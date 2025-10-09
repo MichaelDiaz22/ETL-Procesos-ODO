@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import io
 
-st.title('Excel File Partitioner')
+st.title('Excel File Partitioner - Back Office ODO')
 
 uploaded_file = st.file_uploader("Upload your Excel file", type=['xlsx', 'xls'])
 
@@ -78,4 +78,5 @@ if uploaded_file is not None:
         st.error(f"An error occurred during processing: {e}")
 
 else:
+
     st.info("Please upload an Excel file to get started.")
