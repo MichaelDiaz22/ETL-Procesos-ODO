@@ -7,7 +7,7 @@ st.title('Excel File Partitioner - Back Office ODO')
 
 uploaded_file = st.file_uploader("Upload your Excel file", type=['xlsx', 'xls'])
 
-num_partitions = st.number_input("Enter the number of partitions", min_value=1, value=3)
+num_partitions = st.number_input("Enter the number of partitions (number of back office employees)", min_value=1, value=3)
 
 if uploaded_file is not None:
     try:
@@ -80,3 +80,4 @@ if uploaded_file is not None:
 else:
 
     st.info("Please upload an Excel file to get started.")
+
