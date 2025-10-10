@@ -289,7 +289,7 @@ if uploaded_file is not None:
 
 
             # Filename format: [EMPRESA]_[ubicación]_[dia inicial]_al_[dia final]_[mes]_[año].xlsx
-            filename = f"{empresas_str}_{ubicaciones_str}_{filters[i]['start_date'].day}_al_{filters[i]['end_date'].day}_{filters[i]['start_date'].strftime('%B')}_{filters[i]['start_date'].year}.xlsx"
+            filename = f"{empresas_str}_Confirmacion {ubicaciones_str} {filters[i]['start_date'].day} al {filters[i]['end_date'].day} {filters[i]['start_date'].strftime('%B')} de {filters[i]['start_date'].year}.xlsx"
 
 
             # Create download button
@@ -301,3 +301,4 @@ if uploaded_file is not None:
             )
 
             buffer.close() # Close the buffer after use
+
