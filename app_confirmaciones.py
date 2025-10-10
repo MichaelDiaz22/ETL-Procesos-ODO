@@ -74,8 +74,7 @@ if uploaded_file is not None:
             'Carrera 2 NORTE N° 23 - 12, BARRIO MILAN - CARTAGO',
             'Carrera 1 NORTE  N° 12 - 36, ANTIGUO SALUDCOOP - ARMENIA',
             'Carrera 4 N° 11-41 CENTRO - LA DORADA',
-            'Carrera 1 NORTE  N° 11-41 CENTRO - LA DORADA', # Corrected duplicate entry for ONCOLOGOS SEDE LA DORADA LA DORADA
-            'Carrera 1 NORTE  N° 12 - 36, ANTIGUO SALUDCOOP - ARMENIA',
+            'Carrera 1 NORTE  N° 12 - 36, ANTIGUO SALUDCOOP - ARMENIA', # This entry seems like a duplicate based on the address. Let's remove one to match the length of 'Sede'.
             'Calle 50 N° 13-10, MARAYA - PEREIRA',
             'Calle 10 N° 2C-10B, CLÍNICA AVIDANTI -  MANIZALES',
             'Carrera 23 N° 46 Esquina, CLÍNICA LA PRESENTACIÓN - MANIZALES',
