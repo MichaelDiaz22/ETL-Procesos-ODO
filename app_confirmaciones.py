@@ -5,6 +5,7 @@ import io
 import xlsxwriter
 from datetime import datetime
 import datetime as dt
+import locale
 
 st.title("Excel Data Filtering and Export App")
 
@@ -124,33 +125,76 @@ if uploaded_file is not None:
     df['Apellidos'] = df['Apellidos'].astype(str)
     df['Actividad Médica'] = df['Actividad Médica'].astype(str)
 
-    # Convert 'Fecha Programación' to datetime objects - CORRECCIÓN IMPORTANTE
-    date_formats_prog = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%m-%d-%Y']
+    # CORRECCIÓN CRÍTICA: Convertir fechas en formato español completo
+    st.subheader("📅 Conversión de Fechas en Español")
     
-    def parse_date_prog_robust(date_str):
-        date_str = str(date_str) if not pd.isna(date_str) else ''
-        for fmt in date_formats_prog:
-            try:
-                return pd.to_datetime(date_str, format=fmt)
-            except (ValueError, TypeError):
-                continue
-        # Si ningún formato funciona, intentar con pandas infer
+    # Función específica para fechas en formato español completo
+    def parse_spanish_date(date_str):
+        if pd.isna(date_str) or str(date_str).strip() == '':
+            return pd.NaT
+            
+        date_str = str(date_str).strip().lower()
+        
+        # Mapeo de meses en español a inglés
+        months_map = {
+            'enero': 'January', 'febrero': 'February', 'marzo': 'March', 'abril': 'April',
+            'mayo': 'May', 'junio': 'June', 'julio': 'July', 'agosto': 'August',
+            'septiembre': 'September', 'octubre': 'October', 'noviembre': 'November', 'diciembre': 'December'
+        }
+        
+        # Mapeo de días en español a inglés
+        days_map = {
+            'lunes': 'Monday', 'martes': 'Tuesday', 'miércoles': 'Wednesday', 'miercoles': 'Wednesday',
+            'jueves': 'Thursday', 'viernes': 'Friday', 'sábado': 'Saturday', 'sabado': 'Saturday',
+            'domingo': 'Sunday'
+        }
+        
         try:
-            return pd.to_datetime(date_str)
-        except:
+            # Remover el día de la semana (lunes, martes, etc.)
+            for day_es, day_en in days_map.items():
+                if date_str.startswith(day_es):
+                    # Remover el día de la semana y la coma
+                    date_str = date_str.replace(day_es, '').replace(',', '').strip()
+                    break
+            
+            # Reemplazar meses en español por meses en inglés
+            for month_es, month_en in months_map.items():
+                if month_es in date_str:
+                    date_str = date_str.replace(month_es, month_en)
+                    break
+            
+            # Parsear la fecha en formato inglés
+            return pd.to_datetime(date_str, format='%d de %B de %Y')
+            
+        except Exception as e:
+            st.write(f"❌ Error parseando fecha '{date_str}': {e}")
             return pd.NaT
 
     # Aplicar la conversión de fecha
-    df['Fecha Programación_dt'] = df['Fecha Programación'].apply(parse_date_prog_robust)
+    st.write("🔄 Convirtiendo fechas en formato español...")
+    df['Fecha Programación_dt'] = df['Fecha Programación'].apply(parse_spanish_date)
     
     # DIAGNÓSTICO DE FECHAS - MUY IMPORTANTE
     st.subheader("📅 Diagnóstico de Fechas")
-    st.write(f"📆 Muestra de 'Fecha Programación' original: {df['Fecha Programación'].head(5).tolist()}")
-    st.write(f"🔍 Muestra de 'Fecha Programación_dt' convertida: {df['Fecha Programación_dt'].head(5).tolist()}")
-    st.write(f"📈 Rango de fechas convertidas: {df['Fecha Programación_dt'].min()} to {df['Fecha Programación_dt'].max()}")
+    st.write(f"📆 Muestra de 'Fecha Programación' original: {df['Fecha Programación'].head(3).tolist()}")
+    st.write(f"🔍 Muestra de 'Fecha Programación_dt' convertida: {df['Fecha Programación_dt'].head(3).tolist()}")
+    
+    # Verificar si la conversión fue exitosa
+    valid_dates = df['Fecha Programación_dt'].notna()
+    st.write(f"✅ Número de fechas convertidas exitosamente: {valid_dates.sum()}")
     st.write(f"❌ Número de fechas inválidas (NaT): {df['Fecha Programación_dt'].isna().sum()}")
     
-    # Formatear para mostrar
+    if valid_dates.sum() > 0:
+        st.write(f"📈 Rango de fechas convertidas: {df['Fecha Programación_dt'].min()} to {df['Fecha Programación_dt'].max()}")
+    else:
+        st.error("🚨 No se pudieron convertir las fechas. Usando fechas alternativas...")
+        # Intentar con Fecha Cita como alternativa
+        st.write("🔄 Intentando con columna 'Fecha Cita'...")
+        df['Fecha Programación_dt'] = df['Fecha Cita'].apply(parse_spanish_date)
+        st.write(f"📆 Muestra de 'Fecha Cita' original: {df['Fecha Cita'].head(3).tolist()}")
+        st.write(f"🔍 Muestra de 'Fecha Cita' convertida: {df['Fecha Programación_dt'].head(3).tolist()}")
+
+    # Formatear para mostrar (mantener formato original para exportación)
     df['Fecha Programación'] = df['Fecha Programación_dt'].dt.strftime('%Y-%m-%d').fillna('')
 
     df['Hora Cita'] = df['Hora Cita'].astype(str)
@@ -234,8 +278,14 @@ if uploaded_file is not None:
             selected_ubicaciones = st.multiselect(f"Select Ubicación(s) for File {i+1}", options=all_ubicaciones, key=f"ubicacion_{i}", default=all_ubicaciones)
 
         # CORRECCIÓN: Usar el rango real de fechas para los valores por defecto
-        default_start_date = min_date.date() if pd.notna(min_date) else datetime.today().date()
-        default_end_date = max_date.date() if pd.notna(max_date) else datetime.today().date()
+        if pd.notna(min_date) and pd.notna(max_date):
+            default_start_date = min_date.date()
+            default_end_date = max_date.date()
+        else:
+            # Si no hay fechas válidas, usar fechas por defecto
+            default_start_date = datetime(2025, 10, 15).date()
+            default_end_date = datetime(2025, 10, 16).date()
+            st.warning("⚠️ Usando fechas por defecto ya que no se pudieron detectar fechas válidas")
 
         st.info(f"💡 Rango de fechas disponible en datos: {default_start_date} a {default_end_date}")
 
