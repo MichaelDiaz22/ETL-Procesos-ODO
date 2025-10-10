@@ -26,8 +26,21 @@ if uploaded_file is not None:
     # Convert 'Fecha Cita' and 'Hora Cita' to datetime objects
     # Use errors='coerce' to handle potential parsing issues and set invalid dates to NaT
     # Convert both columns to string first to avoid potential type issues
-    # Assuming a format like 'YYYY-MM-DD HH:MM:SS' or similar based on previous usage
-    df['Fecha Hora Cita'] = pd.to_datetime(df['Fecha Cita'].astype(str) + ' ' + df['Hora Cita'].astype(str), errors='coerce')
+    # Attempt to parse 'Fecha Cita' and 'Hora Cita' with a list of common formats
+    date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%m-%d-%Y']
+    time_formats = ['%H:%M:%S', '%H:%M', '%I:%M %p']
+
+    def parse_datetime_robust(date_str, time_str):
+        for d_fmt in date_formats:
+            for t_fmt in time_formats:
+                try:
+                    return pd.to_datetime(f"{date_str} {time_str}", format=f"{d_fmt} {t_fmt}")
+                except (ValueError, TypeError):
+                    continue
+        return pd.NaT # Return Not a Time if no format matches
+
+    df['Fecha Hora Cita'] = df.apply(lambda row: parse_datetime_robust(row['Fecha Cita'], row['Hora Cita']), axis=1)
+
 
     # Sort the DataFrame by the grouping columns and the new datetime column for 'Identificador Servicio'
     df_sorted_id = df.sort_values(by=['Numero de Identificación', 'Fecha Cita', 'Sede', 'Ubicación', 'Fecha Hora Cita'])
@@ -106,9 +119,21 @@ if uploaded_file is not None:
     df['Nombres'] = df['Nombres'].astype(str)
     df['Apellidos'] = df['Apellidos'].astype(str)
     df['Actividad Médica'] = df['Actividad Médica'].astype(str)
-    # Convert to datetime before string conversion to handle potential NaT values gracefully
-    # Assuming a format like 'YYYY-MM-DD' for 'Fecha Programación' based on previous formatting
-    df['Fecha Programación'] = pd.to_datetime(df['Fecha Programación'], errors='coerce', format='%Y-%m-%d').dt.strftime('%Y-%m-%d').fillna('')
+
+    # Convert 'Fecha Programación' to datetime objects - Attempt with multiple formats
+    date_formats_prog = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%m-%d-%Y']
+    def parse_date_prog_robust(date_str):
+        for fmt in date_formats_prog:
+            try:
+                return pd.to_datetime(date_str, format=fmt)
+            except (ValueError, TypeError):
+                continue
+        return pd.NaT # Return Not a Time if no format matches
+
+    df['Fecha Programación_dt'] = df['Fecha Programación'].apply(lambda x: parse_date_prog_robust(str(x)))
+    df['Fecha Programación'] = df['Fecha Programación_dt'].dt.strftime('%Y-%m-%d').fillna('') # Format after parsing
+
+
     df['Hora Cita'] = df['Hora Cita'].astype(str)
     df['Especialista'] = df['Especialista'].astype(str)
     df['Direccion Final'] = df['Direccion Final'].astype(str)
@@ -116,18 +141,18 @@ if uploaded_file is not None:
     df['Unidad Funcional'] = df['Unidad Funcional'].astype(str)
 
 
-    # Convert 'Hora Cita' to datetime objects to format it to 12-hour format
-    # Use errors='coerce' to handle potential parsing issues and set invalid times to NaT
-    # Assuming a format like 'HH:MM' or 'HH:MM:SS' for 'Hora Cita' based on previous usage
-    # We'll try a common format, but this might need adjustment if the actual format is different
-    df['Hora Cita Formatted'] = pd.to_datetime(df['Hora Cita'], errors='coerce', format='%H:%M').dt.strftime('%I:%M %p')
-    # If the above format fails, try another common one like 'HH:MM:SS'
-    invalid_time_mask = df['Hora Cita Formatted'].isna() & df['Hora Cita'].notna() & (df['Hora Cita'] != '') & (df['Hora Cita'] != 'nan')
-    df.loc[invalid_time_mask, 'Hora Cita Formatted'] = pd.to_datetime(df.loc[invalid_time_mask, 'Hora Cita'], errors='coerce', format='%H:%M:%S').dt.strftime('%I:%M %p')
+    # Convert 'Hora Cita' to datetime objects to format it to 12-hour format - Attempt with multiple formats
+    time_formats_cita = ['%H:%M:%S', '%H:%M', '%I:%M %p']
+    def parse_time_cita_robust(time_str):
+         for fmt in time_formats_cita:
+             try:
+                 # Need a dummy date to combine with time for datetime conversion
+                 return pd.to_datetime(f"2000-01-01 {time_str}", format=f"%Y-%m-%d {fmt}")
+             except (ValueError, TypeError):
+                 continue
+         return pd.NaT # Return Not a Time if no format matches
 
-
-    # Fill any remaining NaN values that might result from coercion, perhaps with an empty string or a placeholder
-    df['Hora Cita Formatted'] = df['Hora Cita Formatted'].fillna('') # Or another suitable placeholder
+    df['Hora Cita Formatted'] = df['Hora Cita'].apply(lambda x: parse_time_cita_robust(str(x))).dt.strftime('%I:%M %p').fillna('')
 
 
     # If 'Unidad Funcional' is 'INVESTIGACION MARAYA', set 'Hora Cita Formatted' to '-'
@@ -141,7 +166,8 @@ if uploaded_file is not None:
     )
 
     # Drop the temporary 'Hora Cita Formatted' column
-    df = df.drop(columns=['Hora Cita Formatted'])
+    # Keep Hora Cita Formatted as it's needed for the Pacientes sheet
+    # df = df.drop(columns=['Hora Cita Formatted'])
 
 
     # Ensure phone number columns are treated as strings and handle potential missing values
@@ -166,6 +192,9 @@ if uploaded_file is not None:
 
     df.loc[movil_is_valid_and_starts_with_3, 'TELEFONO CONFIRMACIÓN'] = '+57' + df.loc[movil_is_valid_and_starts_with_3, 'Telefono Movil']
 
+    # If neither of the above conditions are met, the value remains 'sin número para enviar mensaje' (already initialized)
+
+
     # Convert the column to string and remove '.0' if present
     df['TELEFONO CONFIRMACIÓN'] = df['TELEFONO CONFIRMACIÓN'].astype(str).str.replace(r'\.0$', '', regex=True)
 
@@ -189,12 +218,10 @@ if uploaded_file is not None:
             selected_ubicaciones = st.multiselect(f"Select Ubicación(s) for File {i+1}", options=all_ubicaciones, key=f"ubicacion_{i}", default=all_ubicaciones)
 
         # Set default date inputs based on the date range in the dataframe
-        # Ensure 'Fecha Programación' is treated as datetime for finding min/max
-        df['Fecha Programación_dt'] = pd.to_datetime(df['Fecha Programación'], errors='coerce')
+        # Ensure 'Fecha Programación_dt' is treated as datetime for finding min/max
+        # Use the already created 'Fecha Programación_dt' from preprocessing
         min_date = df['Fecha Programación_dt'].min()
         max_date = df['Fecha Programación_dt'].max()
-        # Drop the temporary datetime column after finding min/max
-        df = df.drop(columns=['Fecha Programación_dt'])
 
 
         # Ensure min_date and max_date are not NaT before setting default values
@@ -225,6 +252,7 @@ if uploaded_file is not None:
             # Apply Empresa filter - only filter if specific companies are selected
             if file_filters['empresas']:
                 empresa_mask = filtered_df['EMPRESA'].str.upper().isin([e.upper() for e in file_filters['empresas']])
+                # st.write(f"Rows after Empresa filter for file {i+1}: {empresa_mask.sum()}") # Debugging line
                 combined_filter_mask = combined_filter_mask & empresa_mask
             else:
                 # If no specific companies are selected, the mask remains True for this filter
@@ -233,16 +261,17 @@ if uploaded_file is not None:
             # Apply Ubicación filter - only filter if specific locations are selected
             if file_filters['ubicaciones']:
                 ubicacion_mask = filtered_df['Ubicación'].str.upper().isin([u.upper() for u in file_filters['ubicaciones']])
+                # st.write(f"Rows after Ubicación filter for file {i+1}: {ubicacion_mask.sum()}") # Debugging line
                 combined_filter_mask = combined_filter_mask & ubicacion_mask
             else:
                  # If no specific locations are selected, the mask remains True for this filter
                  pass # No change to combined_filter_mask
 
 
-            # Apply Date Range filter (using 'Fecha Programación')
-            # Ensure 'Fecha Programación' is in datetime format for comparison
-            # Convert 'Fecha Programación' to datetime objects
-            filtered_df['Fecha Programación_dt'] = pd.to_datetime(filtered_df['Fecha Programación'], errors='coerce')
+            # Apply Date Range filter (using 'Fecha Programación_dt')
+            # Ensure 'Fecha Programación_dt' is in datetime format for comparison
+            # It should already be datetime from preprocessing, but let's be safe
+            filtered_df['Fecha Programación_dt'] = pd.to_datetime(filtered_df['Fecha Programación_dt'], errors='coerce')
 
 
             # Convert selected dates to pandas Timestamps for consistent comparison
@@ -251,6 +280,7 @@ if uploaded_file is not None:
 
             # Perform the comparison using pandas Timestamp objects
             date_mask = (filtered_df['Fecha Programación_dt'] >= start_date_ts) & (filtered_df['Fecha Programación_dt'] <= end_date_ts)
+            # st.write(f"Rows after Date Range filter for file {i+1}: {date_mask.sum()}") # Debugging line
             combined_filter_mask = combined_filter_mask & date_mask
 
 
@@ -283,11 +313,13 @@ if uploaded_file is not None:
                  filtered_df['Nombre completo'] = '' # Handle case where Nombres or Apellidos are missing
 
             # Ensure 'Hora Cita Formatted' is available for the Pacientes sheet
-            if 'Hora Cita Formatted' not in filtered_df.columns:
-                 filtered_df['Hora Cita Formatted'] = pd.to_datetime(filtered_df['Hora Cita'], errors='coerce').dt.strftime('%I:%M %p').fillna('')
-                 # Replace formatted time with "-" if 'Unidad Funcional' is 'INVESTIGACION MARAYA'
-                 if 'Unidad Funcional' in filtered_df.columns:
-                    filtered_df.loc[filtered_df['Unidad Funcional'] == 'INVESTIGACION MARAYA', 'Hora Cita Formatted'] = '-'
+            # Re-add the Hora Cita Formatted creation here to ensure it's available after filtering
+            # Use the robust parsing function created earlier
+            filtered_df['Hora Cita Formatted'] = filtered_df['Hora Cita'].apply(lambda x: parse_time_cita_robust(str(x))).dt.strftime('%I:%M %p').fillna('')
+
+            # Replace formatted time with "-" if 'Unidad Funcional' is 'INVESTIGACION MARAYA'
+            if 'Unidad Funcional' in filtered_df.columns:
+                filtered_df.loc[filtered_df['Unidad Funcional'] == 'INVESTIGACION MARAYA', 'Hora Cita Formatted'] = '-'
 
 
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
