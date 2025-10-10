@@ -1,3 +1,4 @@
+%%writefile app.py
 import streamlit as st
 import pandas as pd
 import openpyxl
@@ -131,7 +132,8 @@ if uploaded_file is not None:
     )
 
     # Drop the temporary 'Hora Cita Formatted' column
-    df = df.drop(columns=['Hora Cita Formatted'])
+    # Keep 'Hora Cita Formatted' for use in the Pacientes sheet
+    # df = df.drop(columns=['Hora Cita Formatted'])
 
 
     # Ensure phone number columns are treated as strings and handle potential missing values
@@ -238,42 +240,34 @@ if uploaded_file is not None:
         for i, filtered_df in enumerate(filtered_dfs):
             buffer = io.BytesIO()
 
-            # Define columns for each sheet
-            base_confirmacion_cols = ['Numero de Identificación', 'Nombre completo', 'Telefono Movil', 'Telefono Fijo', 'TELEFONO CONFIRMACIÓN', 'Modalidad', 'Especialista', 'Fecha Programación', 'Hora Cita', 'Consultorio', 'Sede', 'Direccion Final', 'Unidad Funcional', 'Actividad Médica', 'CUPS', 'Riesgo', 'Identificador Servicio', 'Estado de Confirmación']
-            pacientes_cols = ['Numero de Identificación', 'Nombre completo', 'Telefono Movil', 'Telefono Fijo', 'TELEFONO CONFIRMACIÓN', 'VARIABLE', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación', 'Hora Cita'] # Added other required columns
+            # Define columns for each sheet in the desired order
+            base_confirmacion_cols_ordered = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
+            pacientes_cols_ordered = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación', 'Hora Cita Formatted', 'Actividad Médica'] # Use 'Hora Cita Formatted' here
 
-            # Create 'Nombre completo' by concatenating 'Nombres' and 'Apellidos' for the 'Pacientes' sheet
-            if 'Nombres' in filtered_df.columns and 'Apellidos' in filtered_df.columns:
+
+            # Create 'Nombre completo' by concatenating 'Nombres' and 'Apellidos' for the 'Pacientes' sheet if it doesn't exist
+            if 'Nombre completo' not in filtered_df.columns and 'Nombres' in filtered_df.columns and 'Apellidos' in filtered_df.columns:
                  filtered_df['Nombre completo'] = filtered_df['Nombres'].astype(str) + ' ' + filtered_df['Apellidos'].astype(str)
-            else:
+            elif 'Nombre completo' not in filtered_df.columns:
                  filtered_df['Nombre completo'] = '' # Handle case where Nombres or Apellidos are missing
 
-            # Format 'Hora Cita' to 12-hour format for the 'Pacientes' sheet
-            filtered_df['Hora Cita Formatted'] = pd.to_datetime(filtered_df['Hora Cita'], errors='coerce').dt.strftime('%I:%M %p').fillna('')
-            # Replace formatted time with "-" if 'Unidad Funcional' is 'INVESTIGACION MARAYA'
-            if 'Unidad Funcional' in filtered_df.columns:
-                filtered_df.loc[filtered_df['Unidad Funcional'] == 'INVESTIGACION MARAYA', 'Hora Cita Formatted'] = '-'
+            # Ensure 'Hora Cita Formatted' is available for the Pacientes sheet
+            if 'Hora Cita Formatted' not in filtered_df.columns:
+                 filtered_df['Hora Cita Formatted'] = pd.to_datetime(filtered_df['Hora Cita'], errors='coerce').dt.strftime('%I:%M %p').fillna('')
+                 # Replace formatted time with "-" if 'Unidad Funcional' is 'INVESTIGACION MARAYA'
+                 if 'Unidad Funcional' in filtered_df.columns:
+                    filtered_df.loc[filtered_df['Unidad Funcional'] == 'INVESTIGACION MARAYA', 'Hora Cita Formatted'] = '-'
 
 
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                # Write to "Base confirmación" sheet
-                # Ensure all base_confirmacion_cols exist in the dataframe before writing
-                base_confirmacion_df = filtered_df.reindex(columns=[col for col in base_confirmacion_cols if col in filtered_df.columns])
+                # Write to "Base confirmación" sheet with specified columns and order
+                # Ensure all base_confirmacion_cols_ordered exist in the dataframe before writing
+                base_confirmacion_df = filtered_df.reindex(columns=[col for col in base_confirmacion_cols_ordered if col in filtered_df.columns])
                 base_confirmacion_df.to_excel(writer, sheet_name='Base confirmación', index=False)
 
-                # Write to "Pacientes" sheet
-                # Ensure all pacientes_cols exist in the dataframe before writing
-                # Use 'Hora Cita Formatted' for the 'Hora Cita' column in this sheet
-                pacientes_df = filtered_df.reindex(columns=[col for col in pacientes_cols if col in filtered_df.columns])
-                # Rename 'Hora Cita Formatted' to 'Hora Cita' for consistency in the output sheet if it exists
-                if 'Hora Cita Formatted' in pacientes_df.columns:
-                     pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
-
-                # Ensure 'Actividad Médica' is included in the Pacientes sheet if it exists
-                if 'Actividad Médica' in filtered_df.columns and 'Actividad Médica' not in pacientes_df.columns:
-                    pacientes_df['Actividad Médica'] = filtered_df['Actividad Médica']
-
-
+                # Write to "Pacientes" sheet with specified columns and order
+                # Ensure all pacientes_cols_ordered exist in the dataframe before writing
+                pacientes_df = filtered_df.reindex(columns=[col for col in pacientes_cols_ordered if col in filtered_df.columns])
                 pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
 
 
@@ -287,7 +281,8 @@ if uploaded_file is not None:
 
 
             # Filename format: [EMPRESA]_[ubicación]_[dia inicial]_al_[dia final]_[mes]_[año].xlsx
-            filename = f"{empresas_str}_Confirmacion {ubicaciones_str} {filters[i]['start_date'].day} al {filters[i]['end_date'].day} {filters[i]['start_date'].strftime('%B')} de {filters[i]['start_date'].year}.xlsx"
+            # Adjusted filename format based on user's example: [EMPRESA]_Confirmacion_[ubicación]_[dia inicial]_al_[dia final]_[mes]_[año].xlsx
+            filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{filters[i]['start_date'].day}_al_{filters[i]['end_date'].day}_{filters[i]['start_date'].strftime('%B')}_{filters[i]['start_date'].year}.xlsx"
 
 
             # Create download button
