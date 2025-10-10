@@ -25,8 +25,6 @@ if uploaded_file is not None:
         st.write(f"🏢 Empresas únicas: {df['EMPRESA'].unique()}")
     if 'Ubicación' in df.columns:
         st.write(f"📍 Ubicaciones únicas: {df['Ubicación'].unique()}")
-    if 'Fecha Programación' in df.columns:
-        st.write(f"📅 Rango de fechas en 'Fecha Programación': {df['Fecha Programación'].min()} to {df['Fecha Programación'].max()}")
 
     # Preprocessing steps
 
@@ -126,8 +124,9 @@ if uploaded_file is not None:
     df['Apellidos'] = df['Apellidos'].astype(str)
     df['Actividad Médica'] = df['Actividad Médica'].astype(str)
 
-    # Convert 'Fecha Programación' to datetime objects
+    # Convert 'Fecha Programación' to datetime objects - CORRECCIÓN IMPORTANTE
     date_formats_prog = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%m-%d-%Y']
+    
     def parse_date_prog_robust(date_str):
         date_str = str(date_str) if not pd.isna(date_str) else ''
         for fmt in date_formats_prog:
@@ -135,9 +134,23 @@ if uploaded_file is not None:
                 return pd.to_datetime(date_str, format=fmt)
             except (ValueError, TypeError):
                 continue
-        return pd.NaT
+        # Si ningún formato funciona, intentar con pandas infer
+        try:
+            return pd.to_datetime(date_str)
+        except:
+            return pd.NaT
 
-    df['Fecha Programación_dt'] = df['Fecha Programación'].apply(lambda x: parse_date_prog_robust(str(x)))
+    # Aplicar la conversión de fecha
+    df['Fecha Programación_dt'] = df['Fecha Programación'].apply(parse_date_prog_robust)
+    
+    # DIAGNÓSTICO DE FECHAS - MUY IMPORTANTE
+    st.subheader("📅 Diagnóstico de Fechas")
+    st.write(f"📆 Muestra de 'Fecha Programación' original: {df['Fecha Programación'].head(5).tolist()}")
+    st.write(f"🔍 Muestra de 'Fecha Programación_dt' convertida: {df['Fecha Programación_dt'].head(5).tolist()}")
+    st.write(f"📈 Rango de fechas convertidas: {df['Fecha Programación_dt'].min()} to {df['Fecha Programación_dt'].max()}")
+    st.write(f"❌ Número de fechas inválidas (NaT): {df['Fecha Programación_dt'].isna().sum()}")
+    
+    # Formatear para mostrar
     df['Fecha Programación'] = df['Fecha Programación_dt'].dt.strftime('%Y-%m-%d').fillna('')
 
     df['Hora Cita'] = df['Hora Cita'].astype(str)
@@ -200,6 +213,14 @@ if uploaded_file is not None:
     all_empresas = df['EMPRESA'].unique().tolist()
     all_ubicaciones = df['Ubicación'].unique().tolist()
 
+    # CORRECCIÓN: Obtener el rango de fechas REAL de los datos convertidos
+    min_date = df['Fecha Programación_dt'].min()
+    max_date = df['Fecha Programación_dt'].max()
+    
+    st.subheader("📅 Rango de Fechas Real en los Datos")
+    st.write(f"Fecha mínima: {min_date}")
+    st.write(f"Fecha máxima: {max_date}")
+
     num_files = st.number_input("Number of output files to generate", min_value=1, value=1, key='num_files_input')
 
     # Collect filter selections outside the button click to retain state
@@ -212,13 +233,11 @@ if uploaded_file is not None:
         with col2:
             selected_ubicaciones = st.multiselect(f"Select Ubicación(s) for File {i+1}", options=all_ubicaciones, key=f"ubicacion_{i}", default=all_ubicaciones)
 
-        # Set default date inputs based on the date range in the dataframe
-        min_date = df['Fecha Programación_dt'].min()
-        max_date = df['Fecha Programación_dt'].max()
-
-        # Ensure min_date and max_date are not NaT before setting default values
+        # CORRECCIÓN: Usar el rango real de fechas para los valores por defecto
         default_start_date = min_date.date() if pd.notna(min_date) else datetime.today().date()
         default_end_date = max_date.date() if pd.notna(max_date) else datetime.today().date()
+
+        st.info(f"💡 Rango de fechas disponible en datos: {default_start_date} a {default_end_date}")
 
         start_date = st.date_input(f"Select Start Date for File {i+1}", key=f"start_date_{i}", value=default_start_date)
         end_date = st.date_input(f"Select End Date for File {i+1}", key=f"end_date_{i}", value=default_end_date)
@@ -239,7 +258,7 @@ if uploaded_file is not None:
             st.subheader(f"🔍 Diagnóstico - Filtros para Archivo {i+1}")
             st.write(f"🏢 Empresas seleccionadas: {file_filters['empresas']}")
             st.write(f"📍 Ubicaciones seleccionadas: {file_filters['ubicaciones']}")
-            st.write(f"📅 Rango de fechas: {file_filters['start_date']} a {file_filters['end_date']}")
+            st.write(f"📅 Rango de fechas seleccionado: {file_filters['start_date']} a {file_filters['end_date']}")
 
             # Start with a boolean mask that includes all rows
             combined_filter_mask = pd.Series(True, index=filtered_df.index)
@@ -260,10 +279,7 @@ if uploaded_file is not None:
                 ubicacion_rows_after = ubicacion_mask.sum()
                 st.write(f"📍 Filas después de filtro de ubicación: {ubicacion_rows_after}/{ubicacion_rows_before}")
 
-            # Apply Date Range filter
-            filtered_df['Fecha Programación_dt'] = pd.to_datetime(filtered_df['Fecha Programación_dt'], errors='coerce')
-
-            # Convert selected dates to pandas Timestamps for consistent comparison
+            # Apply Date Range filter - CORRECCIÓN: Usar la columna datetime ya convertida
             start_date_ts = pd.Timestamp(file_filters['start_date'])
             end_date_ts = pd.Timestamp(file_filters['end_date'])
 
@@ -294,11 +310,12 @@ if uploaded_file is not None:
         for i, filtered_df in enumerate(filtered_dfs):
             if len(filtered_df) == 0:
                 st.error(f"❌ El archivo {i+1} no contiene datos con los filtros aplicados. No se generará archivo.")
+                st.info("💡 **Sugerencias:** Ajusta el rango de fechas para que coincida con tus datos reales")
                 continue
                 
             buffer = io.BytesIO()
 
-            # CORRECIÓN PRINCIPAL: Usar selección directa en lugar de reindex
+            # CORRECCIÓN PRINCIPAL: Usar selección directa en lugar de reindex
             base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
             pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación', 'Hora Cita Formatted', 'Actividad Médica']
 
@@ -356,3 +373,4 @@ if uploaded_file is not None:
             )
 
             buffer.close()
+
