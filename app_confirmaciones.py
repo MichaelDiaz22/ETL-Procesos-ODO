@@ -197,32 +197,60 @@ if uploaded_file is not None:
     # Formatear para mostrar (mantener formato original para exportación)
     df['Fecha Programación'] = df['Fecha Programación_dt'].dt.strftime('%Y-%m-%d').fillna('')
 
-    df['Hora Cita'] = df['Hora Cita'].astype(str)
+    # CORRECCIÓN: CONVERSIÓN ROBUSTA DE HORA A FORMATO 12 HORAS
+    st.subheader("⏰ Conversión de Horas")
+    
+    def format_time_to_12h(time_str):
+        """
+        Convierte una hora en formato string a formato 12 horas (AM/PM)
+        """
+        if pd.isna(time_str) or str(time_str).strip() in ['', 'nan', 'NaT']:
+            return ''
+        
+        time_str = str(time_str).strip()
+        
+        # Si ya está en formato 12 horas, retornar tal cual
+        if 'AM' in time_str.upper() or 'PM' in time_str.upper():
+            return time_str
+        
+        # Intentar diferentes formatos de hora
+        time_formats = ['%H:%M:%S', '%H:%M', '%I:%M %p', '%I:%M%p']
+        
+        for fmt in time_formats:
+            try:
+                # Intentar parsear como datetime
+                time_obj = pd.to_datetime(time_str, format=fmt)
+                # Formatear a 12 horas con AM/PM
+                return time_obj.strftime('%I:%M %p').lstrip('0')  # Remover cero inicial
+            except (ValueError, TypeError):
+                continue
+        
+        # Si no se pudo parsear, retornar el string original
+        return time_str
+
+    # Aplicar la conversión de hora
+    st.write("🔄 Convirtiendo horas a formato 12h...")
+    df['Hora Cita Formatted'] = df['Hora Cita'].apply(format_time_to_12h)
+    
+    # DIAGNÓSTICO DE HORAS
+    st.write(f"⏱️ Muestra de 'Hora Cita' original: {df['Hora Cita'].head(5).tolist()}")
+    st.write(f"🕐 Muestra de 'Hora Cita Formatted': {df['Hora Cita Formatted'].head(5).tolist()}")
+    
+    # Verificar conversión
+    empty_hours = (df['Hora Cita Formatted'] == '').sum()
+    st.write(f"✅ Horas convertidas exitosamente: {len(df) - empty_hours}/{len(df)}")
+    st.write(f"❌ Horas vacías o no convertidas: {empty_hours}")
+
+    # If 'Unidad Funcional' is 'INVESTIGACION MARAYA', set 'Hora Cita Formatted' to '-'
+    if 'Unidad Funcional' in df.columns:
+        investigacion_mask = df['Unidad Funcional'] == 'INVESTIGACION MARAYA'
+        df.loc[investigacion_mask, 'Hora Cita Formatted'] = '-'
+        st.write(f"🔬 Horas establecidas como '-' para INVESTIGACION MARAYA: {investigacion_mask.sum()}")
+
     df['Especialista'] = df['Especialista'].astype(str)
     df['Direccion Final'] = df['Direccion Final'].astype(str)
     df['Ubicación'] = df['Ubicación'].astype(str)
     df['Unidad Funcional'] = df['Unidad Funcional'].astype(str)
-
-    # Convert 'Hora Cita' to datetime objects to format it to 12-hour format
-    time_formats_cita = ['%H:%M:%S', '%H:%M', '%I:%M %p']
-    def parse_time_cita_robust(time_str):
-         time_str = str(time_str) if not pd.isna(time_str) else ''
-         for fmt in time_formats_cita:
-             try:
-                 return pd.to_datetime(time_str, format=fmt)
-             except (ValueError, TypeError):
-                 continue
-         return pd.NaT
-
-    time_parsed_series = df['Hora Cita'].apply(lambda x: parse_time_cita_robust(str(x)))
-
-    if pd.api.types.is_datetime64_any_dtype(time_parsed_series):
-        df['Hora Cita Formatted'] = time_parsed_series.dt.strftime('%I:%M %p').fillna('')
-    else:
-        df['Hora Cita Formatted'] = ''
-
-    # If 'Unidad Funcional' is 'INVESTIGACION MARAYA', set 'Hora Cita Formatted' to '-'
-    df.loc[df['Unidad Funcional'] == 'INVESTIGACION MARAYA', 'Hora Cita Formatted'] = '-'
 
     # Create the 'variable_mensaje' column based on the 'Ubicación'
     df['VARIABLE'] = df.apply(
@@ -348,8 +376,8 @@ if uploaded_file is not None:
 
             # Mostrar muestra de datos filtrados si hay resultados
             if len(filtered_df) > 0:
-                st.write("📋 Muestra de datos filtrados:")
-                st.dataframe(filtered_df[['EMPRESA', 'Ubicación', 'Fecha Programación']].head())
+                st.write("📋 Muestra de datos filtrados (incluyendo hora):")
+                st.dataframe(filtered_df[['EMPRESA', 'Ubicación', 'Fecha Programación', 'Hora Cita', 'Hora Cita Formatted']].head())
 
             # Drop the temporary datetime column used for filtering
             filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
@@ -365,7 +393,7 @@ if uploaded_file is not None:
                 
             buffer = io.BytesIO()
 
-            # CORRECCIÓN PRINCIPAL: Usar selección directa en lugar de reindex
+            # CORRECCIÓN: Definir columnas para cada hoja
             base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
             pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación', 'Hora Cita Formatted', 'Actividad Médica']
 
@@ -373,39 +401,36 @@ if uploaded_file is not None:
             if 'Nombre completo' not in filtered_df.columns:
                 filtered_df['Nombre completo'] = filtered_df['Nombres'].astype(str) + ' ' + filtered_df['Apellidos'].astype(str)
 
-            # Asegurar que 'Hora Cita Formatted' esté disponible
-            if 'Hora Cita Formatted' not in filtered_df.columns:
-                time_parsed_series = filtered_df['Hora Cita'].apply(lambda x: parse_time_cita_robust(str(x)))
-                if pd.api.types.is_datetime64_any_dtype(time_parsed_series):
-                    filtered_df['Hora Cita Formatted'] = time_parsed_series.dt.strftime('%I:%M %p').fillna('')
-                else:
-                    filtered_df['Hora Cita Formatted'] = ''
+            # DIAGNÓSTICO: Verificar columnas antes de exportar
+            st.write(f"🔍 Columnas disponibles en filtered_df: {list(filtered_df.columns)}")
+            st.write(f"⏰ Muestra de 'Hora Cita Formatted' para exportar: {filtered_df['Hora Cita Formatted'].head(3).tolist()}")
 
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                # CORRECIÓN: Seleccionar columnas existentes directamente
+                # CORRECCIÓN: Seleccionar columnas existentes directamente
                 base_confirmacion_cols_existing = [col for col in base_confirmacion_cols if col in filtered_df.columns]
                 
                 if base_confirmacion_cols_existing:
                     base_confirmacion_df = filtered_df[base_confirmacion_cols_existing]
                     base_confirmacion_df.to_excel(writer, sheet_name='Base confirmación', index=False)
-                    st.success(f"✅ Hoja 'Base confirmación' creada con {len(base_confirmacion_df)} filas y {len(base_confirmacion_df.columns)} columnas")
+                    st.success(f"✅ Hoja 'Base confirmación' creada con {len(base_confirmacion_df)} filas y columnas: {list(base_confirmacion_df.columns)}")
                 else:
                     st.warning(f"⚠️ No se encontraron las columnas necesarias para 'Base confirmación'")
 
-                # CORRECIÓN: Para la hoja Pacientes
+                # CORRECCIÓN: Para la hoja Pacientes - USAR LA COLUMNA FORMATEADA DIRECTAMENTE
                 pacientes_cols_existing = [col for col in pacientes_cols if col in filtered_df.columns]
                 
                 if pacientes_cols_existing:
                     pacientes_df = filtered_df[pacientes_cols_existing].copy()
                     
-                    # Renombrar 'Hora Cita Formatted' a 'Hora Cita' si existe
+                    # CORRECCIÓN: Renombrar la columna formateada para que se muestre como 'Hora Cita'
                     if 'Hora Cita Formatted' in pacientes_df.columns:
                         pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
                     
                     pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
-                    st.success(f"✅ Hoja 'Pacientes' creada con {len(pacientes_df)} filas y {len(pacientes_df.columns)} columnas")
+                    st.success(f"✅ Hoja 'Pacientes' creada con {len(pacientes_df)} filas y columnas: {list(pacientes_df.columns)}")
+                    st.write(f"⏰ Muestra de 'Hora Cita' en Pacientes: {pacientes_df['Hora Cita'].head(3).tolist()}")
                 else:
-                    st.warning(f"⚠️ No se encontraron las columnas necesarias para 'Pacientes'")
+                    st.warning(f"⚠️ No se encontraron las columnas necesarias para 'Pacientes'. Columnas disponibles: {list(filtered_df.columns)}")
 
             # Generate filename based on filters
             empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
@@ -423,4 +448,3 @@ if uploaded_file is not None:
             )
 
             buffer.close()
-
