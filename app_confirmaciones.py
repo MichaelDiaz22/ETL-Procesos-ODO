@@ -180,7 +180,8 @@ if uploaded_file is not None:
         df['Fecha Programación_dt'] = pd.to_datetime(df['Fecha Programación'], errors='coerce')
         min_date = df['Fecha Programación_dt'].min()
         max_date = df['Fecha Programación_dt'].max()
-        df = df.drop(columns=['Fecha Programación_dt']) # Drop the temporary datetime column
+        # Drop the temporary datetime column after finding min/max
+        df = df.drop(columns=['Fecha Programación_dt'])
 
 
         # Ensure min_date and max_date are not NaT before setting default values
@@ -221,6 +222,7 @@ if uploaded_file is not None:
             start_date_dt = file_filters['start_date']
             end_date_dt = file_filters['end_date']
 
+            # Perform the comparison using the .dt.date accessor on the Series
             filtered_df = filtered_df[
                 (filtered_df['Fecha Programación_dt'] >= start_date_dt) &
                 (filtered_df['Fecha Programación_dt'] <= end_date_dt)
@@ -238,7 +240,20 @@ if uploaded_file is not None:
 
             # Define columns for each sheet
             base_confirmacion_cols = ['Numero de Identificación', 'Nombre completo', 'Telefono Movil', 'Telefono Fijo', 'TELEFONO CONFIRMACIÓN', 'Modalidad', 'Especialista', 'Fecha Programación', 'Hora Cita', 'Consultorio', 'Sede', 'Direccion Final', 'Unidad Funcional', 'Actividad Médica', 'CUPS', 'Riesgo', 'Identificador Servicio', 'Estado de Confirmación']
-            pacientes_cols = ['Numero de Identificación', 'Nombre completo', 'Telefono Movil', 'Telefono Fijo', 'TELEFONO CONFIRMACIÓN', 'VARIABLE']
+            pacientes_cols = ['Numero de Identificación', 'Nombre completo', 'Telefono Movil', 'Telefono Fijo', 'TELEFONO CONFIRMACIÓN', 'VARIABLE', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación', 'Hora Cita'] # Added other required columns
+
+            # Create 'Nombre completo' by concatenating 'Nombres' and 'Apellidos' for the 'Pacientes' sheet
+            if 'Nombres' in filtered_df.columns and 'Apellidos' in filtered_df.columns:
+                 filtered_df['Nombre completo'] = filtered_df['Nombres'].astype(str) + ' ' + filtered_df['Apellidos'].astype(str)
+            else:
+                 filtered_df['Nombre completo'] = '' # Handle case where Nombres or Apellidos are missing
+
+            # Format 'Hora Cita' to 12-hour format for the 'Pacientes' sheet
+            filtered_df['Hora Cita Formatted'] = pd.to_datetime(filtered_df['Hora Cita'], errors='coerce').dt.strftime('%I:%M %p').fillna('')
+            # Replace formatted time with "-" if 'Unidad Funcional' is 'INVESTIGACION MARAYA'
+            if 'Unidad Funcional' in filtered_df.columns:
+                filtered_df.loc[filtered_df['Unidad Funcional'] == 'INVESTIGACION MARAYA', 'Hora Cita Formatted'] = '-'
+
 
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                 # Write to "Base confirmación" sheet
@@ -248,7 +263,17 @@ if uploaded_file is not None:
 
                 # Write to "Pacientes" sheet
                 # Ensure all pacientes_cols exist in the dataframe before writing
+                # Use 'Hora Cita Formatted' for the 'Hora Cita' column in this sheet
                 pacientes_df = filtered_df.reindex(columns=[col for col in pacientes_cols if col in filtered_df.columns])
+                # Rename 'Hora Cita Formatted' to 'Hora Cita' for consistency in the output sheet if it exists
+                if 'Hora Cita Formatted' in pacientes_df.columns:
+                     pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
+
+                # Ensure 'Actividad Médica' is included in the Pacientes sheet if it exists
+                if 'Actividad Médica' in filtered_df.columns and 'Actividad Médica' not in pacientes_df.columns:
+                    pacientes_df['Actividad Médica'] = filtered_df['Actividad Médica']
+
+
                 pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
 
 
@@ -257,8 +282,13 @@ if uploaded_file is not None:
             ubicaciones_str = "_".join(filters[i]['ubicaciones']) if filters[i]['ubicaciones'] else "All_Ubicaciones"
             start_date_str = filters[i]['start_date'].strftime('%Y-%m-%d')
             end_date_str = filters[i]['end_date'].strftime('%Y-%m-%d')
+            # Extract month and year for filename - assuming start_date is representative
+            month_year_str = filters[i]['start_date'].strftime('%B_%Y')
 
-            filename = f"filtered_data_file_{i+1}_{empresas_str}_{ubicaciones_str}_{start_date_str}_to_{end_date_str}.xlsx"
+
+            # Filename format: [EMPRESA]_[ubicación]_[dia inicial]_al_[dia final]_[mes]_[año].xlsx
+            filename = f"{empresas_str}_{ubicaciones_str}_{filters[i]['start_date'].day}_al_{filters[i]['end_date'].day}_{filters[i]['start_date'].strftime('%B')}_{filters[i]['start_date'].year}.xlsx"
+
 
             # Create download button
             st.download_button(
