@@ -131,8 +131,7 @@ if uploaded_file is not None:
     )
 
     # Drop the temporary 'Hora Cita Formatted' column
-    # Keep 'Hora Cita Formatted' for use in the Pacientes sheet
-    # df = df.drop(columns=['Hora Cita Formatted'])
+    df = df.drop(columns=['Hora Cita Formatted'])
 
 
     # Ensure phone number columns are treated as strings and handle potential missing values
@@ -167,13 +166,16 @@ if uploaded_file is not None:
 
     num_files = st.number_input("Number of output files to generate", min_value=1, value=1, key='num_files_input')
 
+    # Collect filter selections outside the button click to retain state
     filters = []
     for i in range(num_files):
         st.subheader(f"Filters for Output File {i+1}")
         col1, col2 = st.columns(2)
         with col1:
+            # Default to all options selected
             selected_empresas = st.multiselect(f"Select Empresa(s) for File {i+1}", options=all_empresas, key=f"empresa_{i}", default=all_empresas)
         with col2:
+            # Default to all options selected
             selected_ubicaciones = st.multiselect(f"Select Ubicación(s) for File {i+1}", options=all_ubicaciones, key=f"ubicacion_{i}", default=all_ubicaciones)
 
         # Set default date inputs based on the date range in the dataframe
@@ -201,33 +203,46 @@ if uploaded_file is not None:
             'end_date': end_date
         })
 
+
     if st.button("Generate and Download Files"):
         filtered_dfs = []
         for i, file_filters in enumerate(filters):
             filtered_df = df.copy()
 
-            # Apply Empresa filter
-            if file_filters['empresas']: # If the list is not empty
-                filtered_df = filtered_df[filtered_df['EMPRESA'].isin(file_filters['empresas'])]
+            # Start with a boolean mask that includes all rows
+            combined_filter_mask = pd.Series(True, index=filtered_df.index)
 
-            # Apply Ubicación filter
-            if file_filters['ubicaciones']: # If the list is not empty
-                filtered_df = filtered_df[filtered_df['Ubicación'].isin(file_filters['ubicaciones'])]
+            # Apply Empresa filter - only filter if specific companies are selected
+            if file_filters['empresas']:
+                empresa_mask = filtered_df['EMPRESA'].isin(file_filters['empresas'])
+                combined_filter_mask = combined_filter_mask & empresa_mask
+
+            # Apply Ubicación filter - only filter if specific locations are selected
+            if file_filters['ubicaciones']:
+                ubicacion_mask = filtered_df['Ubicación'].isin(file_filters['ubicaciones'])
+                combined_filter_mask = combined_filter_mask & ubicacion_mask
 
             # Apply Date Range filter (using 'Fecha Programación')
             # Ensure 'Fecha Programación' is in datetime format for comparison
             # Convert 'Fecha Programación' to datetime objects
             filtered_df['Fecha Programación_dt'] = pd.to_datetime(filtered_df['Fecha Programación'], errors='coerce')
 
+
             # Convert selected dates to pandas Timestamps for consistent comparison
             start_date_ts = pd.Timestamp(file_filters['start_date'])
             end_date_ts = pd.Timestamp(file_filters['end_date'])
 
             # Perform the comparison using pandas Timestamp objects
-            filtered_df = filtered_df[
-                (filtered_df['Fecha Programación_dt'] >= start_date_ts) &
-                (filtered_df['Fecha Programación_dt'] <= end_date_ts)
-            ]
+            date_mask = (filtered_df['Fecha Programación_dt'] >= start_date_ts) & (filtered_df['Fecha Programación_dt'] <= end_date_ts)
+            combined_filter_mask = combined_filter_mask & date_mask
+
+
+            # Apply the combined filter mask to the DataFrame
+            filtered_df = filtered_df.loc[combined_filter_mask].copy() # Use .loc and .copy() to avoid SettingWithCopyWarning
+
+            # Add debugging line to check the number of rows after filtering
+            st.write(f"Número de filas en filtered_df para el archivo {i+1}: {len(filtered_df)}")
+
 
             # Drop the temporary datetime column used for filtering
             filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
@@ -267,6 +282,15 @@ if uploaded_file is not None:
                 # Write to "Pacientes" sheet with specified columns and order
                 # Ensure all pacientes_cols_ordered exist in the dataframe before writing
                 pacientes_df = filtered_df.reindex(columns=[col for col in pacientes_cols_ordered if col in filtered_df.columns])
+                # Rename 'Hora Cita Formatted' to 'Hora Cita' for consistency in the output sheet if it exists
+                if 'Hora Cita Formatted' in pacientes_df.columns:
+                     pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
+
+                # Ensure 'Actividad Médica' is included in the Pacientes sheet if it exists
+                if 'Actividad Médica' in filtered_df.columns and 'Actividad Médica' not in pacientes_df.columns:
+                    pacientes_df['Actividad Médica'] = filtered_df['Actividad Médica']
+
+
                 pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
 
 
@@ -280,7 +304,6 @@ if uploaded_file is not None:
 
 
             # Filename format: [EMPRESA]_[ubicación]_[dia inicial]_al_[dia final]_[mes]_[año].xlsx
-            # Adjusted filename format based on user's example: [EMPRESA]_Confirmacion_[ubicación]_[dia inicial]_al_[dia final]_[mes]_[año].xlsx
             filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{filters[i]['start_date'].day}_al_{filters[i]['end_date'].day}_{filters[i]['start_date'].strftime('%B')}_{filters[i]['start_date'].year}.xlsx"
 
 
@@ -293,4 +316,3 @@ if uploaded_file is not None:
             )
 
             buffer.close() # Close the buffer after use
-
