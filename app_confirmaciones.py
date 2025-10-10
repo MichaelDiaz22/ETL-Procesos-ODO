@@ -216,16 +216,18 @@ if uploaded_file is not None:
             # Apply Date Range filter (using 'Fecha Programación')
             # Ensure 'Fecha Programación' is in datetime format for comparison
             # Re-convert to datetime.date as it might have been converted to datetime.datetime in previous steps
-            filtered_df['Fecha Programación_dt'] = pd.to_datetime(filtered_df['Fecha Programación'], errors='coerce').dt.date
+            # Convert 'Fecha Programación' to datetime objects and then extract the date for comparison
+            filtered_df['Fecha Programación_dt'] = pd.to_datetime(filtered_df['Fecha Programación'], errors='coerce')
 
-            # Convert selected dates to datetime.date for comparison
-            start_date_dt = file_filters['start_date']
-            end_date_dt = file_filters['end_date']
 
-            # Perform the comparison using the .dt.date accessor on the Series
+            # Convert selected dates to pandas Timestamps for consistent comparison
+            start_date_ts = pd.Timestamp(file_filters['start_date'])
+            end_date_ts = pd.Timestamp(file_filters['end_date'])
+
+            # Perform the comparison using pandas Timestamp objects
             filtered_df = filtered_df[
-                (filtered_df['Fecha Programación_dt'] >= start_date_dt) &
-                (filtered_df['Fecha Programación_dt'] <= end_date_dt)
+                (filtered_df['Fecha Programación_dt'] >= start_date_ts) &
+                (filtered_df['Fecha Programación_dt'] <= end_date_ts)
             ]
 
             # Drop the temporary datetime column used for filtering
