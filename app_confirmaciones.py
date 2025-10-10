@@ -1,4 +1,3 @@
-%%writefile app.py
 import streamlit as st
 import pandas as pd
 import openpyxl
@@ -294,3 +293,4 @@ if uploaded_file is not None:
             )
 
             buffer.close() # Close the buffer after use
+
