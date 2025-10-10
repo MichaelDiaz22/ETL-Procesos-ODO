@@ -88,7 +88,7 @@ if uploaded_file is not None:
     # Create the new column with the address, initially taking values from the merged 'Dirección' column
     # Use the merged column if it exists, otherwise use the original 'Dirección Centro Atención'
     if 'Dirección_merged' in df.columns:
-        df['Direccion Final'] = df['Dirección_merged']
+        df['Direccion Final'] = df['Direccion_merged']
         df = df.drop(columns=['Dirección_merged']) # Drop the merged column after use
     else:
         # Check if the original 'Dirección Centro Atención' column exists before using it
