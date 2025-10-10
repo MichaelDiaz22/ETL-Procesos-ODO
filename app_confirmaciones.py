@@ -215,10 +215,8 @@ if uploaded_file is not None:
 
             # Apply Date Range filter (using 'Fecha Programación')
             # Ensure 'Fecha Programación' is in datetime format for comparison
-            # Re-convert to datetime.date as it might have been converted to datetime.datetime in previous steps
-            # Convert 'Fecha Programación' to datetime objects and then extract the date for comparison
+            # Convert 'Fecha Programación' to datetime objects
             filtered_df['Fecha Programación_dt'] = pd.to_datetime(filtered_df['Fecha Programación'], errors='coerce')
-
 
             # Convert selected dates to pandas Timestamps for consistent comparison
             start_date_ts = pd.Timestamp(file_filters['start_date'])
@@ -301,4 +299,3 @@ if uploaded_file is not None:
             )
 
             buffer.close() # Close the buffer after use
-
