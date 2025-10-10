@@ -27,7 +27,7 @@ if uploaded_file is not None:
         df_filtered['Estado'] = ''
         df_filtered['Observación'] = ''
 
-        estado_cita_filter = ['Asignada', 'PreAsignado']
+        estado_cita_filter = ['Asignada', 'PreAsignada']
         df_estado_filtered = df_filtered[df_filtered['Estado cita'].isin(estado_cita_filter)].copy() # Use .copy()
 
 
@@ -80,4 +80,5 @@ if uploaded_file is not None:
 else:
 
     st.info("Please upload an Excel file to get started.")
+
 
