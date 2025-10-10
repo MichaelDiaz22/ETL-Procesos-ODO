@@ -14,9 +14,20 @@ if uploaded_file is not None:
 
     # Load the data into a pandas DataFrame
     df = pd.read_excel(uploaded_file)
+    
+    # MOSTRAR INFORMACIÓN DIAGNÓSTICA DEL DATAFRAME ORIGINAL
+    st.subheader("Información del DataFrame Original")
+    st.write(f"Número total de filas: {len(df)}")
+    st.write(f"Columnas disponibles: {list(df.columns)}")
+    
+    if 'EMPRESA' in df.columns:
+        st.write(f"Empresas únicas: {df['EMPRESA'].unique()}")
+    if 'Ubicación' in df.columns:
+        st.write(f"Ubicaciones únicas: {df['Ubicación'].unique()}")
+    if 'Fecha Programación' in df.columns:
+        st.write(f"Rango de fechas en 'Fecha Programación': {df['Fecha Programación'].min()} to {df['Fecha Programación'].max()}")
 
     # Preprocessing steps
-
     # Sort the DataFrame by 'Numero de Identificación' in ascending order
     df = df.sort_values(by='Numero de Identificación', ascending=True).reset_index(drop=True)
 
@@ -162,6 +173,10 @@ if uploaded_file is not None:
         df['Fecha Programación_dt'] = pd.to_datetime(df['Fecha Programación'], errors='coerce')
         min_date = df['Fecha Programación_dt'].min()
         max_date = df['Fecha Programación_dt'].max()
+        
+        # MOSTRAR INFORMACIÓN DE FECHAS PARA DIAGNÓSTICO
+        st.write(f"📅 Rango de fechas en los datos: {min_date} a {max_date}")
+        
         df = df.drop(columns=['Fecha Programación_dt'])
 
         # Ensure min_date and max_date are not NaT before setting default values
@@ -183,18 +198,30 @@ if uploaded_file is not None:
         for i, file_filters in enumerate(filters):
             filtered_df = df.copy()
 
+            # DIAGNÓSTICO DETALLADO DE FILTROS
+            st.subheader(f"🔍 Diagnóstico - Filtros para Archivo {i+1}")
+            st.write(f"Empresas seleccionadas: {file_filters['empresas']}")
+            st.write(f"Ubicaciones seleccionadas: {file_filters['ubicaciones']}")
+            st.write(f"Rango de fechas: {file_filters['start_date']} a {file_filters['end_date']}")
+
             # Start with a boolean mask that includes all rows
             combined_filter_mask = pd.Series(True, index=filtered_df.index)
 
             # Apply Empresa filter
+            empresa_rows_before = len(filtered_df)
             if file_filters['empresas']:
                 empresa_mask = filtered_df['EMPRESA'].isin(file_filters['empresas'])
                 combined_filter_mask = combined_filter_mask & empresa_mask
+                empresa_rows_after = empresa_mask.sum()
+                st.write(f"📊 Filas después de filtro de empresa: {empresa_rows_after}/{empresa_rows_before}")
 
             # Apply Ubicación filter
+            ubicacion_rows_before = len(filtered_df)
             if file_filters['ubicaciones']:
                 ubicacion_mask = filtered_df['Ubicación'].isin(file_filters['ubicaciones'])
                 combined_filter_mask = combined_filter_mask & ubicacion_mask
+                ubicacion_rows_after = ubicacion_mask.sum()
+                st.write(f"📍 Filas después de filtro de ubicación: {ubicacion_rows_after}/{ubicacion_rows_before}")
 
             # Apply Date Range filter
             filtered_df['Fecha Programación_dt'] = pd.to_datetime(filtered_df['Fecha Programación'], errors='coerce')
@@ -206,12 +233,20 @@ if uploaded_file is not None:
             # Perform the comparison using pandas Timestamp objects
             date_mask = (filtered_df['Fecha Programación_dt'] >= start_date_ts) & (filtered_df['Fecha Programación_dt'] <= end_date_ts)
             combined_filter_mask = combined_filter_mask & date_mask
+            
+            date_rows_after = date_mask.sum()
+            st.write(f"📅 Filas después de filtro de fecha: {date_rows_after}/{len(filtered_df)}")
 
             # Apply the combined filter mask to the DataFrame
             filtered_df = filtered_df.loc[combined_filter_mask].copy()
 
             # Add debugging line to check the number of rows after filtering
-            st.write(f"Número de filas en filtered_df para el archivo {i+1}: {len(filtered_df)}")
+            st.write(f"✅ **Número final de filas en filtered_df para el archivo {i+1}: {len(filtered_df)}**")
+
+            # Mostrar muestra de datos filtrados si hay resultados
+            if len(filtered_df) > 0:
+                st.write("📋 Muestra de datos filtrados:")
+                st.dataframe(filtered_df[['EMPRESA', 'Ubicación', 'Fecha Programación']].head())
 
             # Drop the temporary datetime column used for filtering
             filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
@@ -221,12 +256,16 @@ if uploaded_file is not None:
         # Now, generate and download the filtered files
         for i, filtered_df in enumerate(filtered_dfs):
             if len(filtered_df) == 0:
-                st.warning(f"El archivo {i+1} no contiene datos con los filtros aplicados. No se generará archivo.")
+                st.error(f"❌ El archivo {i+1} no contiene datos con los filtros aplicados. No se generará archivo.")
+                st.info("💡 **Sugerencias para solucionar:**")
+                st.info("- Verifica que los nombres de empresas coincidan exactamente")
+                st.info("- Revisa que las ubicaciones seleccionadas existan en los datos")
+                st.info("- Asegúrate de que el rango de fechas incluya datos existentes")
                 continue
                 
             buffer = io.BytesIO()
 
-            # CORRECIÓN: Verificar y seleccionar columnas existentes
+            # Verificar y seleccionar columnas existentes
             base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
             pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación', 'Hora Cita', 'Actividad Médica']
 
@@ -241,46 +280,42 @@ if uploaded_file is not None:
                     filtered_df.loc[filtered_df['Unidad Funcional'] == 'INVESTIGACION MARAYA', 'Hora Cita Formatted'] = '-'
 
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                # CORRECIÓN: Usar lista de comprensión para seleccionar solo columnas existentes
+                # Para Base confirmación
                 base_confirmacion_cols_existing = [col for col in base_confirmacion_cols if col in filtered_df.columns]
                 if base_confirmacion_cols_existing:
                     base_confirmacion_df = filtered_df[base_confirmacion_cols_existing]
                     base_confirmacion_df.to_excel(writer, sheet_name='Base confirmación', index=False)
+                    st.success(f"✅ Hoja 'Base confirmación' creada con {len(base_confirmacion_df)} filas")
                 else:
-                    st.warning(f"No se encontraron las columnas necesarias para 'Base confirmación' en el archivo {i+1}")
+                    st.warning(f"⚠️ No se encontraron las columnas necesarias para 'Base confirmación'")
 
-                # CORRECIÓN: Para la hoja Pacientes, manejar el renombrado correctamente
+                # Para Pacientes
                 pacientes_cols_existing = [col for col in pacientes_cols if col in filtered_df.columns]
                 
-                # Si necesitamos usar 'Hora Cita Formatted' pero queremos mostrarlo como 'Hora Cita'
-                if 'Hora Cita Formatted' in filtered_df.columns and 'Hora Cita' not in filtered_df.columns:
-                    # Agregar la columna formateada con el nombre correcto
-                    pacientes_df = filtered_df[pacientes_cols_existing].copy()
+                # Manejar el renombrado de Hora Cita
+                pacientes_df = filtered_df[pacientes_cols_existing].copy()
+                if 'Hora Cita Formatted' in filtered_df.columns and 'Hora Cita' not in pacientes_df.columns:
                     pacientes_df['Hora Cita'] = filtered_df['Hora Cita Formatted']
-                    # Remover 'Hora Cita Formatted' si estaba en la lista
-                    if 'Hora Cita Formatted' in pacientes_df.columns:
-                        pacientes_df = pacientes_df.drop(columns=['Hora Cita Formatted'])
-                else:
-                    pacientes_df = filtered_df[pacientes_cols_existing]
 
-                if len(pacientes_cols_existing) > 0:
+                if len(pacientes_df.columns) > 0:
                     pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
+                    st.success(f"✅ Hoja 'Pacientes' creada con {len(pacientes_df)} filas")
                 else:
-                    st.warning(f"No se encontraron las columnas necesarias para 'Pacientes' en el archivo {i+1}")
+                    st.warning(f"⚠️ No se encontraron las columnas necesarias para 'Pacientes'")
 
             # Generate filename based on filters
-            empresas_str = "_".join(filters[i]['empresas']) if filters[i]['empresas'] else "All_Empresas"
-            ubicaciones_str = "_".join(filters[i]['ubicaciones']) if filters[i]['ubicaciones'] else "All_Ubicaciones"
+            empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
+            ubicaciones_str = "_".join(file_filters['ubicaciones']) if file_filters['ubicaciones'] else "All_Ubicaciones"
             
-            # Filename format: [EMPRESA]_[ubicación]_[dia inicial]_al_[dia final]_[mes]_[año].xlsx
-            filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{filters[i]['start_date'].day}_al_{filters[i]['end_date'].day}_{filters[i]['start_date'].strftime('%B')}_{filters[i]['start_date'].year}.xlsx"
+            filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{file_filters['start_date'].day}_al_{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%B')}_{file_filters['start_date'].year}.xlsx"
 
             # Create download button
             st.download_button(
-                label=f"Download File {i+1}: {filename}",
+                label=f"📥 Download File {i+1}: {filename}",
                 data=buffer.getvalue(),
                 file_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheet.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheet.sheet",
+                key=f"download_{i}"
             )
 
             buffer.close()
