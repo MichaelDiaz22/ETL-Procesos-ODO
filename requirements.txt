@@ -4,4 +4,3 @@ scikit-learn
 numpy
 openpyxl
 xlsxwriter
-datetime
