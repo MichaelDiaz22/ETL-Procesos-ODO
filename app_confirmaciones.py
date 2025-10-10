@@ -31,10 +31,16 @@ if uploaded_file is not None:
     time_formats = ['%H:%M:%S', '%H:%M', '%I:%M %p']
 
     def parse_datetime_robust(date_str, time_str):
+        # Ensure inputs are strings
+        date_str = str(date_str) if not pd.isna(date_str) else ''
+        time_str = str(time_str) if not pd.isna(time_str) else ''
+
         for d_fmt in date_formats:
             for t_fmt in time_formats:
                 try:
-                    return pd.to_datetime(f"{date_str} {time_str}", format=f"{d_fmt} {t_fmt}")
+                    # Combine date and time strings and attempt parsing
+                    datetime_str = f"{date_str} {time_str}"
+                    return pd.to_datetime(datetime_str, format=f"{d_fmt} {t_fmt}")
                 except (ValueError, TypeError):
                     continue
         return pd.NaT # Return Not a Time if no format matches
@@ -123,6 +129,7 @@ if uploaded_file is not None:
     # Convert 'Fecha Programación' to datetime objects - Attempt with multiple formats
     date_formats_prog = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%m-%d-%Y']
     def parse_date_prog_robust(date_str):
+        date_str = str(date_str) if not pd.isna(date_str) else ''
         for fmt in date_formats_prog:
             try:
                 return pd.to_datetime(date_str, format=fmt)
@@ -144,15 +151,32 @@ if uploaded_file is not None:
     # Convert 'Hora Cita' to datetime objects to format it to 12-hour format - Attempt with multiple formats
     time_formats_cita = ['%H:%M:%S', '%H:%M', '%I:%M %p']
     def parse_time_cita_robust(time_str):
+         time_str = str(time_str) if not pd.isna(time_str) else ''
          for fmt in time_formats_cita:
              try:
                  # Need a dummy date to combine with time for datetime conversion
-                 return pd.to_datetime(f"2000-01-01 {time_str}", format=f"%Y-%m-%d {fmt}")
+                 # pd.to_datetime can sometimes infer date if only time is provided, but being explicit is safer
+                 return pd.to_datetime(time_str, format=fmt)
              except (ValueError, TypeError):
                  continue
          return pd.NaT # Return Not a Time if no format matches
 
-    df['Hora Cita Formatted'] = df['Hora Cita'].apply(lambda x: parse_time_cita_robust(str(x))).dt.strftime('%I:%M %p').fillna('')
+    # Apply the time parsing function
+    time_parsed_series = df['Hora Cita'].apply(lambda x: parse_time_cita_robust(str(x)))
+
+    # Add debugging to check the result of time parsing
+    # st.write("Sample of time_parsed_series:", time_parsed_series.head())
+    # st.write("Dtype of time_parsed_series:", time_parsed_series.dtype)
+    # st.write("Number of NaT in time_parsed_series:", time_parsed_series.isna().sum())
+
+
+    # Format the time only if the parsing was successful (the result is datetime-like)
+    # Check if the series contains any datetime-like values before using .dt
+    if pd.api.types.is_datetime64_any_dtype(time_parsed_series):
+        df['Hora Cita Formatted'] = time_parsed_series.dt.strftime('%I:%M %p').fillna('')
+    else:
+        # If parsing failed for all rows, fill with empty string or a placeholder
+        df['Hora Cita Formatted'] = '' # Or fill with original value or specific placeholder
 
 
     # If 'Unidad Funcional' is 'INVESTIGACION MARAYA', set 'Hora Cita Formatted' to '-'
@@ -292,6 +316,7 @@ if uploaded_file is not None:
 
 
             # Drop the temporary datetime column used for filtering
+            # Keep the original 'Fecha Programación' string column for output
             filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
 
 
@@ -313,11 +338,37 @@ if uploaded_file is not None:
                  filtered_df['Nombre completo'] = '' # Handle case where Nombres or Apellidos are missing
 
             # Ensure 'Hora Cita Formatted' is available for the Pacientes sheet
-            # Re-add the Hora Cita Formatted creation here to ensure it's available after filtering
-            # Use the robust parsing function created earlier
-            filtered_df['Hora Cita Formatted'] = filtered_df['Hora Cita'].apply(lambda x: parse_time_cita_robust(str(x))).dt.strftime('%I:%M %p').fillna('')
+            # Re-apply time parsing and formatting after filtering
+            time_formats_cita = ['%H:%M:%S', '%H:%M', '%I:%M %p']
+            def parse_time_cita_robust(time_str):
+                 time_str = str(time_str) if not pd.isna(time_str) else ''
+                 for fmt in time_formats_cita:
+                     try:
+                         return pd.to_datetime(time_str, format=fmt).time() # Parse to time object
+                     except (ValueError, TypeError):
+                         continue
+                 return pd.NaT # Return Not a Time if no format matches
 
-            # Replace formatted time with "-" if 'Unidad Funcional' is 'INVESTIGACION MARAYA'
+            # Apply the time parsing function to get time objects
+            time_objects_series = filtered_df['Hora Cita'].apply(lambda x: parse_time_cita_robust(str(x)))
+
+            # Format the time objects to '%I:%M %p'
+            # Check if the series contains any time objects before formatting
+            if pd.api.types.is_datetime64_any_dtype(time_objects_series):
+                 # Convert to datetime first for strftime
+                 filtered_df['Hora Cita Formatted'] = pd.to_datetime(time_objects_series.astype(str)).dt.strftime('%I:%M %p').fillna('')
+            elif pd.api.types.is_object_dtype(time_objects_series) and all(isinstance(x, datetime.time) or pd.isna(x) for x in time_objects_series):
+                 # If it's a series of time objects, convert to string and then try to parse as datetime for formatting
+                 try:
+                     filtered_df['Hora Cita Formatted'] = pd.to_datetime(time_objects_series.astype(str), format='%H:%M:%S').dt.strftime('%I:%M %p').fillna('')
+                 except (ValueError, TypeError):
+                      filtered_df['Hora Cita Formatted'] = time_objects_series.astype(str) # Fallback to string representation
+            else:
+                # If parsing failed for all rows or resulted in non-time objects, fill with empty string or a placeholder
+                filtered_df['Hora Cita Formatted'] = ''
+
+
+            # If 'Unidad Funcional' is 'INVESTIGACION MARAYA', set 'Hora Cita Formatted' to '-'
             if 'Unidad Funcional' in filtered_df.columns:
                 filtered_df.loc[filtered_df['Unidad Funcional'] == 'INVESTIGACION MARAYA', 'Hora Cita Formatted'] = '-'
 
