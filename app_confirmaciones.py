@@ -26,6 +26,7 @@ if uploaded_file is not None:
     # Convert 'Fecha Cita' and 'Hora Cita' to datetime objects
     # Use errors='coerce' to handle potential parsing issues and set invalid dates to NaT
     # Convert both columns to string first to avoid potential type issues
+    # Assuming a format like 'YYYY-MM-DD HH:MM:SS' or similar based on previous usage
     df['Fecha Hora Cita'] = pd.to_datetime(df['Fecha Cita'].astype(str) + ' ' + df['Hora Cita'].astype(str), errors='coerce')
 
     # Sort the DataFrame by the grouping columns and the new datetime column for 'Identificador Servicio'
@@ -106,7 +107,8 @@ if uploaded_file is not None:
     df['Apellidos'] = df['Apellidos'].astype(str)
     df['Actividad Médica'] = df['Actividad Médica'].astype(str)
     # Convert to datetime before string conversion to handle potential NaT values gracefully
-    df['Fecha Programación'] = pd.to_datetime(df['Fecha Programación'], errors='coerce').dt.strftime('%Y-%m-%d').fillna('')
+    # Assuming a format like 'YYYY-MM-DD' for 'Fecha Programación' based on previous formatting
+    df['Fecha Programación'] = pd.to_datetime(df['Fecha Programación'], errors='coerce', format='%Y-%m-%d').dt.strftime('%Y-%m-%d').fillna('')
     df['Hora Cita'] = df['Hora Cita'].astype(str)
     df['Especialista'] = df['Especialista'].astype(str)
     df['Direccion Final'] = df['Direccion Final'].astype(str)
@@ -116,9 +118,17 @@ if uploaded_file is not None:
 
     # Convert 'Hora Cita' to datetime objects to format it to 12-hour format
     # Use errors='coerce' to handle potential parsing issues and set invalid times to NaT
-    df['Hora Cita Formatted'] = pd.to_datetime(df['Hora Cita'], errors='coerce').dt.strftime('%I:%M %p')
-    # Fill NaN values that might result from coercion, perhaps with an empty string or a placeholder
+    # Assuming a format like 'HH:MM' or 'HH:MM:SS' for 'Hora Cita' based on previous usage
+    # We'll try a common format, but this might need adjustment if the actual format is different
+    df['Hora Cita Formatted'] = pd.to_datetime(df['Hora Cita'], errors='coerce', format='%H:%M').dt.strftime('%I:%M %p')
+    # If the above format fails, try another common one like 'HH:MM:SS'
+    invalid_time_mask = df['Hora Cita Formatted'].isna() & df['Hora Cita'].notna() & (df['Hora Cita'] != '') & (df['Hora Cita'] != 'nan')
+    df.loc[invalid_time_mask, 'Hora Cita Formatted'] = pd.to_datetime(df.loc[invalid_time_mask, 'Hora Cita'], errors='coerce', format='%H:%M:%S').dt.strftime('%I:%M %p')
+
+
+    # Fill any remaining NaN values that might result from coercion, perhaps with an empty string or a placeholder
     df['Hora Cita Formatted'] = df['Hora Cita Formatted'].fillna('') # Or another suitable placeholder
+
 
     # If 'Unidad Funcional' is 'INVESTIGACION MARAYA', set 'Hora Cita Formatted' to '-'
     df.loc[df['Unidad Funcional'] == 'INVESTIGACION MARAYA', 'Hora Cita Formatted'] = '-'
