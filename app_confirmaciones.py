@@ -6,6 +6,7 @@ import xlsxwriter
 from datetime import datetime
 import datetime as dt
 import locale
+import numpy as np
 
 st.title("Excel Data Filtering and Export App")
 
@@ -17,15 +18,9 @@ if uploaded_file is not None:
     # Load the data into a pandas DataFrame
     df = pd.read_excel(uploaded_file)
     
-    # DIAGNÓSTICO: Mostrar información del DataFrame original
-    st.subheader("🔍 Información del DataFrame Original")
-    st.write(f"📊 Número total de filas: {len(df)}")
-    st.write(f"📋 Columnas disponibles: {list(df.columns)}")
-    
-    if 'EMPRESA' in df.columns:
-        st.write(f"🏢 Empresas únicas: {df['EMPRESA'].unique()}")
-    if 'Ubicación' in df.columns:
-        st.write(f"📍 Ubicaciones únicas: {df['Ubicación'].unique()}")
+    # SOLUCIÓN: Eliminar toda la información de diagnóstico que no es necesaria
+    # Solo mantener el éxito de carga
+    st.info(f"📊 Archivo cargado: {len(df)} filas, {len(df.columns)} columnas")
 
     # Preprocessing steps
 
@@ -125,10 +120,7 @@ if uploaded_file is not None:
     df['Apellidos'] = df['Apellidos'].astype(str)
     df['Actividad Médica'] = df['Actividad Médica'].astype(str)
 
-    # CORRECCIÓN CRÍTICA: Convertir fechas en formato español completo
-    st.subheader("📅 Conversión de Fechas en Español")
-    
-    # Función específica para fechas en formato español completo
+    # CORRECCIÓN: Conversión robusta de fechas sin mostrar diagnóstico
     def parse_spanish_date(date_str):
         if pd.isna(date_str) or str(date_str).strip() == '':
             return pd.NaT
@@ -166,86 +158,55 @@ if uploaded_file is not None:
             # Parsear la fecha en formato inglés
             return pd.to_datetime(date_str, format='%d de %B de %Y')
             
-        except Exception as e:
-            st.write(f"❌ Error parseando fecha '{date_str}': {e}")
+        except Exception:
             return pd.NaT
 
-    # Aplicar la conversión de fecha
-    st.write("🔄 Convirtiendo fechas en formato español...")
+    # Aplicar la conversión de fecha sin mostrar diagnóstico
     df['Fecha Programación_dt'] = df['Fecha Programación'].apply(parse_spanish_date)
     
-    # DIAGNÓSTICO DE FECHAS - MUY IMPORTANTE
-    st.subheader("📅 Diagnóstico de Fechas")
-    st.write(f"📆 Muestra de 'Fecha Programación' original: {df['Fecha Programación'].head(3).tolist()}")
-    st.write(f"🔍 Muestra de 'Fecha Programación_dt' convertida: {df['Fecha Programación_dt'].head(3).tolist()}")
-    
-    # Verificar si la conversión fue exitosa
-    valid_dates = df['Fecha Programación_dt'].notna()
-    st.write(f"✅ Número de fechas convertidas exitosamente: {valid_dates.sum()}")
-    st.write(f"❌ Número de fechas inválidas (NaT): {df['Fecha Programación_dt'].isna().sum()}")
-    
-    if valid_dates.sum() > 0:
-        st.write(f"📈 Rango de fechas convertidas: {df['Fecha Programación_dt'].min()} to {df['Fecha Programación_dt'].max()}")
-    else:
-        st.error("🚨 No se pudieron convertir las fechas. Usando fechas alternativas...")
-        # Intentar con Fecha Cita como alternativa
-        st.write("🔄 Intentando con columna 'Fecha Cita'...")
+    # Si la conversión falla, intentar con Fecha Cita
+    if df['Fecha Programación_dt'].isna().all():
         df['Fecha Programación_dt'] = df['Fecha Cita'].apply(parse_spanish_date)
-        st.write(f"📆 Muestra de 'Fecha Cita' original: {df['Fecha Cita'].head(3).tolist()}")
-        st.write(f"🔍 Muestra de 'Fecha Cita' convertida: {df['Fecha Programación_dt'].head(3).tolist()}")
 
     # Formatear para mostrar (mantener formato original para exportación)
     df['Fecha Programación'] = df['Fecha Programación_dt'].dt.strftime('%Y-%m-%d').fillna('')
 
-    # CORRECCIÓN: CONVERSIÓN ROBUSTA DE HORA A FORMATO 12 HORAS
-    st.subheader("⏰ Conversión de Horas")
-    
-    def format_time_to_12h(time_str):
+    # CORRECCIÓN MEJORADA: Conversión de horas decimales a formato de tiempo
+    def convert_decimal_to_time(decimal_time):
         """
-        Convierte una hora en formato string a formato 12 horas (AM/PM)
+        Convierte tiempo decimal (0.5 = 12:00 PM) a formato 12 horas
         """
-        if pd.isna(time_str) or str(time_str).strip() in ['', 'nan', 'NaT']:
-            return ''
-        
-        time_str = str(time_str).strip()
-        
-        # Si ya está en formato 12 horas, retornar tal cual
-        if 'AM' in time_str.upper() or 'PM' in time_str.upper():
-            return time_str
-        
-        # Intentar diferentes formatos de hora
-        time_formats = ['%H:%M:%S', '%H:%M', '%I:%M %p', '%I:%M%p']
-        
-        for fmt in time_formats:
-            try:
-                # Intentar parsear como datetime
-                time_obj = pd.to_datetime(time_str, format=fmt)
-                # Formatear a 12 horas con AM/PM
-                return time_obj.strftime('%I:%M %p').lstrip('0')  # Remover cero inicial
-            except (ValueError, TypeError):
-                continue
-        
-        # Si no se pudo parsear, retornar el string original
-        return time_str
+        try:
+            if pd.isna(decimal_time) or str(decimal_time).strip() in ['', 'nan', 'NaT']:
+                return ''
+            
+            # Si ya es un string con formato de hora, retornar tal cual
+            if isinstance(decimal_time, str) and (':' in decimal_time or 'AM' in decimal_time.upper() or 'PM' in decimal_time.upper()):
+                return decimal_time
+            
+            # Convertir a float y calcular horas y minutos
+            decimal_val = float(decimal_time)
+            total_minutes = int(decimal_val * 24 * 60)
+            
+            hours = total_minutes // 60
+            minutes = total_minutes % 60
+            
+            # Crear objeto datetime
+            time_obj = dt.time(hours, minutes)
+            
+            # Formatear a 12 horas
+            return time_obj.strftime('%I:%M %p').lstrip('0')
+            
+        except (ValueError, TypeError):
+            return str(decimal_time)
 
-    # Aplicar la conversión de hora
-    st.write("🔄 Convirtiendo horas a formato 12h...")
-    df['Hora Cita Formatted'] = df['Hora Cita'].apply(format_time_to_12h)
-    
-    # DIAGNÓSTICO DE HORAS
-    st.write(f"⏱️ Muestra de 'Hora Cita' original: {df['Hora Cita'].head(5).tolist()}")
-    st.write(f"🕐 Muestra de 'Hora Cita Formatted': {df['Hora Cita Formatted'].head(5).tolist()}")
-    
-    # Verificar conversión
-    empty_hours = (df['Hora Cita Formatted'] == '').sum()
-    st.write(f"✅ Horas convertidas exitosamente: {len(df) - empty_hours}/{len(df)}")
-    st.write(f"❌ Horas vacías o no convertidas: {empty_hours}")
+    # Aplicar la conversión de hora sin mostrar diagnóstico
+    df['Hora Cita Formatted'] = df['Hora Cita'].apply(convert_decimal_to_time)
 
     # If 'Unidad Funcional' is 'INVESTIGACION MARAYA', set 'Hora Cita Formatted' to '-'
     if 'Unidad Funcional' in df.columns:
         investigacion_mask = df['Unidad Funcional'] == 'INVESTIGACION MARAYA'
         df.loc[investigacion_mask, 'Hora Cita Formatted'] = '-'
-        st.write(f"🔬 Horas establecidas como '-' para INVESTIGACION MARAYA: {investigacion_mask.sum()}")
 
     df['Especialista'] = df['Especialista'].astype(str)
     df['Direccion Final'] = df['Direccion Final'].astype(str)
@@ -285,13 +246,15 @@ if uploaded_file is not None:
     all_empresas = df['EMPRESA'].unique().tolist()
     all_ubicaciones = df['Ubicación'].unique().tolist()
 
-    # CORRECCIÓN: Obtener el rango de fechas REAL de los datos convertidos
+    # Obtener el rango de fechas REAL de los datos convertidos
     min_date = df['Fecha Programación_dt'].min()
     max_date = df['Fecha Programación_dt'].max()
     
-    st.subheader("📅 Rango de Fechas Real en los Datos")
-    st.write(f"Fecha mínima: {min_date}")
-    st.write(f"Fecha máxima: {max_date}")
+    # SOLUCIÓN: Mostrar solo información esencial del rango de fechas
+    if pd.notna(min_date) and pd.notna(max_date):
+        st.info(f"📅 Rango de fechas en los datos: {min_date.date()} a {max_date.date()}")
+    else:
+        st.warning("⚠️ No se pudieron detectar fechas válidas en los datos")
 
     num_files = st.number_input("Number of output files to generate", min_value=1, value=1, key='num_files_input')
 
@@ -305,7 +268,7 @@ if uploaded_file is not None:
         with col2:
             selected_ubicaciones = st.multiselect(f"Select Ubicación(s) for File {i+1}", options=all_ubicaciones, key=f"ubicacion_{i}", default=all_ubicaciones)
 
-        # CORRECCIÓN: Usar el rango real de fechas para los valores por defecto
+        # Usar el rango real de fechas para los valores por defecto
         if pd.notna(min_date) and pd.notna(max_date):
             default_start_date = min_date.date()
             default_end_date = max_date.date()
@@ -313,9 +276,6 @@ if uploaded_file is not None:
             # Si no hay fechas válidas, usar fechas por defecto
             default_start_date = datetime(2025, 10, 15).date()
             default_end_date = datetime(2025, 10, 16).date()
-            st.warning("⚠️ Usando fechas por defecto ya que no se pudieron detectar fechas válidas")
-
-        st.info(f"💡 Rango de fechas disponible en datos: {default_start_date} a {default_end_date}")
 
         start_date = st.date_input(f"Select Start Date for File {i+1}", key=f"start_date_{i}", value=default_start_date)
         end_date = st.date_input(f"Select End Date for File {i+1}", key=f"end_date_{i}", value=default_end_date)
@@ -328,72 +288,60 @@ if uploaded_file is not None:
         })
 
     if st.button("Generate and Download Files"):
+        # SOLUCIÓN: Mostrar solo un mensaje de progreso general
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
         filtered_dfs = []
         for i, file_filters in enumerate(filters):
+            status_text.text(f"Procesando archivo {i+1} de {len(filters)}...")
+            
+            # CORRECCIÓN CRÍTICA: Crear una copia independiente para cada filtro
             filtered_df = df.copy()
-
-            # DIAGNÓSTICO DETALLADO
-            st.subheader(f"🔍 Diagnóstico - Filtros para Archivo {i+1}")
-            st.write(f"🏢 Empresas seleccionadas: {file_filters['empresas']}")
-            st.write(f"📍 Ubicaciones seleccionadas: {file_filters['ubicaciones']}")
-            st.write(f"📅 Rango de fechas seleccionado: {file_filters['start_date']} a {file_filters['end_date']}")
-
-            # Start with a boolean mask that includes all rows
-            combined_filter_mask = pd.Series(True, index=filtered_df.index)
-
-            # Apply Empresa filter
-            empresa_rows_before = len(filtered_df)
+            
+            # Aplicar filtros de manera INDEPENDIENTE para cada archivo
+            mask = pd.Series(True, index=filtered_df.index)
+            
+            # Filtro por Empresa
             if file_filters['empresas']:
-                empresa_mask = filtered_df['EMPRESA'].str.upper().isin([e.upper() for e in file_filters['empresas']])
-                combined_filter_mask = combined_filter_mask & empresa_mask
-                empresa_rows_after = empresa_mask.sum()
-                st.write(f"📊 Filas después de filtro de empresa: {empresa_rows_after}/{empresa_rows_before}")
-
-            # Apply Ubicación filter
-            ubicacion_rows_before = len(filtered_df)
+                empresa_mask = filtered_df['EMPRESA'].isin(file_filters['empresas'])
+                mask = mask & empresa_mask
+            
+            # Filtro por Ubicación
             if file_filters['ubicaciones']:
-                ubicacion_mask = filtered_df['Ubicación'].str.upper().isin([u.upper() for u in file_filters['ubicaciones']])
-                combined_filter_mask = combined_filter_mask & ubicacion_mask
-                ubicacion_rows_after = ubicacion_mask.sum()
-                st.write(f"📍 Filas después de filtro de ubicación: {ubicacion_rows_after}/{ubicacion_rows_before}")
-
-            # Apply Date Range filter - CORRECCIÓN: Usar la columna datetime ya convertida
+                ubicacion_mask = filtered_df['Ubicación'].isin(file_filters['ubicaciones'])
+                mask = mask & ubicacion_mask
+            
+            # Filtro por Fecha - CORRECCIÓN: Usar la columna datetime
             start_date_ts = pd.Timestamp(file_filters['start_date'])
             end_date_ts = pd.Timestamp(file_filters['end_date'])
-
-            # Perform the comparison using pandas Timestamp objects
             date_mask = (filtered_df['Fecha Programación_dt'] >= start_date_ts) & (filtered_df['Fecha Programación_dt'] <= end_date_ts)
-            combined_filter_mask = combined_filter_mask & date_mask
+            mask = mask & date_mask
             
-            date_rows_after = date_mask.sum()
-            st.write(f"📅 Filas después de filtro de fecha: {date_rows_after}/{len(filtered_df)}")
-
-            # Apply the combined filter mask to the DataFrame
-            filtered_df = filtered_df.loc[combined_filter_mask].copy()
-
-            # Add debugging line to check the number of rows after filtering
-            st.write(f"✅ **Número final de filas en filtered_df para el archivo {i+1}: {len(filtered_df)}**")
-
-            # Mostrar muestra de datos filtrados si hay resultados
-            if len(filtered_df) > 0:
-                st.write("📋 Muestra de datos filtrados (incluyendo hora):")
-                st.dataframe(filtered_df[['EMPRESA', 'Ubicación', 'Fecha Programación', 'Hora Cita', 'Hora Cita Formatted']].head())
-
-            # Drop the temporary datetime column used for filtering
-            filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
-
+            # Aplicar todos los filtros
+            filtered_df = filtered_df.loc[mask].copy()
+            
+            # SOLUCIÓN: Solo mostrar información esencial del resultado del filtrado
+            st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado")
+            
+            # Eliminar columna temporal antes de exportar
+            if 'Fecha Programación_dt' in filtered_df.columns:
+                filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
+            
             filtered_dfs.append(filtered_df)
+            progress_bar.progress((i + 1) / len(filters))
+        
+        status_text.text("✅ Procesamiento completado")
 
-        # Now, generate and download the filtered files
+        # Generar archivos de descarga
         for i, filtered_df in enumerate(filtered_dfs):
             if len(filtered_df) == 0:
-                st.error(f"❌ El archivo {i+1} no contiene datos con los filtros aplicados. No se generará archivo.")
-                st.info("💡 **Sugerencias:** Ajusta el rango de fechas para que coincida con tus datos reales")
+                st.error(f"❌ El archivo {i+1} no contiene datos con los filtros aplicados.")
                 continue
                 
             buffer = io.BytesIO()
 
-            # CORRECCIÓN: Definir columnas para cada hoja
+            # Definir columnas para cada hoja
             base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
             pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación', 'Hora Cita Formatted', 'Actividad Médica']
 
@@ -401,36 +349,21 @@ if uploaded_file is not None:
             if 'Nombre completo' not in filtered_df.columns:
                 filtered_df['Nombre completo'] = filtered_df['Nombres'].astype(str) + ' ' + filtered_df['Apellidos'].astype(str)
 
-            # DIAGNÓSTICO: Verificar columnas antes de exportar
-            st.write(f"🔍 Columnas disponibles en filtered_df: {list(filtered_df.columns)}")
-            st.write(f"⏰ Muestra de 'Hora Cita Formatted' para exportar: {filtered_df['Hora Cita Formatted'].head(3).tolist()}")
-
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                # CORRECCIÓN: Seleccionar columnas existentes directamente
+                # Hoja Base confirmación
                 base_confirmacion_cols_existing = [col for col in base_confirmacion_cols if col in filtered_df.columns]
-                
                 if base_confirmacion_cols_existing:
                     base_confirmacion_df = filtered_df[base_confirmacion_cols_existing]
                     base_confirmacion_df.to_excel(writer, sheet_name='Base confirmación', index=False)
-                    st.success(f"✅ Hoja 'Base confirmación' creada con {len(base_confirmacion_df)} filas y columnas: {list(base_confirmacion_df.columns)}")
-                else:
-                    st.warning(f"⚠️ No se encontraron las columnas necesarias para 'Base confirmación'")
 
-                # CORRECCIÓN: Para la hoja Pacientes - USAR LA COLUMNA FORMATEADA DIRECTAMENTE
+                # Hoja Pacientes - CORRECCIÓN: Usar la columna formateada
                 pacientes_cols_existing = [col for col in pacientes_cols if col in filtered_df.columns]
-                
                 if pacientes_cols_existing:
                     pacientes_df = filtered_df[pacientes_cols_existing].copy()
-                    
-                    # CORRECCIÓN: Renombrar la columna formateada para que se muestre como 'Hora Cita'
+                    # Renombrar para que se muestre como 'Hora Cita' en el Excel
                     if 'Hora Cita Formatted' in pacientes_df.columns:
                         pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
-                    
                     pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
-                    st.success(f"✅ Hoja 'Pacientes' creada con {len(pacientes_df)} filas y columnas: {list(pacientes_df.columns)}")
-                    st.write(f"⏰ Muestra de 'Hora Cita' en Pacientes: {pacientes_df['Hora Cita'].head(3).tolist()}")
-                else:
-                    st.warning(f"⚠️ No se encontraron las columnas necesarias para 'Pacientes'. Columnas disponibles: {list(filtered_df.columns)}")
 
             # Generate filename based on filters
             empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
@@ -448,4 +381,3 @@ if uploaded_file is not None:
             )
 
             buffer.close()
-
