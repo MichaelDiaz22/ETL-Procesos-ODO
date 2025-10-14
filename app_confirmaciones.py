@@ -436,7 +436,7 @@ if uploaded_file is not None:
             empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
             ubicaciones_str = "_".join(file_filters['ubicaciones']) if file_filters['ubicaciones'] else "All_Ubicaciones"
             
-            filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{file_filters['start_date'].day}_al_{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%B')}_{file_filters['start_date'].year}.xlsx"
+            filename = f"{empresas_str}_Confirmacion {ubicaciones_str} {file_filters['start_date'].day} al {file_filters['end_date'].day} {file_filters['start_date'].strftime('%B')} {file_filters['start_date'].year}.xlsx"
 
             # Create download button
             st.download_button(
@@ -448,3 +448,4 @@ if uploaded_file is not None:
             )
 
             buffer.close()
+
