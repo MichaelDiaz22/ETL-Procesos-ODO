@@ -5,7 +5,6 @@ import io
 import xlsxwriter
 from datetime import datetime
 import datetime as dt
-import locale
 import numpy as np
 
 st.title("Excel Data Filtering and Export App")
@@ -18,8 +17,6 @@ if uploaded_file is not None:
     # Load the data into a pandas DataFrame
     df = pd.read_excel(uploaded_file)
     
-    # SOLUCIÓN: Eliminar toda la información de diagnóstico que no es necesaria
-    # Solo mantener el éxito de carga
     st.info(f"📊 Archivo cargado: {len(df)} filas, {len(df.columns)} columnas")
 
     # Preprocessing steps
@@ -49,28 +46,51 @@ if uploaded_file is not None:
 
     df['Fecha Hora Cita'] = df.apply(lambda row: parse_datetime_robust(row['Fecha Cita'], row['Hora Cita']), axis=1)
 
-    # Sort the DataFrame by the grouping columns and the new datetime column for 'Identificador Servicio'
-    df_sorted_id = df.sort_values(by=['Numero de Identificación', 'Fecha Cita', 'Sede', 'Ubicación', 'Fecha Hora Cita'])
-
-    # Create a new column 'Identificador Servicio'
-    df_sorted_id['Identificador Servicio'] = 'unico'
-
-    # Identify groups with duplicate combinations of 'Numero de Identificación', 'Fecha Cita', 'Sede', and 'Ubicación'
-    duplicates_group_id = df_sorted_id.duplicated(subset=['Numero de Identificación', 'Fecha Cita', 'Sede', 'Ubicación'], keep=False)
-
-    # Within these duplicate groups, identify the first occurrence based on 'Fecha Hora Cita'
-    df_sorted_id.loc[duplicates_group_id, 'occurrence'] = df_sorted_id[duplicates_group_id].groupby(['Numero de Identificación', 'Fecha Cita', 'Sede', 'Ubicación']).cumcount()
-
-    # Mark the first occurrence (occurrence == 0) in a duplicate group as 'primer servicio'
-    df_sorted_id.loc[duplicates_group_id & (df_sorted_id['occurrence'] == 0), 'Identificador Servicio'] = 'primer servicio'
-    # Mark subsequent occurrences (occurrence > 0) in a duplicate group as 'servicio posterior'
-    df_sorted_id.loc[duplicates_group_id & (df_sorted_id['occurrence'] > 0), 'Identificador Servicio'] = 'servicio posterior'
-
-    # Drop the temporary 'occurrence' column
-    df_sorted_id = df_sorted_id.drop(columns=['occurrence'])
-
-    # Update the original DataFrame with the new 'Identificador Servicio' column based on the sorted DataFrame's index
-    df['Identificador Servicio'] = df_sorted_id.sort_index()['Identificador Servicio']
+    # CORRECCIÓN CRÍTICA: Identificación correcta de primer servicio y servicio posterior
+    st.info("🔄 Identificando servicios únicos y duplicados...")
+    
+    # Ordenar por los campos relevantes incluyendo la fecha y hora completa
+    df_sorted = df.sort_values(by=['Numero de Identificación', 'Fecha Hora Cita', 'Sede', 'Ubicación']).reset_index(drop=True)
+    
+    # Crear columna temporal para agrupación (sin hora, solo fecha)
+    df_sorted['Fecha Cita Solo'] = df_sorted['Fecha Hora Cita'].dt.date
+    
+    # Identificar duplicados basados en identificación, fecha (sin hora), sede y ubicación
+    duplicate_mask = df_sorted.duplicated(
+        subset=['Numero de Identificación', 'Fecha Cita Solo', 'Sede', 'Ubicación'], 
+        keep=False
+    )
+    
+    # Inicializar todas las filas como 'unico'
+    df_sorted['Identificador Servicio'] = 'unico'
+    
+    # Para los grupos duplicados, identificar el primer servicio y servicios posteriores
+    if duplicate_mask.any():
+        # Crear grupos
+        groups = df_sorted[duplicate_mask].groupby(['Numero de Identificación', 'Fecha Cita Solo', 'Sede', 'Ubicación'])
+        
+        # Para cada grupo, ordenar por fecha y hora y asignar identificadores
+        for (id_num, fecha, sede, ubicacion), group in groups:
+            group_sorted = group.sort_values('Fecha Hora Cita')
+            
+            # Marcar el primero como 'primer servicio'
+            first_index = group_sorted.index[0]
+            df_sorted.loc[first_index, 'Identificador Servicio'] = 'primer servicio'
+            
+            # Marcar los siguientes como 'servicio posterior'
+            if len(group_sorted) > 1:
+                for subsequent_index in group_sorted.index[1:]:
+                    df_sorted.loc[subsequent_index, 'Identificador Servicio'] = 'servicio posterior'
+    
+    # DIAGNÓSTICO OPCIONAL: Mostrar estadísticas de identificación
+    servicio_counts = df_sorted['Identificador Servicio'].value_counts()
+    st.info(f"📈 Distribución de servicios: {servicio_counts.to_dict()}")
+    
+    # Actualizar el DataFrame original
+    df['Identificador Servicio'] = df_sorted['Identificador Servicio']
+    
+    # Limpiar columna temporal
+    df_sorted = df_sorted.drop(columns=['Fecha Cita Solo'])
 
     # Load the direcciones_sede DataFrame
     direcciones_sede = pd.DataFrame({
@@ -250,7 +270,6 @@ if uploaded_file is not None:
     min_date = df['Fecha Programación_dt'].min()
     max_date = df['Fecha Programación_dt'].max()
     
-    # SOLUCIÓN: Mostrar solo información esencial del rango de fechas
     if pd.notna(min_date) and pd.notna(max_date):
         st.info(f"📅 Rango de fechas en los datos: {min_date.date()} a {max_date.date()}")
     else:
@@ -268,12 +287,10 @@ if uploaded_file is not None:
         with col2:
             selected_ubicaciones = st.multiselect(f"Select Ubicación(s) for File {i+1}", options=all_ubicaciones, key=f"ubicacion_{i}", default=all_ubicaciones)
 
-        # Usar el rango real de fechas para los valores por defecto
         if pd.notna(min_date) and pd.notna(max_date):
             default_start_date = min_date.date()
             default_end_date = max_date.date()
         else:
-            # Si no hay fechas válidas, usar fechas por defecto
             default_start_date = datetime(2025, 10, 15).date()
             default_end_date = datetime(2025, 10, 16).date()
 
@@ -288,7 +305,6 @@ if uploaded_file is not None:
         })
 
     if st.button("Generate and Download Files"):
-        # SOLUCIÓN: Mostrar solo un mensaje de progreso general
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -296,82 +312,66 @@ if uploaded_file is not None:
         for i, file_filters in enumerate(filters):
             status_text.text(f"Procesando archivo {i+1} de {len(filters)}...")
             
-            # CORRECCIÓN CRÍTICA: Crear una copia independiente para cada filtro
             filtered_df = df.copy()
             
-            # Aplicar filtros de manera INDEPENDIENTE para cada archivo
             mask = pd.Series(True, index=filtered_df.index)
             
-            # Filtro por Empresa
             if file_filters['empresas']:
                 empresa_mask = filtered_df['EMPRESA'].isin(file_filters['empresas'])
                 mask = mask & empresa_mask
             
-            # Filtro por Ubicación
             if file_filters['ubicaciones']:
                 ubicacion_mask = filtered_df['Ubicación'].isin(file_filters['ubicaciones'])
                 mask = mask & ubicacion_mask
             
-            # Filtro por Fecha - CORRECCIÓN: Usar la columna datetime
             start_date_ts = pd.Timestamp(file_filters['start_date'])
             end_date_ts = pd.Timestamp(file_filters['end_date'])
             date_mask = (filtered_df['Fecha Programación_dt'] >= start_date_ts) & (filtered_df['Fecha Programación_dt'] <= end_date_ts)
             mask = mask & date_mask
             
-            # Aplicar todos los filtros
             filtered_df = filtered_df.loc[mask].copy()
             
-            # SOLUCIÓN: Solo mostrar información esencial del resultado del filtrado
             st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado")
             
-            # Eliminar columna temporal antes de exportar
             if 'Fecha Programación_dt' in filtered_df.columns:
                 filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
             
-            filtered_dfs.append(filtered_df)
+            filtered_dfs.append((filtered_df, file_filters))
             progress_bar.progress((i + 1) / len(filters))
         
         status_text.text("✅ Procesamiento completado")
 
-        # Generar archivos de descarga
-        for i, filtered_df in enumerate(filtered_dfs):
+        for i, (filtered_df, file_filters) in enumerate(filtered_dfs):
             if len(filtered_df) == 0:
                 st.error(f"❌ El archivo {i+1} no contiene datos con los filtros aplicados.")
                 continue
                 
             buffer = io.BytesIO()
 
-            # Definir columnas para cada hoja
             base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
             pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación', 'Hora Cita Formatted', 'Actividad Médica']
 
-            # Crear 'Nombre completo' si no existe
             if 'Nombre completo' not in filtered_df.columns:
                 filtered_df['Nombre completo'] = filtered_df['Nombres'].astype(str) + ' ' + filtered_df['Apellidos'].astype(str)
 
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                # Hoja Base confirmación
                 base_confirmacion_cols_existing = [col for col in base_confirmacion_cols if col in filtered_df.columns]
                 if base_confirmacion_cols_existing:
                     base_confirmacion_df = filtered_df[base_confirmacion_cols_existing]
                     base_confirmacion_df.to_excel(writer, sheet_name='Base confirmación', index=False)
 
-                # Hoja Pacientes - CORRECCIÓN: Usar la columna formateada
                 pacientes_cols_existing = [col for col in pacientes_cols if col in filtered_df.columns]
                 if pacientes_cols_existing:
                     pacientes_df = filtered_df[pacientes_cols_existing].copy()
-                    # Renombrar para que se muestre como 'Hora Cita' en el Excel
                     if 'Hora Cita Formatted' in pacientes_df.columns:
                         pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
                     pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
 
-            # Generate filename based on filters
             empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
             ubicaciones_str = "_".join(file_filters['ubicaciones']) if file_filters['ubicaciones'] else "All_Ubicaciones"
             
-            filename = f"{empresas_str}_Confirmacion {ubicaciones_str} {file_filters['start_date'].day} al {file_filters['end_date'].day} {file_filters['start_date'].strftime('%B')} {file_filters['start_date'].year}.xlsx"
+            filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{file_filters['start_date'].day}_al_{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%B')}_{file_filters['start_date'].year}.xlsx"
 
-            # Create download button
             st.download_button(
                 label=f"📥 Download File {i+1}: {filename}",
                 data=buffer.getvalue(),
