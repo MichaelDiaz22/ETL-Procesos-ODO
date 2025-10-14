@@ -46,51 +46,42 @@ if uploaded_file is not None:
 
     df['Fecha Hora Cita'] = df.apply(lambda row: parse_datetime_robust(row['Fecha Cita'], row['Hora Cita']), axis=1)
 
-    # CORRECCIÓN CRÍTICA: Identificación correcta de primer servicio y servicio posterior
-    st.info("🔄 Identificando servicios únicos y duplicados...")
-    
-    # Ordenar por los campos relevantes incluyendo la fecha y hora completa
-    df_sorted = df.sort_values(by=['Numero de Identificación', 'Fecha Hora Cita', 'Sede', 'Ubicación']).reset_index(drop=True)
-    
-    # Crear columna temporal para agrupación (sin hora, solo fecha)
-    df_sorted['Fecha Cita Solo'] = df_sorted['Fecha Hora Cita'].dt.date
-    
-    # Identificar duplicados basados en identificación, fecha (sin hora), sede y ubicación
-    duplicate_mask = df_sorted.duplicated(
-        subset=['Numero de Identificación', 'Fecha Cita Solo', 'Sede', 'Ubicación'], 
-        keep=False
-    )
-    
-    # Inicializar todas las filas como 'unico'
-    df_sorted['Identificador Servicio'] = 'unico'
-    
-    # Para los grupos duplicados, identificar el primer servicio y servicios posteriores
-    if duplicate_mask.any():
-        # Crear grupos
-        groups = df_sorted[duplicate_mask].groupby(['Numero de Identificación', 'Fecha Cita Solo', 'Sede', 'Ubicación'])
+    # CORRECCIÓN: Función mejorada para identificar y filtrar solo el primer servicio
+    def identificar_primer_servicio(df_filtrado):
+        """
+        Identifica y mantiene solo el primer servicio por paciente, sede, especialidad, fecha y hora más temprana
+        """
+        if len(df_filtrado) == 0:
+            return df_filtrado
         
-        # Para cada grupo, ordenar por fecha y hora y asignar identificadores
-        for (id_num, fecha, sede, ubicacion), group in groups:
-            group_sorted = group.sort_values('Fecha Hora Cita')
-            
-            # Marcar el primero como 'primer servicio'
-            first_index = group_sorted.index[0]
-            df_sorted.loc[first_index, 'Identificador Servicio'] = 'primer servicio'
-            
-            # Marcar los siguientes como 'servicio posterior'
-            if len(group_sorted) > 1:
-                for subsequent_index in group_sorted.index[1:]:
-                    df_sorted.loc[subsequent_index, 'Identificador Servicio'] = 'servicio posterior'
-    
-    # DIAGNÓSTICO OPCIONAL: Mostrar estadísticas de identificación
-    servicio_counts = df_sorted['Identificador Servicio'].value_counts()
-    st.info(f"📈 Distribución de servicios: {servicio_counts.to_dict()}")
-    
-    # Actualizar el DataFrame original
-    df['Identificador Servicio'] = df_sorted['Identificador Servicio']
-    
-    # Limpiar columna temporal
-    df_sorted = df_sorted.drop(columns=['Fecha Cita Solo'])
+        # Crear una copia para no modificar el original
+        df_temp = df_filtrado.copy()
+        
+        # Asegurarse de que tenemos la columna de especialidad
+        if 'Especialidad Cita' not in df_temp.columns:
+            st.warning("⚠️ No se encontró la columna 'Especialidad Cita'")
+            return df_temp
+        
+        # Ordenar por fecha y hora de cita
+        df_temp = df_temp.sort_values(['Numero de Identificación', 'Fecha Hora Cita', 'Sede', 'Especialidad Cita'])
+        
+        # Crear una clave única para identificar duplicados
+        df_temp['clave_duplicado'] = (
+            df_temp['Numero de Identificación'].astype(str) + '|' + 
+            df_temp['Sede'].astype(str) + '|' + 
+            df_temp['Especialidad Cita'].astype(str) + '|' + 
+            df_temp['Fecha Hora Cita'].dt.date.astype(str)
+        )
+        
+        # Mantener solo el primer registro (el más temprano) por cada clave
+        df_final = df_temp.drop_duplicates(subset=['clave_duplicado'], keep='first')
+        
+        # Eliminar la columna temporal
+        df_final = df_final.drop(columns=['clave_duplicado'])
+        
+        st.info(f"✅ Después de filtrar servicios duplicados: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
+        
+        return df_final
 
     # Load the direcciones_sede DataFrame
     direcciones_sede = pd.DataFrame({
@@ -331,7 +322,10 @@ if uploaded_file is not None:
             
             filtered_df = filtered_df.loc[mask].copy()
             
-            st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado")
+            st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
+            
+            # CORRECCIÓN CRÍTICA: Aplicar filtro de primer servicio después del filtrado normal
+            filtered_df = identificar_primer_servicio(filtered_df)
             
             if 'Fecha Programación_dt' in filtered_df.columns:
                 filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
