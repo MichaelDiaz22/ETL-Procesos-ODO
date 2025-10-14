@@ -59,7 +59,7 @@ if uploaded_file is not None:
         
         # Asegurarse de que tenemos la columna de especialidad
         if 'Especialidad Cita' not in df_temp.columns:
-            st.warning("⚠️ No se encontró la columna 'Especialidad Cita'")
+            # st.warning("⚠️ No se encontró la columna 'Especialidad Cita'")  # COMENTADO
             return df_temp
         
         # Ordenar por fecha y hora de cita
@@ -79,7 +79,8 @@ if uploaded_file is not None:
         # Eliminar la columna temporal
         df_final = df_final.drop(columns=['clave_duplicado'])
         
-        st.info(f"✅ Después de filtrar servicios duplicados: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
+        # COMENTADO: Eliminar el output de diagnóstico
+        # st.info(f"✅ Después de filtrar servicios duplicados: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
         
         return df_final
 
@@ -322,7 +323,8 @@ if uploaded_file is not None:
             
             filtered_df = filtered_df.loc[mask].copy()
             
-            st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
+            # COMENTADO: Eliminar el output de diagnóstico del filtrado inicial
+            # st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
             
             # CORRECCIÓN CRÍTICA: Aplicar filtro de primer servicio después del filtrado normal
             filtered_df = identificar_primer_servicio(filtered_df)
