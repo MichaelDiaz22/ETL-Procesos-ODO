@@ -80,7 +80,7 @@ if uploaded_file is not None:
         df_final = df_final.drop(columns=['clave_duplicado'])
         
         # COMENTADO: Eliminar el output de diagnóstico
-        # st.info(f"✅ Después de filtrar servicios duplicados: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
+        # (f"✅ Después de filtrar servicios duplicados: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
         
         return df_final
 
@@ -324,7 +324,7 @@ if uploaded_file is not None:
             filtered_df = filtered_df.loc[mask].copy()
             
             # COMENTADO: Eliminar el output de diagnóstico del filtrado inicial
-            # st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
+            st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
             
             # CORRECCIÓN CRÍTICA: Aplicar filtro de primer servicio después del filtrado normal
             filtered_df = identificar_primer_servicio(filtered_df)
@@ -377,3 +377,4 @@ if uploaded_file is not None:
             )
 
             buffer.close()
+
