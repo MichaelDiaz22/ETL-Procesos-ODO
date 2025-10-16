@@ -30,13 +30,14 @@ if uploaded_file is not None:
         estado_cita_filter = ['Asignada', 'PreAsignada']
         df_estado_filtered = df_filtered[df_filtered['Estado cita'].isin(estado_cita_filter)].copy() # Use .copy()
 
-        # ORDENAR POR ENTIDAD ANTES DE PARTICIONAR
-        df_estado_filtered = df_estado_filtered.sort_values(by='Entidad')
-
         if num_partitions < 1:
             st.error("Please enter a valid number of partitions (at least 1).")
         else:
-            unique_identifications = df_estado_filtered['Identificación'].unique()
+            # ORDENAR POR ENTIDAD ANTES DE PARTICIONAR
+            df_estado_filtered = df_estado_filtered.sort_values(by='Entidad')
+            
+            # Obtener identificaciones únicas manteniendo el orden
+            unique_identifications = df_estado_filtered['Identificación'].drop_duplicates().values
             num_identifications = len(unique_identifications)
 
             if num_identifications == 0:
@@ -55,9 +56,10 @@ if uploaded_file is not None:
                 partitioned_dfs = []
                 for i, identification_sublist in enumerate(list_of_identification_sublists):
                     partition_df = df_estado_filtered[df_estado_filtered['Identificación'].isin(identification_sublist)]
+                    # Reordenar la partición para mantener el orden por entidad
+                    partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
                     partitioned_dfs.append(partition_df)
                     st.write(f"Partition {i+1} created with {len(identification_sublist)} unique identifications and {len(partition_df)} rows.")
-
 
                 # Generate Excel file in memory
                 output_buffer = io.BytesIO()
