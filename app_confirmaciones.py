@@ -46,10 +46,11 @@ if uploaded_file is not None:
 
     df['Fecha Hora Cita'] = df.apply(lambda row: parse_datetime_robust(row['Fecha Cita'], row['Hora Cita']), axis=1)
 
-    # CORRECCIÓN: Función mejorada para identificar y filtrar solo el primer servicio
+    # CORRECCIÓN MEJORADA: Función para identificar y filtrar solo la cita más temprana por paciente, día y sede
     def identificar_primer_servicio(df_filtrado):
         """
-        Identifica y mantiene solo el primer servicio por paciente, sede, especialidad, fecha y hora más temprana
+        Identifica y mantiene solo la cita más temprana por paciente, sede y fecha
+        (independiente de la especialidad)
         """
         if len(df_filtrado) == 0:
             return df_filtrado
@@ -57,19 +58,24 @@ if uploaded_file is not None:
         # Crear una copia para no modificar el original
         df_temp = df_filtrado.copy()
         
-        # Asegurarse de que tenemos la columna de especialidad
-        if 'Especialidad Cita' not in df_temp.columns:
-            # st.warning("⚠️ No se encontró la columna 'Especialidad Cita'")  # COMENTADO
-            return df_temp
+        # Asegurarse de que tenemos las columnas necesarias
+        required_cols = ['Numero de Identificación', 'Fecha Hora Cita', 'Sede']
+        for col in required_cols:
+            if col not in df_temp.columns:
+                st.warning(f"⚠️ No se encontró la columna requerida: {col}")
+                return df_temp
         
-        # Ordenar por fecha y hora de cita
-        df_temp = df_temp.sort_values(['Numero de Identificación', 'Fecha Hora Cita', 'Sede', 'Especialidad Cita'])
+        # Ordenar por paciente, sede, fecha y hora de cita (más temprana primero)
+        df_temp = df_temp.sort_values([
+            'Numero de Identificación', 
+            'Sede', 
+            'Fecha Hora Cita'
+        ])
         
-        # Crear una clave única para identificar duplicados
+        # Crear una clave única para identificar duplicados por paciente, sede y día
         df_temp['clave_duplicado'] = (
             df_temp['Numero de Identificación'].astype(str) + '|' + 
             df_temp['Sede'].astype(str) + '|' + 
-            df_temp['Especialidad Cita'].astype(str) + '|' + 
             df_temp['Fecha Hora Cita'].dt.date.astype(str)
         )
         
@@ -79,8 +85,7 @@ if uploaded_file is not None:
         # Eliminar la columna temporal
         df_final = df_final.drop(columns=['clave_duplicado'])
         
-        # COMENTADO: Eliminar el output de diagnóstico
-        # (f"✅ Después de filtrar servicios duplicados: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
+        st.success(f"✅ Después de filtrar citas duplicadas: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
         
         return df_final
 
@@ -323,7 +328,6 @@ if uploaded_file is not None:
             
             filtered_df = filtered_df.loc[mask].copy()
             
-            # COMENTADO: Eliminar el output de diagnóstico del filtrado inicial
             st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
             
             # CORRECCIÓN CRÍTICA: Aplicar filtro de primer servicio después del filtrado normal
@@ -377,4 +381,3 @@ if uploaded_file is not None:
             )
 
             buffer.close()
-
