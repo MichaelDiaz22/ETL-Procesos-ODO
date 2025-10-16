@@ -30,6 +30,8 @@ if uploaded_file is not None:
         estado_cita_filter = ['Asignada', 'PreAsignada']
         df_estado_filtered = df_filtered[df_filtered['Estado cita'].isin(estado_cita_filter)].copy() # Use .copy()
 
+        # ORDENAR POR ENTIDAD ANTES DE PARTICIONAR
+        df_estado_filtered = df_estado_filtered.sort_values(by='Entidad')
 
         if num_partitions < 1:
             st.error("Please enter a valid number of partitions (at least 1).")
@@ -78,7 +80,4 @@ if uploaded_file is not None:
         st.error(f"An error occurred during processing: {e}")
 
 else:
-
     st.info("Please upload an Excel file to get started.")
-
-
