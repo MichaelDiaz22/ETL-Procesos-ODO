@@ -116,14 +116,16 @@ if uploaded_file is not None:
         ]
     })
 
-    # Merge df with direcciones_sede to get the address based on 'Sede'
-    df = pd.merge(df, direcciones_sede, on='Sede', how='left', suffixes=('', '_merged'))
-
-    # Create the new column with the address
-    if 'Dirección_merged' in df.columns:
-        df['Direccion Final'] = df['Dirección_merged']
-        df = df.drop(columns=['Dirección_merged'])
+    # CORRECCIÓN CRÍTICA: Merge correcto para obtener la dirección de la tabla de direcciones
+    # Hacer el merge manteniendo todas las filas del df original
+    df = pd.merge(df, direcciones_sede, on='Sede', how='left')
+    
+    # CORRECCIÓN: Crear la columna 'Direccion Final' usando la dirección de la tabla de direcciones
+    # Si la columna 'Dirección' (de direcciones_sede) existe, úsala, de lo contrario usa el valor original
+    if 'Dirección' in df.columns:
+        df['Direccion Final'] = df['Dirección']
     else:
+        # Si por alguna razón no se creó la columna 'Dirección', usar el campo original como fallback
         if 'Dirección Centro Atención' in df.columns:
             df['Direccion Final'] = df['Dirección Centro Atención']
         else:
