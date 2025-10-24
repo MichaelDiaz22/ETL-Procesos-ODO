@@ -55,7 +55,7 @@ if df_loaded and unidades_disponibles:
         help="Selecciona las unidades funcionales que deseas incluir en el reporte"
     )
     
-    # Mostrar información sobre las unidades disponibles
+    # Mostrar información básica del archivo
     st.subheader("Información del Archivo")
     col1, col2 = st.columns(2)
     with col1:
@@ -76,18 +76,6 @@ if df_loaded and unidades_disponibles:
                 
                 st.success(f"✅ Filtrado aplicado: {len(unidades_seleccionadas)} unidad(es) funcional(es) seleccionada(s)")
                 
-                # Mostrar conteo por unidad funcional seleccionada
-                st.subheader("Distribución por Unidad Funcional Seleccionada")
-                conteo_unidades = df_filtered['Unidad Funcional'].value_counts()
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    for unidad, count in list(conteo_unidades.items())[:len(conteo_unidades)//2]:
-                        st.write(f"• {unidad}: **{count}** registros")
-                with col2:
-                    for unidad, count in list(conteo_unidades.items())[len(conteo_unidades)//2:]:
-                        st.write(f"• {unidad}: **{count}** registros")
-                
                 # Aplicar filtro de estado de cita
                 df_filtered['Estado'] = ''
                 df_filtered['Observación'] = ''
@@ -98,12 +86,6 @@ if df_loaded and unidades_disponibles:
                 if num_partitions < 1:
                     st.error("Please enter a valid number of partitions (at least 1).")
                 else:
-                    # Mostrar resumen antes de particionar
-                    st.subheader("Resumen antes de particionar:")
-                    st.write(f"- Total de registros filtrados: {len(df_estado_filtered)}")
-                    st.write(f"- Total de pacientes únicos: {df_estado_filtered['Identificación'].nunique()}")
-                    st.write(f"- Número de particiones: {num_partitions}")
-
                     # ORDENAR POR ENTIDAD ANTES DE PARTICIONAR
                     df_estado_filtered = df_estado_filtered.sort_values(by='Entidad')
                     
@@ -125,23 +107,17 @@ if df_loaded and unidades_disponibles:
                             start = end
 
                         partitioned_dfs = []
-                        st.subheader("📊 Distribución de Particiones")
                         
+                        # Solo mostrar resumen breve de particiones
+                        st.subheader("📊 Resumen de Particiones")
                         for i, identification_sublist in enumerate(list_of_identification_sublists):
                             partition_df = df_estado_filtered[df_estado_filtered['Identificación'].isin(identification_sublist)]
                             # Reordenar la partición para mantener el orden por entidad
                             partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
                             partitioned_dfs.append(partition_df)
                             
-                            # Mostrar estadísticas de cada partición
-                            with st.expander(f"Partition {i+1} - {len(identification_sublist)} pacientes únicos, {len(partition_df)} registros"):
-                                distribucion = partition_df['Unidad Funcional'].value_counts()
-                                for unidad, count in distribucion.items():
-                                    st.write(f"  - {unidad}: {count} registros")
-                                
-                                # Mostrar entidades en esta partición
-                                entidades = partition_df['Entidad'].unique()
-                                st.write(f"  - Entidades: {len(entidades)}")
+                            # Mostrar solo información básica de cada partición
+                            st.write(f"**Partition {i+1}**: {len(identification_sublist)} pacientes únicos, {len(partition_df)} registros")
 
                         # Generate Excel file in memory
                         output_buffer = io.BytesIO()
