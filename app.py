@@ -56,14 +56,14 @@ if df_loaded and unidades_disponibles:
     )
     
     # Mostrar información básica del archivo
-    st.subheader("Información del Archivo")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write(f"**Total unidades funcionales:** {len(unidades_disponibles)}")
-        st.write(f"**Unidades seleccionadas:** {len(unidades_seleccionadas)}")
-    with col2:
-        st.write(f"**Total registros:** {len(df_subset)}")
-        st.write(f"**Total pacientes únicos:** {df_subset['Identificación'].nunique()}")
+    #st.subheader("Información del Archivo")
+    #col1, col2 = st.columns(2)
+    #with col1:
+     #   st.write(f"**Total unidades funcionales:** {len(unidades_disponibles)}")
+      #  st.write(f"**Unidades seleccionadas:** {len(unidades_seleccionadas)}")
+    #with col2:
+     #   st.write(f"**Total registros:** {len(df_subset)}")
+     #   st.write(f"**Total pacientes únicos:** {df_subset['Identificación'].nunique()}")
 
     # Botón para procesar
     if st.button("Procesar y Particionar Datos"):
@@ -74,7 +74,7 @@ if df_loaded and unidades_disponibles:
                 # Filtrar por unidades funcionales seleccionadas
                 df_filtered = df_subset[df_subset['Unidad Funcional'].isin(unidades_seleccionadas)].copy()
                 
-                st.success(f"✅ Filtrado aplicado: {len(unidades_seleccionadas)} unidad(es) funcional(es) seleccionada(s)")
+                #st.success(f"✅ Filtrado aplicado: {len(unidades_seleccionadas)} unidad(es) funcional(es) seleccionada(s)")
                 
                 # Aplicar filtro de estado de cita
                 df_filtered['Estado'] = ''
@@ -170,4 +170,5 @@ if df_loaded and unidades_disponibles:
 
 elif df_loaded and not unidades_disponibles:
     st.error("No se pudieron identificar unidades funcionales en el archivo. Verifica que la columna 'Unidad Funcional' exista y contenga datos.")
+
 
