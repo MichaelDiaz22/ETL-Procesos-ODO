@@ -10,18 +10,13 @@ uploaded_file = st.file_uploader("Upload CSV file", type="csv")
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     st.write("File uploaded successfully!")
-    st.write("DataFrame loaded:")
-    st.dataframe(df.head())
-
+    
     # Convert 'Ringing' and 'Talking' columns to timedelta objects
     df['Ringing'] = pd.to_timedelta(df['Ringing'], errors='coerce')
     df['Talking'] = pd.to_timedelta(df['Talking'], errors='coerce')
 
     # Convert timedelta to total seconds and then to minutes
     df['Tiempo total llamada (mins)'] = (df['Ringing'].dt.total_seconds() + df['Talking'].dt.total_seconds()) / 60
-
-    st.write("Processed DataFrame with Total Call Time:")
-    st.dataframe(df[['Ringing', 'Talking', 'Tiempo total llamada (mins)']].head())
 
     # Extract unique 'From' and 'To' values
     unique_from = df['From'].unique().tolist()
@@ -32,12 +27,6 @@ if uploaded_file is not None:
     min_date = df['Call Time'].min()
     max_date = df['Call Time'].max()
 
-    st.write("Unique 'From' values:", unique_from[:10]) # Displaying first 10 for brevity
-    st.write("Unique 'To' values:", unique_to[:10]) # Displaying first 10 for brevity
-    st.write("Minimum Call Time:", min_date)
-    st.write("Maximum Call Time:", max_date)
-
-
     st.sidebar.header("Filter Options")
 
     # Date range selector
@@ -47,7 +36,6 @@ if uploaded_file is not None:
         min_value=min_date if pd.notnull(min_date) else datetime.date(1900, 1, 1),
         max_value=max_date if pd.notnull(max_date) else datetime.date.today()
     )
-
 
     # Multiselect for 'From' values
     selected_from = st.sidebar.multiselect(
@@ -62,10 +50,6 @@ if uploaded_file is not None:
         options=unique_to,
         default=unique_to
     )
-
-    st.write("Selected Date Range:", date_range)
-    st.write("Selected 'From' values:", selected_from[:10]) # Displaying first 10 for brevity
-    st.write("Selected 'To' values:", selected_to[:10]) # Displaying first 10 for brevity
 
     filtered_df = df.copy()
 
@@ -82,10 +66,6 @@ if uploaded_file is not None:
     # Filter by 'To' values
     if selected_to:
         filtered_df = filtered_df[filtered_df['To'].isin(selected_to)]
-
-    st.write("Filtered DataFrame head:")
-    st.dataframe(filtered_df.head())
-
 
     # Perform data aggregation only if filtered_df is not empty
     if not filtered_df.empty:
