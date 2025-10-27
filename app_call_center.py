@@ -74,7 +74,7 @@ if uploaded_file is not None:
             {'Call Time': 'count', 'Tiempo total llamada (mins)': 'sum'}
         ).rename(columns={
             'Call Time': 'CANTIDAD SALIENTES',
-            'Tiempo total llamada (mins)': 'TIEMPO SALIENTES(MINS)'
+            'Tiempo total llamada (mins)': 'TIEMPO SALIENTES (MINS)'
         })
 
         # Group by 'To' and calculate the count of records and sum of 'Tiempo total llamada (mins)' for incoming calls
@@ -93,9 +93,46 @@ if uploaded_file is not None:
         combined_summary = combined_summary.fillna(0)
 
         # Calculate the 'TIEMPO TOTAL OCUPADO (MINS)'
-        combined_summary['TIEMPO TOTAL OCUPADO (MINS)'] = combined_summary['TIEMPO ENTRANTES (MINS)'] + combined_summary['TIEMPO SALIENTES(MINS)']
+        combined_summary['TIEMPO TOTAL OCUPADO (MINS)'] = combined_summary['TIEMPO ENTRANTES (MINS)'] + combined_summary['TIEMPO SALIENTES (MINS)']
+
+        # Rename the index to 'AGENTE'
+        combined_summary.index.name = 'AGENTE'
+        
+        # Reset index to make 'AGENTE' a column
+        combined_summary = combined_summary.reset_index()
+        
+        # Add total row
+        total_row = pd.DataFrame({
+            'AGENTE': ['Total general'],
+            'CANTIDAD ENTRANTES': [combined_summary['CANTIDAD ENTRANTES'].sum()],
+            'TIEMPO ENTRANTES (MINS)': [combined_summary['TIEMPO ENTRANTES (MINS)'].sum()],
+            'CANTIDAD SALIENTES': [combined_summary['CANTIDAD SALIENTES'].sum()],
+            'TIEMPO SALIENTES (MINS)': [combined_summary['TIEMPO SALIENTES (MINS)'].sum()],
+            'TIEMPO TOTAL OCUPADO (MINS)': [combined_summary['TIEMPO TOTAL OCUPADO (MINS)'].sum()]
+        })
+        
+        # Format the numbers to 2 decimal places
+        numeric_columns = ['CANTIDAD ENTRANTES', 'TIEMPO ENTRANTES (MINS)', 'CANTIDAD SALIENTES', 
+                          'TIEMPO SALIENTES (MINS)', 'TIEMPO TOTAL OCUPADO (MINS)']
+        
+        combined_summary[numeric_columns] = combined_summary[numeric_columns].round(2)
+        total_row[numeric_columns] = total_row[numeric_columns].round(2)
+        
+        # Combine the main data with the total row
+        final_summary = pd.concat([combined_summary, total_row], ignore_index=True)
 
         st.header("Call Summary by Participant")
-        st.dataframe(combined_summary)
+        
+        # Display the dataframe with formatted numbers
+        st.dataframe(final_summary, use_container_width=True)
+        
+        # Optional: Add download button for the summary
+        csv = final_summary.to_csv(index=False)
+        st.download_button(
+            label="Download summary as CSV",
+            data=csv,
+            file_name="call_summary.csv",
+            mime="text/csv"
+        )
     else:
         st.write("No data available after filtering.")
