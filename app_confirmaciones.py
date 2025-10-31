@@ -207,7 +207,7 @@ if uploaded_file is not None:
         mes = meses[fecha_dt.month - 1]
         año = fecha_dt.year
         
-        return f"{dia_semana}, {dia} DE {mes} de {año}"
+        return f"{dia_semana}, {dia} de {mes} de {año}"
 
     # Aplicar el formato a la columna Fecha Programación
     df['Fecha Programación Formateada'] = df['Fecha Programación_dt'].apply(formato_fecha_espanol)
@@ -409,3 +409,4 @@ if uploaded_file is not None:
             )
 
             buffer.close()
+
