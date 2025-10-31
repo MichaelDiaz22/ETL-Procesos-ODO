@@ -187,8 +187,30 @@ if uploaded_file is not None:
     if df['Fecha Programación_dt'].isna().all():
         df['Fecha Programación_dt'] = df['Fecha Cita'].apply(parse_spanish_date)
 
-    # Formatear para mostrar (mantener formato original para exportación)
-    df['Fecha Programación'] = df['Fecha Programación_dt'].dt.strftime('%Y-%m-%d').fillna('')
+    # NUEVA FUNCIÓN: Formatear fecha en español con el formato solicitado
+    def formato_fecha_espanol(fecha_dt):
+        """
+        Convierte datetime al formato: "Viernes, 31 DE Octubre de 2025"
+        """
+        if pd.isna(fecha_dt):
+            return ""
+        
+        # Días de la semana en español
+        dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        
+        # Meses en español
+        meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+        
+        dia_semana = dias_semana[fecha_dt.weekday()]
+        dia = fecha_dt.day
+        mes = meses[fecha_dt.month - 1]
+        año = fecha_dt.year
+        
+        return f"{dia_semana}, {dia} DE {mes} de {año}"
+
+    # Aplicar el formato a la columna Fecha Programación
+    df['Fecha Programación Formateada'] = df['Fecha Programación_dt'].apply(formato_fecha_espanol)
 
     # CORRECCIÓN MEJORADA: Conversión de horas decimales a formato de tiempo
     def convert_decimal_to_time(decimal_time):
@@ -232,9 +254,9 @@ if uploaded_file is not None:
     df['Ubicación'] = df['Ubicación'].astype(str)
     df['Unidad Funcional'] = df['Unidad Funcional'].astype(str)
 
-    # Create the 'variable_mensaje' column based on the 'Ubicación'
+    # MODIFICACIÓN: Usar la fecha formateada en la variable mensaje
     df['VARIABLE'] = df.apply(
-        lambda row: f"{row['Nombres']} {row['Apellidos']}|{row['Actividad Médica']}|{row['Fecha Programación']}|{row['Hora Cita Formatted']}|{row['Especialista']}|{row['Direccion Final']}",
+        lambda row: f"{row['Nombres']} {row['Apellidos']}|{row['Actividad Médica']}|{row['Fecha Programación Formateada']}|{row['Hora Cita Formatted']}|{row['Especialista']}|{row['Direccion Final']}",
         axis=1
     )
 
@@ -351,7 +373,8 @@ if uploaded_file is not None:
             buffer = io.BytesIO()
 
             base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
-            pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación', 'Hora Cita Formatted', 'Actividad Médica']
+            # MODIFICACIÓN: Usar la columna formateada en lugar de la original
+            pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación Formateada', 'Hora Cita Formatted', 'Actividad Médica']
 
             if 'Nombre completo' not in filtered_df.columns:
                 filtered_df['Nombre completo'] = filtered_df['Nombres'].astype(str) + ' ' + filtered_df['Apellidos'].astype(str)
@@ -367,6 +390,9 @@ if uploaded_file is not None:
                     pacientes_df = filtered_df[pacientes_cols_existing].copy()
                     if 'Hora Cita Formatted' in pacientes_df.columns:
                         pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
+                    # MODIFICACIÓN: Renombrar la columna formateada para que tenga el nombre esperado
+                    if 'Fecha Programación Formateada' in pacientes_df.columns:
+                        pacientes_df = pacientes_df.rename(columns={'Fecha Programación Formateada': 'Fecha Programación'})
                     pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
 
             empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
