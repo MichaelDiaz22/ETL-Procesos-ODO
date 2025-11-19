@@ -61,7 +61,7 @@ if df_loaded and unidades_disponibles:
             st.warning("Por favor selecciona al menos una unidad funcional")
         else:
             try:
-                # CREAR FILTRO PERSONALIZADO PARA RADIOTERAPIA
+                # APLICAR FILTRO COMPLETO ANTES DE PARTICIONAR
                 if 'Radioterapia' in unidades_seleccionadas:
                     # Crear lista de unidades sin Radioterapia
                     otras_unidades = [unidad for unidad in unidades_seleccionadas if unidad != 'Radioterapia']
@@ -92,22 +92,13 @@ if df_loaded and unidades_disponibles:
                 estado_cita_filter = ['Asignada', 'PreAsignada']
                 df_estado_filtered = df_filtered[df_filtered['Estado cita'].isin(estado_cita_filter)].copy()
 
-                # VERIFICACIÓN ADICIONAL: Aplicar filtro de Radioterapia también después del filtro de estado
-                if 'Radioterapia' in unidades_seleccionadas:
-                    # Asegurarnos de que los registros de Radioterapia cumplan con el criterio de actividad
-                    mask_radioterapia_valido = (df_estado_filtered['Unidad Funcional'] != 'Radioterapia') | (
-                        (df_estado_filtered['Unidad Funcional'] == 'Radioterapia') & 
-                        (df_estado_filtered['Nom. Actividad'] == 'CONSULTA DE INICIACION DE RADIOTERAPIA')
-                    )
-                    df_estado_filtered = df_estado_filtered[mask_radioterapia_valido].copy()
-
                 if num_partitions < 1:
                     st.error("Please enter a valid number of partitions (at least 1).")
                 else:
                     # ORDENAR POR ENTIDAD ANTES DE PARTICIONAR
                     df_estado_filtered = df_estado_filtered.sort_values(by='Entidad')
                     
-                    # Obtener identificaciones únicas manteniendo el orden
+                    # Obtener identificaciones únicas del dataset YA FILTRADO
                     unique_identifications = df_estado_filtered['Identificación'].drop_duplicates().values
                     num_identifications = len(unique_identifications)
 
@@ -129,7 +120,9 @@ if df_loaded and unidades_disponibles:
                         # Solo mostrar resumen breve de particiones
                         st.subheader("📊 Resumen de Particiones")
                         for i, identification_sublist in enumerate(list_of_identification_sublists):
-                            partition_df = df_estado_filtered[df_estado_filtered['Identificación'].isin(identification_sublist)]
+                            # Filtrar SOLO los registros que están en la lista de identificaciones
+                            partition_df = df_estado_filtered[df_estado_filtered['Identificación'].isin(identification_sublist)].copy()
+                            
                             # Reordenar la partición para mantener el orden por entidad
                             partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
                             partitioned_dfs.append(partition_df)
@@ -160,19 +153,10 @@ if df_loaded and unidades_disponibles:
                             
                             # Agregar columnas para cada unidad funcional seleccionada
                             for unidad in unidades_seleccionadas:
-                                if unidad == 'Radioterapia':
-                                    # Para Radioterapia, contar solo los registros con la actividad específica
-                                    resumen_data[unidad] = [
-                                        len(partitioned_dfs[i][
-                                            (partitioned_dfs[i]['Unidad Funcional'] == 'Radioterapia') & 
-                                            (partitioned_dfs[i]['Nom. Actividad'] == 'CONSULTA DE INICIACION DE RADIOTERAPIA')
-                                        ]) for i in range(num_partitions)
-                                    ]
-                                else:
-                                    resumen_data[unidad] = [
-                                        len(partitioned_dfs[i][partitioned_dfs[i]['Unidad Funcional'] == unidad]) 
-                                        for i in range(num_partitions)
-                                    ]
+                                resumen_data[unidad] = [
+                                    len(partitioned_dfs[i][partitioned_dfs[i]['Unidad Funcional'] == unidad]) 
+                                    for i in range(num_partitions)
+                                ]
                             
                             resumen_df = pd.DataFrame(resumen_data)
                             resumen_df.to_excel(writer, sheet_name='Resumen', index=False)
