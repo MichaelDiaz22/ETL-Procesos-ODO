@@ -61,37 +61,29 @@ if df_loaded and unidades_disponibles:
             st.warning("Por favor selecciona al menos una unidad funcional")
         else:
             try:
-                # APLICAR FILTRO ESPECIAL PARA RADIOTERAPIA ANTES DEL FILTRADO GENERAL
+                # CREAR FILTRO PERSONALIZADO PARA RADIOTERAPIA
                 if 'Radioterapia' in unidades_seleccionadas:
-                    # Crear una copia del dataframe original para trabajar
-                    df_to_filter = df_subset.copy()
-                    
-                    # Separar los datos en dos grupos:
-                    # 1. Radioterapia - solo con "CONSULTA DE INICIACION DE RADIOTERAPIA"
-                    # 2. Otras unidades - todas las actividades
-                    
-                    # Filtrar Radioterapia con la actividad específica
-                    mask_radioterapia_especifica = (df_to_filter['Unidad Funcional'] == 'Radioterapia') & (df_to_filter['Nom. Actividad'] == 'CONSULTA DE INICIACION DE RADIOTERAPIA')
-                    
-                    # Filtrar otras unidades seleccionadas (excluyendo Radioterapia)
+                    # Crear lista de unidades sin Radioterapia
                     otras_unidades = [unidad for unidad in unidades_seleccionadas if unidad != 'Radioterapia']
-                    mask_otras_unidades = df_to_filter['Unidad Funcional'].isin(otras_unidades)
                     
-                    # Combinar ambos filtros
-                    mask_final = mask_radioterapia_especifica | mask_otras_unidades
+                    # Filtrar: otras unidades normalmente + Radioterapia solo con actividad específica
+                    mask_otras_unidades = df_subset['Unidad Funcional'].isin(otras_unidades)
+                    mask_radioterapia_especifica = (df_subset['Unidad Funcional'] == 'Radioterapia') & (df_subset['Nom. Actividad'] == 'CONSULTA DE INICIACION DE RADIOTERAPIA')
                     
-                    df_filtered = df_to_filter[mask_final].copy()
+                    mask_final = mask_otras_unidades | mask_radioterapia_especifica
+                    df_filtered = df_subset[mask_final].copy()
                     
-                    # Mostrar información sobre el filtro aplicado
-                    registros_radioterapia_total = len(df_subset[df_subset['Unidad Funcional'] == 'Radioterapia'])
-                    registros_radioterapia_filtrados = len(df_filtered[df_filtered['Unidad Funcional'] == 'Radioterapia'])
-                    st.info(f"🔬 Filtro de Radioterapia aplicado: {registros_radioterapia_filtrados} de {registros_radioterapia_total} registros de Radioterapia incluidos (solo 'CONSULTA DE INICIACION DE RADIOTERAPIA')")
+                    # Mostrar estadísticas del filtro
+                    total_radioterapia = len(df_subset[df_subset['Unidad Funcional'] == 'Radioterapia'])
+                    radioterapia_filtrado = len(df_filtered[df_filtered['Unidad Funcional'] == 'Radioterapia'])
+                    st.info(f"🔬 **Filtro Radioterapia aplicado**: {radioterapia_filtrado} de {total_radioterapia} registros incluidos (solo 'CONSULTA DE INICIACION DE RADIOTERAPIA')")
+                    
+                    if radioterapia_filtrado == 0 and total_radioterapia > 0:
+                        st.warning("⚠️ No se encontraron registros de 'CONSULTA DE INICIACION DE RADIOTERAPIA' en Radioterapia. Verifica el nombre exacto de la actividad.")
                     
                 else:
-                    # Si no se seleccionó Radioterapia, aplicar filtro normal
+                    # Filtro normal si no se selecciona Radioterapia
                     df_filtered = df_subset[df_subset['Unidad Funcional'].isin(unidades_seleccionadas)].copy()
-                
-                #st.success(f"✅ Filtrado aplicado: {len(unidades_seleccionadas)} unidad(es) funcional(es) seleccionada(s)")
                 
                 # Aplicar filtro de estado de cita
                 df_filtered['Estado'] = ''
@@ -99,6 +91,15 @@ if df_loaded and unidades_disponibles:
 
                 estado_cita_filter = ['Asignada', 'PreAsignada']
                 df_estado_filtered = df_filtered[df_filtered['Estado cita'].isin(estado_cita_filter)].copy()
+
+                # VERIFICACIÓN ADICIONAL: Aplicar filtro de Radioterapia también después del filtro de estado
+                if 'Radioterapia' in unidades_seleccionadas:
+                    # Asegurarnos de que los registros de Radioterapia cumplan con el criterio de actividad
+                    mask_radioterapia_valido = (df_estado_filtered['Unidad Funcional'] != 'Radioterapia') | (
+                        (df_estado_filtered['Unidad Funcional'] == 'Radioterapia') & 
+                        (df_estado_filtered['Nom. Actividad'] == 'CONSULTA DE INICIACION DE RADIOTERAPIA')
+                    )
+                    df_estado_filtered = df_estado_filtered[mask_radioterapia_valido].copy()
 
                 if num_partitions < 1:
                     st.error("Please enter a valid number of partitions (at least 1).")
@@ -133,8 +134,14 @@ if df_loaded and unidades_disponibles:
                             partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
                             partitioned_dfs.append(partition_df)
                             
-                            # Mostrar solo información básica de cada partición
-                            st.write(f"**Partition {i+1}**: {len(identification_sublist)} pacientes únicos, {len(partition_df)} registros")
+                            # Mostrar información detallada de cada partición
+                            pacientes_unicos = len(identification_sublist)
+                            total_registros = len(partition_df)
+                            registros_radioterapia = len(partition_df[partition_df['Unidad Funcional'] == 'Radioterapia']) if 'Radioterapia' in unidades_seleccionadas else 0
+                            
+                            st.write(f"**Partition {i+1}**: {pacientes_unicos} pacientes únicos, {total_registros} registros")
+                            if 'Radioterapia' in unidades_seleccionadas:
+                                st.write(f"  └─ Radioterapia: {registros_radioterapia} registros (solo 'CONSULTA DE INICIACION DE RADIOTERAPIA')")
 
                         # Generate Excel file in memory
                         output_buffer = io.BytesIO()
@@ -153,10 +160,19 @@ if df_loaded and unidades_disponibles:
                             
                             # Agregar columnas para cada unidad funcional seleccionada
                             for unidad in unidades_seleccionadas:
-                                resumen_data[unidad] = [
-                                    len(partitioned_dfs[i][partitioned_dfs[i]['Unidad Funcional'] == unidad]) 
-                                    for i in range(num_partitions)
-                                ]
+                                if unidad == 'Radioterapia':
+                                    # Para Radioterapia, contar solo los registros con la actividad específica
+                                    resumen_data[unidad] = [
+                                        len(partitioned_dfs[i][
+                                            (partitioned_dfs[i]['Unidad Funcional'] == 'Radioterapia') & 
+                                            (partitioned_dfs[i]['Nom. Actividad'] == 'CONSULTA DE INICIACION DE RADIOTERAPIA')
+                                        ]) for i in range(num_partitions)
+                                    ]
+                                else:
+                                    resumen_data[unidad] = [
+                                        len(partitioned_dfs[i][partitioned_dfs[i]['Unidad Funcional'] == unidad]) 
+                                        for i in range(num_partitions)
+                                    ]
                             
                             resumen_df = pd.DataFrame(resumen_data)
                             resumen_df.to_excel(writer, sheet_name='Resumen', index=False)
@@ -165,8 +181,14 @@ if df_loaded and unidades_disponibles:
 
                         st.success("🎉 Data processed and partitioned successfully!")
 
-                        # Información del archivo a descargar
-                        st.info(f"El archivo contiene {num_partitions} particiones y {len(unidades_seleccionadas)} unidades funcionales")
+                        # Información final del procesamiento
+                        st.info(f"**Resumen final:**")
+                        st.info(f"- Unidades funcionales incluidas: {len(unidades_seleccionadas)}")
+                        st.info(f"- Total particiones generadas: {num_partitions}")
+                        st.info(f"- Total registros procesados: {len(df_estado_filtered)}")
+                        if 'Radioterapia' in unidades_seleccionadas:
+                            total_rad_final = len(df_estado_filtered[df_estado_filtered['Unidad Funcional'] == 'Radioterapia'])
+                            st.info(f"- Registros de Radioterapia incluidos: {total_rad_final} (solo 'CONSULTA DE INICIACION DE RADIOTERAPIA')")
 
                         st.download_button(
                             label="📥 Download Excel File",
