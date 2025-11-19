@@ -55,24 +55,41 @@ if df_loaded and unidades_disponibles:
         help="Selecciona las unidades funcionales que deseas incluir en el reporte"
     )
     
-    # Mostrar información básica del archivo
-    #st.subheader("Información del Archivo")
-    #col1, col2 = st.columns(2)
-    #with col1:
-     #   st.write(f"**Total unidades funcionales:** {len(unidades_disponibles)}")
-      #  st.write(f"**Unidades seleccionadas:** {len(unidades_seleccionadas)}")
-    #with col2:
-     #   st.write(f"**Total registros:** {len(df_subset)}")
-     #   st.write(f"**Total pacientes únicos:** {df_subset['Identificación'].nunique()}")
-
     # Botón para procesar
     if st.button("Procesar y Particionar Datos"):
         if not unidades_seleccionadas:
             st.warning("Por favor selecciona al menos una unidad funcional")
         else:
             try:
-                # Filtrar por unidades funcionales seleccionadas
-                df_filtered = df_subset[df_subset['Unidad Funcional'].isin(unidades_seleccionadas)].copy()
+                # APLICAR FILTRO ESPECIAL PARA RADIOTERAPIA ANTES DEL FILTRADO GENERAL
+                if 'Radioterapia' in unidades_seleccionadas:
+                    # Crear una copia del dataframe original para trabajar
+                    df_to_filter = df_subset.copy()
+                    
+                    # Separar los datos en dos grupos:
+                    # 1. Radioterapia - solo con "CONSULTA DE INICIACION DE RADIOTERAPIA"
+                    # 2. Otras unidades - todas las actividades
+                    
+                    # Filtrar Radioterapia con la actividad específica
+                    mask_radioterapia_especifica = (df_to_filter['Unidad Funcional'] == 'Radioterapia') & (df_to_filter['Nom. Actividad'] == 'CONSULTA DE INICIACION DE RADIOTERAPIA')
+                    
+                    # Filtrar otras unidades seleccionadas (excluyendo Radioterapia)
+                    otras_unidades = [unidad for unidad in unidades_seleccionadas if unidad != 'Radioterapia']
+                    mask_otras_unidades = df_to_filter['Unidad Funcional'].isin(otras_unidades)
+                    
+                    # Combinar ambos filtros
+                    mask_final = mask_radioterapia_especifica | mask_otras_unidades
+                    
+                    df_filtered = df_to_filter[mask_final].copy()
+                    
+                    # Mostrar información sobre el filtro aplicado
+                    registros_radioterapia_total = len(df_subset[df_subset['Unidad Funcional'] == 'Radioterapia'])
+                    registros_radioterapia_filtrados = len(df_filtered[df_filtered['Unidad Funcional'] == 'Radioterapia'])
+                    st.info(f"🔬 Filtro de Radioterapia aplicado: {registros_radioterapia_filtrados} de {registros_radioterapia_total} registros de Radioterapia incluidos (solo 'CONSULTA DE INICIACION DE RADIOTERAPIA')")
+                    
+                else:
+                    # Si no se seleccionó Radioterapia, aplicar filtro normal
+                    df_filtered = df_subset[df_subset['Unidad Funcional'].isin(unidades_seleccionadas)].copy()
                 
                 #st.success(f"✅ Filtrado aplicado: {len(unidades_seleccionadas)} unidad(es) funcional(es) seleccionada(s)")
                 
@@ -143,12 +160,6 @@ if df_loaded and unidades_disponibles:
                             
                             resumen_df = pd.DataFrame(resumen_data)
                             resumen_df.to_excel(writer, sheet_name='Resumen', index=False)
-                            
-                            # Agregar hoja con todas las unidades disponibles
-                            todas_unidades_df = pd.DataFrame({
-                                'Unidades Funcionales en Archivo': unidades_disponibles
-                            })
-                            # todas_unidades_df.to_excel(writer, sheet_name='Todas Unidades', index=False)
 
                         output_buffer.seek(0)
 
@@ -170,4 +181,3 @@ if df_loaded and unidades_disponibles:
 
 elif df_loaded and not unidades_disponibles:
     st.error("No se pudieron identificar unidades funcionales en el archivo. Verifica que la columna 'Unidad Funcional' exista y contenga datos.")
-
