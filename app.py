@@ -171,4 +171,3 @@ if df_loaded and unidades_disponibles:
 elif df_loaded and not unidades_disponibles:
     st.error("No se pudieron identificar unidades funcionales en el archivo. Verifica que la columna 'Unidad Funcional' exista y contenga datos.")
 
-
