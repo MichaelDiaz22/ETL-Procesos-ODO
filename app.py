@@ -55,6 +55,16 @@ if df_loaded and unidades_disponibles:
         help="Selecciona las unidades funcionales que deseas incluir en el reporte"
     )
     
+    # Mostrar información básica del archivo
+    #st.subheader("Información del Archivo")
+    #col1, col2 = st.columns(2)
+    #with col1:
+     #   st.write(f"**Total unidades funcionales:** {len(unidades_disponibles)}")
+      #  st.write(f"**Unidades seleccionadas:** {len(unidades_seleccionadas)}")
+    #with col2:
+     #   st.write(f"**Total registros:** {len(df_subset)}")
+     #   st.write(f"**Total pacientes únicos:** {df_subset['Identificación'].nunique()}")
+
     # Botón para procesar
     if st.button("Procesar y Particionar Datos"):
         if not unidades_seleccionadas:
@@ -64,20 +74,7 @@ if df_loaded and unidades_disponibles:
                 # Filtrar por unidades funcionales seleccionadas
                 df_filtered = df_subset[df_subset['Unidad Funcional'].isin(unidades_seleccionadas)].copy()
                 
-                # ELIMINAR REGISTROS DONDE 'Nom. Actividad' SEA 'ADMINISTRACION RADIOTERAPIA'
-                if 'Nom. Actividad' in df_filtered.columns:
-                    # Contar registros antes de eliminar
-                    registros_antes = len(df_filtered)
-                    
-                    # Eliminar registros con 'ADMINISTRACION RADIOTERAPIA'
-                    df_filtered = df_filtered[df_filtered['Nom. Actividad'] != 'ADMINISTRACION RADIOTERAPIA']
-                    
-                    # Contar registros después de eliminar
-                    registros_despues = len(df_filtered)
-                    registros_eliminados = registros_antes - registros_despues
-                    
-                    if registros_eliminados > 0:
-                        st.info(f"✅ Se eliminaron {registros_eliminados} registros con 'Nom. Actividad' = 'ADMINISTRACION RADIOTERAPIA'")
+                #st.success(f"✅ Filtrado aplicado: {len(unidades_seleccionadas)} unidad(es) funcional(es) seleccionada(s)")
                 
                 # Aplicar filtro de estado de cita
                 df_filtered['Estado'] = ''
@@ -146,6 +143,12 @@ if df_loaded and unidades_disponibles:
                             
                             resumen_df = pd.DataFrame(resumen_data)
                             resumen_df.to_excel(writer, sheet_name='Resumen', index=False)
+                            
+                            # Agregar hoja con todas las unidades disponibles
+                            todas_unidades_df = pd.DataFrame({
+                                'Unidades Funcionales en Archivo': unidades_disponibles
+                            })
+                            # todas_unidades_df.to_excel(writer, sheet_name='Todas Unidades', index=False)
 
                         output_buffer.seek(0)
 
