@@ -283,21 +283,6 @@ if uploaded_file is not None:
     # Convert the column to string and remove '.0' if present
     df['TELEFONO CONFIRMACIÓN'] = df['TELEFONO CONFIRMACIÓN'].astype(str).str.replace(r'\.0$', '', regex=True)
 
-    # NUEVO: Identificar automáticamente sedes y unidades funcionales disponibles
-    if 'Sede' in df.columns:
-        sedes_disponibles = sorted(df['Sede'].dropna().unique())
-        st.success(f"✅ Se identificaron {len(sedes_disponibles)} sedes en el archivo")
-    else:
-        sedes_disponibles = []
-        st.warning("⚠️ No se encontró la columna 'Sede' en el archivo")
-    
-    if 'Unidad Funcional' in df.columns:
-        unidades_disponibles = sorted(df['Unidad Funcional'].dropna().unique())
-        st.success(f"✅ Se identificaron {len(unidades_disponibles)} unidades funcionales en el archivo")
-    else:
-        unidades_disponibles = []
-        st.warning("⚠️ No se encontró la columna 'Unidad Funcional' en el archivo")
-
     # After loading and preprocessing, populate the options for the multiselect filters
     all_empresas = df['EMPRESA'].unique().tolist()
     all_ubicaciones = df['Ubicación'].unique().tolist()
@@ -317,42 +302,12 @@ if uploaded_file is not None:
     filters = []
     for i in range(num_files):
         st.subheader(f"Filters for Output File {i+1}")
-        
-        # Crear columnas para organizar mejor los filtros
         col1, col2 = st.columns(2)
-        
         with col1:
-            # Filtros existentes
             selected_empresas = st.multiselect(f"Select Empresa(s) for File {i+1}", options=all_empresas, key=f"empresa_{i}", default=all_empresas)
-            selected_ubicaciones = st.multiselect(f"Select Ubicación(s) for File {i+1}", options=all_ubicaciones, key=f"ubicacion_{i}", default=all_ubicaciones)
-            
         with col2:
-            # NUEVOS FILTROS: Sede y Unidad Funcional
-            if sedes_disponibles:
-                selected_sedes = st.multiselect(
-                    f"Select Sede(s) for File {i+1}", 
-                    options=sedes_disponibles, 
-                    key=f"sede_{i}", 
-                    default=sedes_disponibles,
-                    help="Selecciona las sedes a incluir en este archivo"
-                )
-            else:
-                selected_sedes = []
-                st.info("No hay datos de sedes disponibles")
-            
-            if unidades_disponibles:
-                selected_unidades = st.multiselect(
-                    f"Select Unidad(es) Funcional(es) for File {i+1}", 
-                    options=unidades_disponibles, 
-                    key=f"unidad_{i}", 
-                    default=unidades_disponibles,
-                    help="Selecciona las unidades funcionales a incluir en este archivo"
-                )
-            else:
-                selected_unidades = []
-                st.info("No hay datos de unidades funcionales disponibles")
+            selected_ubicaciones = st.multiselect(f"Select Ubicación(s) for File {i+1}", options=all_ubicaciones, key=f"ubicacion_{i}", default=all_ubicaciones)
 
-        # Filtros de fecha (debajo de las columnas)
         if pd.notna(min_date) and pd.notna(max_date):
             default_start_date = min_date.date()
             default_end_date = max_date.date()
@@ -363,14 +318,9 @@ if uploaded_file is not None:
         start_date = st.date_input(f"Select Start Date for File {i+1}", key=f"start_date_{i}", value=default_start_date)
         end_date = st.date_input(f"Select End Date for File {i+1}", key=f"end_date_{i}", value=default_end_date)
 
-        # Mostrar resumen de filtros seleccionados
-        st.info(f"**Resumen Archivo {i+1}:** {len(selected_empresas)} empresa(s), {len(selected_ubicaciones)} ubicación(es), {len(selected_sedes)} sede(s), {len(selected_unidades)} unidad(es) funcional(es)")
-
         filters.append({
             'empresas': selected_empresas,
             'ubicaciones': selected_ubicaciones,
-            'sedes': selected_sedes,
-            'unidades': selected_unidades,
             'start_date': start_date,
             'end_date': end_date
         })
@@ -387,27 +337,14 @@ if uploaded_file is not None:
             
             mask = pd.Series(True, index=filtered_df.index)
             
-            # Aplicar filtro de empresas
             if file_filters['empresas']:
                 empresa_mask = filtered_df['EMPRESA'].isin(file_filters['empresas'])
                 mask = mask & empresa_mask
             
-            # Aplicar filtro de ubicaciones
             if file_filters['ubicaciones']:
                 ubicacion_mask = filtered_df['Ubicación'].isin(file_filters['ubicaciones'])
                 mask = mask & ubicacion_mask
             
-            # NUEVO: Aplicar filtro de sedes
-            if file_filters['sedes'] and 'Sede' in filtered_df.columns:
-                sede_mask = filtered_df['Sede'].isin(file_filters['sedes'])
-                mask = mask & sede_mask
-            
-            # NUEVO: Aplicar filtro de unidades funcionales
-            if file_filters['unidades'] and 'Unidad Funcional' in filtered_df.columns:
-                unidad_mask = filtered_df['Unidad Funcional'].isin(file_filters['unidades'])
-                mask = mask & unidad_mask
-            
-            # Aplicar filtro de fechas
             start_date_ts = pd.Timestamp(file_filters['start_date'])
             end_date_ts = pd.Timestamp(file_filters['end_date'])
             date_mask = (filtered_df['Fecha Programación_dt'] >= start_date_ts) & (filtered_df['Fecha Programación_dt'] <= end_date_ts)
@@ -415,25 +352,7 @@ if uploaded_file is not None:
             
             filtered_df = filtered_df.loc[mask].copy()
             
-            # Mostrar estadísticas del filtrado
             st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
-            
-            # Mostrar desglose por sede y unidad funcional
-            if len(filtered_df) > 0:
-                col1, col2 = st.columns(2)
-                with col1:
-                    if 'Sede' in filtered_df.columns:
-                        sedes_count = filtered_df['Sede'].value_counts()
-                        st.write("**Sedes en este archivo:**")
-                        for sede, count in sedes_count.items():
-                            st.write(f"- {sede}: {count} registros")
-                
-                with col2:
-                    if 'Unidad Funcional' in filtered_df.columns:
-                        unidades_count = filtered_df['Unidad Funcional'].value_counts().head(10)  # Mostrar solo top 10
-                        st.write("**Unidades funcionales (top 10):**")
-                        for unidad, count in unidades_count.items():
-                            st.write(f"- {unidad}: {count} registros")
             
             # CORRECCIÓN CRÍTICA: Aplicar filtro de primer servicio después del filtrado normal
             filtered_df = identificar_primer_servicio(filtered_df)
@@ -475,38 +394,11 @@ if uploaded_file is not None:
                     if 'Fecha Programación Formateada' in pacientes_df.columns:
                         pacientes_df = pacientes_df.rename(columns={'Fecha Programación Formateada': 'Fecha Programación'})
                     pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
-                
-                # NUEVA HOJA: Resumen de filtros aplicados
-                resumen_data = {
-                    'Parámetro': [
-                        'Empresas incluidas',
-                        'Ubicaciones incluidas', 
-                        'Sedes incluidas',
-                        'Unidades Funcionales incluidas',
-                        'Rango de fechas',
-                        'Total registros',
-                        'Total pacientes únicos'
-                    ],
-                    'Valor': [
-                        ', '.join(file_filters['empresas']) if file_filters['empresas'] else 'Todas',
-                        ', '.join(file_filters['ubicaciones']) if file_filters['ubicaciones'] else 'Todas',
-                        ', '.join(file_filters['sedes']) if file_filters['sedes'] else 'Todas',
-                        ', '.join(file_filters['unidades']) if file_filters['unidades'] else 'Todas',
-                        f"{file_filters['start_date']} a {file_filters['end_date']}",
-                        len(filtered_df),
-                        filtered_df['Numero de Identificación'].nunique()
-                    ]
-                }
-                resumen_df = pd.DataFrame(resumen_data)
-                resumen_df.to_excel(writer, sheet_name='Resumen Filtros', index=False)
 
-            # NUEVO: Incluir información de sedes y unidades en el nombre del archivo
-            empresas_str = "_".join(file_filters['empresas'][:3]) if file_filters['empresas'] else "All_Empresas"
+            empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
             ubicaciones_str = "_".join(file_filters['ubicaciones']) if file_filters['ubicaciones'] else "All_Ubicaciones"
-            sedes_str = "_".join([sede.replace(' ', '')[:5] for sede in file_filters['sedes'][:2]]) if file_filters['sedes'] else "All_Sedes"
-            unidades_str = "_".join([unidad.replace(' ', '')[:5] for unidad in file_filters['unidades'][:2]]) if file_filters['unidades'] else "All_Unidades"
             
-            filename = f"{empresas_str}_{sedes_str}_{unidades_str}_{file_filters['start_date'].day}-{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%b')}.xlsx"
+            filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{file_filters['start_date'].day}_al_{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%B')}_{file_filters['start_date'].year}.xlsx"
 
             st.download_button(
                 label=f"📥 Download File {i+1}: {filename}",
@@ -515,8 +407,5 @@ if uploaded_file is not None:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheet.sheet",
                 key=f"download_{i}"
             )
-
-            # Mostrar estadísticas finales del archivo generado
-            st.info(f"**Archivo {i+1} generado:** {len(filtered_df)} registros, {filtered_df['Numero de Identificación'].nunique()} pacientes únicos")
 
             buffer.close()
