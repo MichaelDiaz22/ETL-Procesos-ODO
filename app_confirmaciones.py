@@ -300,18 +300,32 @@ if uploaded_file is not None:
 
     num_files = st.number_input("Number of output files to generate", min_value=1, value=1, key='num_files_input')
 
-    # NUEVA FUNCIÓN: Obtener opciones filtradas basadas en las empresas seleccionadas
-    def get_filtered_options(selected_empresas):
-        """Obtiene sedes y unidades funcionales filtradas por las empresas seleccionadas"""
+    # NUEVA FUNCIÓN MEJORADA: Obtener opciones filtradas basadas en las empresas y sedes seleccionadas
+    def get_filtered_options(selected_empresas, selected_sedes=None):
+        """Obtiene sedes y unidades funcionales filtradas por las empresas y sedes seleccionadas"""
         if not selected_empresas:
             # Si no hay empresas seleccionadas, mostrar todas las opciones
             filtered_sedes = all_sedes
-            filtered_unidades = all_unidades_funcionales
+            # Para unidades funcionales, si hay sedes seleccionadas, filtrar por ellas
+            if selected_sedes:
+                filtered_df = df[df['Sede'].isin(selected_sedes)]
+                filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
+            else:
+                filtered_unidades = all_unidades_funcionales
         else:
             # Filtrar el dataframe por las empresas seleccionadas
             filtered_df = df[df['EMPRESA'].isin(selected_empresas)]
             filtered_sedes = filtered_df['Sede'].unique().tolist()
-            filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
+            
+            # Si además hay sedes seleccionadas, filtrar también por sedes para las unidades funcionales
+            if selected_sedes:
+                # Asegurarse de que las sedes seleccionadas estén dentro de las disponibles para las empresas
+                valid_sedes = [sede for sede in selected_sedes if sede in filtered_sedes]
+                if valid_sedes:
+                    filtered_df = filtered_df[filtered_df['Sede'].isin(valid_sedes)]
+                filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
+            else:
+                filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
         
         return filtered_sedes, filtered_unidades
 
@@ -329,7 +343,7 @@ if uploaded_file is not None:
             )
             
             # Obtener las opciones filtradas basadas en las empresas seleccionadas
-            filtered_sedes, filtered_unidades = get_filtered_options(selected_empresas)
+            filtered_sedes, _ = get_filtered_options(selected_empresas)
             
             selected_sedes = st.multiselect(
                 f"Select Sede(s) for File {i+1}", 
@@ -345,6 +359,9 @@ if uploaded_file is not None:
                 key=f"ubicacion_{i}", 
                 default=all_ubicaciones
             )
+            
+            # Obtener las unidades funcionales filtradas basadas en empresas Y sedes seleccionadas
+            _, filtered_unidades = get_filtered_options(selected_empresas, selected_sedes)
             
             selected_unidades = st.multiselect(
                 f"Select Unidad Funcional(es) for File {i+1}", 
