@@ -8,6 +8,7 @@ st.title('Excel File Partitioner - Back Office ODO')
 uploaded_file = st.file_uploader("Upload your Excel file", type=['xlsx', 'xls'])
 
 # Inicializar variables
+sedes_disponibles = []
 unidades_disponibles = []
 df_loaded = False
 
@@ -26,7 +27,13 @@ if uploaded_file is not None:
         
         df_subset = df[columnas_existentes].copy()
         
-        # Identificar automáticamente las unidades funcionales del archivo
+        # Identificar automáticamente las sedes y unidades funcionales del archivo
+        if 'Centro Atención' in df_subset.columns:
+            sedes_disponibles = sorted(df_subset['Centro Atención'].dropna().unique())
+            st.success(f"✅ Se identificaron {len(sedes_disponibles)} sedes en el archivo")
+        else:
+            st.warning("No se encontró la columna 'Centro Atención' en el archivo")
+            
         if 'Unidad Funcional' in df_subset.columns:
             unidades_disponibles = sorted(df_subset['Unidad Funcional'].dropna().unique())
             st.success(f"✅ Se identificaron {len(unidades_disponibles)} unidades funcionales en el archivo")
@@ -38,32 +45,49 @@ if uploaded_file is not None:
 else:
     st.info("Please upload an Excel file to get started.")
 
-# Solo mostrar el número de particiones y selector de unidades si el archivo está cargado
-if df_loaded and unidades_disponibles:
+# Solo mostrar los filtros y número de particiones si el archivo está cargado
+if df_loaded and (sedes_disponibles or unidades_disponibles):
     num_partitions = st.number_input("Enter the number of partitions (number of back office employees)", min_value=1, value=3)
 
-    # Selector de unidades funcionales basado en el archivo cargado
-    st.subheader("Selecciona las Unidades Funcionales a incluir")
+    # Filtros por sede y unidad funcional
+    st.subheader("Filtros de Datos")
     
-    # Ordenar las unidades y seleccionar todas por defecto
-    unidades_disponibles_ordenadas = sorted(unidades_disponibles)
+    # Selector de sedes
+    if sedes_disponibles:
+        sedes_seleccionadas = st.multiselect(
+            "Sedes disponibles:",
+            options=sedes_disponibles,
+            default=sedes_disponibles,  # Selecciona todas por defecto
+            help="Selecciona las sedes que deseas incluir en el reporte"
+        )
+    else:
+        sedes_seleccionadas = []
+        st.info("No hay datos de sedes disponibles para filtrar")
     
-    unidades_seleccionadas = st.multiselect(
-        "Unidades Funcionales encontradas en el archivo:",
-        options=unidades_disponibles_ordenadas,
-        default=unidades_disponibles_ordenadas,  # Selecciona todas por defecto
-        help="Selecciona las unidades funcionales que deseas incluir en el reporte"
-    )
-    
+    # Selector de unidades funcionales
+    if unidades_disponibles:
+        unidades_seleccionadas = st.multiselect(
+            "Unidades Funcionales disponibles:",
+            options=unidades_disponibles,
+            default=unidades_disponibles,  # Selecciona todas por defecto
+            help="Selecciona las unidades funcionales que deseas incluir en el reporte"
+        )
+    else:
+        unidades_seleccionadas = []
+        st.error("No hay unidades funcionales disponibles para filtrar")
+
     # Mostrar información básica del archivo
-    #st.subheader("Información del Archivo")
-    #col1, col2 = st.columns(2)
-    #with col1:
-     #   st.write(f"**Total unidades funcionales:** {len(unidades_disponibles)}")
-      #  st.write(f"**Unidades seleccionadas:** {len(unidades_seleccionadas)}")
-    #with col2:
-     #   st.write(f"**Total registros:** {len(df_subset)}")
-     #   st.write(f"**Total pacientes únicos:** {df_subset['Identificación'].nunique()}")
+    st.subheader("Información del Archivo")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.write(f"**Total sedes:** {len(sedes_disponibles)}")
+        st.write(f"**Sedes seleccionadas:** {len(sedes_seleccionadas)}")
+    with col2:
+        st.write(f"**Total unidades:** {len(unidades_disponibles)}")
+        st.write(f"**Unidades seleccionadas:** {len(unidades_seleccionadas)}")
+    with col3:
+        st.write(f"**Total registros:** {len(df_subset)}")
+        st.write(f"**Total pacientes únicos:** {df_subset['Identificación'].nunique()}")
 
     # Botón para procesar
     if st.button("Procesar y Particionar Datos"):
@@ -71,10 +95,21 @@ if df_loaded and unidades_disponibles:
             st.warning("Por favor selecciona al menos una unidad funcional")
         else:
             try:
-                # Filtrar por unidades funcionales seleccionadas
-                df_filtered = df_subset[df_subset['Unidad Funcional'].isin(unidades_seleccionadas)].copy()
+                # Aplicar filtros combinados
+                df_filtered = df_subset.copy()
                 
-                #st.success(f"✅ Filtrado aplicado: {len(unidades_seleccionadas)} unidad(es) funcional(es) seleccionada(s)")
+                # Filtrar por sedes seleccionadas (si hay sedes disponibles)
+                if sedes_seleccionadas and 'Centro Atención' in df_filtered.columns:
+                    df_filtered = df_filtered[df_filtered['Centro Atención'].isin(sedes_seleccionadas)]
+                    st.success(f"✅ Filtro de sedes aplicado: {len(sedes_seleccionadas)} sede(s) seleccionada(s)")
+                
+                # Filtrar por unidades funcionales seleccionadas
+                if unidades_seleccionadas and 'Unidad Funcional' in df_filtered.columns:
+                    df_filtered = df_filtered[df_filtered['Unidad Funcional'].isin(unidades_seleccionadas)]
+                    st.success(f"✅ Filtro de unidades aplicado: {len(unidades_seleccionadas)} unidad(es) funcional(es) seleccionada(s)")
+                
+                # Mostrar resumen del filtrado
+                st.info(f"**Datos después del filtrado:** {len(df_filtered)} registros, {df_filtered['Identificación'].nunique()} pacientes únicos")
                 
                 # Aplicar filtro de estado de cita
                 df_filtered['Estado'] = ''
@@ -108,16 +143,32 @@ if df_loaded and unidades_disponibles:
 
                         partitioned_dfs = []
                         
-                        # Solo mostrar resumen breve de particiones
-                        st.subheader("📊 Resumen de Particiones")
+                        # Mostrar resumen detallado de particiones
+                        st.subheader("📊 Resumen Detallado de Particiones")
                         for i, identification_sublist in enumerate(list_of_identification_sublists):
                             partition_df = df_estado_filtered[df_estado_filtered['Identificación'].isin(identification_sublist)]
                             # Reordenar la partición para mantener el orden por entidad
                             partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
                             partitioned_dfs.append(partition_df)
                             
-                            # Mostrar solo información básica de cada partición
-                            st.write(f"**Partition {i+1}**: {len(identification_sublist)} pacientes únicos, {len(partition_df)} registros")
+                            # Mostrar información detallada de cada partición
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.write(f"**Partition {i+1}**")
+                                st.write(f"Pacientes: {len(identification_sublist)}")
+                                st.write(f"Registros: {len(partition_df)}")
+                            with col2:
+                                # Contar sedes en esta partición
+                                if 'Centro Atención' in partition_df.columns:
+                                    sedes_partition = partition_df['Centro Atención'].nunique()
+                                    st.write(f"Sedes: {sedes_partition}")
+                                # Contar unidades en esta partición
+                                unidades_partition = partition_df['Unidad Funcional'].nunique()
+                                st.write(f"Unidades: {unidades_partition}")
+                            with col3:
+                                # Mostrar entidades en esta partición
+                                entidades_partition = partition_df['Entidad'].nunique()
+                                st.write(f"Entidades: {entidades_partition}")
 
                         # Generate Excel file in memory
                         output_buffer = io.BytesIO()
@@ -127,16 +178,24 @@ if df_loaded and unidades_disponibles:
                                 sheet_name = f'Part {i+1}'[:31]
                                 part_df.to_excel(writer, sheet_name=sheet_name, index=False)
                             
-                            # Agregar una hoja de resumen
+                            # Agregar una hoja de resumen detallado
                             resumen_data = {
                                 'Partición': [f'Part {i+1}' for i in range(num_partitions)],
                                 'Pacientes Únicos': [len(list_of_identification_sublists[i]) for i in range(num_partitions)],
                                 'Total Registros': [len(partitioned_dfs[i]) for i in range(num_partitions)]
                             }
                             
+                            # Agregar columnas para cada sede seleccionada
+                            if sedes_seleccionadas:
+                                for sede in sedes_seleccionadas:
+                                    resumen_data[f'Sede_{sede}'] = [
+                                        len(partitioned_dfs[i][partitioned_dfs[i]['Centro Atención'] == sede]) 
+                                        for i in range(num_partitions)
+                                    ]
+                            
                             # Agregar columnas para cada unidad funcional seleccionada
                             for unidad in unidades_seleccionadas:
-                                resumen_data[unidad] = [
+                                resumen_data[f'Unidad_{unidad}'] = [
                                     len(partitioned_dfs[i][partitioned_dfs[i]['Unidad Funcional'] == unidad]) 
                                     for i in range(num_partitions)
                                 ]
@@ -144,18 +203,25 @@ if df_loaded and unidades_disponibles:
                             resumen_df = pd.DataFrame(resumen_data)
                             resumen_df.to_excel(writer, sheet_name='Resumen', index=False)
                             
-                            # Agregar hoja con todas las unidades disponibles
-                            todas_unidades_df = pd.DataFrame({
-                                'Unidades Funcionales en Archivo': unidades_disponibles
+                            # Agregar hoja con configuración de filtros aplicados
+                            filtros_aplicados = pd.DataFrame({
+                                'Parámetro': ['Sedes Seleccionadas', 'Unidades Funcionales Seleccionadas', 'Número de Particiones'],
+                                'Valor': [', '.join(map(str, sedes_seleccionadas)) if sedes_seleccionadas else 'Todas', 
+                                         ', '.join(map(str, unidades_seleccionadas)), 
+                                         str(num_partitions)]
                             })
-                            # todas_unidades_df.to_excel(writer, sheet_name='Todas Unidades', index=False)
+                            filtros_aplicados.to_excel(writer, sheet_name='Filtros Aplicados', index=False)
 
                         output_buffer.seek(0)
 
                         st.success("🎉 Data processed and partitioned successfully!")
 
                         # Información del archivo a descargar
-                        st.info(f"El archivo contiene {num_partitions} particiones y {len(unidades_seleccionadas)} unidades funcionales")
+                        st.info(f"El archivo contiene:")
+                        st.info(f"- {num_partitions} particiones")
+                        st.info(f"- {len(sedes_seleccionadas)} sedes seleccionadas")
+                        st.info(f"- {len(unidades_seleccionadas)} unidades funcionales seleccionadas")
+                        st.info(f"- {len(df_estado_filtered)} registros totales después de filtros")
 
                         st.download_button(
                             label="📥 Download Excel File",
