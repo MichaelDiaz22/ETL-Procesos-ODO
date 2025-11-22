@@ -283,10 +283,9 @@ if uploaded_file is not None:
     # Convert the column to string and remove '.0' if present
     df['TELEFONO CONFIRMACIÓN'] = df['TELEFONO CONFIRMACIÓN'].astype(str).str.replace(r'\.0$', '', regex=True)
 
-    # After loading and preprocessing, populate the options for the multiselect filters
+    # After loading and preprocessing, populate the initial options for the multiselect filters
     all_empresas = df['EMPRESA'].unique().tolist()
     all_ubicaciones = df['Ubicación'].unique().tolist()
-    # NUEVO: Obtener opciones para sede y unidad funcional
     all_sedes = df['Sede'].unique().tolist()
     all_unidades_funcionales = df['Unidad Funcional'].unique().tolist()
 
@@ -301,17 +300,58 @@ if uploaded_file is not None:
 
     num_files = st.number_input("Number of output files to generate", min_value=1, value=1, key='num_files_input')
 
+    # NUEVA FUNCIÓN: Obtener opciones filtradas basadas en las empresas seleccionadas
+    def get_filtered_options(selected_empresas):
+        """Obtiene sedes y unidades funcionales filtradas por las empresas seleccionadas"""
+        if not selected_empresas:
+            # Si no hay empresas seleccionadas, mostrar todas las opciones
+            filtered_sedes = all_sedes
+            filtered_unidades = all_unidades_funcionales
+        else:
+            # Filtrar el dataframe por las empresas seleccionadas
+            filtered_df = df[df['EMPRESA'].isin(selected_empresas)]
+            filtered_sedes = filtered_df['Sede'].unique().tolist()
+            filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
+        
+        return filtered_sedes, filtered_unidades
+
     # Collect filter selections outside the button click to retain state
     filters = []
     for i in range(num_files):
         st.subheader(f"Filters for Output File {i+1}")
         col1, col2 = st.columns(2)
         with col1:
-            selected_empresas = st.multiselect(f"Select Empresa(s) for File {i+1}", options=all_empresas, key=f"empresa_{i}", default=all_empresas)
-            selected_sedes = st.multiselect(f"Select Sede(s) for File {i+1}", options=all_sedes, key=f"sede_{i}", default=all_sedes)
+            selected_empresas = st.multiselect(
+                f"Select Empresa(s) for File {i+1}", 
+                options=all_empresas, 
+                key=f"empresa_{i}", 
+                default=all_empresas
+            )
+            
+            # Obtener las opciones filtradas basadas en las empresas seleccionadas
+            filtered_sedes, filtered_unidades = get_filtered_options(selected_empresas)
+            
+            selected_sedes = st.multiselect(
+                f"Select Sede(s) for File {i+1}", 
+                options=filtered_sedes, 
+                key=f"sede_{i}", 
+                default=filtered_sedes
+            )
+            
         with col2:
-            selected_ubicaciones = st.multiselect(f"Select Ubicación(s) for File {i+1}", options=all_ubicaciones, key=f"ubicacion_{i}", default=all_ubicaciones)
-            selected_unidades = st.multiselect(f"Select Unidad Funcional(es) for File {i+1}", options=all_unidades_funcionales, key=f"unidad_{i}", default=all_unidades_funcionales)
+            selected_ubicaciones = st.multiselect(
+                f"Select Ubicación(s) for File {i+1}", 
+                options=all_ubicaciones, 
+                key=f"ubicacion_{i}", 
+                default=all_ubicaciones
+            )
+            
+            selected_unidades = st.multiselect(
+                f"Select Unidad Funcional(es) for File {i+1}", 
+                options=filtered_unidades, 
+                key=f"unidad_{i}", 
+                default=filtered_unidades
+            )
 
         if pd.notna(min_date) and pd.notna(max_date):
             default_start_date = min_date.date()
@@ -352,7 +392,7 @@ if uploaded_file is not None:
                 ubicacion_mask = filtered_df['Ubicación'].isin(file_filters['ubicaciones'])
                 mask = mask & ubicacion_mask
             
-            # NUEVO: Aplicar filtros por sede y unidad funcional
+            # Aplicar filtros por sede y unidad funcional
             if file_filters['sedes']:
                 sede_mask = filtered_df['Sede'].isin(file_filters['sedes'])
                 mask = mask & sede_mask
