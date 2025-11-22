@@ -286,6 +286,9 @@ if uploaded_file is not None:
     # After loading and preprocessing, populate the options for the multiselect filters
     all_empresas = df['EMPRESA'].unique().tolist()
     all_ubicaciones = df['Ubicación'].unique().tolist()
+    # NUEVO: Obtener opciones para sede y unidad funcional
+    all_sedes = df['Sede'].unique().tolist()
+    all_unidades_funcionales = df['Unidad Funcional'].unique().tolist()
 
     # Obtener el rango de fechas REAL de los datos convertidos
     min_date = df['Fecha Programación_dt'].min()
@@ -305,8 +308,10 @@ if uploaded_file is not None:
         col1, col2 = st.columns(2)
         with col1:
             selected_empresas = st.multiselect(f"Select Empresa(s) for File {i+1}", options=all_empresas, key=f"empresa_{i}", default=all_empresas)
+            selected_sedes = st.multiselect(f"Select Sede(s) for File {i+1}", options=all_sedes, key=f"sede_{i}", default=all_sedes)
         with col2:
             selected_ubicaciones = st.multiselect(f"Select Ubicación(s) for File {i+1}", options=all_ubicaciones, key=f"ubicacion_{i}", default=all_ubicaciones)
+            selected_unidades = st.multiselect(f"Select Unidad Funcional(es) for File {i+1}", options=all_unidades_funcionales, key=f"unidad_{i}", default=all_unidades_funcionales)
 
         if pd.notna(min_date) and pd.notna(max_date):
             default_start_date = min_date.date()
@@ -321,6 +326,8 @@ if uploaded_file is not None:
         filters.append({
             'empresas': selected_empresas,
             'ubicaciones': selected_ubicaciones,
+            'sedes': selected_sedes,
+            'unidades_funcionales': selected_unidades,
             'start_date': start_date,
             'end_date': end_date
         })
@@ -344,6 +351,15 @@ if uploaded_file is not None:
             if file_filters['ubicaciones']:
                 ubicacion_mask = filtered_df['Ubicación'].isin(file_filters['ubicaciones'])
                 mask = mask & ubicacion_mask
+            
+            # NUEVO: Aplicar filtros por sede y unidad funcional
+            if file_filters['sedes']:
+                sede_mask = filtered_df['Sede'].isin(file_filters['sedes'])
+                mask = mask & sede_mask
+            
+            if file_filters['unidades_funcionales']:
+                unidad_mask = filtered_df['Unidad Funcional'].isin(file_filters['unidades_funcionales'])
+                mask = mask & unidad_mask
             
             start_date_ts = pd.Timestamp(file_filters['start_date'])
             end_date_ts = pd.Timestamp(file_filters['end_date'])
@@ -398,6 +414,8 @@ if uploaded_file is not None:
             empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
             ubicaciones_str = "_".join(file_filters['ubicaciones']) if file_filters['ubicaciones'] else "All_Ubicaciones"
             
+            # NOTA: Los filtros de sede y unidad funcional se aplican al contenido pero NO al nombre del archivo
+            # para mantener la estructura de nombre existente
             filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{file_filters['start_date'].day}_al_{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%B')}_{file_filters['start_date'].year}.xlsx"
 
             st.download_button(
