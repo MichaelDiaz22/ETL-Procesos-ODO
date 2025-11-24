@@ -64,20 +64,35 @@ if df_loaded and unidades_disponibles:
                 # Filtrar por unidades funcionales seleccionadas
                 df_filtered = df_subset[df_subset['Unidad Funcional'].isin(unidades_seleccionadas)].copy()
                 
-                # ELIMINAR REGISTROS DONDE 'Nom. Actividad' SEA 'ADMINISTRACION RADIOTERAPIA'
+                # ELIMINAR REGISTROS DONDE 'Nom. Actividad' SEA 'ADMINISTRACION RADIOTERAPIA' (MÚLTIPLES VARIACIONES)
                 if 'Nom. Actividad' in df_filtered.columns:
                     # Contar registros antes de eliminar
                     registros_antes = len(df_filtered)
                     
-                    # Eliminar registros con 'ADMINISTRACION RADIOTERAPIA'
-                    df_filtered = df_filtered[df_filtered['Nom. Actividad'] != 'ADMINISTRACION RADIOTERAPIA']
+                    # Mostrar valores únicos de Nom. Actividad para debugging
+                    st.write("📋 Valores únicos en 'Nom. Actividad':")
+                    valores_unicos = df_filtered['Nom. Actividad'].unique()
+                    for valor in sorted(valores_unicos):
+                        st.write(f" - '{valor}'")
+                    
+                    # Crear una máscara para identificar TODAS las variaciones de ADMINISTRACION RADIOTERAPIA
+                    mask_radioterapia = (
+                        df_filtered['Nom. Actividad'].str.contains('ADMINISTRACION RADIOTERAPIA', case=False, na=False) |
+                        df_filtered['Nom. Actividad'].str.contains('ADMINISTRACIÓN RADIOTERAPIA', case=False, na=False) |
+                        df_filtered['Nom. Actividad'].str.contains('RADIOTERAPIA', case=False, na=False)
+                    )
+                    
+                    # Aplicar el filtro inverso (mantener solo los que NO son radioterapia)
+                    df_filtered = df_filtered[~mask_radioterapia]
                     
                     # Contar registros después de eliminar
                     registros_despues = len(df_filtered)
                     registros_eliminados = registros_antes - registros_despues
                     
                     if registros_eliminados > 0:
-                        st.info(f"✅ Se eliminaron {registros_eliminados} registros con 'Nom. Actividad' = 'ADMINISTRACION RADIOTERAPIA'")
+                        st.success(f"✅ Se eliminaron {registros_eliminados} registros relacionados con RADIOTERAPIA")
+                    else:
+                        st.info("ℹ️ No se encontraron registros de RADIOTERAPIA para eliminar")
                 
                 # Aplicar filtro de estado de cita
                 df_filtered['Estado'] = ''
@@ -85,6 +100,16 @@ if df_loaded and unidades_disponibles:
 
                 estado_cita_filter = ['Asignada', 'PreAsignada']
                 df_estado_filtered = df_filtered[df_filtered['Estado cita'].isin(estado_cita_filter)].copy()
+
+                # Verificación final - mostrar si quedan registros de radioterapia
+                if 'Nom. Actividad' in df_estado_filtered.columns:
+                    registros_radioterapia_restantes = df_estado_filtered[
+                        df_estado_filtered['Nom. Actividad'].str.contains('RADIOTERAPIA', case=False, na=False)
+                    ]
+                    if len(registros_radioterapia_restantes) > 0:
+                        st.warning(f"⚠️ Aún quedan {len(registros_radioterapia_restantes)} registros de RADIOTERAPIA después del filtro")
+                        st.write("Registros restantes:")
+                        st.dataframe(registros_radioterapia_restantes[['Nom. Actividad', 'Unidad Funcional']])
 
                 if num_partitions < 1:
                     st.error("Please enter a valid number of partitions (at least 1).")
