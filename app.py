@@ -69,12 +69,6 @@ if df_loaded and unidades_disponibles:
                     # Contar registros antes de eliminar
                     registros_antes = len(df_filtered)
                     
-                    # Mostrar valores únicos de Nom. Actividad para debugging
-                    st.write("📋 Valores únicos en 'Nom. Actividad':")
-                    valores_unicos = df_filtered['Nom. Actividad'].unique()
-                    for valor in sorted(valores_unicos):
-                        st.write(f" - '{valor}'")
-                    
                     # Crear una máscara para identificar TODAS las variaciones de ADMINISTRACION RADIOTERAPIA
                     mask_radioterapia = (
                         df_filtered['Nom. Actividad'].str.contains('ADMINISTRACION RADIOTERAPIA', case=False, na=False) |
@@ -91,8 +85,6 @@ if df_loaded and unidades_disponibles:
                     
                     if registros_eliminados > 0:
                         st.success(f"✅ Se eliminaron {registros_eliminados} registros relacionados con RADIOTERAPIA")
-                    else:
-                        st.info("ℹ️ No se encontraron registros de RADIOTERAPIA para eliminar")
                 
                 # Aplicar filtro de estado de cita
                 df_filtered['Estado'] = ''
@@ -100,16 +92,6 @@ if df_loaded and unidades_disponibles:
 
                 estado_cita_filter = ['Asignada', 'PreAsignada']
                 df_estado_filtered = df_filtered[df_filtered['Estado cita'].isin(estado_cita_filter)].copy()
-
-                # Verificación final - mostrar si quedan registros de radioterapia
-                if 'Nom. Actividad' in df_estado_filtered.columns:
-                    registros_radioterapia_restantes = df_estado_filtered[
-                        df_estado_filtered['Nom. Actividad'].str.contains('RADIOTERAPIA', case=False, na=False)
-                    ]
-                    if len(registros_radioterapia_restantes) > 0:
-                        st.warning(f"⚠️ Aún quedan {len(registros_radioterapia_restantes)} registros de RADIOTERAPIA después del filtro")
-                        st.write("Registros restantes:")
-                        st.dataframe(registros_radioterapia_restantes[['Nom. Actividad', 'Unidad Funcional']])
 
                 if num_partitions < 1:
                     st.error("Please enter a valid number of partitions (at least 1).")
