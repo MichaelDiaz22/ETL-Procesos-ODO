@@ -106,7 +106,7 @@ if uploaded_file is not None:
             'Calle 50 N° 13-10, MARAYA - PEREIRA',
             'Carrera 13 N° 1- 46, LA REBECA - PEREIRA',
             'Carrera 2 NORTE N° 23 - 12, BARRIO MILAN - CARTAGO',
-            'Carrera 1 NORTE  N° 12 - 36, ANTIGUO SALUDCOOP - ARMENIA',
+            'Calle 1 NORTE  N° 12 - 36, ANTIGUO SALUDCOOP - ARMENIA',
             'Carrera 4 N° 11-41 CENTRO - LA DORADA',
             'Carrera 1 NORTE  N° 12 - 36, ANTIGUO SALUDCOOP - ARMENIA',
             'Calle 50 N° 13-10, MARAYA - PEREIRA',
@@ -484,3 +484,4 @@ if uploaded_file is not None:
             )
 
             buffer.close()
+
