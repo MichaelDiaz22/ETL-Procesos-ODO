@@ -71,7 +71,8 @@ if df_loaded and unidades_disponibles:
                     
                     # Crear una máscara para identificar TODAS las variaciones de ADMINISTRACION RADIOTERAPIA
                     mask_radioterapia = (
-                        df_filtered['Nom. Actividad'].str.contains('ADMINISTRACION RADIOTERAPIA', case=False, na=False)
+                        df_filtered['Nom. Actividad'].str.contains('ADMINISTRACION RADIOTERAPIA', case=False, na=False) |
+                        df_filtered['Nom. Actividad'].str.contains('CONSULTA DE TERMINACION DE RADIOTERAPIA', case=False, na=False)
                     )
                     
                     # Aplicar el filtro inverso (mantener solo los que NO son radioterapia)
@@ -172,5 +173,6 @@ if df_loaded and unidades_disponibles:
 
 elif df_loaded and not unidades_disponibles:
     st.error("No se pudieron identificar unidades funcionales en el archivo. Verifica que la columna 'Unidad Funcional' exista y contenga datos.")
+
 
 
