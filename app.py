@@ -16,7 +16,7 @@ if uploaded_file is not None:
         df = pd.read_excel(uploaded_file)
         df_loaded = True
         
-        selected_columns = ['Especialidad', 'Centro Atención', 'Unidad Funcional', 'Identificación', 'Nombre Paciente', 'Entidad', 'F. Inicial cita', 'Nom. Actividad', 'Modalidad', 'Tipo cita', 'Estado cita', 'Cod. CUPS', 'CUPS']
+        selected_columns = ['Especialidad', 'Profesional', 'Centro Atención', 'Unidad Funcional', 'Identificación', 'Nombre Paciente', 'Entidad', 'F. Inicial cita', 'Nom. Actividad', 'Modalidad', 'Tipo cita', 'Estado cita', 'Cod. CUPS', 'CUPS']
         
         # Verificar que las columnas seleccionadas existen en el DataFrame
         columnas_existentes = [col for col in selected_columns if col in df.columns]
@@ -173,6 +173,7 @@ if df_loaded and unidades_disponibles:
 
 elif df_loaded and not unidades_disponibles:
     st.error("No se pudieron identificar unidades funcionales en el archivo. Verifica que la columna 'Unidad Funcional' exista y contenga datos.")
+
 
 
 
