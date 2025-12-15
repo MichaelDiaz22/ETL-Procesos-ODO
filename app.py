@@ -174,7 +174,7 @@ if df_loaded and unidades_disponibles:
                         
                         # Mostrar columnas que se exportarán
                         if len(partitioned_dfs) > 0:
-                            st.info(f"📋 **Columnas incluidas en el exportable:** {list(partitioned_dfs[0].columns)}")
+                            #st.info(f"📋 **Columnas incluidas en el exportable:** {list(partitioned_dfs[0].columns)}")
 
                         # Información del archivo a descargar
                         st.info(f"El archivo contiene {num_partitions} particiones y {len(unidades_seleccionadas)} unidades funcionales")
@@ -192,4 +192,5 @@ if df_loaded and unidades_disponibles:
 
 elif df_loaded and not unidades_disponibles:
     st.error("No se pudieron identificar unidades funcionales en el archivo. Verifica que la columna 'Unidad Funcional' exista y contenga datos.")
+
 
