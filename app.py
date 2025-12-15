@@ -127,6 +127,9 @@ if df_loaded and unidades_disponibles:
                             
                             # Mostrar solo información básica de cada partición
                             st.write(f"**Partition {i+1}**: {len(identification_sublist)} pacientes únicos, {len(partition_df)} registros")
+                            
+                            # DEBUG: Verificar que 'Profesional' esté presente
+                            st.write(f"   - Columnas disponibles: {list(partition_df.columns)}")
 
                         # Generate Excel file in memory
                         output_buffer = io.BytesIO()
@@ -134,7 +137,19 @@ if df_loaded and unidades_disponibles:
                             for i, part_df in enumerate(partitioned_dfs):
                                 # Limitar el nombre de la hoja a 31 caracteres (límite de Excel)
                                 sheet_name = f'Part {i+1}'[:31]
-                                part_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                                
+                                # Asegurar que todas las columnas estén presentes en el orden correcto
+                                # Primero, mantener solo las columnas que existen en el DataFrame
+                                columnas_a_exportar = [col for col in columnas_existentes if col in part_df.columns]
+                                
+                                # Agregar las columnas adicionales que creamos (Estado y Observación)
+                                columnas_adicionales = ['Estado', 'Observación']
+                                columnas_finales = columnas_a_exportar + [col for col in columnas_adicionales if col in part_df.columns]
+                                
+                                # Reordenar el DataFrame para la exportación
+                                part_df_export = part_df[columnas_finales]
+                                
+                                part_df_export.to_excel(writer, sheet_name=sheet_name, index=False)
                             
                             # Agregar una hoja de resumen
                             resumen_data = {
@@ -156,6 +171,10 @@ if df_loaded and unidades_disponibles:
                         output_buffer.seek(0)
 
                         st.success("🎉 Data processed and partitioned successfully!")
+                        
+                        # Mostrar columnas que se exportarán
+                        if len(partitioned_dfs) > 0:
+                            st.info(f"📋 **Columnas incluidas en el exportable:** {list(partitioned_dfs[0].columns)}")
 
                         # Información del archivo a descargar
                         st.info(f"El archivo contiene {num_partitions} particiones y {len(unidades_seleccionadas)} unidades funcionales")
@@ -173,7 +192,3 @@ if df_loaded and unidades_disponibles:
 
 elif df_loaded and not unidades_disponibles:
     st.error("No se pudieron identificar unidades funcionales en el archivo. Verifica que la columna 'Unidad Funcional' exista y contenga datos.")
-
-
-
-
