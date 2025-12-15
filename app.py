@@ -129,7 +129,7 @@ if df_loaded and unidades_disponibles:
                             st.write(f"**Partition {i+1}**: {len(identification_sublist)} pacientes únicos, {len(partition_df)} registros")
                             
                             # DEBUG: Verificar que 'Profesional' esté presente
-                            st.write(f"   - Columnas disponibles: {list(partition_df.columns)}")
+                            # st.write(f"   - Columnas disponibles: {list(partition_df.columns)}")
 
                         # Generate Excel file in memory
                         output_buffer = io.BytesIO()
@@ -192,3 +192,4 @@ if df_loaded and unidades_disponibles:
 
 elif df_loaded and not unidades_disponibles:
     st.error("No se pudieron identificar unidades funcionales en el archivo. Verifica que la columna 'Unidad Funcional' exista y contenga datos.")
+
