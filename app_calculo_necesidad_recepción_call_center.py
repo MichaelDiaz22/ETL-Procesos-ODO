@@ -198,8 +198,8 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
     
     try:
         # Verificar columnas necesarias
-        columnas_requeridas = ['Call Time', 'From', 'To']
-        for col in columnas_requerida:
+        columnas_requeridas = ['Call Time', 'From', 'To']  # AQUÍ ESTÁ BIEN DEFINIDA
+        for col in columnas_requeridas:  # AQUÍ DEBE SER PLURAL "columnas_requeridas"
             if col not in df_procesado.columns:
                 st.error(f"El archivo no contiene la columna '{col}' necesaria para el procesamiento.")
                 return None
