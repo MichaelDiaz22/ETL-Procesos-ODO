@@ -366,13 +366,13 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
     
     return df_procesado
 
-# Función para crear gráfico de proporciones por hora y día
+# Función para crear gráfico de proporciones por hora y día CORREGIDA
 def crear_grafico_proporciones_dia_hora(df_procesado):
     """
-    Crea un gráfico de líneas que muestra la frecuencia de Proporción de Equivalencia
-    y la suma de validador_recurso_hora por hora para un día específico
+    Crea un gráfico de líneas que muestra la SUMA de Proporción de Equivalencia
+    para registros donde empresa_inbound == "Externo" y la suma de validador_recurso_hora por hora para un día específico
     """
-    st.write("### 📈 Frecuencia de Proporción Demanda vs Recursos por Hora y Día")
+    st.write("### 📈 Suma de Proporción Demanda (Externos) vs Recursos por Hora y Día")
     
     # Obtener lista de días disponibles
     dias_disponibles = df_procesado['Dia_Semana'].unique()
@@ -384,29 +384,33 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         key="selector_dia_grafico"
     )
     
-    # Filtrar datos por día seleccionado
-    df_dia = df_procesado[df_procesado['Dia_Semana'] == dia_seleccionado].copy()
+    # Filtrar datos por día seleccionado y empresa_inbound == "Externo"
+    df_dia = df_procesado[(df_procesado['Dia_Semana'] == dia_seleccionado) & 
+                          (df_procesado['empresa_inbound'] == "Externo")].copy()
     
     if len(df_dia) > 0:
-        # Para la Proporción de Equivalencia: calcular frecuencia (conteo) por hora
+        # Para la Proporción de Equivalencia: calcular SUMA por hora (no frecuencia/count)
         # Para validador_recurso_hora: calcular suma por hora
         
-        # Calcular frecuencia de Proporcion_Equivalencia por hora
-        frecuencia_proporcion = df_dia.groupby('Hora_Numerica')['Proporcion_Equivalencia'].count().reset_index()
-        frecuencia_proporcion = frecuencia_proporcion.rename(columns={
+        # Calcular SUMA de Proporcion_Equivalencia por hora para empresa_inbound == "Externo"
+        suma_proporcion = df_dia.groupby('Hora_Numerica')['Proporcion_Equivalencia'].sum().reset_index()
+        suma_proporcion = suma_proporcion.rename(columns={
             'Hora_Numerica': 'Hora',
-            'Proporcion_Equivalencia': 'Frecuencia Proporción Demanda'
+            'Proporcion_Equivalencia': 'Suma Proporción Demanda (Externos)'
         })
         
-        # Calcular suma de validador_recurso_hora por hora
-        suma_recursos = df_dia.groupby('Hora_Numerica')['validador_recurso_hora'].sum().reset_index()
+        # Calcular suma de validador_recurso_hora por hora (sin filtrar por empresa_inbound)
+        # Pero debemos usar el mismo df_dia que ya está filtrado por empresa_inbound == "Externo"
+        # Para recursos, necesitamos TODOS los registros del día seleccionado
+        df_dia_todos = df_procesado[df_procesado['Dia_Semana'] == dia_seleccionado].copy()
+        suma_recursos = df_dia_todos.groupby('Hora_Numerica')['validador_recurso_hora'].sum().reset_index()
         suma_recursos = suma_recursos.rename(columns={
             'Hora_Numerica': 'Hora',
             'validador_recurso_hora': 'Suma Recursos Disponibles'
         })
         
         # Combinar ambos DataFrames
-        datos_grafico = pd.merge(frecuencia_proporcion, suma_recursos, on='Hora', how='outer')
+        datos_grafico = pd.merge(suma_proporcion, suma_recursos, on='Hora', how='outer')
         
         # Rellenar valores NaN con 0
         datos_grafico = datos_grafico.fillna(0)
@@ -414,56 +418,58 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         # Ordenar por hora
         datos_grafico = datos_grafico.sort_values('Hora')
         
+        # Crear rango completo de horas de 0 a 24
+        horas_completas = pd.DataFrame({'Hora': range(0, 25)})
+        
+        # Combinar con datos existentes
+        datos_grafico_completo = pd.merge(horas_completas, datos_grafico, on='Hora', how='left')
+        
+        # Rellenar valores NaN con 0
+        datos_grafico_completo = datos_grafico_completo.fillna(0)
+        
         # Crear gráfico de líneas
         st.write(f"**Distribución para {dia_seleccionado}:**")
         
         # Configurar el gráfico
-        chart_data = datos_grafico.set_index('Hora')
+        chart_data = datos_grafico_completo.set_index('Hora')
         
-        # Mostrar gráfico
+        # Mostrar gráfico con eje X de 0 a 24
         st.line_chart(chart_data)
         
-        # Mostrar tabla de datos
-        st.write("**Datos detallados:**")
-        st.dataframe(datos_grafico.round(6), use_container_width=True)
-        
-        # Calcular métricas de comparación
+        # Mostrar métricas de comparación
         st.write("**Métricas de comparación:**")
         
         col_comp1, col_comp2 = st.columns(2)
         
         with col_comp1:
-            # Ratio promedio frecuencia/recursos
-            if datos_grafico['Suma Recursos Disponibles'].sum() > 0:
-                ratio_promedio = datos_grafico['Frecuencia Proporción Demanda'].sum() / datos_grafico['Suma Recursos Disponibles'].sum()
-                st.metric("Ratio Frecuencia/Recursos", f"{ratio_promedio:.6f}")
+            # Ratio promedio suma_proporcion/suma_recursos
+            if datos_grafico_completo['Suma Recursos Disponibles'].sum() > 0:
+                ratio_promedio = datos_grafico_completo['Suma Proporción Demanda (Externos)'].sum() / datos_grafico_completo['Suma Recursos Disponibles'].sum()
+                st.metric("Ratio Suma Proporción/Recursos", f"{ratio_promedio:.6f}")
         
         with col_comp2:
-            # Diferencia total
-            # Normalizar las escalas para comparar
-            if datos_grafico['Frecuencia Proporción Demanda'].max() > 0:
-                frecuencia_normalizada = datos_grafico['Frecuencia Proporción Demanda'] / datos_grafico['Frecuencia Proporción Demanda'].max()
+            # Diferencia total normalizada
+            if datos_grafico_completo['Suma Proporción Demanda (Externos)'].max() > 0:
+                proporcion_normalizada = datos_grafico_completo['Suma Proporción Demanda (Externos)'] / datos_grafico_completo['Suma Proporción Demanda (Externos)'].max()
             else:
-                frecuencia_normalizada = 0
+                proporcion_normalizada = 0
             
-            if datos_grafico['Suma Recursos Disponibles'].max() > 0:
-                recursos_normalizados = datos_grafico['Suma Recursos Disponibles'] / datos_grafico['Suma Recursos Disponibles'].max()
+            if datos_grafico_completo['Suma Recursos Disponibles'].max() > 0:
+                recursos_normalizados = datos_grafico_completo['Suma Recursos Disponibles'] / datos_grafico_completo['Suma Recursos Disponibles'].max()
             else:
                 recursos_normalizados = 0
             
-            diferencia_promedio = (frecuencia_normalizada - recursos_normalizados).mean()
+            diferencia_promedio = (proporcion_normalizada - recursos_normalizados).mean()
             st.metric("Diferencia normalizada", f"{diferencia_promedio:.6f}")
     else:
-        st.warning(f"No hay datos disponibles para {dia_seleccionado}")
+        st.warning(f"No hay datos disponibles para {dia_seleccionado} con empresa_inbound == 'Externo'")
 
-# Función para mostrar tabla de primeros 10 registros con columnas nuevas
+# Función para mostrar tabla de primeros 10 registros con columnas nuevas (SIMPLIFICADA)
 def mostrar_primeros_registros(df_procesado):
     """
     Muestra una tabla con los primeros 10 registros del dataset procesado,
     incluyendo las columnas nuevas del procesamiento
     """
-    st.write("### 📋 Primeros 10 Registros del Dataset Procesado")
-    
     # Seleccionar columnas originales importantes y las nuevas calculadas
     columnas_originales = ['Call Time', 'From', 'To']
     columnas_nuevas = [
@@ -487,25 +493,6 @@ def mostrar_primeros_registros(df_procesado):
         
         # Mostrar la tabla
         st.dataframe(df_muestra, use_container_width=True)
-        
-        # Mostrar información sobre las columnas
-        st.write("**Columnas mostradas:**")
-        
-        col_info1, col_info2 = st.columns(2)
-        
-        with col_info1:
-            st.write("**Columnas originales:**")
-            for col in columnas_originales:
-                if col in columnas_existentes:
-                    st.write(f"- {col}")
-        
-        with col_info2:
-            st.write("**Columnas nuevas del procesamiento:**")
-            for col in columnas_nuevas:
-                if col in columnas_existentes:
-                    st.write(f"- {col}")
-    else:
-        st.warning("No se encontraron las columnas esperadas en el dataset procesado.")
 
 # Función principal
 def main():
@@ -583,6 +570,7 @@ def main():
                                     
                                     # Mostrar tabla con primeros 10 registros y columnas nuevas
                                     st.divider()
+                                    st.write("### 📋 Primeros 10 Registros del Dataset Procesado")
                                     mostrar_primeros_registros(df_procesado)
                                 else:
                                     st.error("Error al procesar los datos filtrados.")
@@ -595,8 +583,7 @@ def main():
                 if 'df_procesado' in st.session_state:
                     df_procesado = st.session_state['df_procesado']
                     
-                    # Mostrar tabla con primeros 10 registros y columnas nuevas
-                    st.write("### 📋 Muestra de Datos Procesados")
+                    # Mostrar tabla con primeros 10 registros y columnas nuevas (sin título y sin detalles de columnas)
                     mostrar_primeros_registros(df_procesado)
                     
                     st.divider()
@@ -622,50 +609,8 @@ def main():
                             max_recursos = max(st.session_state.recursos_por_hora.values())
                             st.metric("Máximo recursos/hora", max_recursos)
                     
-                    # Gráfico de proporciones por hora y día
+                    # Gráfico de proporciones por hora y día CORREGIDO
                     crear_grafico_proporciones_dia_hora(df_procesado)
-                    
-                    # Análisis por hora
-                    st.write("### 🕐 Análisis por Hora")
-                    
-                    if 'Hora_Numerica' in df_procesado.columns:
-                        analisis_hora = df_procesado.groupby('Hora_Numerica').agg({
-                            'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
-                            'validador_recurso_hora': ['mean', 'sum'],
-                        }).round(6)
-                        
-                        analisis_hora.columns = [
-                            'Cantidad Llamadas', 'Suma Proporción Demanda', 'Promedio Proporción',
-                            'Promedio Recursos/Hora', 'Suma Recursos/Hora'
-                        ]
-                        
-                        # Filtrar solo horas con registros
-                        analisis_hora = analisis_hora[analisis_hora['Cantidad Llamadas'] > 0]
-                        
-                        # Ordenar por hora
-                        analisis_hora = analisis_hora.sort_index()
-                        
-                        st.dataframe(analisis_hora, use_container_width=True)
-                    
-                    # Análisis por día
-                    st.write("### 📅 Análisis por Día de la Semana")
-                    
-                    if 'Dia_Semana' in df_procesado.columns:
-                        analisis_dia = df_procesado.groupby('Dia_Semana').agg({
-                            'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
-                            'validador_recurso_hora': ['sum', 'mean'],
-                        }).round(6)
-                        
-                        analisis_dia.columns = [
-                            'Cantidad Llamadas', 'Suma Proporción Demanda', 'Promedio Proporción',
-                            'Suma Recursos/Hora', 'Promedio Recursos/Hora'
-                        ]
-                        
-                        # Ordenar por días de la semana
-                        orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-                        analisis_dia = analisis_dia.reindex(orden_dias)
-                        
-                        st.dataframe(analisis_dia, use_container_width=True)
                     
                     # Exportación de datos
                     st.write("### 💾 Exportar Datos Procesados")
@@ -690,23 +635,7 @@ def main():
                             # Hoja 1: Datos completos
                             df_procesado.to_excel(writer, sheet_name='Datos_Completos', index=False)
                             
-                            # Hoja 2: Análisis por hora
-                            if 'Hora_Numerica' in df_procesado.columns:
-                                analisis_hora_export = df_procesado.groupby('Hora_Numerica').agg({
-                                    'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
-                                    'validador_recurso_hora': ['mean', 'sum'],
-                                }).round(6)
-                                analisis_hora_export.to_excel(writer, sheet_name='Analisis_Por_Hora')
-                            
-                            # Hoja 3: Análisis por día
-                            if 'Dia_Semana' in df_procesado.columns:
-                                analisis_dia_export = df_procesado.groupby('Dia_Semana').agg({
-                                    'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
-                                    'validador_recurso_hora': ['sum', 'mean'],
-                                }).round(6)
-                                analisis_dia_export.to_excel(writer, sheet_name='Analisis_Por_Dia')
-                            
-                            # Hoja 4: Estadísticas generales
+                            # Hoja 2: Estadísticas generales
                             stats_df = pd.DataFrame({
                                 'Métrica': [
                                     'Total Registros',
