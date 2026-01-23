@@ -114,10 +114,13 @@ def procesar_datos(df):
     
     return df_procesado
 
-# Función para calcular promedios por día y hora
+# Función para calcular promedios corregida
 def calcular_promedios_llamadas(df):
     """
-    Calcula los promedios de llamadas por día de la semana y hora
+    Calcula los promedios de llamadas de manera corregida:
+    1. Promedio general por día de semana
+    2. Promedio general por hora
+    3. Promedio por combinación día-hora
     """
     # Crear DataFrame para análisis
     df_analisis = df.copy()
@@ -125,17 +128,17 @@ def calcular_promedios_llamadas(df):
     # Asegurarse de que tenemos las columnas necesarias
     if not all(col in df_analisis.columns for col in ['Call Time', 'Dia_Semana', 'Hora_Numerica']):
         st.error("No se pueden calcular promedios: faltan columnas necesarias")
-        return None, None
+        return None, None, None
     
     # Crear columna de fecha sin hora para contar por día
     df_analisis['Fecha'] = df_analisis['Call Time'].dt.date
     
-    # 1. Calcular promedio de llamadas por día de la semana
-    # Primero, contar llamadas por fecha y día de semana
-    llamadas_por_fecha = df_analisis.groupby(['Fecha', 'Dia_Semana']).size().reset_index(name='Total_Llamadas')
+    # 1. CALCULAR PROMEDIO GENERAL POR DÍA DE SEMANA
+    # Contar total de llamadas por fecha y día
+    llamadas_por_fecha_dia = df_analisis.groupby(['Fecha', 'Dia_Semana']).size().reset_index(name='Total_Llamadas')
     
-    # Luego, calcular promedio por día de semana
-    promedio_por_dia = llamadas_por_fecha.groupby('Dia_Semana')['Total_Llamadas'].mean().reset_index()
+    # Calcular promedio por día (promedio de los promedios diarios)
+    promedio_por_dia = llamadas_por_fecha_dia.groupby('Dia_Semana')['Total_Llamadas'].mean().reset_index()
     promedio_por_dia = promedio_por_dia.rename(columns={'Total_Llamadas': 'Promedio_Llamadas_Dia'})
     promedio_por_dia['Promedio_Llamadas_Dia'] = promedio_por_dia['Promedio_Llamadas_Dia'].round(2)
     
@@ -144,24 +147,32 @@ def calcular_promedios_llamadas(df):
     promedio_por_dia['Dia_Semana'] = pd.Categorical(promedio_por_dia['Dia_Semana'], categories=orden_dias, ordered=True)
     promedio_por_dia = promedio_por_dia.sort_values('Dia_Semana')
     
-    # 2. Calcular promedio de llamadas por día de semana y hora
-    # Contar llamadas por fecha, día y hora
-    df_analisis['Hora_Redondeada'] = df_analisis['Hora_Numerica']  # Usar hora completa
+    # 2. CALCULAR PROMEDIO GENERAL POR HORA
+    # Contar llamadas por fecha y hora
+    llamadas_por_fecha_hora = df_analisis.groupby(['Fecha', 'Hora_Numerica']).size().reset_index(name='Total_Llamadas')
     
-    llamadas_por_hora = df_analisis.groupby(['Fecha', 'Dia_Semana', 'Hora_Redondeada']).size().reset_index(name='Conteo')
+    # Calcular promedio por hora
+    promedio_por_hora = llamadas_por_fecha_hora.groupby('Hora_Numerica')['Total_Llamadas'].mean().reset_index()
+    promedio_por_hora = promedio_por_hora.rename(columns={'Total_Llamadas': 'Promedio_Llamadas_Hora'})
+    promedio_por_hora['Promedio_Llamadas_Hora'] = promedio_por_hora['Promedio_Llamadas_Hora'].round(2)
+    promedio_por_hora = promedio_por_hora.sort_values('Hora_Numerica')
     
-    # Calcular promedio por día y hora
-    promedio_por_dia_hora = llamadas_por_hora.groupby(['Dia_Semana', 'Hora_Redondeada'])['Conteo'].mean().reset_index()
+    # 3. CALCULAR PROMEDIO POR DÍA-HORA (COMBINACIÓN)
+    # Primero, contar llamadas por fecha, día y hora
+    llamadas_por_fecha_dia_hora = df_analisis.groupby(['Fecha', 'Dia_Semana', 'Hora_Numerica']).size().reset_index(name='Conteo')
+    
+    # Luego, calcular promedio por combinación día-hora
+    promedio_por_dia_hora = llamadas_por_fecha_dia_hora.groupby(['Dia_Semana', 'Hora_Numerica'])['Conteo'].mean().reset_index()
     promedio_por_dia_hora = promedio_por_dia_hora.rename(columns={'Conteo': 'Promedio_Llamadas'})
     promedio_por_dia_hora['Promedio_Llamadas'] = promedio_por_dia_hora['Promedio_Llamadas'].round(2)
     
     # Ordenar
     promedio_por_dia_hora['Dia_Semana'] = pd.Categorical(promedio_por_dia_hora['Dia_Semana'], categories=orden_dias, ordered=True)
-    promedio_por_dia_hora = promedio_por_dia_hora.sort_values(['Dia_Semana', 'Hora_Redondeada'])
+    promedio_por_dia_hora = promedio_por_dia_hora.sort_values(['Dia_Semana', 'Hora_Numerica'])
     
-    return promedio_por_dia, promedio_por_dia_hora
+    return promedio_por_dia, promedio_por_hora, promedio_por_dia_hora
 
-# Función para calcular proporción de equivalencia
+# Función para calcular proporción de equivalencia corregida
 def calcular_proporcion_equivalencia(df, promedio_por_dia_hora):
     """
     Calcula la proporción de equivalencia basada en los promedios por día y hora
@@ -174,7 +185,7 @@ def calcular_proporcion_equivalencia(df, promedio_por_dia_hora):
     # Crear diccionario de promedios
     dict_promedios = {}
     for _, row in promedio_por_dia_hora.iterrows():
-        clave = (row['Dia_Semana'], row['Hora_Redondeada'])
+        clave = (row['Dia_Semana'], row['Hora_Numerica'])
         dict_promedios[clave] = row['Promedio_Llamadas']
     
     # Asignar promedio a cada registro
@@ -200,16 +211,17 @@ def calcular_proporcion_equivalencia(df, promedio_por_dia_hora):
     
     return df_con_proporcion
 
-# Función para crear visualizaciones con Streamlit nativo
-def crear_visualizaciones(promedio_por_dia, promedio_por_dia_hora, df_procesado):
+# Función para crear visualizaciones
+def crear_visualizaciones(promedio_por_dia, promedio_por_hora, promedio_por_dia_hora, df_procesado):
     """
     Crea visualizaciones usando solo Streamlit nativo
     """
     # Crear pestañas para diferentes visualizaciones
-    tab1, tab2, tab3 = st.tabs(["📊 Promedios por Día", "🕐 Promedios por Día y Hora", "📋 Tabla de Calor"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Promedios por Día", "🕐 Promedios por Hora", "📅 Promedios Día-Hora", "📋 Tabla de Calor"])
     
     with tab1:
-        st.subheader("Promedio de Llamadas por Día de la Semana")
+        st.subheader("Promedio General por Día de la Semana")
+        st.write("**Promedio de llamadas por día (todos los horarios combinados):**")
         
         # Crear gráfico de barras simple con Streamlit
         st.bar_chart(promedio_por_dia.set_index('Dia_Semana')['Promedio_Llamadas_Dia'])
@@ -235,44 +247,98 @@ def crear_visualizaciones(promedio_por_dia, promedio_por_dia_hora, df_procesado)
             st.metric("Promedio general", f"{promedio_total:.1f}", "llamadas/día")
     
     with tab2:
-        st.subheader("Promedio de Llamadas por Día y Hora")
+        st.subheader("Promedio General por Hora del Día")
+        st.write("**Promedio de llamadas por hora (todos los días combinados):**")
         
-        # Crear tabla pivote para visualización
-        tabla_pivote = promedio_por_dia_hora.pivot_table(
-            index='Dia_Semana',
-            columns='Hora_Redondeada',
-            values='Promedio_Llamadas',
-            fill_value=0
-        ).round(2)
+        # Crear gráfico de líneas
+        st.line_chart(promedio_por_hora.set_index('Hora_Numerica')['Promedio_Llamadas_Hora'])
         
-        # Ordenar días
-        orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-        tabla_pivote = tabla_pivote.reindex(orden_dias)
+        # Mostrar tabla de datos
+        st.write("**Datos detallados:**")
+        st.dataframe(promedio_por_hora, use_container_width=True)
         
-        # Ordenar horas
-        tabla_pivote = tabla_pivote.sort_index(axis=1)
+        # Métricas clave
+        st.write("**Métricas clave:**")
+        col1, col2, col3 = st.columns(3)
         
-        # Mostrar tabla
-        st.write("**Tabla de promedios:**")
-        st.dataframe(tabla_pivote, use_container_width=True)
+        with col1:
+            hora_max = promedio_por_hora.loc[promedio_por_hora['Promedio_Llamadas_Hora'].idxmax()]
+            st.metric("Hora más ocupada", f"{int(hora_max['Hora_Numerica'])}:00", f"{hora_max['Promedio_Llamadas_Hora']:.1f}")
         
-        # Encontrar hora pico por día
-        st.write("**Horas pico por día:**")
-        for dia in orden_dias:
-            if dia in tabla_pivote.index:
-                fila = tabla_pivote.loc[dia]
-                hora_pico = fila.idxmax()
-                valor_pico = fila.max()
-                if valor_pico > 0:
-                    st.write(f"- **{dia}**: {hora_pico}:00 hrs ({valor_pico:.1f} llamadas)")
+        with col2:
+            hora_min = promedio_por_hora.loc[promedio_por_hora['Promedio_Llamadas_Hora'].idxmin()]
+            st.metric("Hora menos ocupada", f"{int(hora_min['Hora_Numerica'])}:00", f"{hora_min['Promedio_Llamadas_Hora']:.1f}")
+        
+        with col3:
+            # Horario de mayor actividad (mañana/tarde/noche)
+            def clasificar_periodo(hora):
+                if 6 <= hora < 12:
+                    return "Mañana"
+                elif 12 <= hora < 18:
+                    return "Tarde"
+                elif 18 <= hora < 24:
+                    return "Noche"
+                else:
+                    return "Madrugada"
+            
+            promedio_por_hora['Periodo'] = promedio_por_hora['Hora_Numerica'].apply(clasificar_periodo)
+            periodo_actividad = promedio_por_hora.groupby('Periodo')['Promedio_Llamadas_Hora'].sum().idxmax()
+            st.metric("Periodo más activo", periodo_actividad)
     
     with tab3:
+        st.subheader("Promedio por Combinación Día-Hora")
+        st.write("**Promedio de llamadas para cada combinación específica de día y hora:**")
+        
+        # Mostrar los primeros resultados
+        st.dataframe(promedio_por_dia_hora.head(20), use_container_width=True)
+        
+        # Resumen estadístico
+        st.write("**Resumen estadístico:**")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total combinaciones", len(promedio_por_dia_hora))
+        
+        with col2:
+            st.metric("Combinación máxima", 
+                     f"{promedio_por_dia_hora['Promedio_Llamadas'].max():.1f}")
+        
+        with col3:
+            st.metric("Combinación mínima", 
+                     f"{promedio_por_dia_hora['Promedio_Llamadas'].min():.1f}")
+        
+        with col4:
+            st.metric("Promedio combinaciones", 
+                     f"{promedio_por_dia_hora['Promedio_Llamadas'].mean():.1f}")
+        
+        # Ejemplos específicos
+        st.write("**Ejemplos de combinaciones:**")
+        
+        # Encontrar algunas combinaciones específicas
+        ejemplos = [
+            ("Lunes", 9),
+            ("Martes", 14),
+            ("Viernes", 17),
+            ("Sábado", 11),
+            ("Domingo", 16)
+        ]
+        
+        for dia, hora in ejemplos:
+            resultado = promedio_por_dia_hora[
+                (promedio_por_dia_hora['Dia_Semana'] == dia) & 
+                (promedio_por_dia_hora['Hora_Numerica'] == hora)
+            ]
+            if not resultado.empty:
+                valor = resultado.iloc[0]['Promedio_Llamadas']
+                st.write(f"- **{dia} a las {hora}:00**: {valor:.1f} llamadas en promedio")
+    
+    with tab4:
         st.subheader("Tabla de Calor - Promedios por Día y Hora")
         
         # Crear matriz para la tabla de calor
         matriz_promedios = promedio_por_dia_hora.pivot_table(
             index='Dia_Semana',
-            columns='Hora_Redondeada',
+            columns='Hora_Numerica',
             values='Promedio_Llamadas',
             fill_value=0
         )
@@ -289,18 +355,20 @@ def crear_visualizaciones(promedio_por_dia, promedio_por_dia_hora, df_procesado)
             if val == 0:
                 color = '#f0f0f0'  # Gris claro para 0
             elif val < 1:
-                color = '#ffebee'  # Rojo muy claro
+                color = '#e8f5e9'  # Verde muy claro
+            elif val < 3:
+                color = '#c8e6c9'  # Verde claro
             elif val < 5:
-                color = '#ffcdd2'  # Rojo claro
+                color = '#a5d6a7'  # Verde
             elif val < 10:
-                color = '#ef9a9a'  # Rojo
+                color = '#81c784'  # Verde medio
             elif val < 20:
-                color = '#e57373'  # Rojo medio
+                color = '#4caf50'  # Verde oscuro
             elif val < 50:
-                color = '#ef5350'  # Rojo oscuro
+                color = '#388e3c'  # Verde muy oscuro
             else:
-                color = '#d32f2f'  # Rojo muy oscuro
-            return f'background-color: {color}'
+                color = '#1b5e20'  # Verde intenso
+            return f'background-color: {color}; color: black;'
         
         # Mostrar tabla con colores
         st.write("**Mapa de calor (colores indican volumen):**")
@@ -309,115 +377,118 @@ def crear_visualizaciones(promedio_por_dia, promedio_por_dia_hora, df_procesado)
         
         # Leyenda
         st.write("**Leyenda de colores:**")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.markdown('<div style="background-color: #ffebee; padding: 5px; border-radius: 3px;">&lt; 1 llamada</div>', unsafe_allow_html=True)
-        with col2:
-            st.markdown('<div style="background-color: #ef9a9a; padding: 5px; border-radius: 3px;">1-5 llamadas</div>', unsafe_allow_html=True)
-        with col3:
-            st.markdown('<div style="background-color: #e57373; padding: 5px; border-radius: 3px;">5-10 llamadas</div>', unsafe_allow_html=True)
-        with col4:
-            st.markdown('<div style="background-color: #d32f2f; padding: 5px; border-radius: 3px;">&gt; 20 llamadas</div>', unsafe_allow_html=True)
+        cols = st.columns(6)
+        leyenda = [
+            ("0", '#f0f0f0'),
+            ("< 1", '#e8f5e9'),
+            ("1-3", '#c8e6c9'),
+            ("3-5", '#a5d6a7'),
+            ("5-10", '#81c784'),
+            ("10-20", '#4caf50'),
+            ("> 20", '#388e3c'),
+            ("> 50", '#1b5e20')
+        ]
+        
+        for i, (texto, color) in enumerate(leyenda):
+            with cols[i % 6]:
+                st.markdown(f'<div style="background-color: {color}; padding: 5px; border-radius: 3px; text-align: center;">{texto}</div>', 
+                           unsafe_allow_html=True)
 
 # Función para mostrar resumen ejecutivo
-def mostrar_resumen_ejecutivo(df_procesado, promedio_por_dia, promedio_por_dia_hora):
+def mostrar_resumen_ejecutivo(df_procesado, promedio_por_dia, promedio_por_hora, promedio_por_dia_hora):
     """
     Muestra un resumen ejecutivo del análisis
     """
-    st.subheader("📋 Resumen Ejecutivo")
+    st.subheader("📋 Resumen Ejecutivo del Análisis")
     
+    # Estadísticas generales
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         # Día con más llamadas en promedio
         dia_max = promedio_por_dia.loc[promedio_por_dia['Promedio_Llamadas_Dia'].idxmax()]
         st.metric(
-            label="Día con más llamadas",
+            label="Día más ocupado",
             value=dia_max['Dia_Semana'],
             delta=f"{dia_max['Promedio_Llamadas_Dia']:.1f} llamadas/día"
         )
     
     with col2:
-        # Hora pico promedio
-        hora_max_row = promedio_por_dia_hora.loc[promedio_por_dia_hora['Promedio_Llamadas'].idxmax()]
+        # Hora con más llamadas en promedio
+        hora_max = promedio_por_hora.loc[promedio_por_hora['Promedio_Llamadas_Hora'].idxmax()]
         st.metric(
-            label="Hora pico promedio",
-            value=f"{int(hora_max_row['Hora_Redondeada'])}:00",
-            delta=f"{hora_max_row['Promedio_Llamadas']:.1f} llamadas"
+            label="Hora más ocupada",
+            value=f"{int(hora_max['Hora_Numerica'])}:00",
+            delta=f"{hora_max['Promedio_Llamadas_Hora']:.1f} llamadas/hora"
         )
     
     with col3:
-        # Promedio total de llamadas por día
-        promedio_total = promedio_por_dia['Promedio_Llamadas_Dia'].mean()
+        # Combinación día-hora con más llamadas
+        comb_max = promedio_por_dia_hora.loc[promedio_por_dia_hora['Promedio_Llamadas'].idxmax()]
         st.metric(
-            label="Promedio total/día",
-            value=f"{promedio_total:.1f}",
-            delta="llamadas"
+            label="Combinación más ocupada",
+            value=f"{comb_max['Dia_Semana']} {comb_max['Hora_Numerica']}:00",
+            delta=f"{comb_max['Promedio_Llamadas']:.1f} llamadas"
         )
     
     with col4:
-        # Rango horario con más actividad
-        # Agrupar por horas (mañana, tarde, noche)
-        def clasificar_hora(hora):
-            if 6 <= hora < 12:
-                return "Mañana (6-11)"
-            elif 12 <= hora < 18:
-                return "Tarde (12-17)"
-            elif 18 <= hora < 24:
-                return "Noche (18-23)"
-            else:
-                return "Madrugada (0-5)"
-        
-        df_temp = promedio_por_dia_hora.copy()
-        df_temp['Periodo'] = df_temp['Hora_Redondeada'].apply(clasificar_hora)
-        periodo_actividad = df_temp.groupby('Periodo')['Promedio_Llamadas'].sum().idxmax()
-        
+        # Promedio total de llamadas por día
+        promedio_total_dia = promedio_por_dia['Promedio_Llamadas_Dia'].mean()
         st.metric(
-            label="Periodo más activo",
-            value=periodo_actividad,
-            delta="Mayor volumen"
+            label="Promedio general/día",
+            value=f"{promedio_total_dia:.1f}",
+            delta="llamadas"
         )
     
     # Insights adicionales
     st.write("**📈 Insights clave:**")
     
-    # Calcular variabilidad entre días
-    variabilidad = promedio_por_dia['Promedio_Llamadas_Dia'].std() / promedio_por_dia['Promedio_Llamadas_Dia'].mean() * 100
-    
-    col_insight1, col_insight2 = st.columns(2)
+    col_insight1, col_insight2, col_insight3 = st.columns(3)
     
     with col_insight1:
-        st.info(f"**Variabilidad entre días:** {variabilidad:.1f}%")
-        st.caption("Mide cuánto varía el volumen de llamadas entre diferentes días de la semana")
+        # Variabilidad entre días
+        variabilidad_dias = (promedio_por_dia['Promedio_Llamadas_Dia'].std() / 
+                           promedio_por_dia['Promedio_Llamadas_Dia'].mean() * 100)
+        st.info(f"**Variabilidad entre días:** {variabilidad_dias:.1f}%")
+        st.caption("Mide cuánto varía el volumen entre diferentes días")
     
     with col_insight2:
-        # Distribución por período del día
-        horas_pico = promedio_por_dia_hora[promedio_por_dia_hora['Promedio_Llamadas'] > promedio_por_dia_hora['Promedio_Llamadas'].mean()]
-        st.info(f"**Horas pico:** {len(horas_pico)} horas con arriba del promedio")
-        st.caption("Horas donde el volumen de llamadas supera el promedio general")
-        
-    # Distribución de proporciones
+        # Variabilidad entre horas
+        variabilidad_horas = (promedio_por_hora['Promedio_Llamadas_Hora'].std() / 
+                            promedio_por_hora['Promedio_Llamadas_Hora'].mean() * 100)
+        st.info(f"**Variabilidad entre horas:** {variabilidad_horas:.1f}%")
+        st.caption("Mide cuánto varía el volumen a lo largo del día")
+    
+    with col_insight3:
+        # Horas pico
+        horas_pico = promedio_por_dia_hora[promedio_por_dia_hora['Promedio_Llamadas'] > 
+                                         promedio_por_dia_hora['Promedio_Llamadas'].mean()]
+        st.info(f"**Combinaciones pico:** {len(horas_pico)} de {len(promedio_por_dia_hora)}")
+        st.caption("Combinaciones día-hora con arriba del promedio")
+    
+    # Distribución de proporciones (si existe)
     if 'Proporcion_Equivalencia' in df_procesado.columns:
         st.write("**📊 Distribución de Proporciones de Equivalencia:**")
-        col_dist1, col_dist2, col_dist3 = st.columns(3)
         
-        with col_dist1:
-            st.metric(
-                "Proporción mínima",
-                f"{df_procesado['Proporcion_Equivalencia'].min():.4f}"
-            )
+        # Calcular estadísticas de proporciones
+        proporciones = df_procesado['Proporcion_Equivalencia']
+        col_prop1, col_prop2, col_prop3, col_prop4 = st.columns(4)
         
-        with col_dist2:
-            st.metric(
-                "Proporción máxima",
-                f"{df_procesado['Proporcion_Equivalencia'].max():.4f}"
-            )
+        with col_prop1:
+            st.metric("Proporción mínima", f"{proporciones.min():.4f}")
         
-        with col_dist3:
-            st.metric(
-                "Proporción promedio",
-                f"{df_procesado['Proporcion_Equivalencia'].mean():.4f}"
-            )
+        with col_prop2:
+            st.metric("Proporción máxima", f"{proporciones.max():.4f}")
+        
+        with col_prop3:
+            st.metric("Proporción promedio", f"{proporciones.mean():.4f}")
+        
+        with col_prop4:
+            # Contar proporciones significativas (> 0.1)
+            proporciones_significativas = len(proporciones[proporciones > 0.1])
+            total_proporciones = len(proporciones)
+            porcentaje = (proporciones_significativas / total_proporciones * 100) if total_proporciones > 0 else 0
+            st.metric("Proporciones > 0.1", f"{porcentaje:.1f}%")
 
 # Función principal
 def main():
@@ -449,10 +520,13 @@ def main():
                         df_procesado = procesar_datos(df)
                         
                         if df_procesado is not None:
-                            # Calcular promedios
-                            promedio_por_dia, promedio_por_dia_hora = calcular_promedios_llamadas(df_procesado)
+                            # Calcular promedios CORREGIDOS
+                            promedio_por_dia, promedio_por_hora, promedio_por_dia_hora = calcular_promedios_llamadas(df_procesado)
                             
-                            if promedio_por_dia is not None and promedio_por_dia_hora is not None:
+                            if (promedio_por_dia is not None and 
+                                promedio_por_hora is not None and 
+                                promedio_por_dia_hora is not None):
+                                
                                 # Calcular proporción de equivalencia
                                 df_con_proporcion = calcular_proporcion_equivalencia(df_procesado, promedio_por_dia_hora)
                                 
@@ -460,37 +534,64 @@ def main():
                                 st.session_state['df_procesado'] = df_procesado
                                 st.session_state['df_con_proporcion'] = df_con_proporcion
                                 st.session_state['promedio_por_dia'] = promedio_por_dia
+                                st.session_state['promedio_por_hora'] = promedio_por_hora
                                 st.session_state['promedio_por_dia_hora'] = promedio_por_dia_hora
                                 
                                 st.success("✅ Procesamiento completado!")
                                 
                                 # Mostrar resumen rápido
                                 st.write("**Resumen de promedios calculados:**")
+                                
                                 col_res1, col_res2 = st.columns(2)
                                 
                                 with col_res1:
-                                    st.write("📅 **Por día de semana:**")
+                                    st.write("📅 **Promedios por día:**")
                                     st.dataframe(promedio_por_dia, use_container_width=True)
                                 
                                 with col_res2:
-                                    st.write("🕐 **Por día y hora (ejemplo):**")
-                                    st.dataframe(promedio_por_dia_hora.head(10), use_container_width=True)
+                                    st.write("🕐 **Promedios por hora (ejemplo):**")
+                                    st.dataframe(promedio_por_hora.head(10), use_container_width=True)
+                                
+                                st.write("📊 **Promedios por combinación día-hora (ejemplo):**")
+                                st.dataframe(promedio_por_dia_hora.head(10), use_container_width=True)
+                                
+                                # Explicar la metodología
+                                with st.expander("📝 Explicación de la metodología"):
+                                    st.markdown("""
+                                    **Metodología de cálculo de promedios:**
+                                    
+                                    1. **Promedio por día**: Se calcula el promedio de llamadas para cada día de la semana, 
+                                       considerando todos los horarios de ese día.
+                                    
+                                    2. **Promedio por hora**: Se calcula el promedio de llamadas para cada hora del día, 
+                                       considerando todos los días de la semana.
+                                    
+                                    3. **Promedio por combinación día-hora**: Se calcula el promedio específico para cada 
+                                       combinación de día y hora (ej: Lunes 9:00, Martes 14:00, etc.).
+                                    
+                                    4. **Proporción de equivalencia**: Para cada llamada, se toma el promedio correspondiente 
+                                       a su combinación día-hora y se calcula: 1 / promedio.
+                                    
+                                    **Ejemplo**: Si los Lunes a las 9:00 hay en promedio 10 llamadas, cada llamada el Lunes 
+                                    a las 9:00 tendrá una proporción de 1/10 = 0.10.
+                                    """)
                             else:
                                 st.error("No se pudieron calcular los promedios")
             
             with tab3:
                 st.subheader("Resultados y Visualizaciones")
                 
-                if all(key in st.session_state for key in ['df_con_proporcion', 'promedio_por_dia', 'promedio_por_dia_hora']):
+                if all(key in st.session_state for key in ['df_con_proporcion', 'promedio_por_dia', 'promedio_por_hora', 'promedio_por_dia_hora']):
                     df_con_proporcion = st.session_state['df_con_proporcion']
                     promedio_por_dia = st.session_state['promedio_por_dia']
+                    promedio_por_hora = st.session_state['promedio_por_hora']
                     promedio_por_dia_hora = st.session_state['promedio_por_dia_hora']
                     
                     # Mostrar resumen ejecutivo
-                    mostrar_resumen_ejecutivo(df_con_proporcion, promedio_por_dia, promedio_por_dia_hora)
+                    mostrar_resumen_ejecutivo(df_con_proporcion, promedio_por_dia, promedio_por_hora, promedio_por_dia_hora)
                     
                     # Mostrar visualizaciones
-                    crear_visualizaciones(promedio_por_dia, promedio_por_dia_hora, df_con_proporcion)
+                    crear_visualizaciones(promedio_por_dia, promedio_por_hora, promedio_por_dia_hora, df_con_proporcion)
                     
                     # Mostrar datos procesados con proporción
                     st.subheader("📋 Datos Procesados con Proporción de Equivalencia")
@@ -506,21 +607,6 @@ def main():
                     st.write(f"**Muestra de datos ({len(df_con_proporcion)} registros totales):**")
                     st.dataframe(df_con_proporcion[columnas_a_mostrar].head(50), use_container_width=True)
                     
-                    # Explicación de la proporción
-                    with st.expander("📝 ¿Cómo se calcula la proporción de equivalencia?"):
-                        st.markdown("""
-                        **Fórmula:** Proporción de Equivalencia = 1 / Promedio de Llamadas para ese Día y Hora
-                        
-                        **Interpretación:**
-                        - **Valor alto (ej: 0.5):** Pocas llamadas en ese horario, cada llamada tiene mayor peso relativo
-                        - **Valor bajo (ej: 0.01):** Muchas llamadas en ese horario, cada llamada tiene menor peso relativo
-                        
-                        **Ejemplo práctico:**
-                        - Si los lunes a las 9:00 hay en promedio 10 llamadas: Proporción = 1/10 = 0.10
-                        - Si los sábados a las 9:00 hay en promedio 2 llamadas: Proporción = 1/2 = 0.50
-                        
-                        Esto significa que una llamada el sábado a las 9:00 tiene 5 veces más peso relativo que una llamada el lunes a la misma hora.
-                        """)
                 else:
                     st.info("Primero procesa los datos en la pestaña 'Procesar y Analizar'")
             
@@ -530,6 +616,7 @@ def main():
                 if 'df_con_proporcion' in st.session_state:
                     df_con_proporcion = st.session_state['df_con_proporcion']
                     promedio_por_dia = st.session_state.get('promedio_por_dia', pd.DataFrame())
+                    promedio_por_hora = st.session_state.get('promedio_por_hora', pd.DataFrame())
                     promedio_por_dia_hora = st.session_state.get('promedio_por_dia_hora', pd.DataFrame())
                     
                     # Opciones de exportación
@@ -537,7 +624,13 @@ def main():
                     
                     export_option = st.radio(
                         "Tipo de datos a exportar:",
-                        ["Datos completos procesados", "Promedios por día", "Promedios por día y hora", "Todos los datasets"]
+                        [
+                            "Datos completos procesados", 
+                            "Promedios por día", 
+                            "Promedios por hora",
+                            "Promedios por día y hora", 
+                            "Todos los datasets"
+                        ]
                     )
                     
                     col1, col2 = st.columns(2)
@@ -550,6 +643,9 @@ def main():
                         elif export_option == "Promedios por día":
                             data_to_export = promedio_por_dia
                             filename = "promedios_por_dia.csv"
+                        elif export_option == "Promedios por hora":
+                            data_to_export = promedio_por_hora
+                            filename = "promedios_por_hora.csv"
                         elif export_option == "Promedios por día y hora":
                             data_to_export = promedio_por_dia_hora
                             filename = "promedios_por_dia_hora.csv"
@@ -559,6 +655,7 @@ def main():
                             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                                 df_con_proporcion.to_excel(writer, sheet_name='Datos_Procesados', index=False)
                                 promedio_por_dia.to_excel(writer, sheet_name='Promedios_Dia', index=False)
+                                promedio_por_hora.to_excel(writer, sheet_name='Promedios_Hora', index=False)
                                 promedio_por_dia_hora.to_excel(writer, sheet_name='Promedios_Dia_Hora', index=False)
                             
                             buffer.seek(0)
@@ -602,19 +699,25 @@ def main():
         # Mostrar ejemplo de estructura esperada
         with st.expander("Ver estructura esperada del CSV"):
             st.write("""
-            ## Nuevo Enfoque de Análisis
+            ## Metodología de Análisis Corregida
             
-            Esta aplicación ahora calcula:
+            Esta aplicación calcula tres tipos de promedios:
             
-            1. **Promedio de llamadas por día de semana**: Cuántas llamadas en promedio entran cada Lunes, Martes, etc.
-            2. **Promedio de llamadas por día y hora**: Patrones detallados por hora para cada día
-            3. **Proporción de equivalencia**: 1 dividido entre el promedio correspondiente
+            1. **Promedio general por día de semana**: 
+               - Calcula cuántas llamadas en promedio entran cada Lunes, Martes, etc.
+               - Considera todos los horarios del día
             
-            **Ejemplo:**
-            - Si los Lunes a las 9:00 AM hay en promedio 10 llamadas
-            - La proporción de equivalencia para una llamada el Lunes a las 9:00 AM sería: 1/10 = 0.10
+            2. **Promedio general por hora**: 
+               - Calcula cuántas llamadas en promedio entran cada hora del día
+               - Considera todos los días de la semana
             
-            Esto permite comparar el "peso relativo" de cada llamada según cuán ocupado es ese horario.
+            3. **Promedio por combinación día-hora**: 
+               - Calcula el promedio específico para cada combinación (ej: Lunes 9:00)
+               - Usa este promedio para calcular la proporción de equivalencia
+            
+            **Proporción de equivalencia = 1 / Promedio para esa combinación día-hora**
+            
+            Esto permite asignar un "peso relativo" a cada llamada según cuán ocupado es ese horario específico.
             """)
 
 if __name__ == "__main__":
