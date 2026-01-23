@@ -198,8 +198,8 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
     
     try:
         # Verificar columnas necesarias
-        columnas_requeridas = ['Call Time', 'From', 'To']  # AQUÍ ESTÁ BIEN DEFINIDA
-        for col in columnas_requeridas:  # AQUÍ DEBE SER PLURAL "columnas_requeridas"
+        columnas_requeridas = ['Call Time', 'From', 'To']
+        for col in columnas_requeridas:
             if col not in df_procesado.columns:
                 st.error(f"El archivo no contiene la columna '{col}' necesaria para el procesamiento.")
                 return None
@@ -369,10 +369,10 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
 # Función para crear gráfico de proporciones por hora y día
 def crear_grafico_proporciones_dia_hora(df_procesado):
     """
-    Crea un gráfico de líneas que muestra la suma de Proporción de Equivalencia
-    y validador_recurso_hora por hora para un día específico
+    Crea un gráfico de líneas que muestra la frecuencia de Proporción de Equivalencia
+    y la suma de validador_recurso_hora por hora para un día específico
     """
-    st.write("### 📈 Comparación Proporción Demanda vs Recursos por Hora y Día")
+    st.write("### 📈 Frecuencia de Proporción Demanda vs Recursos por Hora y Día")
     
     # Obtener lista de días disponibles
     dias_disponibles = df_procesado['Dia_Semana'].unique()
@@ -388,18 +388,28 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
     df_dia = df_procesado[df_procesado['Dia_Semana'] == dia_seleccionado].copy()
     
     if len(df_dia) > 0:
-        # Agrupar por hora para el día seleccionado
-        datos_grafico = df_dia.groupby('Hora_Numerica').agg({
-            'Proporcion_Equivalencia': 'sum',
-            'validador_recurso_hora': 'sum'
-        }).reset_index()
+        # Para la Proporción de Equivalencia: calcular frecuencia (conteo) por hora
+        # Para validador_recurso_hora: calcular suma por hora
         
-        # Renombrar columnas para mejor visualización
-        datos_grafico = datos_grafico.rename(columns={
+        # Calcular frecuencia de Proporcion_Equivalencia por hora
+        frecuencia_proporcion = df_dia.groupby('Hora_Numerica')['Proporcion_Equivalencia'].count().reset_index()
+        frecuencia_proporcion = frecuencia_proporcion.rename(columns={
             'Hora_Numerica': 'Hora',
-            'Proporcion_Equivalencia': 'Suma Proporción Demanda',
+            'Proporcion_Equivalencia': 'Frecuencia Proporción Demanda'
+        })
+        
+        # Calcular suma de validador_recurso_hora por hora
+        suma_recursos = df_dia.groupby('Hora_Numerica')['validador_recurso_hora'].sum().reset_index()
+        suma_recursos = suma_recursos.rename(columns={
+            'Hora_Numerica': 'Hora',
             'validador_recurso_hora': 'Suma Recursos Disponibles'
         })
+        
+        # Combinar ambos DataFrames
+        datos_grafico = pd.merge(frecuencia_proporcion, suma_recursos, on='Hora', how='outer')
+        
+        # Rellenar valores NaN con 0
+        datos_grafico = datos_grafico.fillna(0)
         
         # Ordenar por hora
         datos_grafico = datos_grafico.sort_values('Hora')
@@ -423,15 +433,26 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         col_comp1, col_comp2 = st.columns(2)
         
         with col_comp1:
-            # Ratio promedio
+            # Ratio promedio frecuencia/recursos
             if datos_grafico['Suma Recursos Disponibles'].sum() > 0:
-                ratio_promedio = datos_grafico['Suma Proporción Demanda'].sum() / datos_grafico['Suma Recursos Disponibles'].sum()
-                st.metric("Ratio Demanda/Recursos", f"{ratio_promedio:.6f}")
+                ratio_promedio = datos_grafico['Frecuencia Proporción Demanda'].sum() / datos_grafico['Suma Recursos Disponibles'].sum()
+                st.metric("Ratio Frecuencia/Recursos", f"{ratio_promedio:.6f}")
         
         with col_comp2:
             # Diferencia total
-            diferencia_total = datos_grafico['Suma Proporción Demanda'].sum() - datos_grafico['Suma Recursos Disponibles'].sum()
-            st.metric("Diferencia total", f"{diferencia_total:.6f}")
+            # Normalizar las escalas para comparar
+            if datos_grafico['Frecuencia Proporción Demanda'].max() > 0:
+                frecuencia_normalizada = datos_grafico['Frecuencia Proporción Demanda'] / datos_grafico['Frecuencia Proporción Demanda'].max()
+            else:
+                frecuencia_normalizada = 0
+            
+            if datos_grafico['Suma Recursos Disponibles'].max() > 0:
+                recursos_normalizados = datos_grafico['Suma Recursos Disponibles'] / datos_grafico['Suma Recursos Disponibles'].max()
+            else:
+                recursos_normalizados = 0
+            
+            diferencia_promedio = (frecuencia_normalizada - recursos_normalizados).mean()
+            st.metric("Diferencia normalizada", f"{diferencia_promedio:.6f}")
     else:
         st.warning(f"No hay datos disponibles para {dia_seleccionado}")
 
