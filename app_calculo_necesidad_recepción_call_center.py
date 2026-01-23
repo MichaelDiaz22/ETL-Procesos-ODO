@@ -121,9 +121,6 @@ def ingresar_recursos_por_hora():
     """
     Muestra un formulario para ingresar la cantidad de recursos disponibles por hora
     """
-    st.subheader("👥 Configuración de Recursos por Hora")
-    st.info("Ingresa la cantidad de personas disponibles para cada hora (6:00 AM - 7:00 PM)")
-    
     recursos = {}
     
     # Crear 3 columnas para organizar las horas
@@ -202,7 +199,7 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
     try:
         # Verificar columnas necesarias
         columnas_requeridas = ['Call Time', 'From', 'To']
-        for col in columnas_requeridas:
+        for col in columnas_requerida:
             if col not in df_procesado.columns:
                 st.error(f"El archivo no contiene la columna '{col}' necesaria para el procesamiento.")
                 return None
@@ -369,6 +366,75 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
     
     return df_procesado
 
+# Función para crear gráfico de proporciones por hora y día
+def crear_grafico_proporciones_dia_hora(df_procesado):
+    """
+    Crea un gráfico de líneas que muestra la suma de Proporción de Equivalencia
+    y validador_recurso_hora por hora para un día específico
+    """
+    st.write("### 📈 Comparación Proporción Demanda vs Recursos por Hora y Día")
+    
+    # Obtener lista de días disponibles
+    dias_disponibles = df_procesado['Dia_Semana'].unique()
+    
+    # Selector de día
+    dia_seleccionado = st.selectbox(
+        "Selecciona el día de la semana:",
+        options=sorted(dias_disponibles),
+        key="selector_dia_grafico"
+    )
+    
+    # Filtrar datos por día seleccionado
+    df_dia = df_procesado[df_procesado['Dia_Semana'] == dia_seleccionado].copy()
+    
+    if len(df_dia) > 0:
+        # Agrupar por hora para el día seleccionado
+        datos_grafico = df_dia.groupby('Hora_Numerica').agg({
+            'Proporcion_Equivalencia': 'sum',
+            'validador_recurso_hora': 'sum'
+        }).reset_index()
+        
+        # Renombrar columnas para mejor visualización
+        datos_grafico = datos_grafico.rename(columns={
+            'Hora_Numerica': 'Hora',
+            'Proporcion_Equivalencia': 'Suma Proporción Demanda',
+            'validador_recurso_hora': 'Suma Recursos Disponibles'
+        })
+        
+        # Ordenar por hora
+        datos_grafico = datos_grafico.sort_values('Hora')
+        
+        # Crear gráfico de líneas
+        st.write(f"**Distribución para {dia_seleccionado}:**")
+        
+        # Configurar el gráfico
+        chart_data = datos_grafico.set_index('Hora')
+        
+        # Mostrar gráfico
+        st.line_chart(chart_data)
+        
+        # Mostrar tabla de datos
+        st.write("**Datos detallados:**")
+        st.dataframe(datos_grafico.round(6), use_container_width=True)
+        
+        # Calcular métricas de comparación
+        st.write("**Métricas de comparación:**")
+        
+        col_comp1, col_comp2 = st.columns(2)
+        
+        with col_comp1:
+            # Ratio promedio
+            if datos_grafico['Suma Recursos Disponibles'].sum() > 0:
+                ratio_promedio = datos_grafico['Suma Proporción Demanda'].sum() / datos_grafico['Suma Recursos Disponibles'].sum()
+                st.metric("Ratio Demanda/Recursos", f"{ratio_promedio:.6f}")
+        
+        with col_comp2:
+            # Diferencia total
+            diferencia_total = datos_grafico['Suma Proporción Demanda'].sum() - datos_grafico['Suma Recursos Disponibles'].sum()
+            st.metric("Diferencia total", f"{diferencia_total:.6f}")
+    else:
+        st.warning(f"No hay datos disponibles para {dia_seleccionado}")
+
 # Función principal
 def main():
     # Inicializar session state para recursos
@@ -384,32 +450,40 @@ def main():
             tab1, tab2 = st.tabs(["📋 Datos y Configuración", "📊 Resultados y Exportación"])
             
             with tab1:
-                col_config1, col_config2 = st.columns([2, 1])
+                st.subheader("Datos Originales")
+                st.write(f"**Forma del dataset:** {df.shape[0]} filas × {df.shape[1]} columnas")
                 
-                with col_config1:
-                    st.subheader("Datos Originales")
-                    st.write(f"**Forma del dataset:** {df.shape[0]} filas × {df.shape[1]} columnas")
-                    
-                    # Mostrar vista previa de datos
-                    st.write("**Vista previa de datos (primeras 10 filas):**")
-                    st.dataframe(df.head(10), use_container_width=True)
+                # Mostrar vista previa de datos
+                st.write("**Vista previa de datos (primeras 10 filas):**")
+                st.dataframe(df.head(10), use_container_width=True)
                 
-                with col_config2:
+                # Divider
+                st.divider()
+                
+                # Configuración de recursos por hora en dos columnas
+                st.subheader("👥 Configuración de Recursos por Hora")
+                st.info("Ingresa la cantidad de personas disponibles para cada hora (6:00 AM - 7:00 PM)")
+                
+                col_recursos1, col_recursos2 = st.columns([3, 2])
+                
+                with col_recursos1:
                     # Ingresar recursos por hora
                     recursos = ingresar_recursos_por_hora()
                     
                     # Guardar recursos en session state
                     st.session_state.recursos_por_hora = recursos
                     
+                    # Calcular máximo de recursos
+                    if recursos:
+                        max_recursos = max(recursos.values())
+                        st.metric("Máximo de recursos por hora", max_recursos)
+                
+                with col_recursos2:
                     # Mostrar gráfico de recursos por hora
                     if recursos:
                         st.write("**📈 Distribución de recursos por hora:**")
                         recursos_df = pd.DataFrame(list(recursos.items()), columns=['Hora', 'Recursos'])
                         st.line_chart(recursos_df.set_index('Hora')['Recursos'])
-                        
-                        # Calcular total de recursos
-                        total_recursos = sum(recursos.values())
-                        st.metric("Total recursos asignados", total_recursos)
                 
                 # Botón para procesar datos
                 st.divider()
@@ -417,7 +491,7 @@ def main():
                 
                 # Verificar que se hayan ingresado recursos
                 if not st.session_state.recursos_por_hora:
-                    st.warning("⚠️ Primero ingresa los recursos por hora en el panel derecho")
+                    st.warning("⚠️ Primero ingresa los recursos por hora")
                 else:
                     if st.button("🔧 Aplicar Filtro y Calcular Métricas", type="primary", use_container_width=True):
                         with st.spinner("Procesando datos..."):
@@ -434,21 +508,6 @@ def main():
                                 if df_procesado is not None:
                                     # Guardar en session state
                                     st.session_state['df_procesado'] = df_procesado
-                                    
-                                    # Mostrar vista previa de datos procesados
-                                    st.write("### 📋 Vista previa de datos procesados:")
-                                    
-                                    # Seleccionar columnas importantes para mostrar
-                                    columnas_a_mostrar = [
-                                        'Call Time', 'From', 'To', 'Fecha_Creacion', 
-                                        'Dia_Semana', 'Hora_Registro', 'rol_inbound',
-                                        'validador_recurso_hora', 'validador_necesidad_personas_hora'
-                                    ]
-                                    
-                                    # Filtrar solo las columnas que existen
-                                    columnas_existentes = [col for col in columnas_a_mostrar if col in df_procesado.columns]
-                                    
-                                    st.dataframe(df_procesado[columnas_existentes].head(10), use_container_width=True)
                                 else:
                                     st.error("Error al procesar los datos filtrados.")
                             else:
@@ -463,7 +522,7 @@ def main():
                     # Mostrar estadísticas generales
                     st.write("### 📈 Estadísticas Generales")
                     
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3 = st.columns(3)
                     
                     with col1:
                         st.metric("Total registros", len(df_procesado))
@@ -476,56 +535,55 @@ def main():
                             st.metric("Rango de fechas", f"{fecha_min} a {fecha_max}")
                     
                     with col3:
-                        # Suma total de validadores de recursos
-                        suma_validador_recurso = df_procesado['validador_recurso_hora'].sum()
-                        st.metric("Suma validador recursos", f"{suma_validador_recurso:.6f}")
+                        # Máximo de recursos
+                        if st.session_state.recursos_por_hora:
+                            max_recursos = max(st.session_state.recursos_por_hora.values())
+                            st.metric("Máximo recursos/hora", max_recursos)
                     
-                    with col4:
-                        # Suma total de necesidades
-                        suma_necesidad = df_procesado['validador_necesidad_personas_hora'].sum()
-                        st.metric("Suma necesidades", f"{suma_necesidad:.6f}")
+                    # Gráfico de proporciones por hora y día
+                    crear_grafico_proporciones_dia_hora(df_procesado)
                     
                     # Análisis por hora
                     st.write("### 🕐 Análisis por Hora")
                     
                     if 'Hora_Numerica' in df_procesado.columns:
                         analisis_hora = df_procesado.groupby('Hora_Numerica').agg({
-                            'validador_demanda_personas_hora': ['count', 'mean'],
+                            'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
                             'validador_recurso_hora': ['mean', 'sum'],
-                            'validador_necesidad_personas_hora': ['mean', 'sum']
                         }).round(6)
                         
                         analisis_hora.columns = [
-                            'Cantidad', 'Promedio Demanda',
-                            'Promedio Recursos', 'Suma Recursos',
-                            'Promedio Necesidad', 'Suma Necesidad'
+                            'Cantidad Llamadas', 'Suma Proporción Demanda', 'Promedio Proporción',
+                            'Promedio Recursos/Hora', 'Suma Recursos/Hora'
                         ]
                         
                         # Filtrar solo horas con registros
-                        analisis_hora = analisis_hora[analisis_hora['Cantidad'] > 0]
+                        analisis_hora = analisis_hora[analisis_hora['Cantidad Llamadas'] > 0]
                         
                         # Ordenar por hora
                         analisis_hora = analisis_hora.sort_index()
                         
                         st.dataframe(analisis_hora, use_container_width=True)
                     
-                    # Análisis por rol
-                    st.write("### 👥 Análisis por Rol")
+                    # Análisis por día
+                    st.write("### 📅 Análisis por Día de la Semana")
                     
-                    if 'rol_inbound' in df_procesado.columns:
-                        analisis_rol = df_procesado.groupby('rol_inbound').agg({
-                            'validador_demanda_personas_hora': ['count', 'mean'],
-                            'validador_recurso_hora': ['mean', 'sum'],
-                            'validador_necesidad_personas_hora': ['mean', 'sum']
+                    if 'Dia_Semana' in df_procesado.columns:
+                        analisis_dia = df_procesado.groupby('Dia_Semana').agg({
+                            'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
+                            'validador_recurso_hora': ['sum', 'mean'],
                         }).round(6)
                         
-                        analisis_rol.columns = [
-                            'Cantidad', 'Promedio Demanda',
-                            'Promedio Recursos', 'Suma Recursos',
-                            'Promedio Necesidad', 'Suma Necesidad'
+                        analisis_dia.columns = [
+                            'Cantidad Llamadas', 'Suma Proporción Demanda', 'Promedio Proporción',
+                            'Suma Recursos/Hora', 'Promedio Recursos/Hora'
                         ]
                         
-                        st.dataframe(analisis_rol, use_container_width=True)
+                        # Ordenar por días de la semana
+                        orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+                        analisis_dia = analisis_dia.reindex(orden_dias)
+                        
+                        st.dataframe(analisis_dia, use_container_width=True)
                     
                     # Exportación de datos
                     st.write("### 💾 Exportar Datos Procesados")
@@ -553,29 +611,34 @@ def main():
                             # Hoja 2: Análisis por hora
                             if 'Hora_Numerica' in df_procesado.columns:
                                 analisis_hora_export = df_procesado.groupby('Hora_Numerica').agg({
-                                    'validador_demanda_personas_hora': ['count', 'mean', 'sum'],
+                                    'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
                                     'validador_recurso_hora': ['mean', 'sum'],
-                                    'validador_necesidad_personas_hora': ['mean', 'sum']
                                 }).round(6)
                                 analisis_hora_export.to_excel(writer, sheet_name='Analisis_Por_Hora')
                             
-                            # Hoja 3: Estadísticas generales
+                            # Hoja 3: Análisis por día
+                            if 'Dia_Semana' in df_procesado.columns:
+                                analisis_dia_export = df_procesado.groupby('Dia_Semana').agg({
+                                    'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
+                                    'validador_recurso_hora': ['sum', 'mean'],
+                                }).round(6)
+                                analisis_dia_export.to_excel(writer, sheet_name='Analisis_Por_Dia')
+                            
+                            # Hoja 4: Estadísticas generales
                             stats_df = pd.DataFrame({
                                 'Métrica': [
                                     'Total Registros',
                                     'Constante de Validación',
-                                    'Total Recursos Asignados',
-                                    'Suma validador_demanda_personas_hora',
-                                    'Suma validador_recurso_hora',
-                                    'Suma validador_necesidad_personas_hora'
+                                    'Máximo Recursos/Hora',
+                                    'Suma Proporción Demanda',
+                                    'Suma validador_recurso_hora'
                                 ],
                                 'Valor': [
                                     len(df_procesado),
                                     CONSTANTE_VALIDACION,
-                                    sum(st.session_state.recursos_por_hora.values()),
-                                    df_procesado['validador_demanda_personas_hora'].sum(),
-                                    df_procesado['validador_recurso_hora'].sum(),
-                                    df_procesado['validador_necesidad_personas_hora'].sum()
+                                    max(st.session_state.recursos_por_hora.values()) if st.session_state.recursos_por_hora else 0,
+                                    df_procesado['Proporcion_Equivalencia'].sum(),
+                                    df_procesado['validador_recurso_hora'].sum()
                                 ]
                             })
                             stats_df.to_excel(writer, sheet_name='Estadisticas_Generales', index=False)
