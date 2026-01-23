@@ -4,7 +4,6 @@ import numpy as np
 from datetime import datetime
 import calendar
 import io
-import re
 
 # Configuración de la página
 st.set_page_config(page_title="Analizador de Llamadas", page_icon="📞", layout="wide")
@@ -72,6 +71,19 @@ def traducir_dia(dia_ingles):
         'Sunday': 'Domingo'
     }
     return dias_traduccion.get(dia_ingles, dia_ingles)
+
+# Función para obtener el número del día de la semana (0=Lunes, 6=Domingo)
+def obtener_numero_dia(dia_espanol):
+    dias_numeros = {
+        'Lunes': 0,
+        'Martes': 1,
+        'Miércoles': 2,
+        'Jueves': 3,
+        'Viernes': 4,
+        'Sábado': 5,
+        'Domingo': 6
+    }
+    return dias_numeros.get(dia_espanol, 0)
 
 # Función para filtrar datos por códigos en el campo "To"
 def filtrar_por_codigos(df):
@@ -189,6 +201,11 @@ def procesar_datos(df):
             
             st.success("✅ Datos básicos procesados exitosamente")
             
+            # Mostrar información del rango de fechas
+            fecha_min = df_procesado['Call Time'].min()
+            fecha_max = df_procesado['Call Time'].max()
+            st.info(f"**Rango de fechas en el dataset:** {fecha_min.strftime('%d/%m/%Y')} al {fecha_max.strftime('%d/%m/%Y')}")
+            
         else:
             st.error("El archivo no contiene la columna 'Call Time' necesaria para el procesamiento.")
             return None
@@ -199,32 +216,75 @@ def procesar_datos(df):
     
     return df_procesado
 
+# Función para calcular la cantidad de días de cada tipo en el rango de fechas
+def calcular_dias_por_semana(fechas_unicas):
+    """
+    Calcula cuántos días de cada tipo de día de la semana hay en el rango de fechas
+    """
+    # Convertir a lista de fechas únicas
+    if isinstance(fechas_unicas, pd.Series):
+        fechas_lista = fechas_unicas.unique()
+    else:
+        fechas_lista = fechas_unicas
+    
+    # Contar días por tipo
+    dias_contador = {
+        'Lunes': 0,
+        'Martes': 0,
+        'Miércoles': 0,
+        'Jueves': 0,
+        'Viernes': 0,
+        'Sábado': 0,
+        'Domingo': 0
+    }
+    
+    for fecha in fechas_lista:
+        if pd.notna(fecha):
+            # Obtener nombre del día en español
+            dia_num = fecha.weekday()
+            dia_nombre = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'][dia_num]
+            dias_contador[dia_nombre] += 1
+    
+    return dias_contador
+
 # Función para calcular promedios corregida
 def calcular_promedios_llamadas(df):
     """
-    Calcula los promedios de llamadas de manera corregida:
-    1. Promedio general por día de semana
-    2. Promedio general por hora
-    3. Promedio por combinación día-hora
+    Calcula los promedios de llamadas CORREGIDOS:
+    1. Suma total de llamadas por día de semana
+    2. Divide entre la cantidad de días de ese tipo en el dataset
+    3. Igual para promedios por hora y por combinación día-hora
     """
     # Crear DataFrame para análisis
     df_analisis = df.copy()
     
     # Asegurarse de que tenemos las columnas necesarias
-    if not all(col in df_analisis.columns for col in ['Call Time', 'Dia_Semana', 'Hora_Numerica']):
+    if not all(col in df_analisis.columns for col in ['Call Time', 'Dia_Semana', 'Hora_Numerica', 'Fecha_Datetime']):
         st.error("No se pueden calcular promedios: faltan columnas necesarias")
         return None, None, None
     
-    # Crear columna de fecha sin hora para contar por día
-    df_analisis['Fecha'] = df_analisis['Call Time'].dt.date
+    # Obtener rango de fechas únicas
+    fechas_unicas = df_analisis['Fecha_Datetime'].unique()
     
-    # 1. CALCULAR PROMEDIO GENERAL POR DÍA DE SEMANA
-    # Contar total de llamadas por fecha y día
-    llamadas_por_fecha_dia = df_analisis.groupby(['Fecha', 'Dia_Semana']).size().reset_index(name='Total_Llamadas')
+    # Calcular cantidad de días de cada tipo en el dataset
+    dias_por_semana = calcular_dias_por_semana(fechas_unicas)
     
-    # Calcular promedio por día (promedio de los promedios diarios)
-    promedio_por_dia = llamadas_por_fecha_dia.groupby('Dia_Semana')['Total_Llamadas'].mean().reset_index()
-    promedio_por_dia = promedio_por_dia.rename(columns={'Total_Llamadas': 'Promedio_Llamadas_Dia'})
+    # Mostrar información de días disponibles
+    st.write("**Días disponibles por tipo en el dataset:**")
+    dias_info = pd.DataFrame(list(dias_por_semana.items()), columns=['Día', 'Cantidad'])
+    st.dataframe(dias_info, use_container_width=True)
+    
+    # 1. CALCULAR PROMEDIO GENERAL POR DÍA DE SEMANA (CORREGIDO)
+    # Sumar total de llamadas por día de semana
+    total_llamadas_por_dia = df_analisis.groupby('Dia_Semana').size().reset_index(name='Total_Llamadas')
+    
+    # Dividir entre la cantidad de días de ese tipo en el dataset
+    promedio_por_dia = total_llamadas_por_dia.copy()
+    promedio_por_dia['Dias_Disponibles'] = promedio_por_dia['Dia_Semana'].map(dias_por_semana)
+    promedio_por_dia['Promedio_Llamadas_Dia'] = promedio_por_dia.apply(
+        lambda x: x['Total_Llamadas'] / x['Dias_Disponibles'] if x['Dias_Disponibles'] > 0 else 0,
+        axis=1
+    )
     promedio_por_dia['Promedio_Llamadas_Dia'] = promedio_por_dia['Promedio_Llamadas_Dia'].round(2)
     
     # Ordenar por días de la semana
@@ -232,28 +292,81 @@ def calcular_promedios_llamadas(df):
     promedio_por_dia['Dia_Semana'] = pd.Categorical(promedio_por_dia['Dia_Semana'], categories=orden_dias, ordered=True)
     promedio_por_dia = promedio_por_dia.sort_values('Dia_Semana')
     
-    # 2. CALCULAR PROMEDIO GENERAL POR HORA
-    # Contar llamadas por fecha y hora
-    llamadas_por_fecha_hora = df_analisis.groupby(['Fecha', 'Hora_Numerica']).size().reset_index(name='Total_Llamadas')
+    # 2. CALCULAR PROMEDIO GENERAL POR HORA (CORREGIDO)
+    # Primero, necesitamos saber cuántos días hay para cada hora
     
-    # Calcular promedio por hora
-    promedio_por_hora = llamadas_por_fecha_hora.groupby('Hora_Numerica')['Total_Llamadas'].mean().reset_index()
-    promedio_por_hora = promedio_por_hora.rename(columns={'Total_Llamadas': 'Promedio_Llamadas_Hora'})
+    # Crear tabla de fechas y horas únicas
+    df_analisis['Fecha_Hora'] = df_analisis['Fecha_Datetime'].astype(str) + '_' + df_analisis['Hora_Numerica'].astype(str)
+    
+    # Contar días únicos por hora (cuántos días diferentes tienen registros a esa hora)
+    dias_por_hora = {}
+    for hora in range(24):
+        # Filtrar registros de esta hora
+        registros_hora = df_analisis[df_analisis['Hora_Numerica'] == hora]
+        # Contar días únicos con registros a esta hora
+        dias_unicos = len(registros_hora['Fecha_Datetime'].unique())
+        dias_por_hora[hora] = dias_unicos if dias_unicos > 0 else 1  # Evitar división por 0
+    
+    # Sumar total de llamadas por hora
+    total_llamadas_por_hora = df_analisis.groupby('Hora_Numerica').size().reset_index(name='Total_Llamadas')
+    
+    # Dividir entre la cantidad de días con registros a esa hora
+    promedio_por_hora = total_llamadas_por_hora.copy()
+    promedio_por_hora['Dias_Con_Registros'] = promedio_por_hora['Hora_Numerica'].map(dias_por_hora)
+    promedio_por_hora['Promedio_Llamadas_Hora'] = promedio_por_hora.apply(
+        lambda x: x['Total_Llamadas'] / x['Dias_Con_Registros'] if x['Dias_Con_Registros'] > 0 else 0,
+        axis=1
+    )
     promedio_por_hora['Promedio_Llamadas_Hora'] = promedio_por_hora['Promedio_Llamadas_Hora'].round(2)
     promedio_por_hora = promedio_por_hora.sort_values('Hora_Numerica')
     
-    # 3. CALCULAR PROMEDIO POR DÍA-HORA (COMBINACIÓN)
-    # Primero, contar llamadas por fecha, día y hora
-    llamadas_por_fecha_dia_hora = df_analisis.groupby(['Fecha', 'Dia_Semana', 'Hora_Numerica']).size().reset_index(name='Conteo')
+    # 3. CALCULAR PROMEDIO POR DÍA-HORA (COMBINACIÓN) - CORREGIDO
+    # Primero, necesitamos saber cuántos días de cada tipo hay para cada combinación día-hora
     
-    # Luego, calcular promedio por combinación día-hora
-    promedio_por_dia_hora = llamadas_por_fecha_dia_hora.groupby(['Dia_Semana', 'Hora_Numerica'])['Conteo'].mean().reset_index()
-    promedio_por_dia_hora = promedio_por_dia_hora.rename(columns={'Conteo': 'Promedio_Llamadas'})
+    # Crear clave única para combinación día-hora-fecha
+    df_analisis['Clave_Dia_Hora_Fecha'] = (
+        df_analisis['Dia_Semana'] + '_' + 
+        df_analisis['Hora_Numerica'].astype(str) + '_' + 
+        df_analisis['Fecha_Datetime'].astype(str)
+    )
+    
+    # Contar días únicos por combinación día-hora
+    combinaciones_info = {}
+    for _, row in df_analisis.iterrows():
+        clave = (row['Dia_Semana'], row['Hora_Numerica'])
+        fecha = row['Fecha_Datetime']
+        
+        if clave not in combinaciones_info:
+            combinaciones_info[clave] = set()
+        
+        combinaciones_info[clave].add(fecha)
+    
+    # Convertir a diccionario de conteos
+    dias_por_combinacion = {clave: len(fechas) for clave, fechas in combinaciones_info.items()}
+    
+    # Sumar total de llamadas por combinación día-hora
+    total_llamadas_por_combinacion = df_analisis.groupby(['Dia_Semana', 'Hora_Numerica']).size().reset_index(name='Total_Llamadas')
+    
+    # Dividir entre la cantidad de días de esa combinación
+    promedio_por_dia_hora = total_llamadas_por_combinacion.copy()
+    promedio_por_dia_hora['Dias_Con_Registros'] = promedio_por_dia_hora.apply(
+        lambda x: dias_por_combinacion.get((x['Dia_Semana'], x['Hora_Numerica']), 0),
+        axis=1
+    )
+    promedio_por_dia_hora['Promedio_Llamadas'] = promedio_por_dia_hora.apply(
+        lambda x: x['Total_Llamadas'] / x['Dias_Con_Registros'] if x['Dias_Con_Registros'] > 0 else 0,
+        axis=1
+    )
     promedio_por_dia_hora['Promedio_Llamadas'] = promedio_por_dia_hora['Promedio_Llamadas'].round(2)
     
     # Ordenar
     promedio_por_dia_hora['Dia_Semana'] = pd.Categorical(promedio_por_dia_hora['Dia_Semana'], categories=orden_dias, ordered=True)
     promedio_por_dia_hora = promedio_por_dia_hora.sort_values(['Dia_Semana', 'Hora_Numerica'])
+    
+    # Eliminar columnas temporales
+    promedio_por_dia = promedio_por_dia.drop(['Total_Llamadas', 'Dias_Disponibles'], axis=1)
+    promedio_por_hora = promedio_por_hora.drop(['Total_Llamadas', 'Dias_Con_Registros'], axis=1)
+    promedio_por_dia_hora = promedio_por_dia_hora.drop(['Total_Llamadas', 'Dias_Con_Registros'], axis=1)
     
     return promedio_por_dia, promedio_por_hora, promedio_por_dia_hora
 
@@ -306,7 +419,7 @@ def crear_visualizaciones(promedio_por_dia, promedio_por_hora, promedio_por_dia_
     
     with tab1:
         st.subheader("Promedio General por Día de la Semana")
-        st.write("**Promedio de llamadas por día (todos los horarios combinados):**")
+        st.write("**Promedio de llamadas por día (CORREGIDO - dividido entre días disponibles):**")
         
         # Crear gráfico de barras simple con Streamlit
         st.bar_chart(promedio_por_dia.set_index('Dia_Semana')['Promedio_Llamadas_Dia'])
@@ -333,7 +446,7 @@ def crear_visualizaciones(promedio_por_dia, promedio_por_hora, promedio_por_dia_
     
     with tab2:
         st.subheader("Promedio General por Hora del Día")
-        st.write("**Promedio de llamadas por hora (todos los días combinados):**")
+        st.write("**Promedio de llamadas por hora (CORREGIDO - dividido entre días con registros):**")
         
         # Crear gráfico de líneas
         st.line_chart(promedio_por_hora.set_index('Hora_Numerica')['Promedio_Llamadas_Hora'])
@@ -372,7 +485,7 @@ def crear_visualizaciones(promedio_por_dia, promedio_por_hora, promedio_por_dia_
     
     with tab3:
         st.subheader("Promedio por Combinación Día-Hora")
-        st.write("**Promedio de llamadas para cada combinación específica de día y hora:**")
+        st.write("**Promedio de llamadas para cada combinación específica de día y hora (CORREGIDO):**")
         
         # Mostrar los primeros resultados
         st.dataframe(promedio_por_dia_hora.head(20), use_container_width=True)
@@ -660,8 +773,33 @@ def main():
                                     
                                     st.success("✅ Procesamiento completado!")
                                     
+                                    # Explicar la metodología CORREGIDA
+                                    with st.expander("📝 Explicación de la metodología CORREGIDA"):
+                                        st.markdown("""
+                                        **METODOLOGÍA CORREGIDA DE CÁLCULO DE PROMEDIOS:**
+                                        
+                                        1. **Para promedios por día de semana:**
+                                           - Se suman **TODAS** las llamadas de ese día de semana en el dataset
+                                           - Se divide entre la **cantidad de días de ese tipo** en el rango de fechas
+                                           - **Ejemplo**: Si hay 100 llamadas los Lunes y el dataset tiene 4 Lunes, el promedio es 100/4 = 25 llamadas/Lunes
+                                        
+                                        2. **Para promedios por hora:**
+                                           - Se suman **TODAS** las llamadas de esa hora en el dataset
+                                           - Se divide entre la **cantidad de días que tienen registros a esa hora**
+                                           - **Ejemplo**: Si hay 50 llamadas a las 9:00 y 10 días tienen registros a las 9:00, el promedio es 50/10 = 5 llamadas/9:00
+                                        
+                                        3. **Para promedios por combinación día-hora:**
+                                           - Se suman **TODAS** las llamadas de esa combinación específica
+                                           - Se divide entre la **cantidad de días de ese tipo que tienen registros a esa hora**
+                                           - **Ejemplo**: Si hay 20 llamadas los Lunes a las 9:00 y hay 3 Lunes con registros a las 9:00, el promedio es 20/3 ≈ 6.67 llamadas/Lunes-9:00
+                                        
+                                        4. **Proporción de equivalencia:**
+                                           - Se calcula como **1 / Promedio para esa combinación día-hora**
+                                           - **Ejemplo**: Si el promedio para Lunes-9:00 es 6.67, la proporción es 1/6.67 ≈ 0.15
+                                        """)
+                                    
                                     # Mostrar resumen rápido
-                                    st.write("**Resumen de promedios calculados:**")
+                                    st.write("**Resumen de promedios calculados (CORREGIDOS):**")
                                     
                                     col_res1, col_res2 = st.columns(2)
                                     
@@ -801,23 +939,22 @@ def main():
         # Mostrar ejemplo de estructura esperada
         with st.expander("Ver estructura esperada del CSV"):
             st.write("""
-            ## Aplicación con Filtro Específico
+            ## Aplicación con Filtro Específico y Cálculo CORREGIDO
             
-            Esta aplicación:
+            **CORRECCIÓN IMPORTANTE**: 
+            Los promedios ahora se calculan CORRECTAMENTE dividiendo entre la cantidad real de días disponibles.
             
-            1. **Filtra los datos**: Solo incluye registros cuyo campo 'To' contenga alguno de los 74 códigos especificados
-            2. **Calcula promedios**: Sobre los datos filtrados
-            3. **Analiza patrones**: Por día, hora y combinaciones
+            **Ejemplo**: 
+            - Si el dataset tiene registros del 1 al 22 de enero de 2026
+            - Hay 4 Lunes en ese período (5, 12, 19, 26)
+            - Si hay 100 llamadas en total los Lunes
+            - El promedio CORRECTO es: 100 llamadas / 4 Lunes = 25 llamadas por Lunes
             
-            **Códigos incluidos en el filtro:**
-            - (0220), (0221), (0222), (0303), (0305), ...
-            - Total: 74 códigos específicos
-            
-            **Metodología de cálculo:**
-            1. Promedio general por día de semana
-            2. Promedio general por hora del día
-            3. Promedio por combinación día-hora
-            4. Proporción de equivalencia = 1 / Promedio para esa combinación
+            **Metodología CORREGIDA:**
+            1. **Promedios por día**: Total llamadas del día ÷ Cantidad de días de ese tipo en el dataset
+            2. **Promedios por hora**: Total llamadas de la hora ÷ Días con registros a esa hora
+            3. **Promedios por combinación**: Total llamadas de la combinación ÷ Días de ese tipo con registros a esa hora
+            4. **Proporción de equivalencia**: 1 ÷ Promedio de la combinación
             """)
 
 if __name__ == "__main__":
