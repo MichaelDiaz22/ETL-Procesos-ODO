@@ -4,8 +4,7 @@ import numpy as np
 from datetime import datetime
 import calendar
 import io
-import plotly.graph_objects as go
-import plotly.express as px
+import matplotlib.pyplot as plt
 
 # Configuración de la página
 st.set_page_config(page_title="Analizador de Llamadas", page_icon="📞", layout="wide")
@@ -432,7 +431,7 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
     
     return df_procesado
 
-# Función para crear gráfico de proporciones por hora y día - MODIFICADA con Plotly y etiquetas
+# Función para crear gráfico de proporciones por hora y día - MODIFICADA con matplotlib y etiquetas
 def crear_grafico_proporciones_dia_hora(df_procesado):
     """
     Crea un gráfico de líneas que muestra la SUMA de Proporción de Equivalencia
@@ -462,7 +461,7 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         suma_proporcion = df_dia.groupby('Hora_Numerica')['Proporcion_Equivalencia'].sum().reset_index()
         suma_proporcion = suma_proporcion.rename(columns={
             'Hora_Numerica': 'Hora',
-            'Proporcion_Equivalencia': 'Suma Proporción Demanda (Origen Externo)'
+            'Proporcion_Equivalencia': 'Suma_Proporcion_Demanda'
         })
         
         # Calcular suma de validador_recurso_hora por hora (sin filtrar por empresa_outbound)
@@ -471,7 +470,7 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         suma_recursos = df_dia_todos.groupby('Hora_Numerica')['validador_recurso_hora'].sum().reset_index()
         suma_recursos = suma_recursos.rename(columns={
             'Hora_Numerica': 'Hora',
-            'validador_recurso_hora': 'Suma Recursos Disponibles'
+            'validador_recurso_hora': 'Suma_Recursos_Disponibles'
         })
         
         # Combinar ambos DataFrames
@@ -492,74 +491,67 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         # Rellenar valores NaN con 0
         datos_grafico_completo = datos_grafico_completo.fillna(0)
         
-        # Formatear horas para mostrar
-        datos_grafico_completo['Hora_Formateada'] = datos_grafico_completo['Hora'].apply(lambda x: f"{x}:00")
+        # Crear figura con matplotlib
+        fig, ax = plt.subplots(figsize=(14, 7))
         
-        # Crear gráfico con Plotly para tener etiquetas
-        fig = go.Figure()
+        # Ancho de las barras
+        bar_width = 0.35
         
-        # Agregar línea para Suma Proporción Demanda
-        fig.add_trace(go.Scatter(
-            x=datos_grafico_completo['Hora'],
-            y=datos_grafico_completo['Suma Proporción Demanda (Origen Externo)'],
-            mode='lines+markers+text',
-            name='Suma Proporción Demanda (Origen Externo)',
-            line=dict(color='blue', width=3),
-            marker=dict(size=8, color='blue'),
-            text=[f"{val:.4f}" if val > 0 else "" for val in datos_grafico_completo['Suma Proporción Demanda (Origen Externo)']],
-            textposition="top center",
-            textfont=dict(size=10, color='blue'),
-            hovertemplate='Hora: %{x}:00<br>Suma Proporción: %{y:.6f}<extra></extra>'
-        ))
+        # Posiciones de las barras
+        horas = datos_grafico_completo['Hora']
+        x = np.arange(len(horas))
         
-        # Agregar línea para Suma Recursos Disponibles
-        fig.add_trace(go.Scatter(
-            x=datos_grafico_completo['Hora'],
-            y=datos_grafico_completo['Suma Recursos Disponibles'],
-            mode='lines+markers+text',
-            name='Suma Recursos Disponibles',
-            line=dict(color='red', width=3, dash='dash'),
-            marker=dict(size=8, color='red', symbol='square'),
-            text=[f"{val:.4f}" if val > 0 else "" for val in datos_grafico_completo['Suma Recursos Disponibles']],
-            textposition="bottom center",
-            textfont=dict(size=10, color='red'),
-            hovertemplate='Hora: %{x}:00<br>Suma Recursos: %{y:.6f}<extra></extra>'
-        ))
+        # Crear gráfico de barras para Proporción Demanda
+        bars1 = ax.bar(x - bar_width/2, datos_grafico_completo['Suma_Proporcion_Demanda'], 
+                      bar_width, label='Suma Proporción Demanda (Origen Externo)', color='blue', alpha=0.7)
         
-        # Configurar el layout del gráfico
-        fig.update_layout(
-            title=f"Distribución para {dia_seleccionado} (Llamadas con Origen Externo)",
-            xaxis_title="Hora del Día",
-            yaxis_title="Valor",
-            xaxis=dict(
-                tickmode='array',
-                tickvals=list(range(0, 25)),
-                ticktext=[f"{h}:00" for h in range(0, 25)],
-                range=[0, 24]
-            ),
-            yaxis=dict(
-                rangemode='tozero'
-            ),
-            hovermode='x unified',
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            ),
-            height=500,
-            showlegend=True
-        )
+        # Crear gráfico de barras para Recursos Disponibles
+        bars2 = ax.bar(x + bar_width/2, datos_grafico_completo['Suma_Recursos_Disponibles'], 
+                      bar_width, label='Suma Recursos Disponibles', color='red', alpha=0.7)
         
-        # Mostrar gráfico
-        st.plotly_chart(fig, use_container_width=True)
+        # Añadir etiquetas de datos a las barras
+        def autolabel(bars, ax):
+            """Añade etiquetas de texto encima de las barras."""
+            for bar in bars:
+                height = bar.get_height()
+                if height > 0:  # Solo mostrar etiquetas para valores > 0
+                    ax.annotate(f'{height:.4f}',
+                              xy=(bar.get_x() + bar.get_width() / 2, height),
+                              xytext=(0, 3),  # 3 puntos de desplazamiento vertical
+                              textcoords="offset points",
+                              ha='center', va='bottom',
+                              fontsize=8, rotation=45)
+        
+        # Aplicar etiquetas a ambas series de barras
+        autolabel(bars1, ax)
+        autolabel(bars2, ax)
+        
+        # Configurar el gráfico
+        ax.set_xlabel('Hora del Día', fontsize=12)
+        ax.set_ylabel('Valor', fontsize=12)
+        ax.set_title(f'Distribución para {dia_seleccionado} (Llamadas con Origen Externo)', fontsize=14, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels([f'{h}:00' for h in horas], rotation=45, ha='right')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        # Ajustar límites del eje Y para mejor visualización
+        ax.set_ylim(bottom=0)
+        
+        # Ajustar layout para evitar que se corten las etiquetas
+        plt.tight_layout()
+        
+        # Mostrar gráfico en Streamlit
+        st.pyplot(fig)
         
         # Mostrar tabla de datos
         with st.expander("📊 Ver datos detallados de la gráfica"):
-            st.dataframe(datos_grafico_completo[['Hora', 'Hora_Formateada', 
-                                                'Suma Proporción Demanda (Origen Externo)', 
-                                                'Suma Recursos Disponibles']].round(6), 
+            # Formatear para mostrar
+            datos_tabla = datos_grafico_completo.copy()
+            datos_tabla['Hora_Formateada'] = datos_tabla['Hora'].apply(lambda x: f"{x}:00")
+            st.dataframe(datos_tabla[['Hora', 'Hora_Formateada', 
+                                    'Suma_Proporcion_Demanda', 
+                                    'Suma_Recursos_Disponibles']].round(6), 
                         use_container_width=True)
         
         # Mostrar métricas de comparación
@@ -569,8 +561,8 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         
         with col_comp1:
             # Ratio promedio suma_proporcion/suma_recursos
-            total_proporcion = datos_grafico_completo['Suma Proporción Demanda (Origen Externo)'].sum()
-            total_recursos = datos_grafico_completo['Suma Recursos Disponibles'].sum()
+            total_proporcion = datos_grafico_completo['Suma_Proporcion_Demanda'].sum()
+            total_recursos = datos_grafico_completo['Suma_Recursos_Disponibles'].sum()
             if total_recursos > 0:
                 ratio_promedio = total_proporcion / total_recursos
                 st.metric("Ratio Total Proporción/Recursos", f"{ratio_promedio:.6f}")
