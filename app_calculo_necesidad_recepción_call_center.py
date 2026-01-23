@@ -4,6 +4,8 @@ import numpy as np
 from datetime import datetime
 import calendar
 import io
+import plotly.graph_objects as go
+import plotly.express as px
 
 # Configuración de la página
 st.set_page_config(page_title="Analizador de Llamadas", page_icon="📞", layout="wide")
@@ -205,7 +207,7 @@ def filtrar_por_codigos(df):
     df_filtrado['empresa_outbound_temp'] = df_filtrado['From'].apply(determinar_empresa_outbound)
     
     # Aplicar el filtro: empresa_outbound == "Externo" Y empresa_inbound != "Externo"
-    mascara = (df_filtrado['empresa_outbound_temp'] != "Externo") & (df_filtrado['empresa_inbound_temp'] != "Externo")
+    mascara = (df_filtrado['empresa_outbound_temp'] == "Externo") & (df_filtrado['empresa_inbound_temp'] != "Externo")
     
     # Aplicar filtro
     df_filtrado = df_filtrado[mascara].copy()
@@ -430,13 +432,13 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
     
     return df_procesado
 
-# Función para crear gráfico de proporciones por hora y día - MODIFICADA
+# Función para crear gráfico de proporciones por hora y día - MODIFICADA con Plotly y etiquetas
 def crear_grafico_proporciones_dia_hora(df_procesado):
     """
     Crea un gráfico de líneas que muestra la SUMA de Proporción de Equivalencia
-    para registros donde empresa_inbound != "Externo" (CCB, ODO, UDC) y la suma de validador_recurso_hora por hora para un día específico
+    para registros donde empresa_outbound == "Externo" y la suma de validador_recurso_hora por hora para un día específico
     """
-    st.write("### 📈 Suma de Proporción Demanda (Internas: CCB/ODO/UDC) vs Recursos por Hora y Día")
+    st.write("### 📈 Suma de Proporción Demanda (Origen Externo) vs Recursos por Hora y Día")
     
     # Obtener lista de días disponibles
     dias_disponibles = df_procesado['Dia_Semana'].unique()
@@ -448,22 +450,22 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         key="selector_dia_grafico"
     )
     
-    # Filtrar datos por día seleccionado y empresa_inbound != "Externo" (CCB, ODO, UDC)
+    # Filtrar datos por día seleccionado y empresa_outbound == "Externo"
     df_dia = df_procesado[(df_procesado['Dia_Semana'] == dia_seleccionado) & 
-                          (df_procesado['empresa_inbound'] == "Externo")].copy()
+                          (df_procesado['empresa_outbound'] == "Externo")].copy()
     
     if len(df_dia) > 0:
         # Para la Proporción de Equivalencia: calcular SUMA por hora (no frecuencia/count)
         # Para validador_recurso_hora: calcular suma por hora
         
-        # Calcular SUMA de Proporcion_Equivalencia por hora para empresa_inbound != "Externo"
+        # Calcular SUMA de Proporcion_Equivalencia por hora para empresa_outbound == "Externo"
         suma_proporcion = df_dia.groupby('Hora_Numerica')['Proporcion_Equivalencia'].sum().reset_index()
         suma_proporcion = suma_proporcion.rename(columns={
             'Hora_Numerica': 'Hora',
-            'Proporcion_Equivalencia': 'Suma Proporción Demanda (Internas)'
+            'Proporcion_Equivalencia': 'Suma Proporción Demanda (Origen Externo)'
         })
         
-        # Calcular suma de validador_recurso_hora por hora (sin filtrar por empresa_inbound)
+        # Calcular suma de validador_recurso_hora por hora (sin filtrar por empresa_outbound)
         # Para recursos, necesitamos TODOS los registros del día seleccionado
         df_dia_todos = df_procesado[df_procesado['Dia_Semana'] == dia_seleccionado].copy()
         suma_recursos = df_dia_todos.groupby('Hora_Numerica')['validador_recurso_hora'].sum().reset_index()
@@ -490,49 +492,105 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         # Rellenar valores NaN con 0
         datos_grafico_completo = datos_grafico_completo.fillna(0)
         
-        # Crear gráfico de líneas
-        st.write(f"**Distribución para {dia_seleccionado} (llamadas internas):**")
+        # Formatear horas para mostrar
+        datos_grafico_completo['Hora_Formateada'] = datos_grafico_completo['Hora'].apply(lambda x: f"{x}:00")
         
-        # Configurar el gráfico
-        chart_data = datos_grafico_completo.set_index('Hora')
+        # Crear gráfico con Plotly para tener etiquetas
+        fig = go.Figure()
         
-        # Mostrar gráfico con eje X de 0 a 24
-        st.line_chart(chart_data)
+        # Agregar línea para Suma Proporción Demanda
+        fig.add_trace(go.Scatter(
+            x=datos_grafico_completo['Hora'],
+            y=datos_grafico_completo['Suma Proporción Demanda (Origen Externo)'],
+            mode='lines+markers+text',
+            name='Suma Proporción Demanda (Origen Externo)',
+            line=dict(color='blue', width=3),
+            marker=dict(size=8, color='blue'),
+            text=[f"{val:.4f}" if val > 0 else "" for val in datos_grafico_completo['Suma Proporción Demanda (Origen Externo)']],
+            textposition="top center",
+            textfont=dict(size=10, color='blue'),
+            hovertemplate='Hora: %{x}:00<br>Suma Proporción: %{y:.6f}<extra></extra>'
+        ))
+        
+        # Agregar línea para Suma Recursos Disponibles
+        fig.add_trace(go.Scatter(
+            x=datos_grafico_completo['Hora'],
+            y=datos_grafico_completo['Suma Recursos Disponibles'],
+            mode='lines+markers+text',
+            name='Suma Recursos Disponibles',
+            line=dict(color='red', width=3, dash='dash'),
+            marker=dict(size=8, color='red', symbol='square'),
+            text=[f"{val:.4f}" if val > 0 else "" for val in datos_grafico_completo['Suma Recursos Disponibles']],
+            textposition="bottom center",
+            textfont=dict(size=10, color='red'),
+            hovertemplate='Hora: %{x}:00<br>Suma Recursos: %{y:.6f}<extra></extra>'
+        ))
+        
+        # Configurar el layout del gráfico
+        fig.update_layout(
+            title=f"Distribución para {dia_seleccionado} (Llamadas con Origen Externo)",
+            xaxis_title="Hora del Día",
+            yaxis_title="Valor",
+            xaxis=dict(
+                tickmode='array',
+                tickvals=list(range(0, 25)),
+                ticktext=[f"{h}:00" for h in range(0, 25)],
+                range=[0, 24]
+            ),
+            yaxis=dict(
+                rangemode='tozero'
+            ),
+            hovermode='x unified',
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            ),
+            height=500,
+            showlegend=True
+        )
+        
+        # Mostrar gráfico
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Mostrar tabla de datos
+        with st.expander("📊 Ver datos detallados de la gráfica"):
+            st.dataframe(datos_grafico_completo[['Hora', 'Hora_Formateada', 
+                                                'Suma Proporción Demanda (Origen Externo)', 
+                                                'Suma Recursos Disponibles']].round(6), 
+                        use_container_width=True)
         
         # Mostrar métricas de comparación
         st.write("**Métricas de comparación:**")
         
-        col_comp1, col_comp2 = st.columns(2)
+        col_comp1, col_comp2, col_comp3 = st.columns(3)
         
         with col_comp1:
             # Ratio promedio suma_proporcion/suma_recursos
-            if datos_grafico_completo['Suma Recursos Disponibles'].sum() > 0:
-                ratio_promedio = datos_grafico_completo['Suma Proporción Demanda (Internas)'].sum() / datos_grafico_completo['Suma Recursos Disponibles'].sum()
-                st.metric("Ratio Suma Proporción/Recursos", f"{ratio_promedio:.6f}")
+            total_proporcion = datos_grafico_completo['Suma Proporción Demanda (Origen Externo)'].sum()
+            total_recursos = datos_grafico_completo['Suma Recursos Disponibles'].sum()
+            if total_recursos > 0:
+                ratio_promedio = total_proporcion / total_recursos
+                st.metric("Ratio Total Proporción/Recursos", f"{ratio_promedio:.6f}")
         
         with col_comp2:
-            # Diferencia total normalizada
-            if datos_grafico_completo['Suma Proporción Demanda (Internas)'].max() > 0:
-                proporcion_normalizada = datos_grafico_completo['Suma Proporción Demanda (Internas)'] / datos_grafico_completo['Suma Proporción Demanda (Internas)'].max()
-            else:
-                proporcion_normalizada = 0
-            
-            if datos_grafico_completo['Suma Recursos Disponibles'].max() > 0:
-                recursos_normalizados = datos_grafico_completo['Suma Recursos Disponibles'] / datos_grafico_completo['Suma Recursos Disponibles'].max()
-            else:
-                recursos_normalizados = 0
-            
-            diferencia_promedio = (proporcion_normalizada - recursos_normalizados).mean()
-            st.metric("Diferencia normalizada", f"{diferencia_promedio:.6f}")
-            
-        # Mostrar distribución por empresa_inbound para este día
-        st.write(f"**Distribución por empresa_inbound para {dia_seleccionado}:**")
+            # Total de proporción demanda
+            st.metric("Total Proporción Demanda", f"{total_proporcion:.6f}")
+        
+        with col_comp3:
+            # Total de recursos
+            st.metric("Total Recursos Disponibles", f"{total_recursos:.6f}")
+        
+        # Mostrar distribución por empresa_inbound para las llamadas con origen externo en este día
+        st.write(f"**Distribución por empresa_inbound (destino) para {dia_seleccionado} (origen externo):**")
         distribucion_dia = df_dia['empresa_inbound'].value_counts()
         for empresa, count in distribucion_dia.items():
             porcentaje = (count / len(df_dia)) * 100
             st.write(f"- {empresa}: {count:,} registros ({porcentaje:.1f}%)")
     else:
-        st.warning(f"No hay datos disponibles para {dia_seleccionado} con empresa_inbound != 'Externo'")
+        st.warning(f"No hay datos disponibles para {dia_seleccionado} con empresa_outbound == 'Externo'")
 
 # Función para mostrar tabla de primeros 10 registros con columnas nuevas (SIMPLIFICADA)
 def mostrar_primeros_registros(df_procesado):
@@ -622,135 +680,4 @@ def main():
                 if not st.session_state.recursos_por_hora:
                     st.warning("⚠️ Primero ingresa los recursos por hora")
                 else:
-                    if st.button("🔧 Aplicar Filtro y Calcular Métricas", type="primary", use_container_width=True):
-                        with st.spinner("Procesando datos..."):
-                            # Aplicar filtro (nuevo criterio: empresa_outbound == "Externo" Y empresa_inbound != "Externo")
-                            df_filtrado = filtrar_por_codigos(df)
-                            
-                            if df_filtrado is not None and len(df_filtrado) > 0:
-                                # Procesar datos y calcular proporción
-                                df_procesado = procesar_datos_con_proporcion(
-                                    df_filtrado, 
-                                    st.session_state.recursos_por_hora
-                                )
-                                
-                                if df_procesado is not None:
-                                    # Guardar en session state
-                                    st.session_state['df_procesado'] = df_procesado
-                                    
-                                    # Mostrar tabla con primeros 10 registros y columnas nuevas
-                                    st.divider()
-                                    st.write("### 📋 Primeros 10 Registros del Dataset Procesado")
-                                    mostrar_primeros_registros(df_procesado)
-                                else:
-                                    st.error("Error al procesar los datos filtrados.")
-                            else:
-                                st.error("No se encontraron registros que coincidan con el criterio: empresa_outbound == 'Externo' Y empresa_inbound != 'Externo'")
-            
-            with tab2:
-                st.subheader("Resultados y Exportación")
-                
-                if 'df_procesado' in st.session_state:
-                    df_procesado = st.session_state['df_procesado']
-                    
-                    # Mostrar tabla con primeros 10 registros y columnas nuevas
-                    mostrar_primeros_registros(df_procesado)
-                    
-                    st.divider()
-                    
-                    # Mostrar estadísticas generales
-                    st.write("### 📈 Estadísticas Generales")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric("Total registros", len(df_procesado))
-                    
-                    with col2:
-                        # Fecha mínima y máxima
-                        if 'Call Time' in df_procesado.columns and pd.api.types.is_datetime64_any_dtype(df_procesado['Call Time']):
-                            fecha_min = df_procesado['Call Time'].min().strftime('%d/%m/%Y')
-                            fecha_max = df_procesado['Call Time'].max().strftime('%d/%m/%Y')
-                            st.metric("Rango de fechas", f"{fecha_min} a {fecha_max}")
-                    
-                    with col3:
-                        # Máximo de recursos
-                        if st.session_state.recursos_por_hora:
-                            max_recursos = max(st.session_state.recursos_por_hora.values())
-                            st.metric("Máximo recursos/hora", max_recursos)
-                    
-                    # Gráfico de proporciones por hora y día (MODIFICADO para empresa_inbound != "Externo")
-                    crear_grafico_proporciones_dia_hora(df_procesado)
-                    
-                    # Exportación de datos
-                    st.write("### 💾 Exportar Datos Procesados")
-                    
-                    col_exp1, col_exp2 = st.columns(2)
-                    
-                    with col_exp1:
-                        # Exportar a CSV completo
-                        csv = df_procesado.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="📥 Descargar CSV completo",
-                            data=csv,
-                            file_name="datos_procesados.csv",
-                            mime="text/csv",
-                            type="primary"
-                        )
-                    
-                    with col_exp2:
-                        # Exportar a Excel
-                        buffer = io.BytesIO()
-                        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                            # Hoja 1: Datos completos
-                            df_procesado.to_excel(writer, sheet_name='Datos_Completos', index=False)
-                            
-                            # Hoja 2: Estadísticas generales
-                            stats_df = pd.DataFrame({
-                                'Métrica': [
-                                    'Total Registros',
-                                    'Constante de Validación',
-                                    'Máximo Recursos/Hora',
-                                    'Suma Proporción Demanda',
-                                    'Suma validador_recurso_hora',
-                                    'Registros CCB',
-                                    'Registros ODO',
-                                    'Registros UDC',
-                                    'Registros Externo (outbound)'
-                                ],
-                                'Valor': [
-                                    len(df_procesado),
-                                    CONSTANTE_VALIDACION,
-                                    max(st.session_state.recursos_por_hora.values()) if st.session_state.recursos_por_hora else 0,
-                                    df_procesado['Proporcion_Equivalencia'].sum(),
-                                    df_procesado['validador_recurso_hora'].sum(),
-                                    len(df_procesado[df_procesado['empresa_inbound'] == 'CCB']),
-                                    len(df_procesado[df_procesado['empresa_inbound'] == 'ODO']),
-                                    len(df_procesado[df_procesado['empresa_inbound'] == 'UDC']),
-                                    len(df_procesado[df_procesado['empresa_outbound'] == 'Externo'])
-                                ]
-                            })
-                            stats_df.to_excel(writer, sheet_name='Estadisticas_Generales', index=False)
-                        
-                        buffer.seek(0)
-                        
-                        st.download_button(
-                            label="📥 Descargar como Excel",
-                            data=buffer,
-                            file_name="datos_procesados.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                
-                else:
-                    st.info("Primero procesa los datos en la pestaña 'Datos y Configuración'")
-        
-        except Exception as e:
-            st.error(f"Error al leer el archivo: {str(e)}")
-            st.info("Asegúrate de que el archivo sea un CSV válido con los campos requeridos.")
-    
-    else:
-        # Mostrar mensaje inicial si no hay archivo cargado
-        st.info("👈 Por favor, carga un archivo CSV usando el panel lateral")
-
-if __name__ == "__main__":
-    main()
+                    if st.button("🔧 Aplic
