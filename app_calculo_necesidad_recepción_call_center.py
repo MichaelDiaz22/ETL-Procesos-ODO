@@ -680,4 +680,137 @@ def main():
                 if not st.session_state.recursos_por_hora:
                     st.warning("⚠️ Primero ingresa los recursos por hora")
                 else:
-                    if st.button("🔧 Aplic
+                    if st.button("🔧 Aplicar Filtro y Calcular Métricas", type="primary", use_container_width=True):
+                        with st.spinner("Procesando datos..."):
+                            # Aplicar filtro (nuevo criterio: empresa_outbound == "Externo" Y empresa_inbound != "Externo")
+                            df_filtrado = filtrar_por_codigos(df)
+                            
+                            if df_filtrado is not None and len(df_filtrado) > 0:
+                                # Procesar datos y calcular proporción
+                                df_procesado = procesar_datos_con_proporcion(
+                                    df_filtrado, 
+                                    st.session_state.recursos_por_hora
+                                )
+                                
+                                if df_procesado is not None:
+                                    # Guardar en session state
+                                    st.session_state['df_procesado'] = df_procesado
+                                    
+                                    # Mostrar tabla con primeros 10 registros y columnas nuevas
+                                    st.divider()
+                                    st.write("### 📋 Primeros 10 Registros del Dataset Procesado")
+                                    mostrar_primeros_registros(df_procesado)
+                                else:
+                                    st.error("Error al procesar los datos filtrados.")
+                            else:
+                                st.error("No se encontraron registros que coincidan con el criterio: empresa_outbound == 'Externo' Y empresa_inbound != 'Externo'")
+            
+            with tab2:
+                st.subheader("Resultados y Exportación")
+                
+                if 'df_procesado' in st.session_state:
+                    df_procesado = st.session_state['df_procesado']
+                    
+                    # Mostrar tabla con primeros 10 registros y columnas nuevas
+                    mostrar_primeros_registros(df_procesado)
+                    
+                    st.divider()
+                    
+                    # Mostrar estadísticas generales
+                    st.write("### 📈 Estadísticas Generales")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("Total registros", len(df_procesado))
+                    
+                    with col2:
+                        # Fecha mínima y máxima
+                        if 'Call Time' in df_procesado.columns and pd.api.types.is_datetime64_any_dtype(df_procesado['Call Time']):
+                            fecha_min = df_procesado['Call Time'].min().strftime('%d/%m/%Y')
+                            fecha_max = df_procesado['Call Time'].max().strftime('%d/%m/%Y')
+                            st.metric("Rango de fechas", f"{fecha_min} a {fecha_max}")
+                    
+                    with col3:
+                        # Máximo de recursos
+                        if st.session_state.recursos_por_hora:
+                            max_recursos = max(st.session_state.recursos_por_hora.values())
+                            st.metric("Máximo recursos/hora", max_recursos)
+                    
+                    # Gráfico de proporciones por hora y día (MODIFICADO para empresa_outbound == "Externo")
+                    crear_grafico_proporciones_dia_hora(df_procesado)
+                    
+                    # Exportación de datos
+                    st.write("### 💾 Exportar Datos Procesados")
+                    
+                    col_exp1, col_exp2 = st.columns(2)
+                    
+                    with col_exp1:
+                        # Exportar a CSV completo
+                        csv = df_procesado.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Descargar CSV completo",
+                            data=csv,
+                            file_name="datos_procesados.csv",
+                            mime="text/csv",
+                            type="primary"
+                        )
+                    
+                    with col_exp2:
+                        # Exportar a Excel
+                        buffer = io.BytesIO()
+                        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                            # Hoja 1: Datos completos
+                            df_procesado.to_excel(writer, sheet_name='Datos_Completos', index=False)
+                            
+                            # Hoja 2: Estadísticas generales
+                            stats_df = pd.DataFrame({
+                                'Métrica': [
+                                    'Total Registros',
+                                    'Constante de Validación',
+                                    'Máximo Recursos/Hora',
+                                    'Suma Proporción Demanda',
+                                    'Suma validador_recurso_hora',
+                                    'Registros CCB (destino)',
+                                    'Registros ODO (destino)',
+                                    'Registros UDC (destino)',
+                                    'Registros Origen Externo',
+                                    'Registros Origen Interno'
+                                ],
+                                'Valor': [
+                                    len(df_procesado),
+                                    CONSTANTE_VALIDACION,
+                                    max(st.session_state.recursos_por_hora.values()) if st.session_state.recursos_por_hora else 0,
+                                    df_procesado['Proporcion_Equivalencia'].sum(),
+                                    df_procesado['validador_recurso_hora'].sum(),
+                                    len(df_procesado[df_procesado['empresa_inbound'] == 'CCB']),
+                                    len(df_procesado[df_procesado['empresa_inbound'] == 'ODO']),
+                                    len(df_procesado[df_procesado['empresa_inbound'] == 'UDC']),
+                                    len(df_procesado[df_procesado['empresa_outbound'] == 'Externo']),
+                                    len(df_procesado[df_procesado['empresa_outbound'] != 'Externo'])
+                                ]
+                            })
+                            stats_df.to_excel(writer, sheet_name='Estadisticas_Generales', index=False)
+                        
+                        buffer.seek(0)
+                        
+                        st.download_button(
+                            label="📥 Descargar como Excel",
+                            data=buffer,
+                            file_name="datos_procesados.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                
+                else:
+                    st.info("Primero procesa los datos en la pestaña 'Datos y Configuración'")
+        
+        except Exception as e:
+            st.error(f"Error al leer el archivo: {str(e)}")
+            st.info("Asegúrate de que el archivo sea un CSV válido con los campos requeridos.")
+    
+    else:
+        # Mostrar mensaje inicial si no hay archivo cargado
+        st.info("👈 Por favor, carga un archivo CSV usando el panel lateral")
+
+if __name__ == "__main__":
+    main()
