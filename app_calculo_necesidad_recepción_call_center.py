@@ -450,7 +450,7 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
     
     # Filtrar datos por día seleccionado y empresa_inbound != "Externo" (CCB, ODO, UDC)
     df_dia = df_procesado[(df_procesado['Dia_Semana'] == dia_seleccionado) & 
-                          (df_procesado['empresa_inbound'] != "Externo")].copy()
+                          (df_procesado['empresa_inbound'] == "Externo")].copy()
     
     if len(df_dia) > 0:
         # Para la Proporción de Equivalencia: calcular SUMA por hora (no frecuencia/count)
