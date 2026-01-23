@@ -4,7 +4,6 @@ import numpy as np
 from datetime import datetime
 import calendar
 import io
-import matplotlib.pyplot as plt
 
 # Configuración de la página
 st.set_page_config(page_title="Analizador de Llamadas", page_icon="📞", layout="wide")
@@ -347,8 +346,8 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
         # Primero necesitamos contar registros por hora, fecha y rol_inbound
         df_procesado['Clave_Hora_Fecha_Rol'] = (
             df_procesado['Hora_Numerica'].astype(str) + '_' +
-            df_procesado['Fecha_Creacion'].astype(str) + '_' +
-            df_procesado['rol_inbound'].astype(str)
+            df_procesado['Fecha_Creacion'].astize(str) + '_' +
+            df_procesado['rol_inbound'].astize(str)
         )
         
         # Calcular conteo por grupo (hora, fecha, rol)
@@ -431,13 +430,13 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
     
     return df_procesado
 
-# Función para crear gráfico de proporciones por hora y día - MODIFICADA con matplotlib y etiquetas
+# Función para crear gráfico de proporciones por hora y día - SIMPLIFICADA
 def crear_grafico_proporciones_dia_hora(df_procesado):
     """
     Crea un gráfico de líneas que muestra la SUMA de Proporción de Equivalencia
-    para registros donde empresa_outbound == "Externo" y la suma de validador_recurso_hora por hora para un día específico
+    y la suma de validador_recurso_hora por hora para un día específico
     """
-    st.write("### 📈 Suma de Proporción Demanda (Origen Externo) vs Recursos por Hora y Día")
+    st.write("### 📈 Suma de Proporción Demanda vs Recursos por Hora y Día")
     
     # Obtener lista de días disponibles
     dias_disponibles = df_procesado['Dia_Semana'].unique()
@@ -449,25 +448,19 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         key="selector_dia_grafico"
     )
     
-    # Filtrar datos por día seleccionado y empresa_outbound == "Externo"
-    df_dia = df_procesado[(df_procesado['Dia_Semana'] == dia_seleccionado) & 
-                          (df_procesado['empresa_outbound'] == "Externo")].copy()
+    # Filtrar datos por día seleccionado (SIN FILTRO DE EMPRESA)
+    df_dia = df_procesado[df_procesado['Dia_Semana'] == dia_seleccionado].copy()
     
     if len(df_dia) > 0:
-        # Para la Proporción de Equivalencia: calcular SUMA por hora (no frecuencia/count)
-        # Para validador_recurso_hora: calcular suma por hora
-        
-        # Calcular SUMA de Proporcion_Equivalencia por hora para empresa_outbound == "Externo"
+        # Calcular SUMA de Proporcion_Equivalencia por hora
         suma_proporcion = df_dia.groupby('Hora_Numerica')['Proporcion_Equivalencia'].sum().reset_index()
         suma_proporcion = suma_proporcion.rename(columns={
             'Hora_Numerica': 'Hora',
             'Proporcion_Equivalencia': 'Suma_Proporcion_Demanda'
         })
         
-        # Calcular suma de validador_recurso_hora por hora (sin filtrar por empresa_outbound)
-        # Para recursos, necesitamos TODOS los registros del día seleccionado
-        df_dia_todos = df_procesado[df_procesado['Dia_Semana'] == dia_seleccionado].copy()
-        suma_recursos = df_dia_todos.groupby('Hora_Numerica')['validador_recurso_hora'].sum().reset_index()
+        # Calcular suma de validador_recurso_hora por hora
+        suma_recursos = df_dia.groupby('Hora_Numerica')['validador_recurso_hora'].sum().reset_index()
         suma_recursos = suma_recursos.rename(columns={
             'Hora_Numerica': 'Hora',
             'validador_recurso_hora': 'Suma_Recursos_Disponibles'
@@ -491,98 +484,17 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         # Rellenar valores NaN con 0
         datos_grafico_completo = datos_grafico_completo.fillna(0)
         
-        # Crear figura con matplotlib
-        fig, ax = plt.subplots(figsize=(14, 7))
-        
-        # Ancho de las barras
-        bar_width = 0.35
-        
-        # Posiciones de las barras
-        horas = datos_grafico_completo['Hora']
-        x = np.arange(len(horas))
-        
-        # Crear gráfico de barras para Proporción Demanda
-        bars1 = ax.bar(x - bar_width/2, datos_grafico_completo['Suma_Proporcion_Demanda'], 
-                      bar_width, label='Suma Proporción Demanda (Origen Externo)', color='blue', alpha=0.7)
-        
-        # Crear gráfico de barras para Recursos Disponibles
-        bars2 = ax.bar(x + bar_width/2, datos_grafico_completo['Suma_Recursos_Disponibles'], 
-                      bar_width, label='Suma Recursos Disponibles', color='red', alpha=0.7)
-        
-        # Añadir etiquetas de datos a las barras
-        def autolabel(bars, ax):
-            """Añade etiquetas de texto encima de las barras."""
-            for bar in bars:
-                height = bar.get_height()
-                if height > 0:  # Solo mostrar etiquetas para valores > 0
-                    ax.annotate(f'{height:.4f}',
-                              xy=(bar.get_x() + bar.get_width() / 2, height),
-                              xytext=(0, 3),  # 3 puntos de desplazamiento vertical
-                              textcoords="offset points",
-                              ha='center', va='bottom',
-                              fontsize=8, rotation=45)
-        
-        # Aplicar etiquetas a ambas series de barras
-        autolabel(bars1, ax)
-        autolabel(bars2, ax)
+        # Crear gráfico de líneas simple
+        st.write(f"**Distribución para {dia_seleccionado}:**")
         
         # Configurar el gráfico
-        ax.set_xlabel('Hora del Día', fontsize=12)
-        ax.set_ylabel('Valor', fontsize=12)
-        ax.set_title(f'Distribución para {dia_seleccionado} (Llamadas con Origen Externo)', fontsize=14, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels([f'{h}:00' for h in horas], rotation=45, ha='right')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+        chart_data = datos_grafico_completo.set_index('Hora')
         
-        # Ajustar límites del eje Y para mejor visualización
-        ax.set_ylim(bottom=0)
+        # Mostrar gráfico con eje X de 0 a 24
+        st.line_chart(chart_data)
         
-        # Ajustar layout para evitar que se corten las etiquetas
-        plt.tight_layout()
-        
-        # Mostrar gráfico en Streamlit
-        st.pyplot(fig)
-        
-        # Mostrar tabla de datos
-        with st.expander("📊 Ver datos detallados de la gráfica"):
-            # Formatear para mostrar
-            datos_tabla = datos_grafico_completo.copy()
-            datos_tabla['Hora_Formateada'] = datos_tabla['Hora'].apply(lambda x: f"{x}:00")
-            st.dataframe(datos_tabla[['Hora', 'Hora_Formateada', 
-                                    'Suma_Proporcion_Demanda', 
-                                    'Suma_Recursos_Disponibles']].round(6), 
-                        use_container_width=True)
-        
-        # Mostrar métricas de comparación
-        st.write("**Métricas de comparación:**")
-        
-        col_comp1, col_comp2, col_comp3 = st.columns(3)
-        
-        with col_comp1:
-            # Ratio promedio suma_proporcion/suma_recursos
-            total_proporcion = datos_grafico_completo['Suma_Proporcion_Demanda'].sum()
-            total_recursos = datos_grafico_completo['Suma_Recursos_Disponibles'].sum()
-            if total_recursos > 0:
-                ratio_promedio = total_proporcion / total_recursos
-                st.metric("Ratio Total Proporción/Recursos", f"{ratio_promedio:.6f}")
-        
-        with col_comp2:
-            # Total de proporción demanda
-            st.metric("Total Proporción Demanda", f"{total_proporcion:.6f}")
-        
-        with col_comp3:
-            # Total de recursos
-            st.metric("Total Recursos Disponibles", f"{total_recursos:.6f}")
-        
-        # Mostrar distribución por empresa_inbound para las llamadas con origen externo en este día
-        st.write(f"**Distribución por empresa_inbound (destino) para {dia_seleccionado} (origen externo):**")
-        distribucion_dia = df_dia['empresa_inbound'].value_counts()
-        for empresa, count in distribucion_dia.items():
-            porcentaje = (count / len(df_dia)) * 100
-            st.write(f"- {empresa}: {count:,} registros ({porcentaje:.1f}%)")
     else:
-        st.warning(f"No hay datos disponibles para {dia_seleccionado} con empresa_outbound == 'Externo'")
+        st.warning(f"No hay datos disponibles para {dia_seleccionado}")
 
 # Función para mostrar tabla de primeros 10 registros con columnas nuevas (SIMPLIFICADA)
 def mostrar_primeros_registros(df_procesado):
@@ -729,7 +641,7 @@ def main():
                             max_recursos = max(st.session_state.recursos_por_hora.values())
                             st.metric("Máximo recursos/hora", max_recursos)
                     
-                    # Gráfico de proporciones por hora y día (MODIFICADO para empresa_outbound == "Externo")
+                    # Gráfico de proporciones por hora y día (SIMPLE, sin filtros)
                     crear_grafico_proporciones_dia_hora(df_procesado)
                     
                     # Exportación de datos
