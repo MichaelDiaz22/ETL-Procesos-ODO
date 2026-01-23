@@ -232,7 +232,7 @@ def filtrar_por_codigos(df):
     
     return df_filtrado
 
-# Función para procesar los datos y calcular proporción de equivalencia
+# Función para procesar los datos y calcular proporción de equivalencia - CORREGIDA
 def procesar_datos_con_proporcion(df, recursos_por_hora):
     """
     Procesa el DataFrame y calcula la proporción de equivalencia según la especificación
@@ -342,50 +342,53 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
         # 11. PASO 7: Calcular empresa_outbound (NUEVA - basado en campo "From")
         df_procesado['empresa_outbound'] = df_procesado['From'].apply(determinar_empresa_outbound)
         
-        # 12. PASO 8: Calcular validador_recurso_hora
-        # Primero necesitamos contar registros por hora, fecha y rol_inbound
-        df_procesado['Clave_Hora_Fecha_Rol'] = (
-            df_procesado['Hora_Numerica'].astype(str) + '_' +
-            df_procesado['Fecha_Creacion'].astize(str) + '_' +
-            df_procesado['rol_inbound'].astize(str)
-        )
+        # 12. CORRECCIÓN IMPORTANTE: Calcular validador_recurso_hora
+        # Primero, necesitamos calcular la suma de Proporcion_Equivalencia por hora y fecha para "Call center"
         
-        # Calcular conteo por grupo (hora, fecha, rol)
-        conteo_hora_fecha_rol = df_procesado.groupby('Clave_Hora_Fecha_Rol').size()
+        # Filtrar solo registros con rol_inbound == "Call center"
+        df_call_center = df_procesado[df_procesado['rol_inbound'] == "Call center"].copy()
         
-        # Asignar el conteo a cada registro
-        df_procesado['Conteo_Hora_Fecha_Rol'] = df_procesado['Clave_Hora_Fecha_Rol'].map(conteo_hora_fecha_rol)
-        
-        # Calcular validador_recurso_hora
-        def calcular_validador_recurso_hora(fila, recursos_dict):
-            hora = fila['Hora_Numerica']
-            conteo = fila['Conteo_Hora_Fecha_Rol']
+        # Calcular suma de Proporcion_Equivalencia por hora, fecha para Call center
+        if len(df_call_center) > 0:
+            suma_proporcion_por_hora_fecha = df_call_center.groupby(['Hora_Numerica', 'Fecha_Creacion'])['Proporcion_Equivalencia'].sum().reset_index()
             
-            # Obtener recursos para esta hora (si no existe, usar 0)
-            recursos = recursos_dict.get(hora, 0)
+            # Calcular el promedio por hora (across all dates)
+            suma_proporcion_por_hora = suma_proporcion_por_hora_fecha.groupby('Hora_Numerica')['Proporcion_Equivalencia'].mean().reset_index()
+            suma_proporcion_por_hora = suma_proporcion_por_hora.rename(columns={'Proporcion_Equivalencia': 'Suma_Promedio_Proporcion'})
             
-            if conteo > 0 and recursos > 0:
-                return (recursos * CONSTANTE_VALIDACION) / conteo
-            else:
-                return 0
-        
-        df_procesado['validador_recurso_hora'] = df_procesado.apply(
-            lambda x: calcular_validador_recurso_hora(x, recursos_por_hora), 
-            axis=1
-        )
+            # Calcular validador_recurso_hora CORREGIDO
+            def calcular_validador_recurso_hora_corregido(hora, suma_promedio_dict, recursos_dict):
+                # Obtener recursos para esta hora
+                recursos = recursos_dict.get(hora, 0)
+                
+                # Obtener suma promedio de proporción para esta hora
+                suma_promedio = suma_promedio_dict.get(hora, 0)
+                
+                if suma_promedio > 0:
+                    # Fórmula corregida: (recursos * CONSTANTE_VALIDACION) / suma_promedio
+                    return (recursos * CONSTANTE_VALIDACION) / suma_promedio
+                else:
+                    return 0
+            
+            # Crear diccionario de suma promedio por hora
+            suma_promedio_dict = dict(zip(suma_proporcion_por_hora['Hora_Numerica'], suma_proporcion_por_hora['Suma_Promedio_Proporcion']))
+            
+            # Calcular validador_recurso_hora para cada registro
+            df_procesado['validador_recurso_hora'] = df_procesado['Hora_Numerica'].apply(
+                lambda x: calcular_validador_recurso_hora_corregido(x, suma_promedio_dict, recursos_por_hora)
+            )
+        else:
+            df_procesado['validador_recurso_hora'] = 0
         
         # 13. PASO 9: Calcular validador_necesidad_personas_hora
         def calcular_validador_necesidad_personas_hora(fila, recursos_dict):
             hora = fila['Hora_Numerica']
-            conteo = fila['Conteo_Hora_Fecha_Rol']
-            
-            # Obtener recursos para esta hora (si no existe, usar 0)
+            # Obtener recursos para esta hora
             recursos = recursos_dict.get(hora, 0)
             
-            if conteo > 0:
-                return recursos / conteo
-            else:
-                return 0
+            # Para calcular necesidad, necesitamos el total de llamadas por hora
+            # Primero calculamos esto por hora y fecha
+            return recursos  # Esto será ajustado más adelante
         
         df_procesado['validador_necesidad_personas_hora'] = df_procesado.apply(
             lambda x: calcular_validador_necesidad_personas_hora(x, recursos_por_hora), 
@@ -400,7 +403,7 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
         df_procesado['validador_necesidad_personas_hora'] = df_procesado['validador_necesidad_personas_hora'].round(6)
         
         # Eliminar columnas temporales
-        columnas_a_eliminar = ['Clave_Agrupacion', 'Clave_Hora_Fecha_Rol']
+        columnas_a_eliminar = ['Clave_Agrupacion']
         df_procesado = df_procesado.drop(columns=columnas_a_eliminar)
         
         # Mostrar distribución de empresa_inbound y empresa_outbound
@@ -422,6 +425,22 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
                 porcentaje = (count / len(df_procesado)) * 100
                 st.write(f"- {empresa}: {count:,} registros ({porcentaje:.1f}%)")
         
+        # Mostrar información sobre los cálculos de recursos
+        st.info("**Información de cálculo de recursos:**")
+        col_rec1, col_rec2 = st.columns(2)
+        
+        with col_rec1:
+            # Mostrar recursos por hora configurados
+            st.write("**Recursos configurados por hora:**")
+            for hora, recurso in sorted(recursos_por_hora.items()):
+                st.write(f"- {hora}:00: {recurso} personas")
+        
+        with col_rec2:
+            # Calcular máximo teórico de validador_recurso_hora
+            if len(df_procesado) > 0:
+                max_recurso_hora = df_procesado['validador_recurso_hora'].max()
+                st.metric("Máximo validador_recurso_hora", f"{max_recurso_hora:.2f}")
+        
         st.success("✅ Datos procesados y cálculos realizados exitosamente")
         
     except Exception as e:
@@ -430,7 +449,7 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
     
     return df_procesado
 
-# Función para crear gráfico de proporciones por hora y día - SIMPLIFICADA
+# Función para crear gráfico de proporciones por hora y día - CORREGIDA
 def crear_grafico_proporciones_dia_hora(df_procesado):
     """
     Crea un gráfico de líneas que muestra la SUMA de Proporción de Equivalencia
@@ -493,6 +512,14 @@ def crear_grafico_proporciones_dia_hora(df_procesado):
         # Mostrar gráfico con eje X de 0 a 24
         st.line_chart(chart_data)
         
+        # Mostrar valores máximos para validación
+        max_proporcion = datos_grafico_completo['Suma_Proporcion_Demanda'].max()
+        max_recursos = datos_grafico_completo['Suma_Recursos_Disponibles'].max()
+        
+        st.info(f"**Valores máximos para {dia_seleccionado}:**")
+        st.write(f"- Máxima suma de proporción demanda: {max_proporcion:.4f}")
+        st.write(f"- Máxima suma de recursos disponibles: {max_recursos:.4f}")
+        
     else:
         st.warning(f"No hay datos disponibles para {dia_seleccionado}")
 
@@ -508,7 +535,7 @@ def mostrar_primeros_registros(df_procesado):
         'Hora_Registro', 'Hora_Numerica', 'Fecha_Creacion', 'Dia_Semana',
         'Dias_Mismo_Tipo_Dataset', 'Conteo_Registros_Similares', 'Paso_1_Division',
         'Proporcion_Equivalencia', 'validador_demanda_personas_hora', 'rol_inbound',
-        'empresa_inbound', 'empresa_outbound', 'Conteo_Hora_Fecha_Rol', 'validador_recurso_hora',
+        'empresa_inbound', 'empresa_outbound', 'validador_recurso_hora',
         'validador_necesidad_personas_hora'
     ]
     
