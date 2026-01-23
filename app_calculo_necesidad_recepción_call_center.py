@@ -28,6 +28,26 @@ CODIGOS_FILTRAR = [
     '(8004)', '(8070)', '(8006)', '(7999)', '(8069)', '(8055)', '(8050)'
 ]
 
+# Definición de códigos por empresa para la columna empresa_inbound
+CODIGOS_CCB = [
+    '(2028)', '(2029)', '(2030)', '(2035)', '(8051)', '(8052)', '(8006)', '(8055)', '(8050)'
+]
+
+CODIGOS_ODO = [
+    '(2001)', '(2002)', '(2003)', '(2004)', '(2005)', '(2006)', '(2007)', '(2008)', 
+    '(2009)', '(2010)', '(2011)', '(2012)', '(2013)', '(2014)', '(2015)', '(2016)', 
+    '(2017)', '(2018)', '(2019)', '(2021)', '(2022)', '(2023)', '(2024)', '(2025)', 
+    '(2026)', '(2032)', '(2034)', '(8000)', '(8002)', '(8003)', '(8071)', '(8079)', 
+    '(8068)', '(8004)', '(7999)'
+]
+
+CODIGOS_UDC = [
+    '(0220)', '(0221)', '(0222)', '(0303)', '(0305)', '(0308)', '(0316)', '(0320)', 
+    '(0323)', '(0324)', '(0327)', '(0331)', '(0404)', '(0407)', '(0410)', '(0412)', 
+    '(0413)', '(0414)', '(0415)', '(0417)', '(8062)', '(8063)', '(8064)', '(8072)', 
+    '(8080)', '(8070)', '(8069)'
+]
+
 # Sidebar para cargar el archivo
 with st.sidebar:
     st.header("Cargar Datos")
@@ -45,11 +65,15 @@ with st.sidebar:
         st.json(file_details)
     
     st.markdown("---")
-    st.markdown("**Filtros aplicados:**")
+    st.markdown("**Filtros y Clasificaciones:**")
     st.markdown(f"""
-    Solo se analizarán registros cuyo campo 'To' contenga alguno de estos códigos:
-    - (0220), (0221), (0222), ...
-    - Total: {len(CODIGOS_FILTRAR)} códigos específicos
+    **Filtro aplicado:**
+    - Total códigos filtrados: {len(CODIGOS_FILTRAR)}
+    
+    **Clasificación por empresa:**
+    - CCB: {len(CODIGOS_CCB)} códigos
+    - ODO: {len(CODIGOS_ODO)} códigos  
+    - UDC: {len(CODIGOS_UDC)} códigos
     """)
     
     st.markdown("---")
@@ -57,6 +81,8 @@ with st.sidebar:
     st.markdown(f"""
     1. **Proporción de Equivalencia**: (1 / Conteo_Similares) / Días_Mismo_Tipo
     2. **Validador Demanda/Personas/Hora**: Proporción / {CONSTANTE_VALIDACION}
+    3. **Rol Inbound**: Call Center / Externo
+    4. **Empresa Inbound**: CCB / ODO / UDC / Externo
     """)
     
     st.markdown("---")
@@ -64,10 +90,9 @@ with st.sidebar:
     st.markdown("""
     1. Sube un archivo CSV con los campos requeridos
     2. La app filtrará por los códigos especificados
-    3. Calculará la proporción de equivalencia
-    4. Calculará el validador de demanda
-    5. Analiza los resultados
-    6. Descarga los datos procesados
+    3. Calculará todas las métricas y clasificaciones
+    4. Analiza los resultados
+    5. Descarga los datos procesados
     """)
 
 # Función para traducir días de la semana
@@ -82,6 +107,42 @@ def traducir_dia(dia_ingles):
         'Sunday': 'Domingo'
     }
     return dias_traduccion.get(dia_ingles, dia_ingles)
+
+# Función para determinar rol_inbound
+def determinar_rol_inbound(valor_to, codigos_filtro):
+    """
+    Determina el rol inbound basado en si el código está en la lista filtrada
+    """
+    valor_str = str(valor_to)
+    # Verificar si contiene algún código del filtro
+    for codigo in codigos_filtro:
+        if codigo in valor_str:
+            return "Call center"
+    return "Externo"
+
+# Función para determinar empresa_inbound
+def determinar_empresa_inbound(valor_to, codigos_ccb, codigos_odo, codigos_udc):
+    """
+    Determina la empresa inbound basado en los códigos específicos
+    """
+    valor_str = str(valor_to)
+    
+    # Verificar CCB
+    for codigo in codigos_ccb:
+        if codigo in valor_str:
+            return "CCB"
+    
+    # Verificar ODO
+    for codigo in codigos_odo:
+        if codigo in valor_str:
+            return "ODO"
+    
+    # Verificar UDC
+    for codigo in codigos_udc:
+        if codigo in valor_str:
+            return "UDC"
+    
+    return "Externo"
 
 # Función para filtrar datos por códigos en el campo "To"
 def filtrar_por_codigos(df):
@@ -154,7 +215,6 @@ def procesar_datos_con_proporcion(df):
         df_procesado['Dia_Semana'] = df_procesado['Dia_Semana'].apply(traducir_dia)
         
         # 4. Calcular cantidad de días de ese tipo en el dataset
-        # Esto es importante porque el dataset puede no cubrir todo el mes
         def calcular_dias_tipo_en_dataset_real(dia_semana, df_completo):
             """
             Calcula cuántos días únicos de este tipo hay realmente en el dataset
@@ -224,6 +284,16 @@ def procesar_datos_con_proporcion(df):
             df_procesado['Proporcion_Equivalencia'] / CONSTANTE_VALIDACION
         )
         
+        # 9. PASO 5: Calcular rol_inbound
+        df_procesado['rol_inbound'] = df_procesado['To'].apply(
+            lambda x: determinar_rol_inbound(x, CODIGOS_FILTRAR)
+        )
+        
+        # 10. PASO 6: Calcular empresa_inbound
+        df_procesado['empresa_inbound'] = df_procesado['To'].apply(
+            lambda x: determinar_empresa_inbound(x, CODIGOS_CCB, CODIGOS_ODO, CODIGOS_UDC)
+        )
+        
         # Redondear a 6 decimales para mayor precisión
         df_procesado['Proporcion_Equivalencia'] = df_procesado['Proporcion_Equivalencia'].round(6)
         df_procesado['Paso_1_Division'] = df_procesado['Paso_1_Division'].round(6)
@@ -235,10 +305,27 @@ def procesar_datos_con_proporcion(df):
         
         st.success("✅ Datos procesados y cálculos realizados exitosamente")
         
+        # Mostrar distribución de las nuevas columnas
+        st.write("**📊 Distribución de las nuevas columnas:**")
+        
+        col_dist1, col_dist2 = st.columns(2)
+        
+        with col_dist1:
+            st.write("**Distribución de rol_inbound:**")
+            distribucion_rol = df_procesado['rol_inbound'].value_counts()
+            st.dataframe(distribucion_rol, use_container_width=True)
+            st.bar_chart(distribucion_rol)
+        
+        with col_dist2:
+            st.write("**Distribución de empresa_inbound:**")
+            distribucion_empresa = df_procesado['empresa_inbound'].value_counts()
+            st.dataframe(distribucion_empresa, use_container_width=True)
+            st.bar_chart(distribucion_empresa)
+        
         # Mostrar ejemplo de cálculo
-        with st.expander("📝 Ver ejemplo de cálculo completo"):
+        with st.expander("📝 Ver ejemplo de cálculo completo con clasificaciones"):
             st.markdown(f"""
-            **Fórmulas de cálculo:**
+            **Fórmulas de cálculo y clasificaciones:**
             
             1. **Proporción de Equivalencia:**
             ```
@@ -250,18 +337,19 @@ def procesar_datos_con_proporcion(df):
             Validador = Proporción_Equivalencia / {CONSTANTE_VALIDACION}
             ```
             
-            **Donde:**
-            - `Conteo_Registros_Similares`: Número de registros con el mismo "To", fecha, día de semana, hora y "From"
-            - `Dias_Mismo_Tipo_Dataset`: Cantidad de días del mismo tipo (ej: Lunes) en el dataset
-            - `{CONSTANTE_VALIDACION}`: Constante para el cálculo del validador
+            3. **Rol Inbound:**
+            ```
+            Si "To" contiene algún código de la lista filtrada → "Call center"
+            Si no → "Externo"
+            ```
             
-            **Ejemplo práctico completo:**
-            1. Si hay 5 registros con las mismas características (mismo To, fecha, día, hora, From)
-               - Paso 1: 1 / 5 = 0.2
-            2. Si hay 4 días del mismo tipo (ej: Lunes) en el dataset
-               - Paso 2: 0.2 / 4 = 0.05 (Proporción de Equivalencia)
-            3. Cálculo del validador:
-               - Paso 3: 0.05 / {CONSTANTE_VALIDACION} = {0.05/CONSTANTE_VALIDACION:.6f}
+            4. **Empresa Inbound:**
+            ```
+            Si "To" contiene códigos CCB → "CCB"
+            Si "To" contiene códigos ODO → "ODO"  
+            Si "To" contiene códigos UDC → "UDC"
+            Si no → "Externo"
+            ```
             """)
             
             # Mostrar un ejemplo real del dataset
@@ -278,6 +366,8 @@ def procesar_datos_con_proporcion(df):
                 st.write(f"- Paso 1 (1/{ejemplo['Conteo_Registros_Similares']}): {ejemplo['Paso_1_Division']:.6f}")
                 st.write(f"- **Proporción final: {ejemplo['Proporcion_Equivalencia']:.6f}**")
                 st.write(f"- **Validador demanda/personas/hora: {ejemplo['validador_demanda_personas_hora']:.6f}**")
+                st.write(f"- **Rol Inbound: {ejemplo['rol_inbound']}**")
+                st.write(f"- **Empresa Inbound: {ejemplo['empresa_inbound']}**")
         
         # Mostrar resumen de los cálculos
         st.write("**📊 Resumen de los cálculos:**")
@@ -316,59 +406,30 @@ def procesar_datos_con_proporcion(df):
             suma_validador = df_procesado['validador_demanda_personas_hora'].sum()
             st.metric("Suma total", f"{suma_validador:.6f}")
         
-        # Relación entre proporción y validador
-        st.write("**📈 Relación Proporción → Validador:**")
-        col_rel1, col_rel2 = st.columns(2)
-        
-        with col_rel1:
-            st.write("**Factor de conversión:**")
-            st.info(f"Cada unidad de proporción equivale a **{1/CONSTANTE_VALIDACION:.6f}** unidades de validador")
-            
-        with col_rel2:
-            # Calcular correlación entre las dos columnas
-            correlacion = df_procesado['Proporcion_Equivalencia'].corr(
-                df_procesado['validador_demanda_personas_hora']
-            )
-            st.write("**Correlación:**")
-            st.info(f"Correlación perfecta: **{correlacion:.6f}** (esperado: 1.0)")
-        
-        # Mostrar distribución de conteos de registros similares
-        st.write("**Distribución de registros por grupo:**")
-        distribucion = df_procesado['Conteo_Registros_Similares'].value_counts().sort_index()
-        
-        col_dist1, col_dist2 = st.columns(2)
-        
-        with col_dist1:
-            st.write("**Conteo de grupos:**")
-            st.dataframe(distribucion.head(10), use_container_width=True)
-        
-        with col_dist2:
-            st.write("**Gráfico de distribución:**")
-            st.bar_chart(distribucion.head(10))
-        
-        # Mostrar estadísticas de días por tipo
-        st.write("**Estadísticas por día de la semana:**")
-        dias_stats = df_procesado.groupby('Dia_Semana').agg({
-            'Dias_Mismo_Tipo_Dataset': 'first',
-            'Proporcion_Equivalencia': ['mean', 'sum', 'count'],
-            'validador_demanda_personas_hora': ['mean', 'sum']
+        # Análisis por rol_inbound
+        st.write("**👥 Análisis por Rol Inbound:**")
+        analisis_rol = df_procesado.groupby('rol_inbound').agg({
+            'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
+            'validador_demanda_personas_hora': ['sum', 'mean']
         }).round(6)
         
-        # Renombrar columnas
-        dias_stats.columns = [
-            'Días en Dataset',
-            'Promedio Proporción', 
-            'Suma Proporciones',
-            'Cantidad Registros',
-            'Promedio Validador',
-            'Suma Validador'
-        ]
+        analisis_rol.columns = ['Cantidad', 'Suma Proporción', 'Promedio Proporción', 
+                               'Suma Validador', 'Promedio Validador']
         
-        # Ordenar por días de la semana
-        orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-        dias_stats = dias_stats.reindex(orden_dias)
+        st.dataframe(analisis_rol, use_container_width=True)
         
-        st.dataframe(dias_stats, use_container_width=True)
+        # Análisis por empresa_inbound
+        st.write("**🏢 Análisis por Empresa Inbound:**")
+        analisis_empresa = df_procesado.groupby('empresa_inbound').agg({
+            'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
+            'validador_demanda_personas_hora': ['sum', 'mean'],
+            'rol_inbound': lambda x: x.value_counts().to_dict()
+        }).round(6)
+        
+        analisis_empresa.columns = ['Cantidad', 'Suma Proporción', 'Promedio Proporción', 
+                                   'Suma Validador', 'Promedio Validador', 'Distribución Rol']
+        
+        st.dataframe(analisis_empresa, use_container_width=True)
         
     except Exception as e:
         st.error(f"Error al procesar los datos: {str(e)}")
@@ -437,7 +498,7 @@ def main():
                                     'Call Time', 'From', 'To', 'Fecha_Creacion', 
                                     'Dia_Semana', 'Hora_Registro', 'Conteo_Registros_Similares',
                                     'Dias_Mismo_Tipo_Dataset', 'Proporcion_Equivalencia',
-                                    'validador_demanda_personas_hora'
+                                    'validador_demanda_personas_hora', 'rol_inbound', 'empresa_inbound'
                                 ]
                                 
                                 # Filtrar solo las columnas que existen
@@ -481,95 +542,72 @@ def main():
                         suma_validador = df_procesado['validador_demanda_personas_hora'].sum()
                         st.metric("Suma total validador", f"{suma_validador:.6f}")
                     
-                    # Análisis comparativo entre proporción y validador
-                    st.write("### 📊 Análisis Comparativo")
+                    # Análisis de clasificaciones
+                    st.write("### 🏷️ Análisis de Clasificaciones")
                     
-                    col_comp1, col_comp2 = st.columns(2)
+                    col_clas1, col_clas2 = st.columns(2)
                     
-                    with col_comp1:
-                        st.write("**Distribución de Proporción de Equivalencia:**")
-                        st.bar_chart(df_procesado['Proporcion_Equivalencia'].value_counts().sort_index().head(20))
+                    with col_clas1:
+                        st.write("**Distribución por Rol Inbound:**")
+                        distrib_rol = df_procesado['rol_inbound'].value_counts()
+                        st.dataframe(distrib_rol, use_container_width=True)
+                        st.bar_chart(distrib_rol)
                     
-                    with col_comp2:
-                        st.write("**Distribución de Validador Demanda:**")
-                        st.bar_chart(df_procesado['validador_demanda_personas_hora'].value_counts().sort_index().head(20))
+                    with col_clas2:
+                        st.write("**Distribución por Empresa Inbound:**")
+                        distrib_empresa = df_procesado['empresa_inbound'].value_counts()
+                        st.dataframe(distrib_empresa, use_container_width=True)
+                        st.bar_chart(distrib_empresa)
                     
-                    # Análisis por día de la semana
-                    st.write("### 📅 Análisis por Día de la Semana")
+                    # Análisis cruzado rol vs empresa
+                    st.write("### 🔄 Análisis Cruzado: Rol vs Empresa")
+                    
+                    cruzado = pd.crosstab(df_procesado['rol_inbound'], 
+                                         df_procesado['empresa_inbound'],
+                                         margins=True)
+                    st.dataframe(cruzado, use_container_width=True)
+                    
+                    # Análisis por día de la semana con clasificaciones
+                    st.write("### 📅 Análisis por Día de la Semana (con clasificaciones)")
                     
                     if 'Dia_Semana' in df_procesado.columns:
-                        analisis_dias = df_procesado.groupby('Dia_Semana').agg({
-                            'Proporcion_Equivalencia': ['count', 'sum', 'mean', 'min', 'max'],
-                            'validador_demanda_personas_hora': ['sum', 'mean'],
-                            'Conteo_Registros_Similares': 'mean',
-                            'Dias_Mismo_Tipo_Dataset': 'first'
+                        # Análisis por día y empresa
+                        analisis_dia_empresa = df_procesado.groupby(['Dia_Semana', 'empresa_inbound']).agg({
+                            'validador_demanda_personas_hora': ['count', 'sum']
                         }).round(6)
                         
-                        # Renombrar columnas para mejor visualización
-                        analisis_dias.columns = [
-                            'Cantidad Registros', 
-                            'Suma Proporciones', 'Promedio Proporción',
-                            'Mínima Proporción', 'Máxima Proporción',
-                            'Suma Validador', 'Promedio Validador',
-                            'Promedio Registros Similares', 'Días Mismo Tipo Dataset'
-                        ]
+                        analisis_dia_empresa.columns = ['Cantidad', 'Suma Validador']
+                        st.dataframe(analisis_dia_empresa, use_container_width=True)
                         
-                        # Ordenar por días de la semana
+                        # Gráfico de suma de validador por día y empresa
+                        pivot_table = df_procesado.pivot_table(
+                            index='Dia_Semana',
+                            columns='empresa_inbound',
+                            values='validador_demanda_personas_hora',
+                            aggfunc='sum',
+                            fill_value=0
+                        ).round(6)
+                        
+                        # Ordenar días
                         orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-                        analisis_dias = analisis_dias.reindex(orden_dias)
+                        pivot_table = pivot_table.reindex(orden_dias)
                         
-                        st.dataframe(analisis_dias, use_container_width=True)
-                        
-                        # Gráfico comparativo por día
-                        col_graf1, col_graf2 = st.columns(2)
-                        
-                        with col_graf1:
-                            st.write("**Suma de proporciones por día:**")
-                            st.bar_chart(analisis_dias['Suma Proporciones'])
-                        
-                        with col_graf2:
-                            st.write("**Suma de validador por día:**")
-                            st.bar_chart(analisis_dias['Suma Validador'])
+                        st.write("**Suma de Validador por Día y Empresa:**")
+                        st.bar_chart(pivot_table)
                     
-                    # Análisis por hora del día
-                    st.write("### 🕐 Análisis por Hora del Día")
+                    # Análisis por hora del día con clasificaciones
+                    st.write("### 🕐 Análisis por Hora del Día (con clasificaciones)")
                     
                     if 'Hora_Numerica' in df_procesado.columns:
-                        analisis_horas = df_procesado.groupby('Hora_Numerica').agg({
-                            'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
-                            'validador_demanda_personas_hora': ['sum', 'mean'],
+                        # Análisis por hora y rol
+                        analisis_hora_rol = df_procesado.groupby(['Hora_Numerica', 'rol_inbound']).agg({
+                            'validador_demanda_personas_hora': ['count', 'sum']
                         }).round(6)
                         
-                        analisis_horas.columns = [
-                            'Cantidad Registros', 
-                            'Suma Proporciones', 'Promedio Proporción',
-                            'Suma Validador', 'Promedio Validador'
-                        ]
-                        analisis_horas = analisis_horas.sort_index()
+                        analisis_hora_rol.columns = ['Cantidad', 'Suma Validador']
+                        analisis_hora_rol = analisis_hora_rol.sort_index()
                         
-                        col_hora1, col_hora2 = st.columns(2)
-                        
-                        with col_hora1:
-                            st.dataframe(analisis_horas, use_container_width=True)
-                        
-                        with col_hora2:
-                            st.write("**Suma de validador por hora:**")
-                            st.line_chart(analisis_horas['Suma Validador'])
-                    
-                    # Análisis de grupos similares
-                    st.write("### 👥 Análisis de Grupos Similares")
-                    
-                    analisis_grupos = df_procesado.groupby('Conteo_Registros_Similares').agg({
-                        'Proporcion_Equivalencia': ['count', 'mean', 'sum'],
-                        'validador_demanda_personas_hora': ['mean', 'sum']
-                    }).round(6)
-                    
-                    analisis_grupos.columns = [
-                        'Cantidad Grupos', 'Promedio Proporción', 'Suma Proporciones',
-                        'Promedio Validador', 'Suma Validador'
-                    ]
-                    
-                    st.dataframe(analisis_grupos.head(15), use_container_width=True)
+                        st.dataframe(analisis_hora_rol, use_container_width=True)
                     
                     # Exportación de datos
                     st.write("### 💾 Exportar Datos Procesados")
@@ -582,7 +620,7 @@ def main():
                         st.download_button(
                             label="📥 Descargar CSV completo",
                             data=csv,
-                            file_name="datos_con_calculos_completos.csv",
+                            file_name="datos_con_calculos_clasificaciones.csv",
                             mime="text/csv",
                             type="primary"
                         )
@@ -597,7 +635,8 @@ def main():
                             default=[
                                 'Call Time', 'From', 'To', 'Fecha_Creacion', 
                                 'Dia_Semana', 'Hora_Registro', 
-                                'Proporcion_Equivalencia', 'validador_demanda_personas_hora'
+                                'Proporcion_Equivalencia', 'validador_demanda_personas_hora',
+                                'rol_inbound', 'empresa_inbound'
                             ]
                         )
                         
@@ -618,23 +657,27 @@ def main():
                             # Hoja 1: Datos completos
                             df_procesado.to_excel(writer, sheet_name='Datos_Completos', index=False)
                             
-                            # Hoja 2: Resumen por día
-                            if 'Dia_Semana' in df_procesado.columns:
-                                resumen_dias = df_procesado.groupby('Dia_Semana').agg({
-                                    'Proporcion_Equivalencia': ['count', 'sum', 'mean', 'min', 'max'],
-                                    'validador_demanda_personas_hora': ['sum', 'mean']
-                                }).round(6)
-                                resumen_dias.to_excel(writer, sheet_name='Resumen_Por_Dia')
+                            # Hoja 2: Resumen por empresa
+                            resumen_empresa = df_procesado.groupby('empresa_inbound').agg({
+                                'Proporcion_Equivalencia': ['count', 'sum', 'mean', 'min', 'max'],
+                                'validador_demanda_personas_hora': ['sum', 'mean']
+                            }).round(6)
+                            resumen_empresa.to_excel(writer, sheet_name='Resumen_Por_Empresa')
                             
-                            # Hoja 3: Resumen por hora
-                            if 'Hora_Numerica' in df_procesado.columns:
-                                resumen_horas = df_procesado.groupby('Hora_Numerica').agg({
-                                    'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
-                                    'validador_demanda_personas_hora': ['sum', 'mean']
-                                }).round(6)
-                                resumen_horas.to_excel(writer, sheet_name='Resumen_Por_Hora')
+                            # Hoja 3: Resumen por rol
+                            resumen_rol = df_procesado.groupby('rol_inbound').agg({
+                                'Proporcion_Equivalencia': ['count', 'sum', 'mean', 'min', 'max'],
+                                'validador_demanda_personas_hora': ['sum', 'mean']
+                            }).round(6)
+                            resumen_rol.to_excel(writer, sheet_name='Resumen_Por_Rol')
                             
-                            # Hoja 4: Estadísticas generales
+                            # Hoja 4: Tabla cruzada rol vs empresa
+                            cruzado_df = pd.crosstab(df_procesado['rol_inbound'], 
+                                                    df_procesado['empresa_inbound'],
+                                                    margins=True)
+                            cruzado_df.to_excel(writer, sheet_name='Cruzado_Rol_Empresa')
+                            
+                            # Hoja 5: Estadísticas generales
                             stats_df = pd.DataFrame({
                                 'Métrica': [
                                     'Total Registros', 
@@ -644,7 +687,13 @@ def main():
                                     'Proporción Máxima',
                                     'Validador Mínimo',
                                     'Validador Máximo',
-                                    'Constante de Validación'
+                                    'Constante de Validación',
+                                    'Registros Call Center',
+                                    'Registros Externos',
+                                    'Empresa CCB',
+                                    'Empresa ODO',
+                                    'Empresa UDC',
+                                    'Empresa Externa'
                                 ],
                                 'Valor': [
                                     len(df_procesado),
@@ -654,7 +703,13 @@ def main():
                                     df_procesado['Proporcion_Equivalencia'].max(),
                                     df_procesado['validador_demanda_personas_hora'].min(),
                                     df_procesado['validador_demanda_personas_hora'].max(),
-                                    CONSTANTE_VALIDACION
+                                    CONSTANTE_VALIDACION,
+                                    len(df_procesado[df_procesado['rol_inbound'] == 'Call center']),
+                                    len(df_procesado[df_procesado['rol_inbound'] == 'Externo']),
+                                    len(df_procesado[df_procesado['empresa_inbound'] == 'CCB']),
+                                    len(df_procesado[df_procesado['empresa_inbound'] == 'ODO']),
+                                    len(df_procesado[df_procesado['empresa_inbound'] == 'UDC']),
+                                    len(df_procesado[df_procesado['empresa_inbound'] == 'Externo'])
                                 ]
                             })
                             stats_df.to_excel(writer, sheet_name='Estadisticas_Generales', index=False)
@@ -684,9 +739,9 @@ def main():
         st.info("👈 Por favor, carga un archivo CSV usando el panel lateral")
         
         # Mostrar ejemplo de estructura esperada
-        with st.expander("Ver estructura esperada del CSV"):
+        with st.expander("Ver estructura esperada del CSV y clasificaciones"):
             st.write(f"""
-            ## Cálculos Realizados
+            ## Cálculos y Clasificaciones Realizadas
             
             **1. Proporción de Equivalencia:**
             ```
@@ -698,31 +753,25 @@ def main():
             Validador = Proporción_Equivalencia / {CONSTANTE_VALIDACION}
             ```
             
-            **Donde:**
-            - `Conteo_Registros_Similares`: Registros con mismo To, fecha, día, hora y From
-            - `Dias_Mismo_Tipo_Dataset`: Días del mismo tipo en el dataset
-            - `{CONSTANTE_VALIDACION}`: Constante de validación (14.08)
+            **3. Rol Inbound:**
+            - **Call center**: Registros cuyo campo "To" contiene alguno de los {len(CODIGOS_FILTRAR)} códigos filtrados
+            - **Externo**: Registros cuyo campo "To" NO contiene ninguno de los códigos filtrados
             
-            **Ejemplo completo:**
+            **4. Empresa Inbound:**
+            - **CCB**: {len(CODIGOS_CCB)} códigos específicos (2028, 2029, 2030, 2035, 8051, 8052, 8006, 8055, 8050)
+            - **ODO**: {len(CODIGOS_ODO)} códigos específicos (serie 2000 y otros específicos)
+            - **UDC**: {len(CODIGOS_UDC)} códigos específicos (series 0200, 0300, 0400 y otros específicos)
+            - **Externo**: No coincide con ningún código de las categorías anteriores
             
-            Registro con:
-            - To: "(0220)"
-            - Fecha: "15/01/2026"
-            - Día: "Miércoles"
-            - Hora: 14:00
-            - From: "ClienteX"
+            **Ejemplo de clasificación:**
             
-            **Cálculos:**
-            1. Si hay 3 registros idénticos: `Conteo_Registros_Similares = 3`
-            2. Paso 1: `1 / 3 = 0.333333`
-            3. Si hay 4 Miércoles en dataset: `Dias_Mismo_Tipo_Dataset = 4`
-            4. Paso 2: `0.333333 / 4 = 0.083333` ← **Proporción de Equivalencia**
-            5. Paso 3: `0.083333 / {CONSTANTE_VALIDACION} = {0.083333/CONSTANTE_VALIDACION:.6f}` ← **Validador**
+            Registro con To = "(2028) Oficina Principal":
+            1. Contiene "(2028)" → está en lista filtrada → **rol_inbound = "Call center"**
+            2. "(2028)" está en lista CCB → **empresa_inbound = "CCB"**
             
-            **Interpretación del Validador:**
-            - Mide la "demanda ajustada por persona por hora"
-            - Útil para estimar necesidades de personal
-            - Permite comparar diferentes períodos y horarios
+            Registro con To = "Cliente Externo 555":
+            1. No contiene códigos filtrados → **rol_inbound = "Externo"**
+            2. No contiene códigos de empresa → **empresa_inbound = "Externo"**
             """)
 
 if __name__ == "__main__":
