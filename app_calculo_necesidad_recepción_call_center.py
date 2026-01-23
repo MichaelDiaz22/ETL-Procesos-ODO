@@ -9,8 +9,11 @@ import io
 st.set_page_config(page_title="Analizador de Llamadas", page_icon="📞", layout="wide")
 
 # Título de la aplicación
-st.title("📊 Analizador de Registros de Llamadas - Proporción de Equivalencia")
-st.markdown("Carga un archivo CSV con registros de llamadas para calcular la proporción de equivalencia")
+st.title("📊 Analizador de Registros de Llamadas - Proporción de Equivalencia y Validación")
+st.markdown("Carga un archivo CSV con registros de llamadas para calcular la proporción de equivalencia y validación de demanda")
+
+# Constante para el cálculo de validación
+CONSTANTE_VALIDACION = 14.08
 
 # Lista de códigos a filtrar en el campo "To"
 CODIGOS_FILTRAR = [
@@ -43,10 +46,17 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("**Filtros aplicados:**")
-    st.markdown("""
+    st.markdown(f"""
     Solo se analizarán registros cuyo campo 'To' contenga alguno de estos códigos:
     - (0220), (0221), (0222), ...
-    - Total: 74 códigos específicos
+    - Total: {len(CODIGOS_FILTRAR)} códigos específicos
+    """)
+    
+    st.markdown("---")
+    st.markdown("**Cálculos realizados:**")
+    st.markdown(f"""
+    1. **Proporción de Equivalencia**: (1 / Conteo_Similares) / Días_Mismo_Tipo
+    2. **Validador Demanda/Personas/Hora**: Proporción / {CONSTANTE_VALIDACION}
     """)
     
     st.markdown("---")
@@ -55,8 +65,9 @@ with st.sidebar:
     1. Sube un archivo CSV con los campos requeridos
     2. La app filtrará por los códigos especificados
     3. Calculará la proporción de equivalencia
-    4. Analiza los resultados
-    5. Descarga los datos procesados
+    4. Calculará el validador de demanda
+    5. Analiza los resultados
+    6. Descarga los datos procesados
     """)
 
 # Función para traducir días de la semana
@@ -111,7 +122,7 @@ def filtrar_por_codigos(df):
 # Función para procesar los datos y calcular proporción de equivalencia
 def procesar_datos_con_proporcion(df):
     """
-    Procesa el DataFrame y calcula la proporción de equivalencia según la nueva especificación
+    Procesa el DataFrame y calcula la proporción de equivalencia según la especificación
     """
     # Hacer una copia para no modificar el original
     df_procesado = df.copy()
@@ -143,41 +154,6 @@ def procesar_datos_con_proporcion(df):
         df_procesado['Dia_Semana'] = df_procesado['Dia_Semana'].apply(traducir_dia)
         
         # 4. Calcular cantidad de días de ese tipo en el dataset
-        def calcular_dias_tipo_en_dataset(fecha, dia_semana, df_completo):
-            """
-            Calcula cuántos días del mismo tipo (mismo día de semana) hay en el dataset
-            para el mes y año de la fecha dada
-            """
-            if pd.isna(fecha):
-                return 0
-            
-            # Obtener año y mes de la fecha
-            año = fecha.year
-            mes = fecha.month
-            
-            # Obtener el número del día de la semana (0=Lunes, 6=Domingo)
-            dias_numeros = {
-                'Lunes': 0, 'Martes': 1, 'Miércoles': 2, 'Jueves': 3,
-                'Viernes': 4, 'Sábado': 5, 'Domingo': 6
-            }
-            dia_num = dias_numeros.get(dia_semana, 0)
-            
-            # Contar cuántos días de ese tipo hay en el mes
-            cal = calendar.monthcalendar(año, mes)
-            contador_dias = 0
-            for semana in cal:
-                if semana[dia_num] != 0:
-                    contador_dias += 1
-            
-            return contador_dias
-        
-        # Aplicar la función para calcular días del mismo tipo en el mes
-        df_procesado['Dias_Mismo_Tipo_Mes'] = df_procesado.apply(
-            lambda x: calcular_dias_tipo_en_dataset(x['Call Time'], x['Dia_Semana'], df_procesado), 
-            axis=1
-        )
-        
-        # 5. Calcular cantidad de días de ese tipo en el DATASET (no solo en el mes teórico)
         # Esto es importante porque el dataset puede no cubrir todo el mes
         def calcular_dias_tipo_en_dataset_real(dia_semana, df_completo):
             """
@@ -213,7 +189,7 @@ def procesar_datos_con_proporcion(df):
         dias_info = pd.DataFrame(list(dias_por_tipo.items()), columns=['Día de la semana', 'Cantidad en dataset'])
         st.dataframe(dias_info, use_container_width=True)
         
-        # 6. PASO 1: Calcular conteo de registros que coinciden en:
+        # 5. PASO 1: Calcular conteo de registros que coinciden en:
         # - Mismo "To"
         # - Misma fecha de creación
         # - Mismo día de la semana
@@ -235,43 +211,57 @@ def procesar_datos_con_proporcion(df):
         # Asignar el conteo a cada registro
         df_procesado['Conteo_Registros_Similares'] = df_procesado['Clave_Agrupacion'].map(conteo_grupos)
         
-        # 7. PASO 2: Calcular primera división (1 / conteo de registros similares)
+        # 6. PASO 2: Calcular primera división (1 / conteo de registros similares)
         df_procesado['Paso_1_Division'] = 1 / df_procesado['Conteo_Registros_Similares']
         
-        # 8. PASO 3: Dividir entre la cantidad de días del mismo tipo en el dataset
+        # 7. PASO 3: Dividir entre la cantidad de días del mismo tipo en el dataset
         df_procesado['Proporcion_Equivalencia'] = (
             df_procesado['Paso_1_Division'] / df_procesado['Dias_Mismo_Tipo_Dataset']
+        )
+        
+        # 8. PASO 4: Calcular validador_demanda_personas_hora
+        df_procesado['validador_demanda_personas_hora'] = (
+            df_procesado['Proporcion_Equivalencia'] / CONSTANTE_VALIDACION
         )
         
         # Redondear a 6 decimales para mayor precisión
         df_procesado['Proporcion_Equivalencia'] = df_procesado['Proporcion_Equivalencia'].round(6)
         df_procesado['Paso_1_Division'] = df_procesado['Paso_1_Division'].round(6)
+        df_procesado['validador_demanda_personas_hora'] = df_procesado['validador_demanda_personas_hora'].round(6)
         
         # Eliminar columnas temporales
         columnas_a_eliminar = ['Clave_Agrupacion']
         df_procesado = df_procesado.drop(columns=columnas_a_eliminar)
         
-        st.success("✅ Datos procesados y proporción de equivalencia calculada exitosamente")
+        st.success("✅ Datos procesados y cálculos realizados exitosamente")
         
         # Mostrar ejemplo de cálculo
-        with st.expander("📝 Ver ejemplo de cálculo de proporción de equivalencia"):
-            st.markdown("""
-            **Fórmula de cálculo:**
+        with st.expander("📝 Ver ejemplo de cálculo completo"):
+            st.markdown(f"""
+            **Fórmulas de cálculo:**
             
+            1. **Proporción de Equivalencia:**
             ```
-            Proporción de Equivalencia = (1 / Conteo_Registros_Similares) / Dias_Mismo_Tipo_Dataset
+            Proporción = (1 / Conteo_Registros_Similares) / Dias_Mismo_Tipo_Dataset
+            ```
+            
+            2. **Validador Demanda/Personas/Hora:**
+            ```
+            Validador = Proporción_Equivalencia / {CONSTANTE_VALIDACION}
             ```
             
             **Donde:**
             - `Conteo_Registros_Similares`: Número de registros con el mismo "To", fecha, día de semana, hora y "From"
             - `Dias_Mismo_Tipo_Dataset`: Cantidad de días del mismo tipo (ej: Lunes) en el dataset
+            - `{CONSTANTE_VALIDACION}`: Constante para el cálculo del validador
             
-            **Ejemplo práctico:**
+            **Ejemplo práctico completo:**
             1. Si hay 5 registros con las mismas características (mismo To, fecha, día, hora, From)
                - Paso 1: 1 / 5 = 0.2
             2. Si hay 4 días del mismo tipo (ej: Lunes) en el dataset
-               - Paso 2: 0.2 / 4 = 0.05
-            3. **Proporción final: 0.05**
+               - Paso 2: 0.2 / 4 = 0.05 (Proporción de Equivalencia)
+            3. Cálculo del validador:
+               - Paso 3: 0.05 / {CONSTANTE_VALIDACION} = {0.05/CONSTANTE_VALIDACION:.6f}
             """)
             
             # Mostrar un ejemplo real del dataset
@@ -287,25 +277,60 @@ def procesar_datos_con_proporcion(df):
                 st.write(f"- Días del mismo tipo en dataset: {ejemplo['Dias_Mismo_Tipo_Dataset']}")
                 st.write(f"- Paso 1 (1/{ejemplo['Conteo_Registros_Similares']}): {ejemplo['Paso_1_Division']:.6f}")
                 st.write(f"- **Proporción final: {ejemplo['Proporcion_Equivalencia']:.6f}**")
+                st.write(f"- **Validador demanda/personas/hora: {ejemplo['validador_demanda_personas_hora']:.6f}**")
         
-        # Mostrar resumen de la proporción
-        st.write("**📊 Resumen de la proporción de equivalencia:**")
+        # Mostrar resumen de los cálculos
+        st.write("**📊 Resumen de los cálculos:**")
         
-        col1, col2, col3, col4 = st.columns(4)
+        # Métricas para Proporción de Equivalencia
+        st.write("##### Proporción de Equivalencia:")
+        col_prop1, col_prop2, col_prop3, col_prop4 = st.columns(4)
         
-        with col1:
-            st.metric("Proporción mínima", f"{df_procesado['Proporcion_Equivalencia'].min():.6f}")
+        with col_prop1:
+            st.metric("Mínima", f"{df_procesado['Proporcion_Equivalencia'].min():.6f}")
         
-        with col2:
-            st.metric("Proporción máxima", f"{df_procesado['Proporcion_Equivalencia'].max():.6f}")
+        with col_prop2:
+            st.metric("Máxima", f"{df_procesado['Proporcion_Equivalencia'].max():.6f}")
         
-        with col3:
-            st.metric("Proporción promedio", f"{df_procesado['Proporcion_Equivalencia'].mean():.6f}")
+        with col_prop3:
+            st.metric("Promedio", f"{df_procesado['Proporcion_Equivalencia'].mean():.6f}")
         
-        with col4:
-            total_registros = len(df_procesado)
+        with col_prop4:
             suma_proporciones = df_procesado['Proporcion_Equivalencia'].sum()
             st.metric("Suma total", f"{suma_proporciones:.6f}")
+        
+        # Métricas para Validador Demanda
+        st.write("##### Validador Demanda/Personas/Hora:")
+        col_val1, col_val2, col_val3, col_val4 = st.columns(4)
+        
+        with col_val1:
+            st.metric("Mínima", f"{df_procesado['validador_demanda_personas_hora'].min():.6f}")
+        
+        with col_val2:
+            st.metric("Máxima", f"{df_procesado['validador_demanda_personas_hora'].max():.6f}")
+        
+        with col_val3:
+            st.metric("Promedio", f"{df_procesado['validador_demanda_personas_hora'].mean():.6f}")
+        
+        with col_val4:
+            suma_validador = df_procesado['validador_demanda_personas_hora'].sum()
+            st.metric("Suma total", f"{suma_validador:.6f}")
+        
+        # Relación entre proporción y validador
+        st.write("**📈 Relación Proporción → Validador:**")
+        col_rel1, col_rel2 = st.columns(2)
+        
+        with col_rel1:
+            st.write("**Factor de conversión:**")
+            st.info(f"Cada unidad de proporción equivale a **{1/CONSTANTE_VALIDACION:.6f}** unidades de validador")
+            
+        with col_rel2:
+            # Calcular correlación entre las dos columnas
+            correlacion = df_procesado['Proporcion_Equivalencia'].corr(
+                df_procesado['validador_demanda_personas_hora']
+            )
+            st.write("**Correlación:**")
+            st.info(f"Correlación perfecta: **{correlacion:.6f}** (esperado: 1.0)")
         
         # Mostrar distribución de conteos de registros similares
         st.write("**Distribución de registros por grupo:**")
@@ -322,11 +347,26 @@ def procesar_datos_con_proporcion(df):
             st.bar_chart(distribucion.head(10))
         
         # Mostrar estadísticas de días por tipo
-        st.write("**Estadísticas de días por tipo:**")
+        st.write("**Estadísticas por día de la semana:**")
         dias_stats = df_procesado.groupby('Dia_Semana').agg({
             'Dias_Mismo_Tipo_Dataset': 'first',
-            'Proporcion_Equivalencia': ['mean', 'sum', 'count']
-        }).round(4)
+            'Proporcion_Equivalencia': ['mean', 'sum', 'count'],
+            'validador_demanda_personas_hora': ['mean', 'sum']
+        }).round(6)
+        
+        # Renombrar columnas
+        dias_stats.columns = [
+            'Días en Dataset',
+            'Promedio Proporción', 
+            'Suma Proporciones',
+            'Cantidad Registros',
+            'Promedio Validador',
+            'Suma Validador'
+        ]
+        
+        # Ordenar por días de la semana
+        orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        dias_stats = dias_stats.reindex(orden_dias)
         
         st.dataframe(dias_stats, use_container_width=True)
         
@@ -369,14 +409,14 @@ def main():
                             st.write(f"- {valor}")
             
             with tab2:
-                st.subheader("Filtrado y Cálculo de Proporción de Equivalencia")
+                st.subheader("Filtrado y Cálculos")
                 
                 # Primero aplicar el filtro
                 st.write("### Paso 1: Aplicar Filtro por Códigos")
                 st.info(f"Se filtrarán los registros cuyo campo 'To' contenga alguno de los {len(CODIGOS_FILTRAR)} códigos especificados")
                 
-                if st.button("Aplicar Filtro y Calcular Proporción", type="primary"):
-                    with st.spinner("Aplicando filtro y calculando proporción de equivalencia..."):
+                if st.button("Aplicar Filtro y Calcular", type="primary"):
+                    with st.spinner("Aplicando filtro y realizando cálculos..."):
                         # Aplicar filtro
                         df_filtrado = filtrar_por_codigos(df)
                         
@@ -396,7 +436,8 @@ def main():
                                 columnas_a_mostrar = [
                                     'Call Time', 'From', 'To', 'Fecha_Creacion', 
                                     'Dia_Semana', 'Hora_Registro', 'Conteo_Registros_Similares',
-                                    'Dias_Mismo_Tipo_Dataset', 'Proporcion_Equivalencia'
+                                    'Dias_Mismo_Tipo_Dataset', 'Proporcion_Equivalencia',
+                                    'validador_demanda_personas_hora'
                                 ]
                                 
                                 # Filtrar solo las columnas que existen
@@ -436,9 +477,22 @@ def main():
                             st.metric("Días únicos", dias_unicos)
                     
                     with col4:
-                        # Suma total de proporciones
-                        suma_total = df_procesado['Proporcion_Equivalencia'].sum()
-                        st.metric("Suma total proporciones", f"{suma_total:.6f}")
+                        # Suma total de validadores
+                        suma_validador = df_procesado['validador_demanda_personas_hora'].sum()
+                        st.metric("Suma total validador", f"{suma_validador:.6f}")
+                    
+                    # Análisis comparativo entre proporción y validador
+                    st.write("### 📊 Análisis Comparativo")
+                    
+                    col_comp1, col_comp2 = st.columns(2)
+                    
+                    with col_comp1:
+                        st.write("**Distribución de Proporción de Equivalencia:**")
+                        st.bar_chart(df_procesado['Proporcion_Equivalencia'].value_counts().sort_index().head(20))
+                    
+                    with col_comp2:
+                        st.write("**Distribución de Validador Demanda:**")
+                        st.bar_chart(df_procesado['validador_demanda_personas_hora'].value_counts().sort_index().head(20))
                     
                     # Análisis por día de la semana
                     st.write("### 📅 Análisis por Día de la Semana")
@@ -446,14 +500,17 @@ def main():
                     if 'Dia_Semana' in df_procesado.columns:
                         analisis_dias = df_procesado.groupby('Dia_Semana').agg({
                             'Proporcion_Equivalencia': ['count', 'sum', 'mean', 'min', 'max'],
+                            'validador_demanda_personas_hora': ['sum', 'mean'],
                             'Conteo_Registros_Similares': 'mean',
                             'Dias_Mismo_Tipo_Dataset': 'first'
                         }).round(6)
                         
                         # Renombrar columnas para mejor visualización
                         analisis_dias.columns = [
-                            'Cantidad Registros', 'Suma Proporciones', 'Promedio Proporción',
-                            'Mínima Proporción', 'Máxima Proporción', 
+                            'Cantidad Registros', 
+                            'Suma Proporciones', 'Promedio Proporción',
+                            'Mínima Proporción', 'Máxima Proporción',
+                            'Suma Validador', 'Promedio Validador',
                             'Promedio Registros Similares', 'Días Mismo Tipo Dataset'
                         ]
                         
@@ -463,9 +520,16 @@ def main():
                         
                         st.dataframe(analisis_dias, use_container_width=True)
                         
-                        # Gráfico de suma de proporciones por día
-                        st.write("**Suma de proporciones por día de la semana:**")
-                        st.bar_chart(analisis_dias['Suma Proporciones'])
+                        # Gráfico comparativo por día
+                        col_graf1, col_graf2 = st.columns(2)
+                        
+                        with col_graf1:
+                            st.write("**Suma de proporciones por día:**")
+                            st.bar_chart(analisis_dias['Suma Proporciones'])
+                        
+                        with col_graf2:
+                            st.write("**Suma de validador por día:**")
+                            st.bar_chart(analisis_dias['Suma Validador'])
                     
                     # Análisis por hora del día
                     st.write("### 🕐 Análisis por Hora del Día")
@@ -473,9 +537,14 @@ def main():
                     if 'Hora_Numerica' in df_procesado.columns:
                         analisis_horas = df_procesado.groupby('Hora_Numerica').agg({
                             'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
+                            'validador_demanda_personas_hora': ['sum', 'mean'],
                         }).round(6)
                         
-                        analisis_horas.columns = ['Cantidad Registros', 'Suma Proporciones', 'Promedio Proporción']
+                        analisis_horas.columns = [
+                            'Cantidad Registros', 
+                            'Suma Proporciones', 'Promedio Proporción',
+                            'Suma Validador', 'Promedio Validador'
+                        ]
                         analisis_horas = analisis_horas.sort_index()
                         
                         col_hora1, col_hora2 = st.columns(2)
@@ -484,8 +553,23 @@ def main():
                             st.dataframe(analisis_horas, use_container_width=True)
                         
                         with col_hora2:
-                            st.write("**Suma de proporciones por hora:**")
-                            st.line_chart(analisis_horas['Suma Proporciones'])
+                            st.write("**Suma de validador por hora:**")
+                            st.line_chart(analisis_horas['Suma Validador'])
+                    
+                    # Análisis de grupos similares
+                    st.write("### 👥 Análisis de Grupos Similares")
+                    
+                    analisis_grupos = df_procesado.groupby('Conteo_Registros_Similares').agg({
+                        'Proporcion_Equivalencia': ['count', 'mean', 'sum'],
+                        'validador_demanda_personas_hora': ['mean', 'sum']
+                    }).round(6)
+                    
+                    analisis_grupos.columns = [
+                        'Cantidad Grupos', 'Promedio Proporción', 'Suma Proporciones',
+                        'Promedio Validador', 'Suma Validador'
+                    ]
+                    
+                    st.dataframe(analisis_grupos.head(15), use_container_width=True)
                     
                     # Exportación de datos
                     st.write("### 💾 Exportar Datos Procesados")
@@ -493,12 +577,12 @@ def main():
                     col_exp1, col_exp2 = st.columns(2)
                     
                     with col_exp1:
-                        # Exportar a CSV
+                        # Exportar a CSV completo
                         csv = df_procesado.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            label="📥 Descargar como CSV",
+                            label="📥 Descargar CSV completo",
                             data=csv,
-                            file_name="datos_con_proporcion_equivalencia.csv",
+                            file_name="datos_con_calculos_completos.csv",
                             mime="text/csv",
                             type="primary"
                         )
@@ -512,7 +596,8 @@ def main():
                             options=df_procesado.columns.tolist(),
                             default=[
                                 'Call Time', 'From', 'To', 'Fecha_Creacion', 
-                                'Dia_Semana', 'Hora_Registro', 'Proporcion_Equivalencia'
+                                'Dia_Semana', 'Hora_Registro', 
+                                'Proporcion_Equivalencia', 'validador_demanda_personas_hora'
                             ]
                         )
                         
@@ -536,16 +621,43 @@ def main():
                             # Hoja 2: Resumen por día
                             if 'Dia_Semana' in df_procesado.columns:
                                 resumen_dias = df_procesado.groupby('Dia_Semana').agg({
-                                    'Proporcion_Equivalencia': ['count', 'sum', 'mean', 'min', 'max']
+                                    'Proporcion_Equivalencia': ['count', 'sum', 'mean', 'min', 'max'],
+                                    'validador_demanda_personas_hora': ['sum', 'mean']
                                 }).round(6)
                                 resumen_dias.to_excel(writer, sheet_name='Resumen_Por_Dia')
                             
                             # Hoja 3: Resumen por hora
                             if 'Hora_Numerica' in df_procesado.columns:
                                 resumen_horas = df_procesado.groupby('Hora_Numerica').agg({
-                                    'Proporcion_Equivalencia': ['count', 'sum', 'mean']
+                                    'Proporcion_Equivalencia': ['count', 'sum', 'mean'],
+                                    'validador_demanda_personas_hora': ['sum', 'mean']
                                 }).round(6)
                                 resumen_horas.to_excel(writer, sheet_name='Resumen_Por_Hora')
+                            
+                            # Hoja 4: Estadísticas generales
+                            stats_df = pd.DataFrame({
+                                'Métrica': [
+                                    'Total Registros', 
+                                    'Suma Proporción Equivalencia',
+                                    'Suma Validador Demanda',
+                                    'Proporción Mínima',
+                                    'Proporción Máxima',
+                                    'Validador Mínimo',
+                                    'Validador Máximo',
+                                    'Constante de Validación'
+                                ],
+                                'Valor': [
+                                    len(df_procesado),
+                                    df_procesado['Proporcion_Equivalencia'].sum(),
+                                    df_procesado['validador_demanda_personas_hora'].sum(),
+                                    df_procesado['Proporcion_Equivalencia'].min(),
+                                    df_procesado['Proporcion_Equivalencia'].max(),
+                                    df_procesado['validador_demanda_personas_hora'].min(),
+                                    df_procesado['validador_demanda_personas_hora'].max(),
+                                    CONSTANTE_VALIDACION
+                                ]
+                            })
+                            stats_df.to_excel(writer, sheet_name='Estadisticas_Generales', index=False)
                         
                         buffer.seek(0)
                         
@@ -573,51 +685,44 @@ def main():
         
         # Mostrar ejemplo de estructura esperada
         with st.expander("Ver estructura esperada del CSV"):
-            st.write("""
-            ## Cálculo de Proporción de Equivalencia
+            st.write(f"""
+            ## Cálculos Realizados
             
-            **Nueva especificación del cálculo:**
-            
-            Para cada registro, la proporción de equivalencia se calcula como:
-            
+            **1. Proporción de Equivalencia:**
             ```
             Proporción = (1 / Conteo_Registros_Similares) / Dias_Mismo_Tipo_Dataset
             ```
             
+            **2. Validador Demanda/Personas/Hora:**
+            ```
+            Validador = Proporción_Equivalencia / {CONSTANTE_VALIDACION}
+            ```
+            
             **Donde:**
+            - `Conteo_Registros_Similares`: Registros con mismo To, fecha, día, hora y From
+            - `Dias_Mismo_Tipo_Dataset`: Días del mismo tipo en el dataset
+            - `{CONSTANTE_VALIDACION}`: Constante de validación (14.08)
             
-            1. **Conteo_Registros_Similares**: 
-               - Número de registros que tienen el MISMO:
-                 - Valor en "To"
-                 - Fecha de creación (DD/MM/YYYY)
-                 - Día de la semana (Lunes, Martes, etc.)
-                 - Hora del día
-                 - Valor en "From"
+            **Ejemplo completo:**
             
-            2. **Dias_Mismo_Tipo_Dataset**:
-               - Cantidad de días del MISMO tipo (mismo día de la semana) que existen en el dataset
+            Registro con:
+            - To: "(0220)"
+            - Fecha: "15/01/2026"
+            - Día: "Miércoles"
+            - Hora: 14:00
+            - From: "ClienteX"
             
-            **Ejemplo paso a paso:**
+            **Cálculos:**
+            1. Si hay 3 registros idénticos: `Conteo_Registros_Similares = 3`
+            2. Paso 1: `1 / 3 = 0.333333`
+            3. Si hay 4 Miércoles en dataset: `Dias_Mismo_Tipo_Dataset = 4`
+            4. Paso 2: `0.333333 / 4 = 0.083333` ← **Proporción de Equivalencia**
+            5. Paso 3: `0.083333 / {CONSTANTE_VALIDACION} = {0.083333/CONSTANTE_VALIDACION:.6f}` ← **Validador**
             
-            1. **Registro A** tiene:
-               - To: "(0220)"
-               - Fecha: "15/01/2026"
-               - Día: "Miércoles"
-               - Hora: "14:00"
-               - From: "ClienteX"
-            
-            2. Si hay 3 registros en total con estas mismas características
-               - Paso 1: 1 / 3 = 0.333333
-            
-            3. Si en el dataset hay 4 días que son Miércoles
-               - Paso 2: 0.333333 / 4 = 0.083333
-            
-            4. **Proporción final para Registro A: 0.083333**
-            
-            **Interpretación:**
-            - Valor más alto = Menos registros similares / Más peso relativo
-            - Valor más bajo = Más registros similares / Menos peso relativo
-            - La suma de todas las proporciones indica el "peso total" del dataset
+            **Interpretación del Validador:**
+            - Mide la "demanda ajustada por persona por hora"
+            - Útil para estimar necesidades de personal
+            - Permite comparar diferentes períodos y horarios
             """)
 
 if __name__ == "__main__":
