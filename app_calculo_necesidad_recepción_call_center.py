@@ -92,10 +92,11 @@ def determinar_rol_inbound(valor_to, codigos_filtro):
             return "Call center"
     return "Externo"
 
-# Función para determinar empresa_inbound
+# Función para determinar empresa_inbound CORREGIDA
 def determinar_empresa_inbound(valor_to, codigos_ccb, codigos_odo, codigos_udc):
     """
     Determina la empresa inbound basado en los códigos específicos
+    Si no encuentra ninguno de los códigos, retorna "Externo"
     """
     valor_str = str(valor_to)
     
@@ -114,6 +115,7 @@ def determinar_empresa_inbound(valor_to, codigos_ccb, codigos_odo, codigos_udc):
         if codigo in valor_str:
             return "UDC"
     
+    # Si no encontró ningún código de las empresas, es Externo
     return "Externo"
 
 # Función para ingresar recursos por hora
@@ -292,7 +294,7 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
             lambda x: determinar_rol_inbound(x, CODIGOS_FILTRAR)
         )
         
-        # 10. PASO 6: Calcular empresa_inbound
+        # 10. PASO 6: Calcular empresa_inbound CON LA NUEVA LÓGICA
         df_procesado['empresa_inbound'] = df_procesado['To'].apply(
             lambda x: determinar_empresa_inbound(x, CODIGOS_CCB, CODIGOS_ODO, CODIGOS_UDC)
         )
@@ -357,6 +359,12 @@ def procesar_datos_con_proporcion(df, recursos_por_hora):
         # Eliminar columnas temporales
         columnas_a_eliminar = ['Clave_Agrupacion', 'Clave_Hora_Fecha_Rol']
         df_procesado = df_procesado.drop(columns=columnas_a_eliminar)
+        
+        # Mostrar distribución de empresa_inbound
+        distribucion_empresa = df_procesado['empresa_inbound'].value_counts()
+        st.info(f"**Distribución de empresa_inbound:**")
+        for empresa, count in distribucion_empresa.items():
+            st.write(f"- {empresa}: {count:,} registros ({count/len(df_procesado)*100:.1f}%)")
         
         st.success("✅ Datos procesados y cálculos realizados exitosamente")
         
