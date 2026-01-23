@@ -4,6 +4,7 @@ import numpy as np
 from datetime import datetime
 import calendar
 import io
+import re
 
 # Configuración de la página
 st.set_page_config(page_title="Analizador de Llamadas", page_icon="📞", layout="wide")
@@ -11,6 +12,19 @@ st.set_page_config(page_title="Analizador de Llamadas", page_icon="📞", layout
 # Título de la aplicación
 st.title("📊 Analizador de Registros de Llamadas - Análisis por Día y Hora")
 st.markdown("Carga un archivo CSV con registros de llamadas para analizar patrones por día de la semana y hora")
+
+# Lista de códigos a filtrar en el campo "To"
+CODIGOS_FILTRAR = [
+    '(0220)', '(0221)', '(0222)', '(0303)', '(0305)', '(0308)', '(0316)', '(0320)', 
+    '(0323)', '(0324)', '(0327)', '(0331)', '(0404)', '(0407)', '(0410)', '(0412)', 
+    '(0413)', '(0414)', '(0415)', '(0417)', '(2001)', '(2002)', '(2003)', '(2004)', 
+    '(2005)', '(2006)', '(2007)', '(2008)', '(2009)', '(2010)', '(2011)', '(2012)', 
+    '(2013)', '(2014)', '(2015)', '(2016)', '(2017)', '(2018)', '(2019)', '(2021)', 
+    '(2022)', '(2023)', '(2024)', '(2025)', '(2026)', '(2028)', '(2029)', '(2030)', 
+    '(2032)', '(2034)', '(2035)', '(8000)', '(8002)', '(8003)', '(8051)', '(8052)', 
+    '(8062)', '(8063)', '(8064)', '(8071)', '(8072)', '(8079)', '(8080)', '(8068)', 
+    '(8004)', '(8070)', '(8006)', '(7999)', '(8069)', '(8055)', '(8050)'
+]
 
 # Sidebar para cargar el archivo
 with st.sidebar:
@@ -29,12 +43,21 @@ with st.sidebar:
         st.json(file_details)
     
     st.markdown("---")
+    st.markdown("**Filtros aplicados:**")
+    st.markdown("""
+    Solo se analizarán registros cuyo campo 'To' contenga alguno de estos códigos:
+    - (0220), (0221), (0222), ...
+    - Total: 74 códigos específicos
+    """)
+    
+    st.markdown("---")
     st.markdown("**Instrucciones:**")
     st.markdown("""
     1. Sube un archivo CSV con los campos requeridos
-    2. La app calculará promedios por día y hora
-    3. Analiza los patrones de llamadas
-    4. Descarga los resultados procesados
+    2. La app filtrará por los códigos especificados
+    3. Calculará promedios por día y hora
+    4. Analiza los patrones de llamadas
+    5. Descarga los resultados procesados
     """)
 
 # Función para traducir días de la semana
@@ -49,6 +72,68 @@ def traducir_dia(dia_ingles):
         'Sunday': 'Domingo'
     }
     return dias_traduccion.get(dia_ingles, dia_ingles)
+
+# Función para filtrar datos por códigos en el campo "To"
+def filtrar_por_codigos(df):
+    """
+    Filtra el DataFrame para incluir solo registros cuyo campo 'To' contenga
+    alguno de los códigos especificados
+    """
+    df_filtrado = df.copy()
+    
+    # Verificar que exista la columna 'To'
+    if 'To' not in df_filtrado.columns:
+        st.error("El archivo no contiene la columna 'To' necesaria para el filtrado.")
+        return None
+    
+    # Crear máscara para filtrar
+    mascara = df_filtrado['To'].astype(str).apply(
+        lambda x: any(codigo in str(x) for codigo in CODIGOS_FILTRAR)
+    )
+    
+    # Aplicar filtro
+    df_filtrado = df_filtrado[mascara].copy()
+    
+    # Mostrar estadísticas del filtrado
+    total_registros = len(df)
+    registros_filtrados = len(df_filtrado)
+    porcentaje_filtrado = (registros_filtrados / total_registros * 100) if total_registros > 0 else 0
+    
+    st.info(f"""
+    **Estadísticas de filtrado:**
+    - Total de registros originales: {total_registros:,}
+    - Registros después de filtrar: {registros_filtrados:,}
+    - Porcentaje incluido: {porcentaje_filtrado:.1f}%
+    - Códigos buscados: {len(CODIGOS_FILTRAR)}
+    """)
+    
+    # Mostrar distribución por códigos encontrados
+    if registros_filtrados > 0:
+        st.write("**Distribución por códigos más frecuentes:**")
+        
+        # Extraer códigos encontrados
+        def extraer_codigo(texto):
+            texto_str = str(texto)
+            for codigo in CODIGOS_FILTRAR:
+                if codigo in texto_str:
+                    return codigo
+            return "Otro"
+        
+        df_filtrado['Codigo_Filtrado'] = df_filtrado['To'].apply(extraer_codigo)
+        distribucion_codigos = df_filtrado['Codigo_Filtrado'].value_counts().head(10)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.dataframe(distribucion_codigos, use_container_width=True)
+        
+        with col2:
+            st.bar_chart(distribucion_codigos)
+        
+        # Eliminar columna temporal
+        df_filtrado = df_filtrado.drop('Codigo_Filtrado', axis=1)
+    
+    return df_filtrado
 
 # Función para procesar los datos
 def procesar_datos(df):
@@ -399,7 +484,7 @@ def mostrar_resumen_ejecutivo(df_procesado, promedio_por_dia, promedio_por_hora,
     """
     Muestra un resumen ejecutivo del análisis
     """
-    st.subheader("📋 Resumen Ejecutivo del Análisis")
+    st.subheader("📋 Resumen Ejecutivo del Análisis (Filtrado por Códigos Específicos)")
     
     # Estadísticas generales
     col1, col2, col3, col4 = st.columns(4)
@@ -498,85 +583,102 @@ def main():
             df = pd.read_csv(uploaded_file)
             
             # Mostrar pestañas para diferentes vistas
-            tab1, tab2, tab3, tab4 = st.tabs(["📋 Datos Originales", "⚙️ Procesar y Analizar", "📊 Resultados y Visualizaciones", "💾 Exportar"])
+            tab1, tab2, tab3, tab4 = st.tabs(["📋 Datos Originales", "⚙️ Filtrar y Procesar", "📊 Resultados y Visualizaciones", "💾 Exportar"])
             
             with tab1:
-                st.subheader("Datos Originales")
+                st.subheader("Datos Originales (Sin Filtrar)")
                 st.write(f"**Forma del dataset:** {df.shape[0]} filas × {df.shape[1]} columnas")
-                st.dataframe(df.head(100), use_container_width=True)
                 
                 # Mostrar información de las columnas
                 with st.expander("Ver información de columnas"):
                     st.write("**Columnas disponibles:**")
                     for col in df.columns:
                         st.write(f"- {col}")
+                
+                # Mostrar vista previa de datos
+                st.write("**Vista previa de datos (primeras 100 filas):**")
+                st.dataframe(df.head(100), use_container_width=True)
+                
+                # Mostrar distribución del campo 'To' si existe
+                if 'To' in df.columns:
+                    with st.expander("Ver distribución del campo 'To'"):
+                        st.write("**Valores únicos en 'To' (primeros 20):**")
+                        valores_to = df['To'].unique()[:20]
+                        for valor in valores_to:
+                            st.write(f"- {valor}")
             
             with tab2:
-                st.subheader("Procesamiento y Análisis de Datos")
+                st.subheader("Filtrado y Procesamiento de Datos")
                 
-                if st.button("Procesar Datos y Calcular Promedios", type="primary"):
-                    with st.spinner("Procesando datos y calculando promedios..."):
-                        # Procesar datos básicos
-                        df_procesado = procesar_datos(df)
+                # Primero aplicar el filtro
+                st.write("### Paso 1: Aplicar Filtro por Códigos")
+                st.info(f"Se filtrarán los registros cuyo campo 'To' contenga alguno de los {len(CODIGOS_FILTRAR)} códigos especificados")
+                
+                if st.button("Aplicar Filtro", type="primary", key="filtrar"):
+                    with st.spinner("Aplicando filtro..."):
+                        df_filtrado = filtrar_por_codigos(df)
                         
-                        if df_procesado is not None:
-                            # Calcular promedios CORREGIDOS
-                            promedio_por_dia, promedio_por_hora, promedio_por_dia_hora = calcular_promedios_llamadas(df_procesado)
+                        if df_filtrado is not None and len(df_filtrado) > 0:
+                            # Guardar en session state
+                            st.session_state['df_filtrado'] = df_filtrado
+                            st.success(f"✅ Filtro aplicado. {len(df_filtrado)} registros incluidos.")
                             
-                            if (promedio_por_dia is not None and 
-                                promedio_por_hora is not None and 
-                                promedio_por_dia_hora is not None):
+                            # Mostrar vista previa de datos filtrados
+                            st.write("**Vista previa de datos filtrados:**")
+                            st.dataframe(df_filtrado.head(50), use_container_width=True)
+                        else:
+                            st.error("No se encontraron registros que coincidan con los códigos especificados.")
+                
+                # Procesar datos filtrados
+                st.write("### Paso 2: Procesar Datos Filtrados")
+                
+                if 'df_filtrado' in st.session_state and len(st.session_state['df_filtrado']) > 0:
+                    df_filtrado = st.session_state['df_filtrado']
+                    
+                    if st.button("Procesar Datos y Calcular Promedios", type="primary", key="procesar"):
+                        with st.spinner("Procesando datos y calculando promedios..."):
+                            # Procesar datos básicos
+                            df_procesado = procesar_datos(df_filtrado)
+                            
+                            if df_procesado is not None:
+                                # Calcular promedios CORREGIDOS
+                                promedio_por_dia, promedio_por_hora, promedio_por_dia_hora = calcular_promedios_llamadas(df_procesado)
                                 
-                                # Calcular proporción de equivalencia
-                                df_con_proporcion = calcular_proporcion_equivalencia(df_procesado, promedio_por_dia_hora)
-                                
-                                # Guardar en session state
-                                st.session_state['df_procesado'] = df_procesado
-                                st.session_state['df_con_proporcion'] = df_con_proporcion
-                                st.session_state['promedio_por_dia'] = promedio_por_dia
-                                st.session_state['promedio_por_hora'] = promedio_por_hora
-                                st.session_state['promedio_por_dia_hora'] = promedio_por_dia_hora
-                                
-                                st.success("✅ Procesamiento completado!")
-                                
-                                # Mostrar resumen rápido
-                                st.write("**Resumen de promedios calculados:**")
-                                
-                                col_res1, col_res2 = st.columns(2)
-                                
-                                with col_res1:
-                                    st.write("📅 **Promedios por día:**")
-                                    st.dataframe(promedio_por_dia, use_container_width=True)
-                                
-                                with col_res2:
-                                    st.write("🕐 **Promedios por hora (ejemplo):**")
-                                    st.dataframe(promedio_por_hora.head(10), use_container_width=True)
-                                
-                                st.write("📊 **Promedios por combinación día-hora (ejemplo):**")
-                                st.dataframe(promedio_por_dia_hora.head(10), use_container_width=True)
-                                
-                                # Explicar la metodología
-                                with st.expander("📝 Explicación de la metodología"):
-                                    st.markdown("""
-                                    **Metodología de cálculo de promedios:**
+                                if (promedio_por_dia is not None and 
+                                    promedio_por_hora is not None and 
+                                    promedio_por_dia_hora is not None):
                                     
-                                    1. **Promedio por día**: Se calcula el promedio de llamadas para cada día de la semana, 
-                                       considerando todos los horarios de ese día.
+                                    # Calcular proporción de equivalencia
+                                    df_con_proporcion = calcular_proporcion_equivalencia(df_procesado, promedio_por_dia_hora)
                                     
-                                    2. **Promedio por hora**: Se calcula el promedio de llamadas para cada hora del día, 
-                                       considerando todos los días de la semana.
+                                    # Guardar en session state
+                                    st.session_state['df_procesado'] = df_procesado
+                                    st.session_state['df_con_proporcion'] = df_con_proporcion
+                                    st.session_state['promedio_por_dia'] = promedio_por_dia
+                                    st.session_state['promedio_por_hora'] = promedio_por_hora
+                                    st.session_state['promedio_por_dia_hora'] = promedio_por_dia_hora
                                     
-                                    3. **Promedio por combinación día-hora**: Se calcula el promedio específico para cada 
-                                       combinación de día y hora (ej: Lunes 9:00, Martes 14:00, etc.).
+                                    st.success("✅ Procesamiento completado!")
                                     
-                                    4. **Proporción de equivalencia**: Para cada llamada, se toma el promedio correspondiente 
-                                       a su combinación día-hora y se calcula: 1 / promedio.
+                                    # Mostrar resumen rápido
+                                    st.write("**Resumen de promedios calculados:**")
                                     
-                                    **Ejemplo**: Si los Lunes a las 9:00 hay en promedio 10 llamadas, cada llamada el Lunes 
-                                    a las 9:00 tendrá una proporción de 1/10 = 0.10.
-                                    """)
-                            else:
-                                st.error("No se pudieron calcular los promedios")
+                                    col_res1, col_res2 = st.columns(2)
+                                    
+                                    with col_res1:
+                                        st.write("📅 **Promedios por día:**")
+                                        st.dataframe(promedio_por_dia, use_container_width=True)
+                                    
+                                    with col_res2:
+                                        st.write("🕐 **Promedios por hora (ejemplo):**")
+                                        st.dataframe(promedio_por_hora.head(10), use_container_width=True)
+                                    
+                                    st.write("📊 **Promedios por combinación día-hora (ejemplo):**")
+                                    st.dataframe(promedio_por_dia_hora.head(10), use_container_width=True)
+                                else:
+                                    st.error("No se pudieron calcular los promedios")
+                else:
+                    st.info("Primero aplica el filtro en el Paso 1")
             
             with tab3:
                 st.subheader("Resultados y Visualizaciones")
@@ -608,7 +710,7 @@ def main():
                     st.dataframe(df_con_proporcion[columnas_a_mostrar].head(50), use_container_width=True)
                     
                 else:
-                    st.info("Primero procesa los datos en la pestaña 'Procesar y Analizar'")
+                    st.info("Primero procesa los datos en la pestaña 'Filtrar y Procesar'")
             
             with tab4:
                 st.subheader("Exportar Datos Procesados")
@@ -639,16 +741,16 @@ def main():
                         # Preparar datos según selección
                         if export_option == "Datos completos procesados":
                             data_to_export = df_con_proporcion
-                            filename = "datos_procesados_completos.csv"
+                            filename = "datos_procesados_filtrados.csv"
                         elif export_option == "Promedios por día":
                             data_to_export = promedio_por_dia
-                            filename = "promedios_por_dia.csv"
+                            filename = "promedios_por_dia_filtrados.csv"
                         elif export_option == "Promedios por hora":
                             data_to_export = promedio_por_hora
-                            filename = "promedios_por_hora.csv"
+                            filename = "promedios_por_hora_filtrados.csv"
                         elif export_option == "Promedios por día y hora":
                             data_to_export = promedio_por_dia_hora
-                            filename = "promedios_por_dia_hora.csv"
+                            filename = "promedios_por_dia_hora_filtrados.csv"
                         else:  # Todos los datasets
                             # Crear un Excel con múltiples hojas
                             buffer = io.BytesIO()
@@ -659,7 +761,7 @@ def main():
                                 promedio_por_dia_hora.to_excel(writer, sheet_name='Promedios_Dia_Hora', index=False)
                             
                             buffer.seek(0)
-                            filename = "todos_los_datos.xlsx"
+                            filename = "todos_los_datos_filtrados.xlsx"
                             
                             st.download_button(
                                 label="📥 Descargar Excel completo",
@@ -686,7 +788,7 @@ def main():
                         st.dataframe(data_to_export.head(10), use_container_width=True)
                         
                 else:
-                    st.info("No hay datos procesados para exportar. Primero procesa los datos en la pestaña 'Procesar y Analizar'")
+                    st.info("No hay datos procesados para exportar. Primero procesa los datos en la pestaña 'Filtrar y Procesar'")
         
         except Exception as e:
             st.error(f"Error al leer el archivo: {str(e)}")
@@ -699,25 +801,23 @@ def main():
         # Mostrar ejemplo de estructura esperada
         with st.expander("Ver estructura esperada del CSV"):
             st.write("""
-            ## Metodología de Análisis Corregida
+            ## Aplicación con Filtro Específico
             
-            Esta aplicación calcula tres tipos de promedios:
+            Esta aplicación:
             
-            1. **Promedio general por día de semana**: 
-               - Calcula cuántas llamadas en promedio entran cada Lunes, Martes, etc.
-               - Considera todos los horarios del día
+            1. **Filtra los datos**: Solo incluye registros cuyo campo 'To' contenga alguno de los 74 códigos especificados
+            2. **Calcula promedios**: Sobre los datos filtrados
+            3. **Analiza patrones**: Por día, hora y combinaciones
             
-            2. **Promedio general por hora**: 
-               - Calcula cuántas llamadas en promedio entran cada hora del día
-               - Considera todos los días de la semana
+            **Códigos incluidos en el filtro:**
+            - (0220), (0221), (0222), (0303), (0305), ...
+            - Total: 74 códigos específicos
             
-            3. **Promedio por combinación día-hora**: 
-               - Calcula el promedio específico para cada combinación (ej: Lunes 9:00)
-               - Usa este promedio para calcular la proporción de equivalencia
-            
-            **Proporción de equivalencia = 1 / Promedio para esa combinación día-hora**
-            
-            Esto permite asignar un "peso relativo" a cada llamada según cuán ocupado es ese horario específico.
+            **Metodología de cálculo:**
+            1. Promedio general por día de semana
+            2. Promedio general por hora del día
+            3. Promedio por combinación día-hora
+            4. Proporción de equivalencia = 1 / Promedio para esa combinación
             """)
 
 if __name__ == "__main__":
