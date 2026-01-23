@@ -3,8 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import calendar
-import plotly.graph_objects as go
-import plotly.express as px
+import io
 
 # Configuración de la página
 st.set_page_config(page_title="Analizador de Llamadas", page_icon="📞", layout="wide")
@@ -201,68 +200,44 @@ def calcular_proporcion_equivalencia(df, promedio_por_dia_hora):
     
     return df_con_proporcion
 
-# Función para crear visualizaciones
+# Función para crear visualizaciones con Streamlit nativo
 def crear_visualizaciones(promedio_por_dia, promedio_por_dia_hora, df_procesado):
     """
-    Crea visualizaciones para los promedios de llamadas
+    Crea visualizaciones usando solo Streamlit nativo
     """
     # Crear pestañas para diferentes visualizaciones
-    tab1, tab2, tab3 = st.tabs(["📊 Promedios por Día", "🕐 Promedios por Día y Hora", "🔥 Mapa de Calor"])
+    tab1, tab2, tab3 = st.tabs(["📊 Promedios por Día", "🕐 Promedios por Día y Hora", "📋 Tabla de Calor"])
     
     with tab1:
         st.subheader("Promedio de Llamadas por Día de la Semana")
         
-        # Crear gráfico de barras
-        fig1 = px.bar(
-            promedio_por_dia,
-            x='Dia_Semana',
-            y='Promedio_Llamadas_Dia',
-            title='Promedio de Llamadas por Día de la Semana',
-            labels={'Dia_Semana': 'Día de la Semana', 'Promedio_Llamadas_Dia': 'Promedio de Llamadas'},
-            color='Promedio_Llamadas_Dia',
-            color_continuous_scale='Viridis'
-        )
-        
-        # Personalizar el gráfico
-        fig1.update_layout(
-            xaxis_title="Día de la Semana",
-            yaxis_title="Promedio de Llamadas",
-            showlegend=False
-        )
-        
-        st.plotly_chart(fig1, use_container_width=True)
+        # Crear gráfico de barras simple con Streamlit
+        st.bar_chart(promedio_por_dia.set_index('Dia_Semana')['Promedio_Llamadas_Dia'])
         
         # Mostrar tabla de datos
         st.write("**Datos detallados:**")
         st.dataframe(promedio_por_dia, use_container_width=True)
+        
+        # Métricas clave
+        st.write("**Métricas clave:**")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            dia_max = promedio_por_dia.loc[promedio_por_dia['Promedio_Llamadas_Dia'].idxmax()]
+            st.metric("Día más ocupado", dia_max['Dia_Semana'], f"{dia_max['Promedio_Llamadas_Dia']:.1f}")
+        
+        with col2:
+            dia_min = promedio_por_dia.loc[promedio_por_dia['Promedio_Llamadas_Dia'].idxmin()]
+            st.metric("Día menos ocupado", dia_min['Dia_Semana'], f"{dia_min['Promedio_Llamadas_Dia']:.1f}")
+        
+        with col3:
+            promedio_total = promedio_por_dia['Promedio_Llamadas_Dia'].mean()
+            st.metric("Promedio general", f"{promedio_total:.1f}", "llamadas/día")
     
     with tab2:
         st.subheader("Promedio de Llamadas por Día y Hora")
         
-        # Crear gráfico de líneas
-        fig2 = px.line(
-            promedio_por_dia_hora,
-            x='Hora_Redondeada',
-            y='Promedio_Llamadas',
-            color='Dia_Semana',
-            title='Promedio de Llamadas por Día y Hora',
-            labels={'Hora_Redondeada': 'Hora del Día', 'Promedio_Llamadas': 'Promedio de Llamadas', 'Dia_Semana': 'Día de la Semana'},
-            markers=True
-        )
-        
-        # Personalizar el gráfico
-        fig2.update_layout(
-            xaxis_title="Hora del Día",
-            yaxis_title="Promedio de Llamadas",
-            xaxis=dict(tickmode='linear', dtick=1)
-        )
-        
-        st.plotly_chart(fig2, use_container_width=True)
-        
-        # Mostrar tabla pivote
-        st.write("**Tabla pivote - Promedios por Día y Hora:**")
-        
-        # Crear tabla pivote
+        # Crear tabla pivote para visualización
         tabla_pivote = promedio_por_dia_hora.pivot_table(
             index='Dia_Semana',
             columns='Hora_Redondeada',
@@ -277,12 +252,24 @@ def crear_visualizaciones(promedio_por_dia, promedio_por_dia_hora, df_procesado)
         # Ordenar horas
         tabla_pivote = tabla_pivote.sort_index(axis=1)
         
-        st.dataframe(tabla_pivote.style.background_gradient(cmap='Blues'), use_container_width=True)
+        # Mostrar tabla
+        st.write("**Tabla de promedios:**")
+        st.dataframe(tabla_pivote, use_container_width=True)
+        
+        # Encontrar hora pico por día
+        st.write("**Horas pico por día:**")
+        for dia in orden_dias:
+            if dia in tabla_pivote.index:
+                fila = tabla_pivote.loc[dia]
+                hora_pico = fila.idxmax()
+                valor_pico = fila.max()
+                if valor_pico > 0:
+                    st.write(f"- **{dia}**: {hora_pico}:00 hrs ({valor_pico:.1f} llamadas)")
     
     with tab3:
-        st.subheader("Mapa de Calor - Promedios por Día y Hora")
+        st.subheader("Tabla de Calor - Promedios por Día y Hora")
         
-        # Crear matriz para el mapa de calor
+        # Crear matriz para la tabla de calor
         matriz_promedios = promedio_por_dia_hora.pivot_table(
             index='Dia_Semana',
             columns='Hora_Redondeada',
@@ -297,26 +284,40 @@ def crear_visualizaciones(promedio_por_dia, promedio_por_dia_hora, df_procesado)
         # Ordenar horas
         matriz_promedios = matriz_promedios.sort_index(axis=1)
         
-        # Crear mapa de calor
-        fig3 = go.Figure(data=go.Heatmap(
-            z=matriz_promedios.values,
-            x=matriz_promedios.columns,
-            y=matriz_promedios.index,
-            colorscale='Viridis',
-            colorbar=dict(title="Promedio Llamadas"),
-            text=matriz_promedios.values.round(2),
-            texttemplate='%{text}',
-            textfont={"size": 10}
-        ))
+        # Aplicar formato condicional
+        def color_cells(val):
+            if val == 0:
+                color = '#f0f0f0'  # Gris claro para 0
+            elif val < 1:
+                color = '#ffebee'  # Rojo muy claro
+            elif val < 5:
+                color = '#ffcdd2'  # Rojo claro
+            elif val < 10:
+                color = '#ef9a9a'  # Rojo
+            elif val < 20:
+                color = '#e57373'  # Rojo medio
+            elif val < 50:
+                color = '#ef5350'  # Rojo oscuro
+            else:
+                color = '#d32f2f'  # Rojo muy oscuro
+            return f'background-color: {color}'
         
-        fig3.update_layout(
-            title='Mapa de Calor - Promedio de Llamadas por Día y Hora',
-            xaxis_title="Hora del Día",
-            yaxis_title="Día de la Semana",
-            height=500
-        )
+        # Mostrar tabla con colores
+        st.write("**Mapa de calor (colores indican volumen):**")
+        styled_table = matriz_promedios.style.applymap(color_cells).format("{:.1f}")
+        st.dataframe(styled_table, use_container_width=True)
         
-        st.plotly_chart(fig3, use_container_width=True)
+        # Leyenda
+        st.write("**Leyenda de colores:**")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.markdown('<div style="background-color: #ffebee; padding: 5px; border-radius: 3px;">&lt; 1 llamada</div>', unsafe_allow_html=True)
+        with col2:
+            st.markdown('<div style="background-color: #ef9a9a; padding: 5px; border-radius: 3px;">1-5 llamadas</div>', unsafe_allow_html=True)
+        with col3:
+            st.markdown('<div style="background-color: #e57373; padding: 5px; border-radius: 3px;">5-10 llamadas</div>', unsafe_allow_html=True)
+        with col4:
+            st.markdown('<div style="background-color: #d32f2f; padding: 5px; border-radius: 3px;">&gt; 20 llamadas</div>', unsafe_allow_html=True)
 
 # Función para mostrar resumen ejecutivo
 def mostrar_resumen_ejecutivo(df_procesado, promedio_por_dia, promedio_por_dia_hora):
@@ -394,6 +395,29 @@ def mostrar_resumen_ejecutivo(df_procesado, promedio_por_dia, promedio_por_dia_h
         horas_pico = promedio_por_dia_hora[promedio_por_dia_hora['Promedio_Llamadas'] > promedio_por_dia_hora['Promedio_Llamadas'].mean()]
         st.info(f"**Horas pico:** {len(horas_pico)} horas con arriba del promedio")
         st.caption("Horas donde el volumen de llamadas supera el promedio general")
+        
+    # Distribución de proporciones
+    if 'Proporcion_Equivalencia' in df_procesado.columns:
+        st.write("**📊 Distribución de Proporciones de Equivalencia:**")
+        col_dist1, col_dist2, col_dist3 = st.columns(3)
+        
+        with col_dist1:
+            st.metric(
+                "Proporción mínima",
+                f"{df_procesado['Proporcion_Equivalencia'].min():.4f}"
+            )
+        
+        with col_dist2:
+            st.metric(
+                "Proporción máxima",
+                f"{df_procesado['Proporcion_Equivalencia'].max():.4f}"
+            )
+        
+        with col_dist3:
+            st.metric(
+                "Proporción promedio",
+                f"{df_procesado['Proporcion_Equivalencia'].mean():.4f}"
+            )
 
 # Función principal
 def main():
@@ -531,9 +555,8 @@ def main():
                             filename = "promedios_por_dia_hora.csv"
                         else:  # Todos los datasets
                             # Crear un Excel con múltiples hojas
-                            import io
                             buffer = io.BytesIO()
-                            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                                 df_con_proporcion.to_excel(writer, sheet_name='Datos_Procesados', index=False)
                                 promedio_por_dia.to_excel(writer, sheet_name='Promedios_Dia', index=False)
                                 promedio_por_dia_hora.to_excel(writer, sheet_name='Promedios_Dia_Hora', index=False)
