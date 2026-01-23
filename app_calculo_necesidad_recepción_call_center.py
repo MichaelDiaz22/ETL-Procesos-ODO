@@ -205,7 +205,7 @@ def filtrar_por_codigos(df):
     df_filtrado['empresa_outbound_temp'] = df_filtrado['From'].apply(determinar_empresa_outbound)
     
     # Aplicar el filtro: empresa_outbound == "Externo" Y empresa_inbound != "Externo"
-    mascara = (df_filtrado['empresa_outbound_temp'] == "Externo") & (df_filtrado['empresa_inbound_temp'] != "Externo")
+    mascara = (df_filtrado['empresa_outbound_temp'] != "Externo") & (df_filtrado['empresa_inbound_temp'] != "Externo")
     
     # Aplicar filtro
     df_filtrado = df_filtrado[mascara].copy()
