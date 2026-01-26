@@ -265,7 +265,7 @@ def crear_pdf(demanda_df, recursos_por_hora, dia_seleccionado, datos_grafica):
         # Encabezados de tabla
         pdf.cell(30, 8, 'Hora', 1)
         pdf.cell(40, 8, 'Recursos Base', 1)
-        pdf.cell(40, 8, 'Recursos Total', 1)
+        pdf.cell(40, 8, 'Capacidad de Recursos', 1)
         pdf.cell(40, 8, 'Demanda Promedio', 1)
         pdf.ln()
         
