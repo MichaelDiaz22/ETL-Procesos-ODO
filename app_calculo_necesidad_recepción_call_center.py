@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import io
+from fpdf import FPDF
+import base64
 
 # Configuración de la página
 st.set_page_config(page_title="Analizador de Llamadas", page_icon="📞", layout="wide")
@@ -172,21 +174,121 @@ def procesar_datos_demanda_filtrada(df):
         # Combinar con conteo
         demanda_con_dias = pd.merge(demanda_por_hora_dia, fechas_por_dia, on='Dia_Semana')
         
-        # Calcular promedio
-        demanda_con_dias['Promedio_Demanda'] = demanda_con_dias['Conteo'] / demanda_con_dias['Num_Dias']
+        # Calcular promedio y DIVIDIR ENTRE 3
+        demanda_con_dias['Promedio_Demanda'] = (demanda_con_dias['Conteo'] / demanda_con_dias['Num_Dias']) / 3
         
         # Redondear a 2 decimales
         demanda_con_dias['Promedio_Demanda'] = demanda_con_dias['Promedio_Demanda'].round(2)
+        
+        # Calcular total de llamadas diarias (promedio diario total)
+        demanda_total_diaria = demanda_con_dias.groupby('Dia_Semana')['Promedio_Demanda'].sum().reset_index()
+        demanda_total_diaria = demanda_total_diaria.rename(columns={'Promedio_Demanda': 'Total_Llamadas_Diarias'})
+        
+        # Combinar con el DataFrame principal
+        demanda_con_dias = pd.merge(demanda_con_dias, demanda_total_diaria, on='Dia_Semana')
         
         # Ordenar por día y hora
         orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
         demanda_con_dias['Dia_Semana'] = pd.Categorical(demanda_con_dias['Dia_Semana'], categories=orden_dias, ordered=True)
         demanda_con_dias = demanda_con_dias.sort_values(['Dia_Semana', 'Hora'])
         
-        return demanda_con_dias[['Dia_Semana', 'Hora', 'Promedio_Demanda', 'Conteo', 'Num_Dias']]
+        return demanda_con_dias[['Dia_Semana', 'Hora', 'Promedio_Demanda', 'Total_Llamadas_Diarias', 'Conteo', 'Num_Dias']]
         
     except Exception as e:
-        st.error(f"Error al procesar los datos: {str(e)}")
+        st.error(f"Error al procesar los datos: {e}")
+        return None
+
+# Función para crear PDF
+def crear_pdf(demanda_df, recursos_por_hora, dia_seleccionado, datos_grafica):
+    """Crea un PDF con los resultados del análisis"""
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        
+        # Título
+        pdf.set_font('Arial', 'B', 16)
+        pdf.cell(0, 10, 'Reporte de Análisis de Llamadas', 0, 1, 'C')
+        pdf.ln(10)
+        
+        # Información general
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 10, f'Día analizado: {dia_seleccionado}', 0, 1)
+        
+        # Recursos configurados
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 10, 'Recursos configurados por hora:', 0, 1)
+        pdf.set_font('Arial', '', 10)
+        
+        recursos_texto = ""
+        for hora, valor in sorted(recursos_por_hora.items()):
+            recursos_texto += f"{hora}:00 - Base: {valor}, Total: {valor * CONSTANTE_VALIDACION:.1f}\n"
+        
+        pdf.multi_cell(0, 8, recursos_texto)
+        pdf.ln(5)
+        
+        # Métricas
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 10, 'Métricas principales:', 0, 1)
+        pdf.set_font('Arial', '', 10)
+        
+        # Obtener métricas
+        max_demanda = datos_grafica['Demanda_Promedio'].max()
+        hora_max_demanda = datos_grafica.loc[datos_grafica['Demanda_Promedio'].idxmax(), 'Hora']
+        max_recursos = datos_grafica['Recursos_Disponibles'].max()
+        hora_max_recursos = datos_grafica.loc[datos_grafica['Recursos_Disponibles'].idxmax(), 'Hora']
+        total_llamadas = datos_grafica['Demanda_Promedio'].sum()
+        
+        # Calcular diferencia
+        datos_grafica['Diferencia'] = datos_grafica['Recursos_Disponibles'] - datos_grafica['Demanda_Promedio']
+        max_exceso = datos_grafica['Diferencia'].max()
+        max_deficit = datos_grafica['Diferencia'].min()
+        
+        metricas_texto = f"""
+        Pico de demanda: {max_demanda:.0f} llamadas (Hora: {hora_max_demanda}:00)
+        Máximo recursos: {max_recursos:.0f} (Hora: {hora_max_recursos}:00)
+        Total llamadas diarias: {total_llamadas:.0f}
+        """
+        
+        if max_exceso > 0:
+            metricas_texto += f"Mayor exceso: {max_exceso:.0f}\n"
+        else:
+            metricas_texto += f"Mayor déficit: {abs(max_deficit):.0f}\n"
+        
+        pdf.multi_cell(0, 8, metricas_texto)
+        pdf.ln(5)
+        
+        # Tabla de datos
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 10, 'Datos por hora:', 0, 1)
+        pdf.set_font('Arial', 'B', 10)
+        
+        # Encabezados de tabla
+        pdf.cell(30, 8, 'Hora', 1)
+        pdf.cell(40, 8, 'Recursos Base', 1)
+        pdf.cell(40, 8, 'Recursos Total', 1)
+        pdf.cell(40, 8, 'Demanda Promedio', 1)
+        pdf.ln()
+        
+        # Datos de tabla
+        pdf.set_font('Arial', '', 10)
+        for idx, row in datos_grafica.iterrows():
+            hora = int(row['Hora'])
+            recursos_base = row['Recursos_Base']
+            recursos_total = row['Recursos_Disponibles']
+            demanda = row['Demanda_Promedio']
+            
+            pdf.cell(30, 8, f"{hora}:00", 1)
+            pdf.cell(40, 8, f"{recursos_base:.1f}", 1)
+            pdf.cell(40, 8, f"{recursos_total:.1f}", 1)
+            pdf.cell(40, 8, f"{demanda:.1f}", 1)
+            pdf.ln()
+        
+        # Guardar PDF
+        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        return pdf_bytes
+        
+    except Exception as e:
+        st.error(f"Error al crear PDF: {e}")
         return None
 
 # Función para crear gráfica comparativa
@@ -199,7 +301,7 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
     
     if len(demanda_dia) == 0:
         st.warning(f"No hay datos de demanda para {dia_seleccionado}")
-        return
+        return None
     
     # Crear DataFrame para la gráfica
     # Primero, crear rango completo de horas de 0 a 23
@@ -229,6 +331,9 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
         'Promedio_Demanda': 'Demanda_Promedio'
     })
     
+    # Calcular recursos base
+    datos_grafica['Recursos_Base'] = datos_grafica['Recursos_Disponibles'] / CONSTANTE_VALIDACION
+    
     # Crear gráfica
     st.write(f"### 📈 Comparación: Recursos vs Demanda - {dia_seleccionado}")
     
@@ -236,21 +341,15 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
     chart_data = datos_grafica.set_index('Hora')
     
     # Mostrar gráfica
-    st.line_chart(chart_data, height=500)
-    
-    # Mostrar tabla de datos
-    with st.expander("📊 Ver datos detallados"):
-        datos_tabla = datos_grafica.copy()
-        datos_tabla['Hora_Formateada'] = datos_tabla['Hora'].apply(lambda x: f"{x}:00")
-        datos_tabla['Recursos_Base'] = datos_tabla['Recursos_Disponibles'] / CONSTANTE_VALIDACION
-        st.dataframe(datos_tabla[['Hora', 'Hora_Formateada', 'Recursos_Base', 
-                                'Recursos_Disponibles', 'Demanda_Promedio']].round(2), 
-                    use_container_width=True)
+    st.line_chart(chart_data[['Recursos_Disponibles', 'Demanda_Promedio']], height=500)
     
     # Calcular métricas de comparación
     st.write(f"**Métricas para {dia_seleccionado}:**")
     
-    col1, col2, col3 = st.columns(3)
+    # Obtener total de llamadas diarias
+    total_llamadas_dia = demanda_dia['Total_Llamadas_Diarias'].iloc[0] if len(demanda_dia) > 0 else 0
+    
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         # Pico de demanda
@@ -265,6 +364,10 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
         st.metric("Máximo recursos", f"{pico_recursos:.0f}", f"Hora: {hora_recursos}:00")
     
     with col3:
+        # Total de llamadas diarias
+        st.metric("Total llamadas diarias", f"{total_llamadas_dia:.0f}")
+    
+    with col4:
         # Diferencia máxima
         datos_grafica['Diferencia'] = datos_grafica['Recursos_Disponibles'] - datos_grafica['Demanda_Promedio']
         max_exceso = datos_grafica['Diferencia'].max()
@@ -274,6 +377,8 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
             st.metric("Mayor exceso", f"{max_exceso:.0f}")
         else:
             st.metric("Mayor déficit", f"{abs(max_deficit):.0f}")
+    
+    return datos_grafica
 
 # Función principal
 def main():
@@ -303,7 +408,7 @@ def main():
                 st.divider()
                 
                 # Configuración de recursos por hora en dos columnas
-                st.subheader("👥 Configuración de Recursos por Hora")
+                st.subheader("👥 Configuración de Recursos por hora")
                 st.info("Ingresa la cantidad de personas disponibles para cada hora (6:00 AM - 7:00 PM)")
                 st.write(f"**Nota:** Cada valor se multiplicará por {CONSTANTE_VALIDACION} para calcular recursos disponibles")
                 
@@ -367,39 +472,23 @@ def main():
                     )
                     
                     # Crear gráfica comparativa
-                    crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado)
+                    datos_grafica = crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado)
                     
-                    # Exportación de datos
-                    st.divider()
-                    st.write("### 💾 Exportar Datos")
-                    
-                    col_exp1, col_exp2 = st.columns(2)
-                    
-                    with col_exp1:
-                        # Exportar datos de demanda
-                        csv_demanda = demanda_df.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="📥 Descargar Datos de Demanda",
-                            data=csv_demanda,
-                            file_name="demanda_promedio.csv",
-                            mime="text/csv",
-                            type="primary"
-                        )
-                    
-                    with col_exp2:
-                        # Exportar configuración de recursos
-                        recursos_df = pd.DataFrame({
-                            'Hora': list(recursos_por_hora.keys()),
-                            'Recursos_Base': list(recursos_por_hora.values()),
-                            'Recursos_Total': [r * CONSTANTE_VALIDACION for r in recursos_por_hora.values()]
-                        })
-                        csv_recursos = recursos_df.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="📥 Descargar Configuración Recursos",
-                            data=csv_recursos,
-                            file_name="recursos_configuracion.csv",
-                            mime="text/csv"
-                        )
+                    if datos_grafica is not None:
+                        # Botón para generar PDF
+                        st.divider()
+                        st.write("### 📄 Generar Reporte PDF")
+                        
+                        if st.button("🖨️ Generar Reporte PDF", type="primary"):
+                            with st.spinner("Generando reporte PDF..."):
+                                pdf_bytes = crear_pdf(demanda_df, recursos_por_hora, dia_seleccionado, datos_grafica)
+                                
+                                if pdf_bytes:
+                                    # Crear botón de descarga
+                                    b64 = base64.b64encode(pdf_bytes).decode()
+                                    href = f'<a href="data:application/pdf;base64,{b64}" download="reporte_analisis_{dia_seleccionado}.pdf">📥 Descargar Reporte PDF</a>'
+                                    st.markdown(href, unsafe_allow_html=True)
+                                    st.success("✅ Reporte PDF generado exitosamente")
                 
                 else:
                     st.info("👈 Primero procesa los datos en la pestaña 'Datos y Configuración'")
