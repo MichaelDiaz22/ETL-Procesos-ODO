@@ -426,7 +426,7 @@ def main():
                         max_recursos_base = max(recursos.values())
                         max_recursos_total = max_recursos_base * CONSTANTE_VALIDACION
                         st.metric("Máximo recursos base", f"{max_recursos_base}")
-                        st.metric("Máximo recursos total", f"{max_recursos_total:.1f}")
+                        st.metric("Capacidad máxima de recursos", f"{max_recursos_total:.1f}")
                 
                 with col_recursos2:
                     # Mostrar gráfico de recursos por hora
