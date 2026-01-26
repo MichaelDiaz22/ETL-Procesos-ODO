@@ -151,7 +151,6 @@ def procesar_datos_demanda_filtrada(df):
         porcentaje_filtrado = (registros_filtrados / total_registros * 100) if total_registros > 0 else 0
         
         st.info(f"**Filtro aplicado:** {registros_filtrados:,} de {total_registros:,} registros ({porcentaje_filtrado:.1f}%)")
-        st.write("**Criterio:** Llamadas con origen EXTERNO y destino INTERNO")
         
         if registros_filtrados == 0:
             st.warning("No se encontraron registros que cumplan el criterio de filtro.")
@@ -183,8 +182,6 @@ def procesar_datos_demanda_filtrada(df):
         orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
         demanda_con_dias['Dia_Semana'] = pd.Categorical(demanda_con_dias['Dia_Semana'], categories=orden_dias, ordered=True)
         demanda_con_dias = demanda_con_dias.sort_values(['Dia_Semana', 'Hora'])
-        
-        st.success("✅ Datos procesados y demanda calculada exitosamente")
         
         return demanda_con_dias[['Dia_Semana', 'Hora', 'Promedio_Demanda', 'Conteo', 'Num_Dias']]
         
@@ -226,16 +223,17 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
     # Combinar ambos DataFrames
     datos_grafica = pd.merge(recursos_completo, demanda_completo, on='Hora')
     
+    # Renombrar columnas para la gráfica
+    datos_grafica = datos_grafica.rename(columns={
+        'Recursos': 'Recursos_Disponibles',
+        'Promedio_Demanda': 'Demanda_Promedio'
+    })
+    
     # Crear gráfica
     st.write(f"### 📈 Comparación: Recursos vs Demanda - {dia_seleccionado}")
-    st.write("**Filtro aplicado:** Llamadas externas → internas")
     
     # Configurar gráfica
     chart_data = datos_grafica.set_index('Hora')
-    chart_data = chart_data.rename(columns={
-        'Recursos': 'Recursos Disponibles',
-        'Promedio_Demanda': 'Demanda Promedio (externas→internas)'
-    })
     
     # Mostrar gráfica
     st.line_chart(chart_data, height=500)
@@ -244,9 +242,9 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
     with st.expander("📊 Ver datos detallados"):
         datos_tabla = datos_grafica.copy()
         datos_tabla['Hora_Formateada'] = datos_tabla['Hora'].apply(lambda x: f"{x}:00")
-        datos_tabla['Recursos_Base'] = datos_tabla['Recursos'] / CONSTANTE_VALIDACION
+        datos_tabla['Recursos_Base'] = datos_tabla['Recursos_Disponibles'] / CONSTANTE_VALIDACION
         st.dataframe(datos_tabla[['Hora', 'Hora_Formateada', 'Recursos_Base', 
-                                'Recursos Disponibles', 'Promedio_Demanda']].round(2), 
+                                'Recursos_Disponibles', 'Demanda_Promedio']].round(2), 
                     use_container_width=True)
     
     # Calcular métricas de comparación
@@ -256,19 +254,19 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
     
     with col1:
         # Pico de demanda
-        pico_demanda = datos_grafica['Promedio_Demanda'].max()
-        hora_pico = datos_grafica.loc[datos_grafica['Promedio_Demanda'].idxmax(), 'Hora']
+        pico_demanda = datos_grafica['Demanda_Promedio'].max()
+        hora_pico = datos_grafica.loc[datos_grafica['Demanda_Promedio'].idxmax(), 'Hora']
         st.metric("Pico de demanda", f"{pico_demanda:.0f} llamadas", f"Hora: {hora_pico}:00")
     
     with col2:
         # Pico de recursos
-        pico_recursos = datos_grafica['Recursos'].max()
-        hora_recursos = datos_grafica.loc[datos_grafica['Recursos'].idxmax(), 'Hora']
+        pico_recursos = datos_grafica['Recursos_Disponibles'].max()
+        hora_recursos = datos_grafica.loc[datos_grafica['Recursos_Disponibles'].idxmax(), 'Hora']
         st.metric("Máximo recursos", f"{pico_recursos:.0f}", f"Hora: {hora_recursos}:00")
     
     with col3:
         # Diferencia máxima
-        datos_grafica['Diferencia'] = datos_grafica['Recursos'] - datos_grafica['Promedio_Demanda']
+        datos_grafica['Diferencia'] = datos_grafica['Recursos_Disponibles'] - datos_grafica['Demanda_Promedio']
         max_exceso = datos_grafica['Diferencia'].max()
         max_deficit = datos_grafica['Diferencia'].min()
         
@@ -300,14 +298,6 @@ def main():
                 # Mostrar vista previa de datos
                 st.write("**Vista previa de datos (primeras 10 filas):**")
                 st.dataframe(df.head(10), use_container_width=True)
-                
-                # Mostrar información sobre extensiones
-                with st.expander("📞 Información sobre extensiones internas"):
-                    st.write("**Códigos considerados como extensiones internas:**")
-                    st.write(f"Total: {len(CODIGOS_EXTENSION)} códigos")
-                    st.write("**Filtro aplicado:**")
-                    st.write("- **Origen (From)**: NO debe contener códigos de extensión (externo)")
-                    st.write("- **Destino (To)**: DEBE contener códigos de extensión (interno)")
                 
                 # Divider
                 st.divider()
@@ -343,37 +333,15 @@ def main():
                 # Botón para procesar datos de demanda
                 st.divider()
                 st.subheader("Procesamiento de Datos de Demanda")
-                st.write("**Filtro a aplicar:** Llamadas con origen EXTERNO y destino INTERNO")
                 
-                if st.button("📊 Calcular Demanda Promedio Filtrada", type="primary", use_container_width=True):
-                    with st.spinner("Calculando demanda promedio (externas→internas)..."):
+                if st.button("📊 Calcular Demanda Promedio", type="primary", use_container_width=True):
+                    with st.spinner("Calculando demanda promedio..."):
                         # Procesar datos para calcular demanda CON FILTRO
                         demanda_df = procesar_datos_demanda_filtrada(df)
                         
                         if demanda_df is not None:
                             # Guardar en session state
                             st.session_state.demanda_df = demanda_df
-                            
-                            # Mostrar resumen de demanda
-                            st.write("**Resumen de demanda calculada (filtrada):**")
-                            
-                            # Calcular días únicos
-                            dias_unicos = demanda_df['Dia_Semana'].unique()
-                            num_dias_por_dia = demanda_df[['Dia_Semana', 'Num_Dias']].drop_duplicates()
-                            
-                            col_dias1, col_dias2 = st.columns(2)
-                            
-                            with col_dias1:
-                                st.write("**Días disponibles:**")
-                                for _, row in num_dias_por_dia.iterrows():
-                                    st.write(f"- {row['Dia_Semana']}: {row['Num_Dias']} días")
-                            
-                            with col_dias2:
-                                # Calcular demanda promedio total por día
-                                demanda_total_dia = demanda_df.groupby('Dia_Semana')['Promedio_Demanda'].sum().reset_index()
-                                st.write("**Demanda promedio total por día:**")
-                                for _, row in demanda_total_dia.iterrows():
-                                    st.write(f"- {row['Dia_Semana']}: {row['Promedio_Demanda']:.0f} llamadas")
             
             with tab2:
                 st.subheader("Resultados y Análisis")
@@ -383,8 +351,13 @@ def main():
                     demanda_df = st.session_state.demanda_df
                     recursos_por_hora = st.session_state.recursos_por_hora
                     
-                    # Selector de día de la semana
-                    dias_disponibles = sorted(demanda_df['Dia_Semana'].unique())
+                    # Obtener días disponibles en orden correcto (Lunes a Domingo)
+                    orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+                    dias_disponibles = [dia for dia in orden_dias if dia in demanda_df['Dia_Semana'].unique()]
+                    
+                    if not dias_disponibles:
+                        st.warning("No hay días disponibles para mostrar")
+                        return
                     
                     st.write("### 🔍 Selecciona un día para analizar:")
                     dia_seleccionado = st.selectbox(
@@ -392,15 +365,6 @@ def main():
                         options=dias_disponibles,
                         key="selector_dia_analisis"
                     )
-                    
-                    # Mostrar información del día seleccionado
-                    info_dia = demanda_df[demanda_df['Dia_Semana'] == dia_seleccionado]
-                    num_dias = info_dia['Num_Dias'].iloc[0] if len(info_dia) > 0 else 0
-                    
-                    st.info(f"**Información para {dia_seleccionado}:**")
-                    st.write(f"- Basado en {num_dias} días de datos")
-                    st.write(f"- Horas con datos: {len(info_dia)} horas del día")
-                    st.write("- **Filtro:** Llamadas externas → internas")
                     
                     # Crear gráfica comparativa
                     crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado)
@@ -415,9 +379,9 @@ def main():
                         # Exportar datos de demanda
                         csv_demanda = demanda_df.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            label="📥 Descargar Datos de Demanda Filtrada",
+                            label="📥 Descargar Datos de Demanda",
                             data=csv_demanda,
-                            file_name="demanda_promedio_filtrada.csv",
+                            file_name="demanda_promedio.csv",
                             mime="text/csv",
                             type="primary"
                         )
@@ -440,12 +404,12 @@ def main():
                 else:
                     st.info("👈 Primero procesa los datos en la pestaña 'Datos y Configuración'")
                     if st.session_state.demanda_df is None:
-                        st.warning("- Falta calcular la demanda promedio filtrada")
+                        st.warning("- Falta calcular la demanda promedio")
                     if not st.session_state.recursos_por_hora:
                         st.warning("- Falta configurar los recursos por hora")
         
         except Exception as e:
-            st.error(f"Error al leer el archivo: {str(e)}")
+            st.error(f"Error al leer el archivo: {e}")
             st.info("Asegúrate de que el archivo sea un CSV válido y tenga las columnas 'Call Time', 'From', 'To'")
     
     else:
