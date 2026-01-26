@@ -14,6 +14,7 @@ st.markdown("Carga un archivo CSV con registros de llamadas para analizar demand
 
 # Constante para el cálculo de recursos
 CONSTANTE_VALIDACION = 14.08
+CONSTANTE_DEMANDA_A_RECURSOS = 3.0
 
 # Lista de códigos que representan extensiones internas
 CODIGOS_EXTENSION = [
@@ -120,7 +121,7 @@ def ingresar_recursos_por_hora():
 def procesar_datos_demanda_filtrada(df):
     """
     Procesa el DataFrame para calcular la demanda promedio por hora y día
-    APLICANDO FILTRO: From = externo, To = interno
+    APLICANDO FILTRO: From = NO extensión (externo), To = SÍ extensión (interno)
     """
     df_procesado = df.copy()
     
@@ -179,12 +180,15 @@ def procesar_datos_demanda_filtrada(df):
         # Redondear a 2 decimales
         demanda_con_dias['Promedio_Demanda'] = demanda_con_dias['Promedio_Demanda'].round(2)
         
+        # Calcular Recursos Necesarios (demanda promedio ÷ 3)
+        demanda_con_dias['Recursos_Necesarios'] = (demanda_con_dias['Promedio_Demanda'] / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
+        
         # Ordenar por día y hora
         orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
         demanda_con_dias['Dia_Semana'] = pd.Categorical(demanda_con_dias['Dia_Semana'], categories=orden_dias, ordered=True)
         demanda_con_dias = demanda_con_dias.sort_values(['Dia_Semana', 'Hora'])
         
-        return demanda_con_dias[['Dia_Semana', 'Hora', 'Promedio_Demanda', 'Conteo', 'Num_Dias']]
+        return demanda_con_dias[['Dia_Semana', 'Hora', 'Promedio_Demanda', 'Recursos_Necesarios', 'Conteo', 'Num_Dias']]
         
     except Exception as e:
         st.error(f"Error al procesar los datos: {str(e)}")
@@ -219,24 +223,23 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
         return
     
     # Crear DataFrame para la gráfica
-    # Primero, crear rango completo de horas de 0 a 23
     horas_completas = pd.DataFrame({'Hora': range(0, 24)})
     
     # Preparar datos de recursos (solo para días de semana)
     if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
         recursos_lista = []
         for hora, valor in recursos_por_hora.items():
-            recursos_lista.append({'Hora': hora, 'Recursos': valor * CONSTANTE_VALIDACION})
+            recursos_lista.append({'Hora': hora, 'Capacidad_Disponible': valor * CONSTANTE_VALIDACION})
         
         recursos_df = pd.DataFrame(recursos_lista)
         
         # Combinar con horas completas
         recursos_completo = pd.merge(horas_completas, recursos_df, on='Hora', how='left')
-        recursos_completo['Recursos'] = recursos_completo['Recursos'].fillna(0)
+        recursos_completo['Capacidad_Disponible'] = recursos_completo['Capacidad_Disponible'].fillna(0)
     else:
         # Para sábado y domingo, no mostrar recursos
         recursos_completo = horas_completas.copy()
-        recursos_completo['Recursos'] = 0
+        recursos_completo['Capacidad_Disponible'] = 0
     
     # Preparar datos de demanda
     if dia_seleccionado == "Todos":
@@ -249,31 +252,30 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
     # Combinar ambos DataFrames
     datos_grafica = pd.merge(recursos_completo, demanda_completo, on='Hora')
     
-    # Renombrar columnas para la gráfica
-    datos_grafica = datos_grafica.rename(columns={
-        'Recursos': 'Capacidad Disponible',
-        'Promedio_Demanda': 'Demanda Promedio'
-    })
-    
-    # Crear gráfica - seleccionar solo las columnas que se deben mostrar
+    # Crear gráfica
     st.write(f"### 📈 Comparación: Capacidad vs Demanda - {titulo_dia}")
     
     # Para sábado y domingo, solo mostrar demanda
     if dia_seleccionado in ['Sábado', 'Domingo']:
-        chart_data = datos_grafica[['Hora', 'Demanda Promedio']].set_index('Hora')
+        chart_data = datos_grafica[['Hora', 'Promedio_Demanda']].set_index('Hora')
+        chart_data = chart_data.rename(columns={'Promedio_Demanda': 'Demanda Promedio'})
     else:
-        chart_data = datos_grafica[['Hora', 'Capacidad Disponible', 'Demanda Promedio']].set_index('Hora')
+        chart_data = datos_grafica[['Hora', 'Capacidad_Disponible', 'Promedio_Demanda']].set_index('Hora')
+        chart_data = chart_data.rename(columns={
+            'Capacidad_Disponible': 'Capacidad Disponible',
+            'Promedio_Demanda': 'Demanda Promedio'
+        })
     
     # Mostrar gráfica
     st.line_chart(chart_data, height=500)
     
     # Calcular métricas
-    suma_demanda = datos_grafica['Demanda Promedio'].sum()
+    suma_demanda = datos_grafica['Promedio_Demanda'].sum()
+    suma_recursos_necesarios = (suma_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
     
-    # Calcular diferencia y encontrar picos
-    datos_grafica['Diferencia'] = datos_grafica['Capacidad Disponible'] - datos_grafica['Demanda Promedio']
-    
+    # Calcular diferencia y encontrar picos (solo para días con capacidad disponible)
     if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
+        datos_grafica['Diferencia'] = datos_grafica['Capacidad_Disponible'] - datos_grafica['Promedio_Demanda']
         max_exceso = datos_grafica['Diferencia'].max()
         max_deficit = datos_grafica['Diferencia'].min()
         hora_max_exceso = datos_grafica.loc[datos_grafica['Diferencia'].idxmax(), 'Hora'] if max_exceso > 0 else None
@@ -291,14 +293,12 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
     with col2:
         if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
             # Pico de capacidad disponible
-            pico_capacidad = datos_grafica['Capacidad Disponible'].max()
-            hora_capacidad = datos_grafica.loc[datos_grafica['Capacidad Disponible'].idxmax(), 'Hora']
+            pico_capacidad = datos_grafica['Capacidad_Disponible'].max()
+            hora_capacidad = datos_grafica.loc[datos_grafica['Capacidad_Disponible'].idxmax(), 'Hora']
             st.metric("Pico Capacidad Disponible", f"{pico_capacidad:.0f}", f"Hora: {hora_capacidad}:00")
         else:
-            # Para sábado y domingo, mostrar hora pico de demanda
-            pico_demanda = datos_grafica['Demanda Promedio'].max()
-            hora_pico = datos_grafica.loc[datos_grafica['Demanda Promedio'].idxmax(), 'Hora']
-            st.metric("Pico Demanda", f"{pico_demanda:.0f} llamadas", f"Hora: {hora_pico}:00")
+            # Para sábado y domingo, mostrar recursos necesarios
+            st.metric("Recursos Necesarios", f"{suma_recursos_necesarios:.1f}", "Demanda total ÷ 3")
     
     with col3:
         if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
@@ -309,29 +309,35 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
             else:
                 st.metric("Equilibrio", "Perfecto", "Sin exceso ni déficit")
         else:
-            # Para sábado y domingo, mostrar demanda dividida entre 3
-            recursos_necesarios = (suma_demanda / 3).round(2)
-            st.metric("Recursos Necesarios", f"{recursos_necesarios:.1f}", "Demanda ÷ 3")
+            # Para sábado y domingo, mostrar pico de demanda
+            pico_demanda = datos_grafica['Promedio_Demanda'].max()
+            hora_pico = datos_grafica.loc[datos_grafica['Promedio_Demanda'].idxmax(), 'Hora']
+            recursos_pico = (pico_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
+            st.metric("Pico Demanda", f"{pico_demanda:.0f} llamadas", f"Recursos: {recursos_pico}")
 
 # Función para generar PDF
 def generar_pdf(demanda_df, recursos_por_hora, dia_seleccionado):
     """
     Genera un PDF con el reporte del día seleccionado
     """
-    # Filtrar demanda para el día seleccionado
+    # Preparar datos según la selección
     if dia_seleccionado == "Todos":
         dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
         demanda_dia = demanda_df[demanda_df['Dia_Semana'].isin(dias_semana)].copy()
         # Calcular promedio por hora para todos los días de semana
-        demanda_promedio = demanda_dia.groupby('Hora')['Promedio_Demanda'].mean().reset_index()
-        demanda_promedio['Promedio_Demanda'] = demanda_promedio['Promedio_Demanda'].round(2)
-        demanda_promedio['Dia_Semana'] = 'Promedio L-V'
-        demanda_dia = demanda_promedio
+        reporte_data = demanda_dia.groupby('Hora')['Promedio_Demanda'].mean().reset_index()
+        reporte_data['Promedio_Demanda'] = reporte_data['Promedio_Demanda'].round(2)
+        titulo = "Promedio Lunes a Viernes"
     else:
         demanda_dia = demanda_df[demanda_df['Dia_Semana'] == dia_seleccionado].copy()
+        reporte_data = demanda_dia[['Hora', 'Promedio_Demanda']].copy()
+        titulo = dia_seleccionado
     
-    if len(demanda_dia) == 0:
+    if len(reporte_data) == 0:
         return None
+    
+    # Calcular recursos necesarios
+    reporte_data['Recursos_Necesarios'] = (reporte_data['Promedio_Demanda'] / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
     
     # Crear PDF
     pdf = FPDF()
@@ -341,14 +347,14 @@ def generar_pdf(demanda_df, recursos_por_hora, dia_seleccionado):
     pdf.set_font("Arial", 'B', 16)
     
     # Título
-    titulo = f"Reporte de Análisis - {dia_seleccionado}" if dia_seleccionado != "Todos" else "Reporte de Análisis - Promedio Lunes a Viernes"
-    pdf.cell(0, 10, titulo, ln=True, align='C')
+    pdf.cell(0, 10, f"Reporte de Análisis - {titulo}", ln=True, align='C')
     pdf.ln(5)
     
     # Información general
     pdf.set_font("Arial", '', 10)
     pdf.cell(0, 10, f"Fecha de generación: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
     pdf.cell(0, 10, f"Constante de validación: {CONSTANTE_VALIDACION}", ln=True)
+    pdf.cell(0, 10, f"Factor demanda a recursos: 1/{CONSTANTE_DEMANDA_A_RECURSOS} (÷{CONSTANTE_DEMANDA_A_RECURSOS})", ln=True)
     pdf.ln(5)
     
     # Crear tabla
@@ -370,10 +376,10 @@ def generar_pdf(demanda_df, recursos_por_hora, dia_seleccionado):
     # Agregar datos
     pdf.set_font("Arial", '', 9)
     
-    for _, row in demanda_dia.iterrows():
+    for _, row in reporte_data.iterrows():
         hora = row['Hora']
         demanda = row['Promedio_Demanda']
-        recursos_necesarios = demanda / 3  # Dividir demanda entre 3
+        recursos_necesarios = row['Recursos_Necesarios']
         
         if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
             # Obtener recursos disponibles para esta hora
@@ -404,20 +410,21 @@ def generar_pdf(demanda_df, recursos_por_hora, dia_seleccionado):
     pdf.set_font("Arial", '', 9)
     
     # Calcular métricas
-    suma_demanda = demanda_dia['Promedio_Demanda'].sum()
-    suma_recursos_necesarios = suma_demanda / 3
+    suma_demanda = reporte_data['Promedio_Demanda'].sum()
+    suma_recursos_necesarios = reporte_data['Recursos_Necesarios'].sum()
     
     pdf.cell(0, 8, f"Sumatoria demanda: {suma_demanda:.2f} llamadas", ln=True)
-    pdf.cell(0, 8, f"Recursos necesarios totales: {suma_recursos_necesarios:.2f} (demanda ÷ 3)", ln=True)
+    pdf.cell(0, 8, f"Recursos necesarios totales: {suma_recursos_necesarios:.2f} (demanda ÷ {CONSTANTE_DEMANDA_A_RECURSOS})", ln=True)
     
     if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
         # Calcular recursos disponibles totales
         recursos_disponibles_total = 0
-        for hora in demanda_dia['Hora']:
+        for hora in reporte_data['Hora']:
             recursos_base = recursos_por_hora.get(hora, 0)
             recursos_disponibles_total += recursos_base * CONSTANTE_VALIDACION
         
         pdf.cell(0, 8, f"Capacidad disponible total: {recursos_disponibles_total:.2f}", ln=True)
+        pdf.cell(0, 8, f"Relación capacidad/demanda: {(recursos_disponibles_total/suma_demanda if suma_demanda > 0 else 0):.2f}", ln=True)
     
     # Guardar PDF en bytes
     return pdf.output(dest='S').encode('latin1')
@@ -498,13 +505,16 @@ def main():
                     demanda_df = st.session_state.demanda_df
                     recursos_por_hora = st.session_state.recursos_por_hora
                     
-                    # Obtener días disponibles en orden correcto (Lunes a Domingo)
+                    # Obtener días disponibles en orden correcto
                     orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo', 'Todos']
                     dias_disponibles = []
                     
                     for dia in orden_dias:
                         if dia == "Todos":
-                            dias_disponibles.append(dia)
+                            # Verificar si hay datos de lunes a viernes
+                            dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
+                            if any(dia_sem in demanda_df['Dia_Semana'].unique() for dia_sem in dias_semana):
+                                dias_disponibles.append(dia)
                         elif dia in demanda_df['Dia_Semana'].unique():
                             dias_disponibles.append(dia)
                     
@@ -534,71 +544,70 @@ def main():
                         key="formato_exportacion"
                     )
                     
-                    if st.button(f"📥 Descargar Reporte ({formato_exportacion})", type="primary", use_container_width=True):
-                        if formato_exportacion == "PDF":
-                            # Generar y exportar PDF
-                            pdf_bytes = generar_pdf(demanda_df, recursos_por_hora, dia_seleccionado)
-                            if pdf_bytes:
-                                nombre_archivo = f"reporte_{dia_seleccionado}.pdf" if dia_seleccionado != "Todos" else "reporte_promedio_lv.pdf"
+                    # Preparar datos para exportación
+                    if dia_seleccionado == "Todos":
+                        dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
+                        demanda_dia = demanda_df[demanda_df['Dia_Semana'].isin(dias_semana)].copy()
+                        # Calcular promedio por hora
+                        export_data = demanda_dia.groupby('Hora')['Promedio_Demanda'].mean().reset_index()
+                        export_data['Promedio_Demanda'] = export_data['Promedio_Demanda'].round(2)
+                        nombre_base = "promedio_lv"
+                    else:
+                        demanda_dia = demanda_df[demanda_df['Dia_Semana'] == dia_seleccionado].copy()
+                        export_data = demanda_dia[['Hora', 'Promedio_Demanda']].copy()
+                        nombre_base = dia_seleccionado.lower()
+                    
+                    # Calcular recursos necesarios
+                    export_data['Recursos_Necesarios'] = (export_data['Promedio_Demanda'] / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
+                    
+                    # Para días con capacidad disponible, agregar columnas adicionales
+                    if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
+                        export_data['Recursos_Base'] = export_data['Hora'].apply(lambda h: recursos_por_hora.get(h, 0))
+                        export_data['Capacidad_Disponible'] = (export_data['Recursos_Base'] * CONSTANTE_VALIDACION).round(2)
+                        export_data['Diferencia'] = (export_data['Capacidad_Disponible'] - export_data['Promedio_Demanda']).round(2)
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        if st.button(f"📥 Descargar {formato_exportacion}", use_container_width=True):
+                            if formato_exportacion == "PDF":
+                                pdf_bytes = generar_pdf(demanda_df, recursos_por_hora, dia_seleccionado)
+                                if pdf_bytes:
+                                    nombre_archivo = f"reporte_{nombre_base}.pdf"
+                                    st.download_button(
+                                        label="Click para descargar PDF",
+                                        data=pdf_bytes,
+                                        file_name=nombre_archivo,
+                                        mime="application/pdf",
+                                        key="pdf_download"
+                                    )
+                            
+                            elif formato_exportacion == "CSV":
+                                csv_data = export_data.to_csv(index=False).encode('utf-8')
+                                nombre_archivo = f"reporte_{nombre_base}.csv"
                                 st.download_button(
-                                    label="Descargar PDF",
-                                    data=pdf_bytes,
+                                    label="Click para descargar CSV",
+                                    data=csv_data,
                                     file_name=nombre_archivo,
-                                    mime="application/pdf"
+                                    mime="text/csv",
+                                    key="csv_download"
                                 )
-                        
-                        elif formato_exportacion == "CSV":
-                            # Preparar datos para CSV
-                            if dia_seleccionado == "Todos":
-                                dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
-                                demanda_dia = demanda_df[demanda_df['Dia_Semana'].isin(dias_semana)].copy()
-                                # Calcular promedio por hora
-                                reporte_data = demanda_dia.groupby('Hora')['Promedio_Demanda'].mean().reset_index()
-                                reporte_data['Recursos_Necesarios'] = reporte_data['Promedio_Demanda'] / 3
-                                reporte_data['Recursos_Necesarios'] = reporte_data['Recursos_Necesarios'].round(2)
-                            else:
-                                demanda_dia = demanda_df[demanda_df['Dia_Semana'] == dia_seleccionado].copy()
-                                reporte_data = demanda_dia[['Hora', 'Promedio_Demanda']].copy()
-                                reporte_data['Recursos_Necesarios'] = reporte_data['Promedio_Demanda'] / 3
-                                reporte_data['Recursos_Necesarios'] = reporte_data['Recursos_Necesarios'].round(2)
                             
-                            csv_data = reporte_data.to_csv(index=False).encode('utf-8')
-                            nombre_archivo = f"reporte_{dia_seleccionado}.csv" if dia_seleccionado != "Todos" else "reporte_promedio_lv.csv"
-                            st.download_button(
-                                label="Descargar CSV",
-                                data=csv_data,
-                                file_name=nombre_archivo,
-                                mime="text/csv"
-                            )
-                        
-                        elif formato_exportacion == "XLSX":
-                            # Preparar datos para Excel
-                            if dia_seleccionado == "Todos":
-                                dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
-                                demanda_dia = demanda_df[demanda_df['Dia_Semana'].isin(dias_semana)].copy()
-                                # Calcular promedio por hora
-                                reporte_data = demanda_dia.groupby('Hora')['Promedio_Demanda'].mean().reset_index()
-                                reporte_data['Recursos_Necesarios'] = reporte_data['Promedio_Demanda'] / 3
-                                reporte_data['Recursos_Necesarios'] = reporte_data['Recursos_Necesarios'].round(2)
-                            else:
-                                demanda_dia = demanda_df[demanda_df['Dia_Semana'] == dia_seleccionado].copy()
-                                reporte_data = demanda_dia[['Hora', 'Promedio_Demanda']].copy()
-                                reporte_data['Recursos_Necesarios'] = reporte_data['Promedio_Demanda'] / 3
-                                reporte_data['Recursos_Necesarios'] = reporte_data['Recursos_Necesarios'].round(2)
-                            
-                            # Crear Excel en memoria
-                            output = io.BytesIO()
-                            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                                reporte_data.to_excel(writer, index=False, sheet_name='Reporte')
-                            
-                            excel_data = output.getvalue()
-                            nombre_archivo = f"reporte_{dia_seleccionado}.xlsx" if dia_seleccionado != "Todos" else "reporte_promedio_lv.xlsx"
-                            st.download_button(
-                                label="Descargar Excel",
-                                data=excel_data,
-                                file_name=nombre_archivo,
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
+                            elif formato_exportacion == "XLSX":
+                                # Crear Excel en memoria
+                                output = io.BytesIO()
+                                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                                    export_data.to_excel(writer, index=False, sheet_name='Reporte')
+                                
+                                excel_data = output.getvalue()
+                                nombre_archivo = f"reporte_{nombre_base}.xlsx"
+                                st.download_button(
+                                    label="Click para descargar Excel",
+                                    data=excel_data,
+                                    file_name=nombre_archivo,
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    key="excel_download"
+                                )
                 
                 else:
                     st.info("👈 Primero procesa los datos en la pestaña 'Datos y Configuración'")
