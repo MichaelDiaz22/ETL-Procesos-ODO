@@ -361,11 +361,11 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
         # Pico de recursos
         pico_recursos = datos_grafica['Recursos_Disponibles'].max()
         hora_recursos = datos_grafica.loc[datos_grafica['Recursos_Disponibles'].idxmax(), 'Hora']
-        st.metric("Máximo recursos", f"{pico_recursos:.0f}", f"Hora: {hora_recursos}:00")
+        st.metric("Pico capacidad recursos", f"{pico_recursos:.0f}", f"Hora: {hora_recursos}:00")
     
     with col3:
         # Total de llamadas diarias
-        st.metric("Total llamadas diarias", f"{total_llamadas_dia:.0f}")
+        st.metric("Promedio llamadas diarias", f"{total_llamadas_dia:.0f}")
     
     with col4:
         # Diferencia máxima
