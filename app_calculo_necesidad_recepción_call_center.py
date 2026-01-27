@@ -312,6 +312,27 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
         
         # Mostrar gráfica
         st.line_chart(chart_data, height=400)
+        
+        # Métricas de llamadas debajo de la gráfica
+        st.write("**Métricas de Llamadas:**")
+        
+        col_met1, col_met2, col_met3 = st.columns(3)
+        
+        with col_met1:
+            # Sumatoria de demanda promedio
+            suma_demanda = datos_grafica['Promedio_Demanda'].sum()
+            st.metric("Sumatoria Demanda", f"{suma_demanda:.0f} llamadas")
+        
+        with col_met2:
+            # Pico de demanda
+            pico_demanda = datos_grafica['Promedio_Demanda'].max()
+            hora_pico = datos_grafica.loc[datos_grafica['Promedio_Demanda'].idxmax(), 'Hora']
+            st.metric("Pico Demanda", f"{pico_demanda:.0f} llamadas", f"Hora: {hora_pico}:00")
+        
+        with col_met3:
+            # Demanda promedio por hora
+            demanda_promedio_hora = suma_demanda / 24 if suma_demanda > 0 else 0
+            st.metric("Demanda Promedio/Hora", f"{demanda_promedio_hora:.1f} llamadas")
     
     with col_grafica2:
         st.write("#### 👥 Por Recursos")
@@ -336,52 +357,43 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
         
         # Mostrar gráfica de recursos
         st.line_chart(chart_data_recursos, height=400)
-    
-    # Calcular métricas
-    suma_demanda = datos_grafica['Promedio_Demanda'].sum()
-    suma_recursos_necesarios = (suma_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
-    
-    # Calcular diferencia y encontrar picos (solo para días con capacidad disponible)
-    if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
-        datos_grafica['Diferencia'] = datos_grafica['Capacidad_Disponible'] - datos_grafica['Promedio_Demanda']
-        max_exceso = datos_grafica['Diferencia'].max()
-        max_deficit = datos_grafica['Diferencia'].min()
-        hora_max_exceso = datos_grafica.loc[datos_grafica['Diferencia'].idxmax(), 'Hora'] if max_exceso > 0 else None
-        hora_max_deficit = datos_grafica.loc[datos_grafica['Diferencia'].idxmin(), 'Hora'] if max_deficit < 0 else None
-    
-    # Mostrar métricas
-    st.write(f"**Métricas para {titulo_dia}:**")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        # Sumatoria de demanda promedio
-        st.metric("Sumatoria Demanda", f"{suma_demanda:.0f} llamadas")
-    
-    with col2:
-        if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
-            # Pico de capacidad disponible
-            pico_capacidad = datos_grafica['Capacidad_Disponible'].max()
-            hora_capacidad = datos_grafica.loc[datos_grafica['Capacidad_Disponible'].idxmax(), 'Hora']
-            st.metric("Pico Capacidad Disponible", f"{pico_capacidad:.0f}", f"Hora: {hora_capacidad}:00")
-        else:
-            # Para sábado y domingo, mostrar recursos necesarios
-            st.metric("Recursos Necesarios", f"{suma_recursos_necesarios:.1f}", "Demanda total ÷ 3")
-    
-    with col3:
-        if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
-            if max_exceso > 0:
-                st.metric("Mayor Exceso", f"{max_exceso:.0f}", f"Hora: {hora_max_exceso}:00")
-            elif max_deficit < 0:
-                st.metric("Mayor Déficit", f"{abs(max_deficit):.0f}", f"Hora: {hora_max_deficit}:00")
+        
+        # Métricas de recursos debajo de la gráfica
+        st.write("**Métricas de Recursos:**")
+        
+        col_met4, col_met5, col_met6 = st.columns(3)
+        
+        with col_met4:
+            # Máximo de recursos disponibles
+            if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
+                max_recursos_disponibles = datos_recursos['Capacidad_Recursos'].max()
+                hora_max_recursos = datos_recursos.loc[datos_recursos['Capacidad_Recursos'].idxmax(), 'Hora']
+                st.metric("Máx. Recursos Disponibles", f"{max_recursos_disponibles:.1f}", f"Hora: {hora_max_recursos}:00")
             else:
-                st.metric("Equilibrio", "Perfecto", "Sin exceso ni déficit")
-        else:
-            # Para sábado y domingo, mostrar pico de demanda
-            pico_demanda = datos_grafica['Promedio_Demanda'].max()
-            hora_pico = datos_grafica.loc[datos_grafica['Promedio_Demanda'].idxmax(), 'Hora']
-            recursos_pico = (pico_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
-            st.metric("Pico Demanda", f"{pico_demanda:.0f} llamadas", f"Recursos: {recursos_pico}")
+                suma_recursos_necesarios = datos_recursos['Demanda_Recursos'].sum()
+                st.metric("Recursos Necesarios Totales", f"{suma_recursos_necesarios:.1f}")
+        
+        with col_met5:
+            # Máximo de recursos requeridos
+            max_recursos_requeridos = datos_recursos['Demanda_Recursos'].max()
+            hora_max_requeridos = datos_recursos.loc[datos_recursos['Demanda_Recursos'].idxmax(), 'Hora']
+            st.metric("Máx. Recursos Requeridos", f"{max_recursos_requeridos:.1f}", f"Hora: {hora_max_requeridos}:00")
+        
+        with col_met6:
+            # Déficit de recursos
+            if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
+                datos_recursos['Diferencia_Recursos'] = datos_recursos['Capacidad_Recursos'] - datos_recursos['Demanda_Recursos']
+                max_deficit = datos_recursos['Diferencia_Recursos'].min()
+                if max_deficit < 0:
+                    hora_deficit = datos_recursos.loc[datos_recursos['Diferencia_Recursos'].idxmin(), 'Hora']
+                    st.metric("Máx. Déficit Recursos", f"{abs(max_deficit):.1f}", f"Hora: {hora_deficit}:00")
+                else:
+                    st.metric("Déficit Recursos", "0.0", "Sin déficit")
+            else:
+                # Para sábado y domingo
+                pico_demanda = datos_grafica['Promedio_Demanda'].max()
+                recursos_pico = (pico_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
+                st.metric("Recursos Pico Demanda", f"{recursos_pico:.1f}")
 
 # Función para preparar datos para modelos de predicción
 def preparar_datos_para_prediccion(df):
@@ -578,6 +590,27 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         
         # Mostrar gráfica
         st.line_chart(chart_data, height=400)
+        
+        # Métricas de llamadas debajo de la gráfica
+        st.write("**Métricas de Llamadas:**")
+        
+        col_met1, col_met2, col_met3 = st.columns(3)
+        
+        with col_met1:
+            # Sumatoria de predicción
+            suma_prediccion = df_grafica['Predicción'].sum()
+            st.metric("Sumatoria Predicción", f"{suma_prediccion:.0f} llamadas")
+        
+        with col_met2:
+            # Sumatoria promedio actual
+            suma_promedio = df_grafica['Promedio Actual'].sum()
+            st.metric("Sumatoria Promedio", f"{suma_promedio:.0f} llamadas")
+        
+        with col_met3:
+            # Pico de predicción
+            pico_prediccion = df_grafica['Predicción'].max()
+            hora_pico_pred = df_grafica.loc[df_grafica['Predicción'].idxmax(), 'Hora']
+            st.metric("Pico Predicción", f"{pico_prediccion:.0f} llamadas", f"Hora: {hora_pico_pred}:00")
     
     with col_grafica2:
         st.write("#### 👥 Por Recursos")
@@ -596,8 +629,35 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         
         # Mostrar gráfica de recursos
         st.line_chart(chart_data_recursos, height=400)
+        
+        # Métricas de recursos debajo de la gráfica
+        st.write("**Métricas de Recursos:**")
+        
+        col_met4, col_met5, col_met6 = st.columns(3)
+        
+        with col_met4:
+            # Máximo de recursos disponibles
+            max_recursos_disponibles = df_recursos['Capacidad_Recursos'].max()
+            hora_max_disp = df_recursos.loc[df_recursos['Capacidad_Recursos'].idxmax(), 'Hora']
+            st.metric("Máx. Recursos Disponibles", f"{max_recursos_disponibles:.1f}", f"Hora: {hora_max_disp}:00")
+        
+        with col_met5:
+            # Máximo de recursos requeridos (predicción)
+            max_recursos_requeridos = df_recursos['Prediccion_Recursos'].max()
+            hora_max_req = df_recursos.loc[df_recursos['Prediccion_Recursos'].idxmax(), 'Hora']
+            st.metric("Máx. Recursos Requeridos", f"{max_recursos_requeridos:.1f}", f"Hora: {hora_max_req}:00")
+        
+        with col_met6:
+            # Déficit de recursos (predicción)
+            df_recursos['Diferencia_Recursos'] = df_recursos['Capacidad_Recursos'] - df_recursos['Prediccion_Recursos']
+            max_deficit = df_recursos['Diferencia_Recursos'].min()
+            if max_deficit < 0:
+                hora_deficit = df_recursos.loc[df_recursos['Diferencia_Recursos'].idxmin(), 'Hora']
+                st.metric("Máx. Déficit Recursos", f"{abs(max_deficit):.1f}", f"Hora: {hora_deficit}:00")
+            else:
+                st.metric("Déficit Recursos", "0.0", "Sin déficit")
     
-    # Calcular métricas
+    # Calcular métricas adicionales para retornar
     suma_prediccion = df_grafica['Predicción'].sum()
     suma_promedio = df_grafica['Promedio Actual'].sum()
     suma_capacidad = df_grafica['Capacidad Disponible'].sum()
@@ -618,7 +678,8 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         'deficit_prediccion': deficit_prediccion,
         'deficit_promedio': deficit_promedio,
         'diferencia_deficit': diferencia_deficit,
-        'df_grafica': df_grafica
+        'df_grafica': df_grafica,
+        'df_recursos': df_recursos
     }
 
 # Función principal
@@ -1026,9 +1087,9 @@ def main():
                                     demanda_promedio_actual
                                 )
                                 
-                                # Mostrar métricas de predicción
+                                # Mostrar métricas de predicción adicionales
                                 st.divider()
-                                st.write("### 📈 Métricas de Predicción")
+                                st.write("### 📈 Métricas de Predicción Adicionales")
                                 
                                 # Obtener métricas del mejor modelo
                                 r2_mejor = st.session_state.modelos_entrenados[mejor_modelo_nombre]['r2']
@@ -1044,33 +1105,33 @@ def main():
                                     )
                                 
                                 with col2:
-                                    # Predicción de sumatoria de demanda diaria
+                                    # Diferencia entre predicción y promedio
                                     suma_prediccion = metricas_prediccion['suma_prediccion']
                                     suma_promedio = metricas_prediccion['suma_promedio']
                                     if suma_promedio > 0:
                                         dif_porcentaje = ((suma_prediccion - suma_promedio) / suma_promedio * 100)
                                         st.metric(
-                                            "Predicción Demanda Diaria", 
-                                            f"{suma_prediccion:.0f} llamadas",
+                                            "Diferencia Predicción", 
+                                            f"{suma_prediccion - suma_promedio:.0f} llamadas",
                                             f"{dif_porcentaje:+.1f}% vs promedio"
                                         )
                                     else:
                                         st.metric(
-                                            "Predicción Demanda Diaria", 
+                                            "Diferencia Predicción", 
                                             f"{suma_prediccion:.0f} llamadas",
                                             "Sin datos previos"
                                         )
                                 
                                 with col3:
-                                    # Predicción de déficit
+                                    # Déficit predicho vs promedio
                                     deficit_prediccion = metricas_prediccion['deficit_prediccion']
                                     deficit_promedio = metricas_prediccion['deficit_promedio']
                                     dif_deficit = deficit_prediccion - deficit_promedio
                                     
                                     st.metric(
-                                        "Predicción Déficit", 
-                                        f"{deficit_prediccion:.0f}",
-                                        f"{dif_deficit:+.0f} vs promedio"
+                                        "Diferencia Déficit", 
+                                        f"{deficit_prediccion:.0f} vs {deficit_promedio:.0f}",
+                                        f"{dif_deficit:+.0f} de cambio"
                                     )
                                 
                                 # Mostrar tabla detallada
