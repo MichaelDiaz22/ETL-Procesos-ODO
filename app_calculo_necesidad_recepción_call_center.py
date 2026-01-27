@@ -32,7 +32,8 @@ CODIGOS_EXTENSION = [
     '(2013)', '(2014)', '(2015)', '(2016)', '(2017)', '(2018)', '(2019)', '(2021)', 
     '(2022)', '(2023)', '(2024)', '(2025)', '(2026)', '(2028)', '(2029)', '(2030)', 
     '(2032)', '(2034)', '(2035)', '(8000)', '(8002)', '(8003)', '(8051)', '(8052)', 
-    '(8062)', '(8063)', '(8064)', '(8071)', '(8072)', '(8079)', '(8080)'
+    '(8062)', '(8063)', '(8064)', '(8071)', '(8072)', '(8079)', '(8080)', '(8068)', 
+    '(8004)', '(8070)', '(8006)', '(7999)', '(8069)', '(8055)', '(8050)'
 ]
 
 # Horas para ingresar recursos (6:00 a 19:00)
@@ -291,22 +292,51 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
     # Combinar ambos DataFrames
     datos_grafica = pd.merge(recursos_completo, demanda_completo, on='Hora')
     
-    # Crear gráfica
+    # Crear gráficas en paralelo
     st.write(f"### 📈 Comparación: Capacidad vs Demanda - {titulo_dia}")
     
-    # Para sábado y domingo, solo mostrar demanda
-    if dia_seleccionado in ['Sábado', 'Domingo']:
-        chart_data = datos_grafica[['Hora', 'Promedio_Demanda']].set_index('Hora')
-        chart_data = chart_data.rename(columns={'Promedio_Demanda': 'Demanda Promedio'})
-    else:
-        chart_data = datos_grafica[['Hora', 'Capacidad_Disponible', 'Promedio_Demanda']].set_index('Hora')
-        chart_data = chart_data.rename(columns={
-            'Capacidad_Disponible': 'Capacidad Disponible',
-            'Promedio_Demanda': 'Demanda Promedio'
-        })
+    # Dos columnas para las gráficas
+    col_grafica1, col_grafica2 = st.columns(2)
     
-    # Mostrar gráfica
-    st.line_chart(chart_data, height=500)
+    with col_grafica1:
+        st.write("#### 📊 Por Llamadas")
+        # Para sábado y domingo, solo mostrar demanda
+        if dia_seleccionado in ['Sábado', 'Domingo']:
+            chart_data = datos_grafica[['Hora', 'Promedio_Demanda']].set_index('Hora')
+            chart_data = chart_data.rename(columns={'Promedio_Demanda': 'Demanda Promedio'})
+        else:
+            chart_data = datos_grafica[['Hora', 'Capacidad_Disponible', 'Promedio_Demanda']].set_index('Hora')
+            chart_data = chart_data.rename(columns={
+                'Capacidad_Disponible': 'Capacidad Disponible',
+                'Promedio_Demanda': 'Demanda Promedio'
+            })
+        
+        # Mostrar gráfica
+        st.line_chart(chart_data, height=400)
+    
+    with col_grafica2:
+        st.write("#### 👥 Por Recursos")
+        # Crear versión de datos para recursos (dividiendo por CONSTANTE_VALIDACION)
+        datos_recursos = datos_grafica.copy()
+        
+        if dia_seleccionado in ['Sábado', 'Domingo']:
+            # Solo demanda
+            datos_recursos['Demanda_Recursos'] = datos_recursos['Promedio_Demanda'] / CONSTANTE_VALIDACION
+            chart_data_recursos = datos_recursos[['Hora', 'Demanda_Recursos']].set_index('Hora')
+            chart_data_recursos = chart_data_recursos.rename(columns={'Demanda_Recursos': 'Recursos Necesarios'})
+        else:
+            # Capacidad y demanda
+            datos_recursos['Capacidad_Recursos'] = datos_recursos['Capacidad_Disponible'] / CONSTANTE_VALIDACION
+            datos_recursos['Demanda_Recursos'] = datos_recursos['Promedio_Demanda'] / CONSTANTE_VALIDACION
+            
+            chart_data_recursos = datos_recursos[['Hora', 'Capacidad_Recursos', 'Demanda_Recursos']].set_index('Hora')
+            chart_data_recursos = chart_data_recursos.rename(columns={
+                'Capacidad_Recursos': 'Recursos Disponibles',
+                'Demanda_Recursos': 'Recursos Necesarios'
+            })
+        
+        # Mostrar gráfica de recursos
+        st.line_chart(chart_data_recursos, height=400)
     
     # Calcular métricas
     suma_demanda = datos_grafica['Promedio_Demanda'].sum()
@@ -532,13 +562,41 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
     
     df_grafica = pd.DataFrame(predicciones_por_hora)
     
-    # Crear gráfica
+    # Crear gráficas en paralelo
     st.write(f"### 📈 Predicción vs Realidad - {dia_seleccionado}")
     
-    chart_data = df_grafica[['Hora', 'Predicción', 'Promedio Actual', 'Capacidad Disponible']].set_index('Hora')
+    # Dos columnas para las gráficas
+    col_grafica1, col_grafica2 = st.columns(2)
     
-    # Mostrar gráfica
-    st.line_chart(chart_data, height=500)
+    with col_grafica1:
+        st.write("#### 📊 Por Llamadas")
+        chart_data = df_grafica[['Hora', 'Predicción', 'Promedio Actual', 'Capacidad Disponible']].set_index('Hora')
+        chart_data = chart_data.rename(columns={
+            'Predicción': 'Predicción',
+            'Promedio Actual': 'Promedio Actual',
+            'Capacidad Disponible': 'Capacidad Disponible'
+        })
+        
+        # Mostrar gráfica
+        st.line_chart(chart_data, height=400)
+    
+    with col_grafica2:
+        st.write("#### 👥 Por Recursos")
+        # Crear versión de datos para recursos (dividiendo por CONSTANTE_VALIDACION)
+        df_recursos = df_grafica.copy()
+        df_recursos['Prediccion_Recursos'] = df_recursos['Predicción'] / CONSTANTE_VALIDACION
+        df_recursos['Promedio_Recursos'] = df_recursos['Promedio Actual'] / CONSTANTE_VALIDACION
+        df_recursos['Capacidad_Recursos'] = df_recursos['Capacidad Disponible'] / CONSTANTE_VALIDACION
+        
+        chart_data_recursos = df_recursos[['Hora', 'Prediccion_Recursos', 'Promedio_Recursos', 'Capacidad_Recursos']].set_index('Hora')
+        chart_data_recursos = chart_data_recursos.rename(columns={
+            'Prediccion_Recursos': 'Predicción Recursos',
+            'Promedio_Recursos': 'Promedio Actual Recursos',
+            'Capacidad_Recursos': 'Recursos Disponibles'
+        })
+        
+        # Mostrar gráfica de recursos
+        st.line_chart(chart_data_recursos, height=400)
     
     # Calcular métricas
     suma_prediccion = df_grafica['Predicción'].sum()
@@ -1022,9 +1080,12 @@ def main():
                                     df_detalle['Hora_Formato'] = df_detalle['Hora'].apply(lambda x: f"{x}:00")
                                     df_detalle['Diferencia'] = df_detalle['Predicción'] - df_detalle['Promedio Actual']
                                     df_detalle['% Cambio'] = (df_detalle['Diferencia'] / df_detalle['Promedio Actual'] * 100).where(df_detalle['Promedio Actual'] > 0, 0)
+                                    df_detalle['Prediccion_Recursos'] = (df_detalle['Predicción'] / CONSTANTE_VALIDACION).round(2)
+                                    df_detalle['Promedio_Recursos'] = (df_detalle['Promedio Actual'] / CONSTANTE_VALIDACION).round(2)
                                     
                                     st.dataframe(
                                         df_detalle[['Hora_Formato', 'Predicción', 'Promedio Actual', 
+                                                   'Prediccion_Recursos', 'Promedio_Recursos',
                                                    'Diferencia', '% Cambio', 'Capacidad Disponible']].round(2),
                                         use_container_width=True
                                     )
@@ -1046,11 +1107,14 @@ def main():
                                 df_export['Hora_Formato'] = df_export['Hora'].apply(lambda x: f"{x}:00")
                                 df_export['Diferencia'] = df_export['Predicción'] - df_export['Promedio Actual']
                                 df_export['% Cambio'] = (df_export['Diferencia'] / df_export['Promedio Actual'] * 100).where(df_export['Promedio Actual'] > 0, 0)
+                                df_export['Prediccion_Recursos'] = (df_export['Predicción'] / CONSTANTE_VALIDACION).round(2)
+                                df_export['Promedio_Recursos'] = (df_export['Promedio Actual'] / CONSTANTE_VALIDACION).round(2)
                                 
                                 # Para días con capacidad disponible, agregar columnas adicionales
                                 if dia_prediccion in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
                                     df_export['Recursos_Base'] = df_export['Hora'].apply(lambda h: recursos_por_hora.get(h, 0))
                                     df_export['Capacidad_Disponible'] = (df_export['Recursos_Base'] * CONSTANTE_VALIDACION).round(2)
+                                    df_export['Recursos_Disponibles'] = (df_export['Capacidad_Disponible'] / CONSTANTE_VALIDACION).round(2)
                                 
                                 nombre_base = dia_prediccion.lower().replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u') if dia_prediccion != "Todos" else "prediccion_promedio"
                                 
