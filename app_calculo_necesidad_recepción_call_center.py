@@ -720,7 +720,7 @@ def main():
                 # Configuración de recursos por hora en dos columnas
                 st.subheader("👥 Configuración de Recursos por Hora")
                 st.info("Ingresa la cantidad de personas disponibles para cada hora (6:00 AM - 7:00 PM)")
-                st.write(f"**Nota:** Cada valor se multiplicará por {CONSTANTE_VALIDACION} para calcular capacidad disponible")
+                #st.write(f"**Nota:** Cada valor se multiplicará por {CONSTANTE_VALIDACION} para calcular capacidad disponible")
                 
                 col_recursos1, col_recursos2 = st.columns([3, 2])
                 
