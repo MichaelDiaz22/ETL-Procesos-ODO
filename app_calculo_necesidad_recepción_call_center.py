@@ -312,27 +312,6 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
         
         # Mostrar gráfica
         st.line_chart(chart_data, height=400)
-        
-        # Métricas de llamadas debajo de la gráfica
-        st.write("**Métricas de Llamadas:**")
-        
-        col_met1, col_met2, col_met3 = st.columns(3)
-        
-        with col_met1:
-            # Sumatoria de demanda promedio
-            suma_demanda = datos_grafica['Promedio_Demanda'].sum()
-            st.metric("Sumatoria Demanda", f"{suma_demanda:.0f} llamadas")
-        
-        with col_met2:
-            # Pico de demanda
-            pico_demanda = datos_grafica['Promedio_Demanda'].max()
-            hora_pico = datos_grafica.loc[datos_grafica['Promedio_Demanda'].idxmax(), 'Hora']
-            st.metric("Pico Demanda", f"{pico_demanda:.0f} llamadas", f"Hora: {hora_pico}:00")
-        
-        with col_met3:
-            # Demanda promedio por hora
-            demanda_promedio_hora = suma_demanda / 24 if suma_demanda > 0 else 0
-            st.metric("Demanda Promedio/Hora", f"{demanda_promedio_hora:.1f} llamadas")
     
     with col_grafica2:
         st.write("#### 👥 Por Recursos")
@@ -357,128 +336,186 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
         
         # Mostrar gráfica de recursos
         st.line_chart(chart_data_recursos, height=400)
-        
-        # Métricas de recursos debajo de la gráfica
-        st.write("**Métricas de Recursos:**")
-        
-        col_met4, col_met5, col_met6 = st.columns(3)
-        
-        with col_met4:
-            # Máximo de recursos disponibles
-            if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
-                max_recursos_disponibles = datos_recursos['Capacidad_Recursos'].max()
-                hora_max_recursos = datos_recursos.loc[datos_recursos['Capacidad_Recursos'].idxmax(), 'Hora']
-                st.metric("Máx. Recursos Disponibles", f"{max_recursos_disponibles:.1f}", f"Hora: {hora_max_recursos}:00")
+    
+    # Calcular métricas
+    suma_demanda = datos_grafica['Promedio_Demanda'].sum()
+    suma_recursos_necesarios = (suma_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
+    
+    # Calcular diferencia y encontrar picos (solo para días con capacidad disponible)
+    if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
+        datos_grafica['Diferencia'] = datos_grafica['Capacidad_Disponible'] - datos_grafica['Promedio_Demanda']
+        max_exceso = datos_grafica['Diferencia'].max()
+        max_deficit = datos_grafica['Diferencia'].min()
+        hora_max_exceso = datos_grafica.loc[datos_grafica['Diferencia'].idxmax(), 'Hora'] if max_exceso > 0 else None
+        hora_max_deficit = datos_grafica.loc[datos_grafica['Diferencia'].idxmin(), 'Hora'] if max_deficit < 0 else None
+    
+    # Mostrar métricas
+    st.write(f"**Métricas para {titulo_dia}:**")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Sumatoria de demanda promedio
+        st.metric("Sumatoria Demanda", f"{suma_demanda:.0f} llamadas")
+    
+    with col2:
+        if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
+            # Pico de capacidad disponible
+            pico_capacidad = datos_grafica['Capacidad_Disponible'].max()
+            hora_capacidad = datos_grafica.loc[datos_grafica['Capacidad_Disponible'].idxmax(), 'Hora']
+            st.metric("Pico Capacidad Disponible", f"{pico_capacidad:.0f}", f"Hora: {hora_capacidad}:00")
+        else:
+            # Para sábado y domingo, mostrar recursos necesarios
+            st.metric("Recursos Necesarios", f"{suma_recursos_necesarios:.1f}", "Demanda total ÷ 3")
+    
+    with col3:
+        if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
+            if max_exceso > 0:
+                st.metric("Mayor Exceso", f"{max_exceso:.0f}", f"Hora: {hora_max_exceso}:00")
+            elif max_deficit < 0:
+                st.metric("Mayor Déficit", f"{abs(max_deficit):.0f}", f"Hora: {hora_max_deficit}:00")
             else:
-                suma_recursos_necesarios = datos_recursos['Demanda_Recursos'].sum()
-                st.metric("Recursos Necesarios Totales", f"{suma_recursos_necesarios:.1f}")
-        
-        with col_met5:
-            # Máximo de recursos requeridos
-            max_recursos_requeridos = datos_recursos['Demanda_Recursos'].max()
-            hora_max_requeridos = datos_recursos.loc[datos_recursos['Demanda_Recursos'].idxmax(), 'Hora']
-            st.metric("Máx. Recursos Requeridos", f"{max_recursos_requeridos:.1f}", f"Hora: {hora_max_requeridos}:00")
-        
-        with col_met6:
-            # Déficit de recursos
-            if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
-                datos_recursos['Diferencia_Recursos'] = datos_recursos['Capacidad_Recursos'] - datos_recursos['Demanda_Recursos']
-                max_deficit = datos_recursos['Diferencia_Recursos'].min()
-                if max_deficit < 0:
-                    hora_deficit = datos_recursos.loc[datos_recursos['Diferencia_Recursos'].idxmin(), 'Hora']
-                    st.metric("Máx. Déficit Recursos", f"{abs(max_deficit):.1f}", f"Hora: {hora_deficit}:00")
-                else:
-                    st.metric("Déficit Recursos", "0.0", "Sin déficit")
-            else:
-                # Para sábado y domingo
-                pico_demanda = datos_grafica['Promedio_Demanda'].max()
-                recursos_pico = (pico_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
-                st.metric("Recursos Pico Demanda", f"{recursos_pico:.1f}")
+                st.metric("Equilibrio", "Perfecto", "Sin exceso ni déficit")
+        else:
+            # Para sábado y domingo, mostrar pico de demanda
+            pico_demanda = datos_grafica['Promedio_Demanda'].max()
+            hora_pico = datos_grafica.loc[datos_grafica['Promedio_Demanda'].idxmax(), 'Hora']
+            recursos_pico = (pico_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
+            st.metric("Pico Demanda", f"{pico_demanda:.0f} llamadas", f"Recursos: {recursos_pico}")
 
-# Función para preparar datos para modelos de predicción - SIMPLIFICADA
-def preparar_datos_para_prediccion(df, demanda_df):
+# Función para preparar datos para modelos de predicción
+def preparar_datos_para_prediccion(df):
     """
-    Prepara los datos para entrenar modelos de predicción usando los promedios históricos
+    Prepara los datos para entrenar modelos de predicción
     """
     try:
-        # Usar los promedios históricos de demanda_df como base
-        if demanda_df is None or len(demanda_df) == 0:
+        # Hacer una copia para no modificar el original
+        df_clean = df.copy()
+        
+        # Convertir Call Time a datetime, manejar errores
+        try:
+            df_clean['Call Time'] = pd.to_datetime(df_clean['Call Time'], errors='coerce')
+        except Exception as e:
+            # Intentar con formato específico
+            try:
+                df_clean['Call Time'] = pd.to_datetime(df_clean['Call Time'], format='mixed', errors='coerce')
+            except:
+                df_clean['Call Time'] = pd.to_datetime(df_clean['Call Time'], errors='coerce')
+        
+        # Eliminar filas con Call Time nulo o inválido
+        df_clean = df_clean.dropna(subset=['Call Time'])
+        
+        if len(df_clean) == 0:
             return None, None, None
         
-        # Crear características simples: hora, día de semana
-        datos_prediccion = demanda_df.copy()
+        # Aplicar filtro: From = NO extensión (externo), To = SÍ extensión (interno)
+        df_clean['From_es_extension'] = df_clean['From'].apply(es_extension_interna)
+        df_clean['To_es_extension'] = df_clean['To'].apply(es_extension_interna)
         
-        # Mapear día de la semana a número
-        dias_numericos = {
-            'Lunes': 0, 'Martes': 1, 'Miércoles': 2, 
-            'Jueves': 3, 'Viernes': 4, 'Sábado': 5, 'Domingo': 6
-        }
+        # Filtrar: origen externo Y destino interno
+        mascara = (~df_clean['From_es_extension']) & (df_clean['To_es_extension'])
+        df_filtrado = df_clean[mascara].copy()
         
-        datos_prediccion['Dia_Semana_Num'] = datos_prediccion['Dia_Semana'].map(dias_numericos)
+        if len(df_filtrado) == 0:
+            return None, None, None
+        
+        # Extraer características
+        df_filtrado['Hora'] = df_filtrado['Call Time'].dt.hour
+        df_filtrado['Dia_Semana_Num'] = df_filtrado['Call Time'].dt.dayofweek  # 0=Lunes, 6=Domingo
+        df_filtrado['Mes'] = df_filtrado['Call Time'].dt.month
+        df_filtrado['Dia_Mes'] = df_filtrado['Call Time'].dt.day
+        df_filtrado['Semana_Mes'] = (df_filtrado['Dia_Mes'] - 1) // 7 + 1
+        
+        # Agrupar por día y hora para obtener datos diarios
+        df_agrupado = df_filtrado.groupby(['Dia_Semana_Num', 'Hora', 'Mes', 'Dia_Mes', 'Semana_Mes']).size().reset_index(name='Llamadas')
         
         # Preparar características y variable objetivo
-        X = datos_prediccion[['Dia_Semana_Num', 'Hora']].values
-        y = datos_prediccion['Promedio_Demanda'].values
+        X = df_agrupado[['Dia_Semana_Num', 'Hora', 'Mes', 'Dia_Mes', 'Semana_Mes']]
+        y = df_agrupado['Llamadas']
         
-        # Verificar que tenemos suficientes datos
-        if len(X) < 10:
+        # Verificar que tenemos suficientes datos para entrenamiento
+        if len(X) < 30:
             return None, None, None
         
-        return X, y, datos_prediccion
+        return X, y, df_agrupado
         
     except Exception as e:
         return None, None, None
 
-# Función para entrenar modelos de predicción - SIMPLIFICADA
+# Función para entrenar y evaluar modelos
 def entrenar_modelos_prediccion(X, y):
     """
-    Entrena modelos simples para predecir demanda basados en promedios históricos
+    Entrena y evalúa diferentes modelos de predicción
     """
     resultados = {}
     
-    if len(X) < 10:
+    # Verificar que tenemos suficientes datos
+    if len(X) < 30:
         return None, None, None
     
     try:
-        # Dividir datos (80%/20%)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        # Dividir datos en entrenamiento y prueba (70%/30%)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
         
-        # Modelo 1: Regresión Lineal simple
-        with st.spinner("🧠 Entrenando Modelo Lineal..."):
+        # Modelo 1: Regresión Lineal
+        with st.spinner("🧠 Entrenando Regresión Lineal..."):
             try:
                 modelo_lr = LinearRegression()
                 modelo_lr.fit(X_train, y_train)
                 y_pred_lr = modelo_lr.predict(X_test)
-                
-                # Asegurar predicciones realistas
                 y_pred_lr = np.maximum(y_pred_lr, 0)
-                y_pred_lr = np.minimum(y_pred_lr, np.max(y_train) * 1.5)
                 
-                resultados['Modelo Lineal'] = {
+                resultados['Regresión Lineal'] = {
                     'modelo': modelo_lr,
                     'mse': mean_squared_error(y_test, y_pred_lr),
                     'mae': mean_absolute_error(y_test, y_pred_lr),
                     'r2': r2_score(y_test, y_pred_lr),
                     'predicciones': y_pred_lr
                 }
-            except:
-                resultados['Modelo Lineal'] = None
+            except Exception as e:
+                resultados['Regresión Lineal'] = None
         
-        # Modelo 2: Gradient Boosting simple
-        with st.spinner("🧠 Entrenando Modelo Gradient Boosting..."):
+        # Modelo 2: MLP (Red Neuronal) - Solo si hay suficientes datos
+        with st.spinner("🧠 Entrenando MLP (Red Neuronal)..."):
             try:
+                if len(X_train) > 100:
+                    modelo_mlp = MLPRegressor(
+                        hidden_layer_sizes=(50, 25), 
+                        max_iter=500, 
+                        random_state=42,
+                        early_stopping=True,
+                        validation_fraction=0.1
+                    )
+                    modelo_mlp.fit(X_train, y_train)
+                    y_pred_mlp = modelo_mlp.predict(X_test)
+                    y_pred_mlp = np.maximum(y_pred_mlp, 0)
+                    
+                    resultados['MLP (Red Neuronal)'] = {
+                        'modelo': modelo_mlp,
+                        'mse': mean_squared_error(y_test, y_pred_mlp),
+                        'mae': mean_absolute_error(y_test, y_pred_mlp),
+                        'r2': r2_score(y_test, y_pred_mlp),
+                        'predicciones': y_pred_mlp
+                    }
+                else:
+                    resultados['MLP (Red Neuronal)'] = None
+            except Exception as e:
+                resultados['MLP (Red Neuronal)'] = None
+        
+        # Modelo 3: Gradient Boosting
+        with st.spinner("🧠 Entrenando Gradient Boosting..."):
+            try:
+                n_estimators = min(50, len(X_train) // 2)
+                n_estimators = max(10, n_estimators)
+                
                 modelo_gb = GradientBoostingRegressor(
-                    n_estimators=50,
-                    max_depth=3,
-                    learning_rate=0.1,
-                    random_state=42
+                    n_estimators=n_estimators, 
+                    random_state=42,
+                    max_depth=3
                 )
                 modelo_gb.fit(X_train, y_train)
                 y_pred_gb = modelo_gb.predict(X_test)
-                
-                # Asegurar predicciones realistas
                 y_pred_gb = np.maximum(y_pred_gb, 0)
-                y_pred_gb = np.minimum(y_pred_gb, np.max(y_train) * 1.5)
                 
                 resultados['Gradient Boosting'] = {
                     'modelo': modelo_gb,
@@ -487,10 +524,10 @@ def entrenar_modelos_prediccion(X, y):
                     'r2': r2_score(y_test, y_pred_gb),
                     'predicciones': y_pred_gb
                 }
-            except:
+            except Exception as e:
                 resultados['Gradient Boosting'] = None
         
-        # Filtrar modelos válidos
+        # Filtrar modelos que se entrenaron correctamente
         modelos_validos = {k: v for k, v in resultados.items() if v is not None}
         
         if not modelos_validos:
@@ -501,8 +538,8 @@ def entrenar_modelos_prediccion(X, y):
     except Exception as e:
         return None, None, None
 
-# Función para crear gráfica de predicción - MEJORADA
-def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_hora, demanda_promedio_actual, modelo_nombre):
+# Función para crear gráfica de predicción
+def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_hora, demanda_promedio_actual):
     """
     Crea una gráfica con las predicciones para un día específico
     """
@@ -515,14 +552,9 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         promedio_actual = demanda_promedio_actual.get(hora, 0)
         capacidad = recursos_por_hora.get(hora, 0) * CONSTANTE_VALIDACION if hora in recursos_por_hora else 0
         
-        # Asegurar que las predicciones sean razonables
-        if promedio_actual > 0:
-            # La predicción no debe ser más del doble del promedio histórico
-            prediccion = min(prediccion, promedio_actual * 2)
-        
         predicciones_por_hora.append({
             'Hora': hora,
-            'Predicción': max(0, round(prediccion, 1)),
+            'Predicción': prediccion,
             'Promedio Actual': promedio_actual,
             'Capacidad Disponible': capacidad
         })
@@ -531,7 +563,6 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
     
     # Crear gráficas en paralelo
     st.write(f"### 📈 Predicción vs Realidad - {dia_seleccionado}")
-    st.caption(f"Modelo: {modelo_nombre}")
     
     # Dos columnas para las gráficas
     col_grafica1, col_grafica2 = st.columns(2)
@@ -547,31 +578,10 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         
         # Mostrar gráfica
         st.line_chart(chart_data, height=400)
-        
-        # Métricas de llamadas debajo de la gráfica
-        st.write("**Métricas de Llamadas:**")
-        
-        col_met1, col_met2, col_met3 = st.columns(3)
-        
-        with col_met1:
-            # Sumatoria de predicción
-            suma_prediccion = df_grafica['Predicción'].sum()
-            st.metric("Sumatoria Predicción", f"{suma_prediccion:.0f} llamadas")
-        
-        with col_met2:
-            # Sumatoria promedio actual
-            suma_promedio = df_grafica['Promedio Actual'].sum()
-            st.metric("Sumatoria Promedio", f"{suma_promedio:.0f} llamadas")
-        
-        with col_met3:
-            # Pico de predicción
-            pico_prediccion = df_grafica['Predicción'].max()
-            hora_pico_pred = df_grafica.loc[df_grafica['Predicción'].idxmax(), 'Hora']
-            st.metric("Pico Predicción", f"{pico_prediccion:.0f} llamadas", f"Hora: {hora_pico_pred}:00")
     
     with col_grafica2:
         st.write("#### 👥 Por Recursos")
-        # Crear versión de datos para recursos
+        # Crear versión de datos para recursos (dividiendo por CONSTANTE_VALIDACION)
         df_recursos = df_grafica.copy()
         df_recursos['Prediccion_Recursos'] = df_recursos['Predicción'] / CONSTANTE_VALIDACION
         df_recursos['Promedio_Recursos'] = df_recursos['Promedio Actual'] / CONSTANTE_VALIDACION
@@ -586,68 +596,32 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         
         # Mostrar gráfica de recursos
         st.line_chart(chart_data_recursos, height=400)
-        
-        # Métricas de recursos debajo de la gráfica
-        st.write("**Métricas de Recursos:**")
-        
-        col_met4, col_met5, col_met6 = st.columns(3)
-        
-        with col_met4:
-            # Máximo de recursos disponibles
-            max_recursos_disponibles = df_recursos['Capacidad_Recursos'].max()
-            hora_max_disp = df_recursos.loc[df_recursos['Capacidad_Recursos'].idxmax(), 'Hora']
-            st.metric("Máx. Recursos Disponibles", f"{max_recursos_disponibles:.1f}", f"Hora: {hora_max_disp}:00")
-        
-        with col_met5:
-            # Máximo de recursos requeridos (predicción)
-            max_recursos_requeridos = df_recursos['Prediccion_Recursos'].max()
-            hora_max_req = df_recursos.loc[df_recursos['Prediccion_Recursos'].idxmax(), 'Hora']
-            st.metric("Máx. Recursos Requeridos", f"{max_recursos_requeridos:.1f}", f"Hora: {hora_max_req}:00")
-        
-        with col_met6:
-            # Déficit de recursos (predicción)
-            df_recursos['Diferencia_Recursos'] = df_recursos['Capacidad_Recursos'] - df_recursos['Prediccion_Recursos']
-            max_deficit = df_recursos['Diferencia_Recursos'].min()
-            if max_deficit < 0:
-                hora_deficit = df_recursos.loc[df_recursos['Diferencia_Recursos'].idxmin(), 'Hora']
-                st.metric("Máx. Déficit Recursos", f"{abs(max_deficit):.1f}", f"Hora: {hora_deficit}:00")
-            else:
-                st.metric("Déficit Recursos", "0.0", "Sin déficit")
     
-    # Calcular métricas adicionales
+    # Calcular métricas
     suma_prediccion = df_grafica['Predicción'].sum()
     suma_promedio = df_grafica['Promedio Actual'].sum()
     suma_capacidad = df_grafica['Capacidad Disponible'].sum()
     
+    diferencia_prediccion = suma_prediccion - suma_promedio
+    porcentaje_diferencia = (diferencia_prediccion / suma_promedio * 100) if suma_promedio > 0 else 0
+    
+    # Calcular déficit predicho
+    deficit_prediccion = max(0, suma_prediccion - suma_capacidad)
+    deficit_promedio = max(0, suma_promedio - suma_capacidad)
+    diferencia_deficit = deficit_prediccion - deficit_promedio
+    
     return {
         'suma_prediccion': suma_prediccion,
         'suma_promedio': suma_promedio,
-        'suma_capacidad': suma_capacidad,
-        'df_grafica': df_grafica,
-        'df_recursos': df_recursos
+        'diferencia_prediccion': diferencia_prediccion,
+        'porcentaje_diferencia': porcentaje_diferencia,
+        'deficit_prediccion': deficit_prediccion,
+        'deficit_promedio': deficit_promedio,
+        'diferencia_deficit': diferencia_deficit,
+        'df_grafica': df_grafica
     }
 
-# Función para predecir demanda usando el modelo SIMPLIFICADO
-def predecir_demanda_simple(modelo, dia_num, hora):
-    """
-    Predice la demanda para una hora específica usando el modelo entrenado
-    """
-    try:
-        # Crear características para la predicción
-        caracteristicas = np.array([[dia_num, hora]])
-        
-        # Predecir
-        prediccion = modelo.predict(caracteristicas)[0]
-        
-        # Asegurar que la predicción sea razonable
-        prediccion = max(0, prediccion)
-        prediccion = min(prediccion, 50)  # Límite máximo razonable
-        
-        return prediccion
-    except:
-        return 0
-
-# Función principal - ACTUALIZADA
+# Función principal
 def main():
     # Inicializar session state
     if 'recursos_por_hora' not in st.session_state:
@@ -660,6 +634,8 @@ def main():
         st.session_state.mejor_modelo = None
     if 'metricas_modelos' not in st.session_state:
         st.session_state.metricas_modelos = None
+    if 'datos_prediccion' not in st.session_state:
+        st.session_state.datos_prediccion = None
     
     if uploaded_file is not None:
         try:
@@ -846,20 +822,21 @@ def main():
                     
                     if st.button("🤖 Ejecutar Modelos de Predicción", type="primary", use_container_width=True):
                         with st.spinner("Preparando datos y entrenando modelos..."):
-                            # Preparar datos para predicción usando los promedios históricos
-                            X, y, datos_promedio = preparar_datos_para_prediccion(df, st.session_state.demanda_df)
+                            # Preparar datos para predicción
+                            X, y, datos_agrupados = preparar_datos_para_prediccion(df)
                             
                             if X is not None and y is not None:
-                                # Mostrar información de los datos
-                                st.info(f"**Datos para entrenamiento:** {len(X)} muestras")
-                                st.info(f"**Rango de valores objetivo:** {y.min():.1f} a {y.max():.1f} llamadas por hora")
-                                
                                 # Entrenar y evaluar modelos
                                 resultados, X_test, y_test = entrenar_modelos_prediccion(X, y)
                                 
                                 if resultados is not None:
                                     # Guardar resultados en session state
                                     st.session_state.modelos_entrenados = resultados
+                                    st.session_state.datos_prediccion = {
+                                        'X_test': X_test,
+                                        'y_test': y_test,
+                                        'datos_agrupados': datos_agrupados
+                                    }
                                     
                                     # Determinar el mejor modelo (basado en R²)
                                     mejor_modelo_nombre = None
@@ -873,9 +850,9 @@ def main():
                                         
                                         metricas_comparativas.append({
                                             'Modelo': nombre,
-                                            'MSE': f"{resultado['mse']:.2f}",
-                                            'MAE': f"{resultado['mae']:.2f}",
-                                            'R²': f"{resultado['r2']:.4f}"
+                                            'MSE': resultado['mse'],
+                                            'MAE': resultado['mae'],
+                                            'R²': resultado['r2']
                                         })
                                     
                                     st.session_state.mejor_modelo = mejor_modelo_nombre
@@ -907,6 +884,7 @@ def main():
                         # Verificar que tenemos un mejor modelo
                         if mejor_modelo_nombre and mejor_modelo_nombre in st.session_state.modelos_entrenados:
                             mejor_modelo = st.session_state.modelos_entrenados[mejor_modelo_nombre]['modelo']
+                            datos_agrupados = st.session_state.datos_prediccion['datos_agrupados']
                             
                             # Crear un mapeo de día de semana numérico a nombre
                             dias_numericos = {
@@ -919,10 +897,10 @@ def main():
                                 6: 'Domingo'
                             }
                             
-                            # Obtener días disponibles para predicción
+                            # Obtener días disponibles para predicción (solo L-V que tengan datos)
                             dias_disponibles_pred = []
                             for dia_num, dia_nombre in dias_numericos.items():
-                                if dia_nombre in demanda_df['Dia_Semana'].unique():
+                                if dia_nombre in demanda_df['Dia_Semana'].unique() and dia_num <= 4:  # Solo L-V
                                     dias_disponibles_pred.append(dia_nombre)
                             
                             # Añadir opción "Todos" (promedio de Lunes a Viernes)
@@ -941,6 +919,46 @@ def main():
                                 if dia_prediccion == "Todos":
                                     # Calcular promedio de predicciones para Lunes a Viernes
                                     dias_semana_nums = [0, 1, 2, 3, 4]  # Lunes a Viernes
+                                    predicciones_todas = []
+                                    demanda_promedio_todas = []
+                                    
+                                    # Obtener valores promedio de los datos de entrenamiento
+                                    if not datos_agrupados.empty:
+                                        mes_comun = datos_agrupados['Mes'].mode()[0] if not datos_agrupados['Mes'].mode().empty else 1
+                                        dia_mes_comun = 15
+                                        semana_mes_comun = 2
+                                    else:
+                                        mes_comun = 1
+                                        dia_mes_comun = 15
+                                        semana_mes_comun = 2
+                                    
+                                    # Generar predicciones para cada hora y cada día de semana
+                                    predicciones_por_hora_todas = {}
+                                    demanda_promedio_actual_todas = {}
+                                    
+                                    for dia_num in dias_semana_nums:
+                                        predicciones_dia = {}
+                                        for hora in range(24):
+                                            try:
+                                                # Crear características para la predicción
+                                                caracteristicas = np.array([[dia_num, hora, mes_comun, dia_mes_comun, semana_mes_comun]])
+                                                # Predecir
+                                                prediccion = mejor_modelo.predict(caracteristicas)[0]
+                                                prediccion = max(0, prediccion)
+                                                predicciones_dia[hora] = prediccion
+                                            except:
+                                                predicciones_dia[hora] = 0
+                                        
+                                        # Acumular predicciones por hora
+                                        for hora, pred in predicciones_dia.items():
+                                            if hora not in predicciones_por_hora_todas:
+                                                predicciones_por_hora_todas[hora] = []
+                                            predicciones_por_hora_todas[hora].append(pred)
+                                    
+                                    # Calcular promedio por hora para todos los días
+                                    predicciones_por_hora = {}
+                                    for hora, preds in predicciones_por_hora_todas.items():
+                                        predicciones_por_hora[hora] = np.mean(preds) if preds else 0
                                     
                                     # Calcular demanda promedio actual para "Todos"
                                     demanda_promedio_actual = {}
@@ -955,20 +973,6 @@ def main():
                                                     demandas_hora.append(datos_hora['Promedio_Demanda'].values[0])
                                         demanda_promedio_actual[hora] = np.mean(demandas_hora) if demandas_hora else 0
                                     
-                                    # Generar predicciones para cada día y promediar
-                                    predicciones_por_hora_todas = {}
-                                    for dia_num in dias_semana_nums:
-                                        for hora in range(24):
-                                            prediccion = predecir_demanda_simple(mejor_modelo, dia_num, hora)
-                                            if hora not in predicciones_por_hora_todas:
-                                                predicciones_por_hora_todas[hora] = []
-                                            predicciones_por_hora_todas[hora].append(prediccion)
-                                    
-                                    # Calcular promedio por hora para todos los días
-                                    predicciones_por_hora = {}
-                                    for hora, preds in predicciones_por_hora_todas.items():
-                                        predicciones_por_hora[hora] = np.mean(preds) if preds else 0
-                                    
                                 else:
                                     # Obtener el número del día seleccionado
                                     dia_num = None
@@ -978,16 +982,36 @@ def main():
                                             break
                                     
                                     if dia_num is not None:
-                                        # Obtener datos actuales del día seleccionado
+                                        # Preparar datos para predicción del día seleccionado
+                                        if not datos_agrupados.empty:
+                                            mes_comun = datos_agrupados['Mes'].mode()[0] if not datos_agrupados['Mes'].mode().empty else 1
+                                            dia_mes_comun = 15
+                                            semana_mes_comun = 2
+                                        else:
+                                            mes_comun = 1
+                                            dia_mes_comun = 15
+                                            semana_mes_comun = 2
+                                        
+                                        # Crear predicciones por hora para el día seleccionado
+                                        predicciones_por_hora = {}
                                         demanda_promedio_actual = {}
+                                        
+                                        # Obtener datos actuales del día seleccionado
                                         datos_dia_actual = demanda_df[demanda_df['Dia_Semana'] == dia_prediccion]
                                         for _, row in datos_dia_actual.iterrows():
                                             demanda_promedio_actual[row['Hora']] = row['Promedio_Demanda']
                                         
                                         # Generar predicciones para cada hora
-                                        predicciones_por_hora = {}
                                         for hora in range(24):
-                                            predicciones_por_hora[hora] = predecir_demanda_simple(mejor_modelo, dia_num, hora)
+                                            try:
+                                                # Crear características para la predicción
+                                                caracteristicas = np.array([[dia_num, hora, mes_comun, dia_mes_comun, semana_mes_comun]])
+                                                # Predecir
+                                                prediccion = mejor_modelo.predict(caracteristicas)[0]
+                                                prediccion = max(0, prediccion)
+                                                predicciones_por_hora[hora] = prediccion
+                                            except:
+                                                predicciones_por_hora[hora] = 0
                                         
                                         # Si no hay datos actuales para este día, usar 0
                                         if not demanda_promedio_actual:
@@ -999,9 +1023,55 @@ def main():
                                     dia_prediccion, 
                                     predicciones_por_hora, 
                                     recursos_por_hora,
-                                    demanda_promedio_actual,
-                                    mejor_modelo_nombre
+                                    demanda_promedio_actual
                                 )
+                                
+                                # Mostrar métricas de predicción
+                                st.divider()
+                                st.write("### 📈 Métricas de Predicción")
+                                
+                                # Obtener métricas del mejor modelo
+                                r2_mejor = st.session_state.modelos_entrenados[mejor_modelo_nombre]['r2']
+                                
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    # Métrica de desempeño del modelo
+                                    st.metric(
+                                        "Desempeño Modelo (R²)", 
+                                        f"{r2_mejor:.4f}",
+                                        f"{mejor_modelo_nombre}"
+                                    )
+                                
+                                with col2:
+                                    # Predicción de sumatoria de demanda diaria
+                                    suma_prediccion = metricas_prediccion['suma_prediccion']
+                                    suma_promedio = metricas_prediccion['suma_promedio']
+                                    if suma_promedio > 0:
+                                        dif_porcentaje = ((suma_prediccion - suma_promedio) / suma_promedio * 100)
+                                        st.metric(
+                                            "Predicción Demanda Diaria", 
+                                            f"{suma_prediccion:.0f} llamadas",
+                                            f"{dif_porcentaje:+.1f}% vs promedio"
+                                        )
+                                    else:
+                                        st.metric(
+                                            "Predicción Demanda Diaria", 
+                                            f"{suma_prediccion:.0f} llamadas",
+                                            "Sin datos previos"
+                                        )
+                                
+                                with col3:
+                                    # Predicción de déficit
+                                    deficit_prediccion = metricas_prediccion['deficit_prediccion']
+                                    deficit_promedio = metricas_prediccion['deficit_promedio']
+                                    dif_deficit = deficit_prediccion - deficit_promedio
+                                    
+                                    st.metric(
+                                        "Predicción Déficit", 
+                                        f"{deficit_prediccion:.0f}",
+                                        f"{dif_deficit:+.0f} vs promedio"
+                                    )
                                 
                                 # Mostrar tabla detallada
                                 with st.expander("📋 Ver predicciones detalladas por hora"):
