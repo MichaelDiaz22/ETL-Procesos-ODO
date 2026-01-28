@@ -395,7 +395,7 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
                 recursos_pico = (pico_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
                 st.metric("Recursos Pico Demanda", f"{recursos_pico:.1f}")
 
-# Función para preparar datos para modelos de predicción
+# Función para preparar datos para modelos de predicción - CORREGIDA
 def preparar_datos_para_prediccion(df):
     """
     Prepara los datos para entrenar modelos de predicción
@@ -435,26 +435,35 @@ def preparar_datos_para_prediccion(df):
         df_filtrado['Hora'] = df_filtrado['Call Time'].dt.hour
         df_filtrado['Dia_Semana_Num'] = df_filtrado['Call Time'].dt.dayofweek  # 0=Lunes, 6=Domingo
         df_filtrado['Mes'] = df_filtrado['Call Time'].dt.month
-        df_filtrado['Dia_Mes'] = df_filtrado['Call Time'].dt.day
-        df_filtrado['Semana_Mes'] = (df_filtrado['Dia_Mes'] - 1) // 7 + 1
         
-        # Agrupar por día y hora para obtener datos diarios
-        df_agrupado = df_filtrado.groupby(['Dia_Semana_Num', 'Hora', 'Mes', 'Dia_Mes', 'Semana_Mes']).size().reset_index(name='Llamadas')
+        # Agrupar por día, mes y hora para obtener datos diarios
+        # Primero extraer fecha
+        df_filtrado['Fecha'] = df_filtrado['Call Time'].dt.date
+        
+        # Agrupar por fecha y hora para contar llamadas diarias
+        df_diario = df_filtrado.groupby(['Fecha', 'Dia_Semana_Num', 'Hora', 'Mes']).size().reset_index(name='Llamadas')
+        
+        # Calcular el promedio por día de semana y hora
+        df_promedio = df_diario.groupby(['Dia_Semana_Num', 'Hora']).agg({
+            'Llamadas': 'mean',
+            'Mes': 'first'
+        }).reset_index()
         
         # Preparar características y variable objetivo
-        X = df_agrupado[['Dia_Semana_Num', 'Hora', 'Mes', 'Dia_Mes', 'Semana_Mes']]
-        y = df_agrupado['Llamadas']
+        X = df_promedio[['Dia_Semana_Num', 'Hora', 'Mes']]
+        y = df_promedio['Llamadas']
         
         # Verificar que tenemos suficientes datos para entrenamiento
-        if len(X) < 30:
+        if len(X) < 10:
             return None, None, None
         
-        return X, y, df_agrupado
+        return X, y, df_promedio
         
     except Exception as e:
+        st.error(f"Error en preparar_datos_para_prediccion: {str(e)}")
         return None, None, None
 
-# Función para entrenar y evaluar modelos
+# Función para entrenar y evaluar modelos - CORREGIDA
 def entrenar_modelos_prediccion(X, y):
     """
     Entrena y evalúa diferentes modelos de predicción
@@ -462,12 +471,12 @@ def entrenar_modelos_prediccion(X, y):
     resultados = {}
     
     # Verificar que tenemos suficientes datos
-    if len(X) < 30:
+    if len(X) < 10:
         return None, None, None
     
     try:
-        # Dividir datos en entrenamiento y prueba (70%/30%)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+        # Dividir datos en entrenamiento y prueba (80%/20%)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
         # Modelo 1: Regresión Lineal
         with st.spinner("🧠 Entrenando Regresión Lineal..."):
@@ -475,7 +484,9 @@ def entrenar_modelos_prediccion(X, y):
                 modelo_lr = LinearRegression()
                 modelo_lr.fit(X_train, y_train)
                 y_pred_lr = modelo_lr.predict(X_test)
+                # Asegurar que las predicciones no sean negativas y sean realistas
                 y_pred_lr = np.maximum(y_pred_lr, 0)
+                y_pred_lr = np.minimum(y_pred_lr, np.max(y_train) * 2)  # Limitar a máximo 2x el valor máximo observado
                 
                 resultados['Regresión Lineal'] = {
                     'modelo': modelo_lr,
@@ -487,47 +498,24 @@ def entrenar_modelos_prediccion(X, y):
             except Exception as e:
                 resultados['Regresión Lineal'] = None
         
-        # Modelo 2: MLP (Red Neuronal) - Solo si hay suficientes datos
-        with st.spinner("🧠 Entrenando MLP (Red Neuronal)..."):
-            try:
-                if len(X_train) > 100:
-                    modelo_mlp = MLPRegressor(
-                        hidden_layer_sizes=(50, 25), 
-                        max_iter=500, 
-                        random_state=42,
-                        early_stopping=True,
-                        validation_fraction=0.1
-                    )
-                    modelo_mlp.fit(X_train, y_train)
-                    y_pred_mlp = modelo_mlp.predict(X_test)
-                    y_pred_mlp = np.maximum(y_pred_mlp, 0)
-                    
-                    resultados['MLP (Red Neuronal)'] = {
-                        'modelo': modelo_mlp,
-                        'mse': mean_squared_error(y_test, y_pred_mlp),
-                        'mae': mean_absolute_error(y_test, y_pred_mlp),
-                        'r2': r2_score(y_test, y_pred_mlp),
-                        'predicciones': y_pred_mlp
-                    }
-                else:
-                    resultados['MLP (Red Neuronal)'] = None
-            except Exception as e:
-                resultados['MLP (Red Neuronal)'] = None
-        
-        # Modelo 3: Gradient Boosting
+        # Modelo 2: Gradient Boosting - más robusto para datos pequeños
         with st.spinner("🧠 Entrenando Gradient Boosting..."):
             try:
-                n_estimators = min(50, len(X_train) // 2)
+                n_estimators = min(50, len(X_train))
                 n_estimators = max(10, n_estimators)
                 
                 modelo_gb = GradientBoostingRegressor(
                     n_estimators=n_estimators, 
                     random_state=42,
-                    max_depth=3
+                    max_depth=3,
+                    learning_rate=0.1,
+                    min_samples_split=5,
+                    min_samples_leaf=2
                 )
                 modelo_gb.fit(X_train, y_train)
                 y_pred_gb = modelo_gb.predict(X_test)
                 y_pred_gb = np.maximum(y_pred_gb, 0)
+                y_pred_gb = np.minimum(y_pred_gb, np.max(y_train) * 1.5)
                 
                 resultados['Gradient Boosting'] = {
                     'modelo': modelo_gb,
@@ -539,6 +527,36 @@ def entrenar_modelos_prediccion(X, y):
             except Exception as e:
                 resultados['Gradient Boosting'] = None
         
+        # Modelo 3: MLP (Red Neuronal) - Solo si hay suficientes datos
+        if len(X_train) > 50:
+            with st.spinner("🧠 Entrenando MLP (Red Neuronal)..."):
+                try:
+                    modelo_mlp = MLPRegressor(
+                        hidden_layer_sizes=(20, 10), 
+                        max_iter=1000, 
+                        random_state=42,
+                        early_stopping=True,
+                        validation_fraction=0.2,
+                        alpha=0.01,
+                        learning_rate_init=0.001
+                    )
+                    modelo_mlp.fit(X_train, y_train)
+                    y_pred_mlp = modelo_mlp.predict(X_test)
+                    y_pred_mlp = np.maximum(y_pred_mlp, 0)
+                    y_pred_mlp = np.minimum(y_pred_mlp, np.max(y_train) * 1.5)
+                    
+                    resultados['MLP (Red Neuronal)'] = {
+                        'modelo': modelo_mlp,
+                        'mse': mean_squared_error(y_test, y_pred_mlp),
+                        'mae': mean_absolute_error(y_test, y_pred_mlp),
+                        'r2': r2_score(y_test, y_pred_mlp),
+                        'predicciones': y_pred_mlp
+                    }
+                except Exception as e:
+                    resultados['MLP (Red Neuronal)'] = None
+        else:
+            resultados['MLP (Red Neuronal)'] = None
+        
         # Filtrar modelos que se entrenaron correctamente
         modelos_validos = {k: v for k, v in resultados.items() if v is not None}
         
@@ -548,10 +566,11 @@ def entrenar_modelos_prediccion(X, y):
         return modelos_validos, X_test, y_test
         
     except Exception as e:
+        st.error(f"Error en entrenar_modelos_prediccion: {str(e)}")
         return None, None, None
 
-# Función para crear gráfica de predicción
-def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_hora, demanda_promedio_actual):
+# Función para crear gráfica de predicción - CORREGIDA
+def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_hora, demanda_promedio_actual, modelo_nombre):
     """
     Crea una gráfica con las predicciones para un día específico
     """
@@ -564,6 +583,10 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         promedio_actual = demanda_promedio_actual.get(hora, 0)
         capacidad = recursos_por_hora.get(hora, 0) * CONSTANTE_VALIDACION if hora in recursos_por_hora else 0
         
+        # Asegurar que las predicciones sean realistas
+        if prediccion > promedio_actual * 3:  # Si la predicción es más de 3x el promedio
+            prediccion = promedio_actual * 1.2  # Ajustar a un aumento más razonable
+        
         predicciones_por_hora.append({
             'Hora': hora,
             'Predicción': prediccion,
@@ -575,6 +598,7 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
     
     # Crear gráficas en paralelo
     st.write(f"### 📈 Predicción vs Realidad - {dia_seleccionado}")
+    st.caption(f"Modelo: {modelo_nombre}")
     
     # Dos columnas para las gráficas
     col_grafica1, col_grafica2 = st.columns(2)
@@ -588,8 +612,9 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
             'Capacidad Disponible': 'Capacidad Disponible'
         })
         
-        # Mostrar gráfica
-        st.line_chart(chart_data, height=400)
+        # Ajustar los límites del eje Y para que sean realistas
+        max_valor = max(chart_data.max().max(), 50)  # Máximo 50 llamadas o el valor real
+        st.line_chart(chart_data, height=400, ylim=[0, max_valor])
         
         # Métricas de llamadas debajo de la gráfica
         st.write("**Métricas de Llamadas:**")
@@ -627,8 +652,9 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
             'Capacidad_Recursos': 'Recursos Disponibles'
         })
         
-        # Mostrar gráfica de recursos
-        st.line_chart(chart_data_recursos, height=400)
+        # Ajustar los límites del eje Y para recursos
+        max_recursos = max(chart_data_recursos.max().max(), 10)  # Máximo 10 recursos o el valor real
+        st.line_chart(chart_data_recursos, height=400, ylim=[0, max_recursos])
         
         # Métricas de recursos debajo de la gráfica
         st.write("**Métricas de Recursos:**")
@@ -682,7 +708,32 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         'df_recursos': df_recursos
     }
 
-# Función principal
+# Función para predecir demanda usando el modelo - NUEVA FUNCIÓN
+def predecir_demanda_con_modelo(modelo, dia_num, mes=1):
+    """
+    Predice la demanda por hora para un día específico usando el modelo entrenado
+    """
+    predicciones = {}
+    
+    for hora in range(24):
+        try:
+            # Crear características para la predicción
+            caracteristicas = np.array([[dia_num, hora, mes]])
+            
+            # Predecir
+            prediccion = modelo.predict(caracteristicas)[0]
+            
+            # Asegurar que la predicción sea razonable
+            prediccion = max(0, prediccion)  # No negativa
+            prediccion = min(prediccion, 100)  # Máximo 100 llamadas por hora (límite razonable)
+            
+            predicciones[hora] = prediccion
+        except:
+            predicciones[hora] = 0
+    
+    return predicciones
+
+# Función principal - CORREGIDA
 def main():
     # Inicializar session state
     if 'recursos_por_hora' not in st.session_state:
@@ -720,7 +771,7 @@ def main():
                 # Configuración de recursos por hora en dos columnas
                 st.subheader("👥 Configuración de Recursos por Hora")
                 st.info("Ingresa la cantidad de personas disponibles para cada hora (6:00 AM - 7:00 PM)")
-                #st.write(f"**Nota:** Cada valor se multiplicará por {CONSTANTE_VALIDACION} para calcular capacidad disponible")
+                st.write(f"**Nota:** Cada valor se multiplicará por {CONSTANTE_VALIDACION} para calcular capacidad disponible")
                 
                 col_recursos1, col_recursos2 = st.columns([3, 2])
                 
@@ -884,9 +935,13 @@ def main():
                     if st.button("🤖 Ejecutar Modelos de Predicción", type="primary", use_container_width=True):
                         with st.spinner("Preparando datos y entrenando modelos..."):
                             # Preparar datos para predicción
-                            X, y, datos_agrupados = preparar_datos_para_prediccion(df)
+                            X, y, datos_promedio = preparar_datos_para_prediccion(df)
                             
                             if X is not None and y is not None:
+                                # Mostrar información de los datos
+                                st.info(f"**Datos para entrenamiento:** {len(X)} muestras")
+                                st.info(f"**Rango de valores objetivo:** {y.min():.1f} a {y.max():.1f} llamadas por hora")
+                                
                                 # Entrenar y evaluar modelos
                                 resultados, X_test, y_test = entrenar_modelos_prediccion(X, y)
                                 
@@ -896,7 +951,7 @@ def main():
                                     st.session_state.datos_prediccion = {
                                         'X_test': X_test,
                                         'y_test': y_test,
-                                        'datos_agrupados': datos_agrupados
+                                        'datos_promedio': datos_promedio
                                     }
                                     
                                     # Determinar el mejor modelo (basado en R²)
@@ -911,9 +966,9 @@ def main():
                                         
                                         metricas_comparativas.append({
                                             'Modelo': nombre,
-                                            'MSE': resultado['mse'],
-                                            'MAE': resultado['mae'],
-                                            'R²': resultado['r2']
+                                            'MSE': f"{resultado['mse']:.2f}",
+                                            'MAE': f"{resultado['mae']:.2f}",
+                                            'R²': f"{resultado['r2']:.4f}"
                                         })
                                     
                                     st.session_state.mejor_modelo = mejor_modelo_nombre
@@ -945,7 +1000,7 @@ def main():
                         # Verificar que tenemos un mejor modelo
                         if mejor_modelo_nombre and mejor_modelo_nombre in st.session_state.modelos_entrenados:
                             mejor_modelo = st.session_state.modelos_entrenados[mejor_modelo_nombre]['modelo']
-                            datos_agrupados = st.session_state.datos_prediccion['datos_agrupados']
+                            datos_promedio = st.session_state.datos_prediccion['datos_promedio']
                             
                             # Crear un mapeo de día de semana numérico a nombre
                             dias_numericos = {
@@ -958,10 +1013,10 @@ def main():
                                 6: 'Domingo'
                             }
                             
-                            # Obtener días disponibles para predicción (solo L-V que tengan datos)
+                            # Obtener días disponibles para predicción (solo los que tienen datos)
                             dias_disponibles_pred = []
                             for dia_num, dia_nombre in dias_numericos.items():
-                                if dia_nombre in demanda_df['Dia_Semana'].unique() and dia_num <= 4:  # Solo L-V
+                                if dia_nombre in demanda_df['Dia_Semana'].unique():
                                     dias_disponibles_pred.append(dia_nombre)
                             
                             # Añadir opción "Todos" (promedio de Lunes a Viernes)
@@ -980,46 +1035,7 @@ def main():
                                 if dia_prediccion == "Todos":
                                     # Calcular promedio de predicciones para Lunes a Viernes
                                     dias_semana_nums = [0, 1, 2, 3, 4]  # Lunes a Viernes
-                                    predicciones_todas = []
-                                    demanda_promedio_todas = []
-                                    
-                                    # Obtener valores promedio de los datos de entrenamiento
-                                    if not datos_agrupados.empty:
-                                        mes_comun = datos_agrupados['Mes'].mode()[0] if not datos_agrupados['Mes'].mode().empty else 1
-                                        dia_mes_comun = 15
-                                        semana_mes_comun = 2
-                                    else:
-                                        mes_comun = 1
-                                        dia_mes_comun = 15
-                                        semana_mes_comun = 2
-                                    
-                                    # Generar predicciones para cada hora y cada día de semana
-                                    predicciones_por_hora_todas = {}
-                                    demanda_promedio_actual_todas = {}
-                                    
-                                    for dia_num in dias_semana_nums:
-                                        predicciones_dia = {}
-                                        for hora in range(24):
-                                            try:
-                                                # Crear características para la predicción
-                                                caracteristicas = np.array([[dia_num, hora, mes_comun, dia_mes_comun, semana_mes_comun]])
-                                                # Predecir
-                                                prediccion = mejor_modelo.predict(caracteristicas)[0]
-                                                prediccion = max(0, prediccion)
-                                                predicciones_dia[hora] = prediccion
-                                            except:
-                                                predicciones_dia[hora] = 0
-                                        
-                                        # Acumular predicciones por hora
-                                        for hora, pred in predicciones_dia.items():
-                                            if hora not in predicciones_por_hora_todas:
-                                                predicciones_por_hora_todas[hora] = []
-                                            predicciones_por_hora_todas[hora].append(pred)
-                                    
-                                    # Calcular promedio por hora para todos los días
-                                    predicciones_por_hora = {}
-                                    for hora, preds in predicciones_por_hora_todas.items():
-                                        predicciones_por_hora[hora] = np.mean(preds) if preds else 0
+                                    mes_comun = 1  # Mes por defecto
                                     
                                     # Calcular demanda promedio actual para "Todos"
                                     demanda_promedio_actual = {}
@@ -1034,6 +1050,22 @@ def main():
                                                     demandas_hora.append(datos_hora['Promedio_Demanda'].values[0])
                                         demanda_promedio_actual[hora] = np.mean(demandas_hora) if demandas_hora else 0
                                     
+                                    # Generar predicciones para cada día y promediar
+                                    predicciones_por_hora_todas = {}
+                                    for dia_num in dias_semana_nums:
+                                        predicciones_dia = predecir_demanda_con_modelo(mejor_modelo, dia_num, mes_comun)
+                                        
+                                        # Acumular predicciones por hora
+                                        for hora, pred in predicciones_dia.items():
+                                            if hora not in predicciones_por_hora_todas:
+                                                predicciones_por_hora_todas[hora] = []
+                                            predicciones_por_hora_todas[hora].append(pred)
+                                    
+                                    # Calcular promedio por hora para todos los días
+                                    predicciones_por_hora = {}
+                                    for hora, preds in predicciones_por_hora_todas.items():
+                                        predicciones_por_hora[hora] = np.mean(preds) if preds else 0
+                                    
                                 else:
                                     # Obtener el número del día seleccionado
                                     dia_num = None
@@ -1043,36 +1075,16 @@ def main():
                                             break
                                     
                                     if dia_num is not None:
-                                        # Preparar datos para predicción del día seleccionado
-                                        if not datos_agrupados.empty:
-                                            mes_comun = datos_agrupados['Mes'].mode()[0] if not datos_agrupados['Mes'].mode().empty else 1
-                                            dia_mes_comun = 15
-                                            semana_mes_comun = 2
-                                        else:
-                                            mes_comun = 1
-                                            dia_mes_comun = 15
-                                            semana_mes_comun = 2
-                                        
-                                        # Crear predicciones por hora para el día seleccionado
-                                        predicciones_por_hora = {}
-                                        demanda_promedio_actual = {}
+                                        mes_comun = 1  # Mes por defecto
                                         
                                         # Obtener datos actuales del día seleccionado
+                                        demanda_promedio_actual = {}
                                         datos_dia_actual = demanda_df[demanda_df['Dia_Semana'] == dia_prediccion]
                                         for _, row in datos_dia_actual.iterrows():
                                             demanda_promedio_actual[row['Hora']] = row['Promedio_Demanda']
                                         
-                                        # Generar predicciones para cada hora
-                                        for hora in range(24):
-                                            try:
-                                                # Crear características para la predicción
-                                                caracteristicas = np.array([[dia_num, hora, mes_comun, dia_mes_comun, semana_mes_comun]])
-                                                # Predecir
-                                                prediccion = mejor_modelo.predict(caracteristicas)[0]
-                                                prediccion = max(0, prediccion)
-                                                predicciones_por_hora[hora] = prediccion
-                                            except:
-                                                predicciones_por_hora[hora] = 0
+                                        # Generar predicciones usando la nueva función
+                                        predicciones_por_hora = predecir_demanda_con_modelo(mejor_modelo, dia_num, mes_comun)
                                         
                                         # Si no hay datos actuales para este día, usar 0
                                         if not demanda_promedio_actual:
@@ -1084,7 +1096,8 @@ def main():
                                     dia_prediccion, 
                                     predicciones_por_hora, 
                                     recursos_por_hora,
-                                    demanda_promedio_actual
+                                    demanda_promedio_actual,
+                                    mejor_modelo_nombre
                                 )
                                 
                                 # Mostrar métricas de predicción adicionales
