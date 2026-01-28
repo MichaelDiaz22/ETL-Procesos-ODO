@@ -4,11 +4,12 @@ import numpy as np
 from datetime import datetime
 import io
 from fpdf import FPDF
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.neural_network import MLPRegressor
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -310,7 +311,7 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
                 'Promedio_Demanda': 'Demanda Promedio'
             })
         
-        # Mostrar gráfica
+        # Mostrar gráfica sin ylim
         st.line_chart(chart_data, height=400)
         
         # Métricas de llamadas debajo de la gráfica
@@ -355,7 +356,7 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
                 'Demanda_Recursos': 'Recursos Necesarios'
             })
         
-        # Mostrar gráfica de recursos
+        # Mostrar gráfica de recursos sin ylim
         st.line_chart(chart_data_recursos, height=400)
         
         # Métricas de recursos debajo de la gráfica
@@ -395,10 +396,10 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
                 recursos_pico = (pico_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
                 st.metric("Recursos Pico Demanda", f"{recursos_pico:.1f}")
 
-# Función para preparar datos para modelos de predicción - CORREGIDA
+# Función para preparar datos para modelos de predicción - MEJORADA
 def preparar_datos_para_prediccion(df):
     """
-    Prepara los datos para entrenar modelos de predicción
+    Prepara los datos para entrenar modelos de predicción con características mejoradas
     """
     try:
         # Hacer una copia para no modificar el original
@@ -431,42 +432,126 @@ def preparar_datos_para_prediccion(df):
         if len(df_filtrado) == 0:
             return None, None, None
         
-        # Extraer características
+        # Extraer características temporales mejoradas
         df_filtrado['Hora'] = df_filtrado['Call Time'].dt.hour
         df_filtrado['Dia_Semana_Num'] = df_filtrado['Call Time'].dt.dayofweek  # 0=Lunes, 6=Domingo
         df_filtrado['Mes'] = df_filtrado['Call Time'].dt.month
+        df_filtrado['Dia_Mes'] = df_filtrado['Call Time'].dt.day
         
-        # Agrupar por día, mes y hora para obtener datos diarios
-        # Primero extraer fecha
+        # Crear características cíclicas para hora
+        df_filtrado['Hora_sin'] = np.sin(2 * np.pi * df_filtrado['Hora'] / 24)
+        df_filtrado['Hora_cos'] = np.cos(2 * np.pi * df_filtrado['Hora'] / 24)
+        
+        # Crear características cíclicas para día de la semana
+        df_filtrado['Dia_sin'] = np.sin(2 * np.pi * df_filtrado['Dia_Semana_Num'] / 7)
+        df_filtrado['Dia_cos'] = np.cos(2 * np.pi * df_filtrado['Dia_Semana_Num'] / 7)
+        
+        # Extraer fecha
         df_filtrado['Fecha'] = df_filtrado['Call Time'].dt.date
         
         # Agrupar por fecha y hora para contar llamadas diarias
-        df_diario = df_filtrado.groupby(['Fecha', 'Dia_Semana_Num', 'Hora', 'Mes']).size().reset_index(name='Llamadas')
+        df_diario = df_filtrado.groupby(['Fecha', 'Dia_Semana_Num', 'Hora', 'Mes', 'Dia_Mes',
+                                        'Hora_sin', 'Hora_cos', 'Dia_sin', 'Dia_cos']).size().reset_index(name='Llamadas')
         
         # Calcular el promedio por día de semana y hora
-        df_promedio = df_diario.groupby(['Dia_Semana_Num', 'Hora']).agg({
+        df_promedio = df_diario.groupby(['Dia_Semana_Num', 'Hora', 'Hora_sin', 'Hora_cos', 'Dia_sin', 'Dia_cos']).agg({
             'Llamadas': 'mean',
             'Mes': 'first'
         }).reset_index()
         
         # Preparar características y variable objetivo
-        X = df_promedio[['Dia_Semana_Num', 'Hora', 'Mes']]
+        X = df_promedio[['Dia_Semana_Num', 'Hora', 'Hora_sin', 'Hora_cos', 'Dia_sin', 'Dia_cos', 'Mes']]
         y = df_promedio['Llamadas']
         
         # Verificar que tenemos suficientes datos para entrenamiento
         if len(X) < 10:
             return None, None, None
         
-        return X, y, df_promedio
+        # Escalar características para modelos sensibles a la escala
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        
+        return X_scaled, y, df_promedio
         
     except Exception as e:
-        st.error(f"Error en preparar_datos_para_prediccion: {str(e)}")
         return None, None, None
 
-# Función para entrenar y evaluar modelos - CORREGIDA
+# Función para optimizar hiperparámetros - NUEVA FUNCIÓN INTERNA
+def optimizar_hiperparametros(X_train, y_train, modelo_tipo='gradient_boosting'):
+    """
+    Optimiza los hiperparámetros de los modelos internamente
+    """
+    if len(X_train) < 20:
+        # Si hay pocos datos, usar configuración simple
+        if modelo_tipo == 'gradient_boosting':
+            return {
+                'n_estimators': min(50, len(X_train) * 2),
+                'max_depth': 3,
+                'learning_rate': 0.1,
+                'min_samples_split': 5,
+                'min_samples_leaf': 2,
+                'random_state': 42
+            }
+        elif modelo_tipo == 'random_forest':
+            return {
+                'n_estimators': min(50, len(X_train)),
+                'max_depth': 5,
+                'min_samples_split': 3,
+                'min_samples_leaf': 1,
+                'random_state': 42
+            }
+    
+    # Para conjuntos de datos más grandes, hacer búsqueda simple
+    try:
+        if modelo_tipo == 'gradient_boosting':
+            # Parámetros optimizados para Gradient Boosting
+            return {
+                'n_estimators': 100,
+                'max_depth': 4,
+                'learning_rate': 0.05,
+                'subsample': 0.8,
+                'min_samples_split': 5,
+                'min_samples_leaf': 2,
+                'max_features': 'sqrt',
+                'random_state': 42
+            }
+        
+        elif modelo_tipo == 'random_forest':
+            # Parámetros optimizados para Random Forest
+            return {
+                'n_estimators': 100,
+                'max_depth': 10,
+                'min_samples_split': 2,
+                'min_samples_leaf': 1,
+                'max_features': 'sqrt',
+                'bootstrap': True,
+                'random_state': 42
+            }
+        
+        elif modelo_tipo == 'mlp':
+            # Parámetros optimizados para MLP
+            return {
+                'hidden_layer_sizes': (50, 25, 10),
+                'activation': 'relu',
+                'solver': 'adam',
+                'alpha': 0.001,
+                'batch_size': 'auto',
+                'learning_rate': 'adaptive',
+                'learning_rate_init': 0.001,
+                'max_iter': 1000,
+                'early_stopping': True,
+                'validation_fraction': 0.1,
+                'random_state': 42
+            }
+        
+    except:
+        # En caso de error, usar configuración por defecto
+        return None
+
+# Función para entrenar y evaluar modelos con hiperparámetros optimizados
 def entrenar_modelos_prediccion(X, y):
     """
-    Entrena y evalúa diferentes modelos de predicción
+    Entrena y evalúa diferentes modelos de predicción con hiperparámetros optimizados
     """
     resultados = {}
     
@@ -476,46 +561,33 @@ def entrenar_modelos_prediccion(X, y):
     
     try:
         # Dividir datos en entrenamiento y prueba (80%/20%)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=True)
         
-        # Modelo 1: Regresión Lineal
-        with st.spinner("🧠 Entrenando Regresión Lineal..."):
+        # Modelo 1: Gradient Boosting con hiperparámetros optimizados
+        with st.spinner("🧠 Entrenando Gradient Boosting (optimizado)..."):
             try:
-                modelo_lr = LinearRegression()
-                modelo_lr.fit(X_train, y_train)
-                y_pred_lr = modelo_lr.predict(X_test)
-                # Asegurar que las predicciones no sean negativas y sean realistas
-                y_pred_lr = np.maximum(y_pred_lr, 0)
-                y_pred_lr = np.minimum(y_pred_lr, np.max(y_train) * 2)  # Limitar a máximo 2x el valor máximo observado
+                params_gb = optimizar_hiperparametros(X_train, y_train, 'gradient_boosting')
                 
-                resultados['Regresión Lineal'] = {
-                    'modelo': modelo_lr,
-                    'mse': mean_squared_error(y_test, y_pred_lr),
-                    'mae': mean_absolute_error(y_test, y_pred_lr),
-                    'r2': r2_score(y_test, y_pred_lr),
-                    'predicciones': y_pred_lr
-                }
-            except Exception as e:
-                resultados['Regresión Lineal'] = None
-        
-        # Modelo 2: Gradient Boosting - más robusto para datos pequeños
-        with st.spinner("🧠 Entrenando Gradient Boosting..."):
-            try:
-                n_estimators = min(50, len(X_train))
-                n_estimators = max(10, n_estimators)
+                if params_gb:
+                    modelo_gb = GradientBoostingRegressor(**params_gb)
+                else:
+                    # Configuración por defecto robusta
+                    modelo_gb = GradientBoostingRegressor(
+                        n_estimators=min(100, len(X_train)),
+                        max_depth=3,
+                        learning_rate=0.05,
+                        min_samples_split=5,
+                        min_samples_leaf=2,
+                        random_state=42
+                    )
                 
-                modelo_gb = GradientBoostingRegressor(
-                    n_estimators=n_estimators, 
-                    random_state=42,
-                    max_depth=3,
-                    learning_rate=0.1,
-                    min_samples_split=5,
-                    min_samples_leaf=2
-                )
                 modelo_gb.fit(X_train, y_train)
                 y_pred_gb = modelo_gb.predict(X_test)
+                
+                # Asegurar que las predicciones sean realistas
                 y_pred_gb = np.maximum(y_pred_gb, 0)
-                y_pred_gb = np.minimum(y_pred_gb, np.max(y_train) * 1.5)
+                max_realistic = np.percentile(y_train, 95) * 1.5 if len(y_train) > 0 else 50
+                y_pred_gb = np.minimum(y_pred_gb, max_realistic)
                 
                 resultados['Gradient Boosting'] = {
                     'modelo': modelo_gb,
@@ -527,23 +599,99 @@ def entrenar_modelos_prediccion(X, y):
             except Exception as e:
                 resultados['Gradient Boosting'] = None
         
-        # Modelo 3: MLP (Red Neuronal) - Solo si hay suficientes datos
-        if len(X_train) > 50:
-            with st.spinner("🧠 Entrenando MLP (Red Neuronal)..."):
+        # Modelo 2: Random Forest con hiperparámetros optimizados
+        with st.spinner("🧠 Entrenando Random Forest (optimizado)..."):
+            try:
+                if len(X_train) > 30:  # Random Forest necesita más datos
+                    params_rf = optimizar_hiperparametros(X_train, y_train, 'random_forest')
+                    
+                    if params_rf:
+                        modelo_rf = RandomForestRegressor(**params_rf)
+                    else:
+                        modelo_rf = RandomForestRegressor(
+                            n_estimators=min(50, len(X_train)),
+                            max_depth=5,
+                            min_samples_split=3,
+                            min_samples_leaf=1,
+                            random_state=42
+                        )
+                    
+                    modelo_rf.fit(X_train, y_train)
+                    y_pred_rf = modelo_rf.predict(X_test)
+                    
+                    # Asegurar que las predicciones sean realistas
+                    y_pred_rf = np.maximum(y_pred_rf, 0)
+                    y_pred_rf = np.minimum(y_pred_rf, max_realistic)
+                    
+                    resultados['Random Forest'] = {
+                        'modelo': modelo_rf,
+                        'mse': mean_squared_error(y_test, y_pred_rf),
+                        'mae': mean_absolute_error(y_test, y_pred_rf),
+                        'r2': r2_score(y_test, y_pred_rf),
+                        'predicciones': y_pred_rf
+                    }
+                else:
+                    resultados['Random Forest'] = None
+            except Exception as e:
+                resultados['Random Forest'] = None
+        
+        # Modelo 3: Ridge Regression (regularizada)
+        with st.spinner("🧠 Entrenando Ridge Regression..."):
+            try:
+                # Buscar mejor alpha con validación cruzada
+                alphas = [0.01, 0.1, 1.0, 10.0, 100.0]
+                best_alpha = 1.0
+                best_score = -float('inf')
+                
+                for alpha in alphas:
+                    modelo_ridge = Ridge(alpha=alpha, random_state=42)
+                    score = np.mean(cross_val_score(modelo_ridge, X_train, y_train, cv=3, scoring='r2'))
+                    if score > best_score:
+                        best_score = score
+                        best_alpha = alpha
+                
+                modelo_ridge = Ridge(alpha=best_alpha, random_state=42)
+                modelo_ridge.fit(X_train, y_train)
+                y_pred_ridge = modelo_ridge.predict(X_test)
+                
+                # Asegurar que las predicciones sean realistas
+                y_pred_ridge = np.maximum(y_pred_ridge, 0)
+                y_pred_ridge = np.minimum(y_pred_ridge, max_realistic)
+                
+                resultados['Ridge Regression'] = {
+                    'modelo': modelo_ridge,
+                    'mse': mean_squared_error(y_test, y_pred_ridge),
+                    'mae': mean_absolute_error(y_test, y_pred_ridge),
+                    'r2': r2_score(y_test, y_pred_ridge),
+                    'predicciones': y_pred_ridge,
+                    'alpha': best_alpha
+                }
+            except Exception as e:
+                resultados['Ridge Regression'] = None
+        
+        # Modelo 4: MLP (Red Neuronal) - Solo si hay suficientes datos
+        if len(X_train) > 100:
+            with st.spinner("🧠 Entrenando MLP (Red Neuronal optimizada)..."):
                 try:
-                    modelo_mlp = MLPRegressor(
-                        hidden_layer_sizes=(20, 10), 
-                        max_iter=1000, 
-                        random_state=42,
-                        early_stopping=True,
-                        validation_fraction=0.2,
-                        alpha=0.01,
-                        learning_rate_init=0.001
-                    )
+                    params_mlp = optimizar_hiperparametros(X_train, y_train, 'mlp')
+                    
+                    if params_mlp:
+                        modelo_mlp = MLPRegressor(**params_mlp)
+                    else:
+                        modelo_mlp = MLPRegressor(
+                            hidden_layer_sizes=(30, 15),
+                            max_iter=500,
+                            random_state=42,
+                            early_stopping=True,
+                            validation_fraction=0.1
+                        )
+                    
                     modelo_mlp.fit(X_train, y_train)
                     y_pred_mlp = modelo_mlp.predict(X_test)
+                    
+                    # Asegurar que las predicciones sean realistas
                     y_pred_mlp = np.maximum(y_pred_mlp, 0)
-                    y_pred_mlp = np.minimum(y_pred_mlp, np.max(y_train) * 1.5)
+                    y_pred_mlp = np.minimum(y_pred_mlp, max_realistic)
                     
                     resultados['MLP (Red Neuronal)'] = {
                         'modelo': modelo_mlp,
@@ -566,10 +714,9 @@ def entrenar_modelos_prediccion(X, y):
         return modelos_validos, X_test, y_test
         
     except Exception as e:
-        st.error(f"Error en entrenar_modelos_prediccion: {str(e)}")
         return None, None, None
 
-# Función para crear gráfica de predicción - CORREGIDA
+# Función para crear gráfica de predicción - CORREGIDA (sin ylim)
 def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_hora, demanda_promedio_actual, modelo_nombre):
     """
     Crea una gráfica con las predicciones para un día específico
@@ -584,12 +731,12 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         capacidad = recursos_por_hora.get(hora, 0) * CONSTANTE_VALIDACION if hora in recursos_por_hora else 0
         
         # Asegurar que las predicciones sean realistas
-        if prediccion > promedio_actual * 3:  # Si la predicción es más de 3x el promedio
+        if prediccion > promedio_actual * 3 and promedio_actual > 0:  # Si la predicción es más de 3x el promedio
             prediccion = promedio_actual * 1.2  # Ajustar a un aumento más razonable
         
         predicciones_por_hora.append({
             'Hora': hora,
-            'Predicción': prediccion,
+            'Predicción': max(0, prediccion),
             'Promedio Actual': promedio_actual,
             'Capacidad Disponible': capacidad
         })
@@ -612,9 +759,8 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
             'Capacidad Disponible': 'Capacidad Disponible'
         })
         
-        # Ajustar los límites del eje Y para que sean realistas
-        max_valor = max(chart_data.max().max(), 50)  # Máximo 50 llamadas o el valor real
-        st.line_chart(chart_data, height=400, ylim=[0, max_valor])
+        # Mostrar gráfica sin ylim
+        st.line_chart(chart_data, height=400)
         
         # Métricas de llamadas debajo de la gráfica
         st.write("**Métricas de Llamadas:**")
@@ -652,9 +798,8 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
             'Capacidad_Recursos': 'Recursos Disponibles'
         })
         
-        # Ajustar los límites del eje Y para recursos
-        max_recursos = max(chart_data_recursos.max().max(), 10)  # Máximo 10 recursos o el valor real
-        st.line_chart(chart_data_recursos, height=400, ylim=[0, max_recursos])
+        # Mostrar gráfica de recursos sin ylim
+        st.line_chart(chart_data_recursos, height=400)
         
         # Métricas de recursos debajo de la gráfica
         st.write("**Métricas de Recursos:**")
@@ -708,17 +853,24 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         'df_recursos': df_recursos
     }
 
-# Función para predecir demanda usando el modelo - NUEVA FUNCIÓN
+# Función para predecir demanda usando el modelo
 def predecir_demanda_con_modelo(modelo, dia_num, mes=1):
     """
     Predice la demanda por hora para un día específico usando el modelo entrenado
     """
     predicciones = {}
     
+    # Características cíclicas para la hora
     for hora in range(24):
         try:
             # Crear características para la predicción
-            caracteristicas = np.array([[dia_num, hora, mes]])
+            hora_sin = np.sin(2 * np.pi * hora / 24)
+            hora_cos = np.cos(2 * np.pi * hora / 24)
+            dia_sin = np.sin(2 * np.pi * dia_num / 7)
+            dia_cos = np.cos(2 * np.pi * dia_num / 7)
+            
+            # Crear array de características
+            caracteristicas = np.array([[dia_num, hora, hora_sin, hora_cos, dia_sin, dia_cos, mes]])
             
             # Predecir
             prediccion = modelo.predict(caracteristicas)[0]
@@ -733,7 +885,7 @@ def predecir_demanda_con_modelo(modelo, dia_num, mes=1):
     
     return predicciones
 
-# Función principal - CORREGIDA
+# Función principal
 def main():
     # Inicializar session state
     if 'recursos_por_hora' not in st.session_state:
