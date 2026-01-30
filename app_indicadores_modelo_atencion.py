@@ -4,6 +4,7 @@ import numpy as np
 from datetime import datetime, time
 import matplotlib.pyplot as plt
 import seaborn as sns
+from io import BytesIO
 
 # Configuración de la página
 st.set_page_config(page_title="Gestión de Ingresos", layout="wide")
@@ -219,6 +220,9 @@ if uploaded_file is not None:
                     horas_formateadas = [f"{h}:00" for h in horas]
                     tabla_resultados.columns = horas_formateadas
                     
+                    # Asegurar que todos los valores sean numéricos
+                    tabla_resultados = tabla_resultados.astype(float)
+                    
                     # Agregar columna de total por usuario
                     tabla_resultados['TOTAL'] = tabla_resultados.sum(axis=1)
                     
@@ -247,7 +251,7 @@ if uploaded_file is not None:
                     with col2:
                         st.metric("Horas analizadas", len(horas))
                     with col3:
-                        promedio_general = tabla_resultados.iloc[:, :-1].values.mean()
+                        promedio_general = tabla_resultados[horas_formateadas].values.mean()
                         st.metric("Promedio general por hora", round(promedio_general, 2))
                     with col4:
                         promedio_usuario = tabla_resultados['TOTAL'].mean()
@@ -283,8 +287,8 @@ if uploaded_file is not None:
                     # Gráfico de calor usando matplotlib
                     st.subheader("🔥 Distribución por Hora")
                     
-                    # Seleccionar solo las horas (excluir TOTAL)
-                    datos_heatmap = tabla_resultados[horas_formateadas].values
+                    # Seleccionar solo las horas (excluir TOTAL) y asegurar que sean numéricas
+                    datos_heatmap = tabla_resultados[horas_formateadas].values.astype(float)
                     
                     fig2, ax2 = plt.subplots(figsize=(12, max(6, len(usuarios_proceso) * 0.4)))
                     
@@ -318,6 +322,30 @@ if uploaded_file is not None:
                     st.pyplot(fig2)
                     plt.close(fig2)
                     
+                    # Gráfico de línea simple para promedio por hora
+                    st.subheader("📈 Promedio por Hora (Todos los Usuarios)")
+                    
+                    # Calcular promedio por hora
+                    promedio_por_hora = tabla_resultados[horas_formateadas].mean()
+                    
+                    fig3, ax3 = plt.subplots(figsize=(10, 4))
+                    ax3.plot(horas_formateadas, promedio_por_hora.values, marker='o', linewidth=2)
+                    ax3.set_xlabel('Hora del día')
+                    ax3.set_ylabel('Promedio de registros')
+                    ax3.set_title(f'Promedio de Registros por Hora ({dia_label})')
+                    ax3.grid(True, alpha=0.3)
+                    
+                    # Rotar etiquetas del eje X
+                    plt.xticks(rotation=45)
+                    
+                    # Añadir valores en los puntos
+                    for i, v in enumerate(promedio_por_hora.values):
+                        ax3.text(i, v + 0.05, f'{v:.2f}', ha='center', va='bottom')
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig3)
+                    plt.close(fig3)
+                    
                     # Botón para descargar los resultados
                     st.divider()
                     st.subheader("📥 Exportar Resultados")
@@ -336,7 +364,6 @@ if uploaded_file is not None:
                     
                     with col2:
                         # Crear archivo Excel en memoria
-                        from io import BytesIO
                         output = BytesIO()
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
                             tabla_resultados.to_excel(writer, sheet_name='Promedios')
@@ -380,6 +407,8 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"Error técnico: {e}")
+        import traceback
+        st.code(traceback.format_exc())
         st.info("Verifica que el archivo tenga las columnas necesarias: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
 else:
     st.info("👆 Sube un archivo Excel para activar los filtros.")
