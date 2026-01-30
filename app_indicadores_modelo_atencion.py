@@ -107,9 +107,6 @@ with tab1:
                     key="tab1_dia"
                 )
 
-                # Botón para procesar
-                procesar = st.button("🚀 Procesar", type="primary", use_container_width=True, key="tab1_procesar")
-
             # --- APLICACIÓN DE FILTROS ---
             df_filtrado = df.copy()
 
@@ -128,8 +125,8 @@ with tab1:
             if usuario_sel:
                 df_filtrado = df_filtrado[df_filtrado["USUARIO CREA INGRESO"].isin(usuario_sel)]
 
-            # --- PROCESAMIENTO AVANZADO (solo si se presiona el botón) ---
-            if procesar and not df_filtrado.empty and fecha_inicio <= fecha_fin:
+            # --- PROCESAMIENTO AVANZADO (siempre que haya datos) ---
+            if not df_filtrado.empty and fecha_inicio <= fecha_fin:
                 st.divider()
                 st.subheader("📈 Análisis de Promedios por Hora y Día")
                 
@@ -472,7 +469,6 @@ with tab1:
         st.info("👆 Usa la barra lateral para subir un archivo Excel y activar los filtros.")
         st.caption("El archivo debe contener al menos las columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
 
-
 # ============================================================================
 # PESTAÑA 2: ANÁLISIS DE LLAMADOS
 # ============================================================================
@@ -538,13 +534,13 @@ with tab2:
             nombres_hora_llegada = ['Hora Llegada', 'HORA LLEGADA', 'Hora llegada', 'HORA_LLEGADA']
             nombres_servicio = ['Servicio', 'SERVICIO', 'servicio']
             nombres_usuario_atencion = ['Usuario Atención', 'USUARIO ATENCIÓN', 'Usuario atención']
-            nombres_tipo = ['Tipo', 'TIPO', 'tipo']  # Para identificar llamados manuales/auto
+            nombres_tipo = ['Tipo', 'TIPO', 'tipo']
             
             # Encontrar las columnas reales
             col_hora_llegada = encontrar_columna(df_tab2, nombres_hora_llegada)
             col_servicio = encontrar_columna(df_tab2, nombres_servicio)
             col_usuario_atencion = encontrar_columna(df_tab2, nombres_usuario_atencion)
-            col_tipo = encontrar_columna(df_tab2, nombres_tipo)  # Columna para tipo de llamado
+            col_tipo = encontrar_columna(df_tab2, nombres_tipo)
             
             # Verificar columnas necesarias
             if not all([col_hora_llegada, col_servicio, col_usuario_atencion]):
@@ -552,15 +548,16 @@ with tab2:
                 st.stop()
             
             # Renombrar columnas para uso interno
-            df_tab2 = df_tab2.rename(columns={
+            rename_dict = {
                 col_hora_llegada: 'HORA_LLEGADA',
                 col_servicio: 'SERVICIO',
                 col_usuario_atencion: 'USUARIO_ATENCION'
-            })
+            }
             
-            # Renombrar columna Tipo si existe
             if col_tipo:
-                df_tab2 = df_tab2.rename(columns={col_tipo: 'TIPO_LLAMADO'})
+                rename_dict[col_tipo] = 'TIPO_LLAMADO'
+            
+            df_tab2 = df_tab2.rename(columns=rename_dict)
             
             # --- PROCESAMIENTO DE FECHAS ---
             df_tab2["HORA_LLEGADA"] = pd.to_datetime(df_tab2["HORA_LLEGADA"], errors='coerce')
@@ -604,7 +601,7 @@ with tab2:
                 else:
                     st.success(f"✅ Rango válido")
 
-                # LISTA DESPLEGABLE DE SERVICIOS (como solicitaste)
+                # LISTA DESPLEGABLE DE SERVICIOS
                 servicios = sorted(df_tab2_limpio["SERVICIO"].dropna().unique())
                 servicio_sel = st.multiselect(
                     "Servicio:", 
@@ -633,10 +630,7 @@ with tab2:
                     key="tab2_dia"
                 )
 
-                # Botón para procesar
-                procesar_tab2 = st.button("🚀 Procesar", type="primary", use_container_width=True, key="tab2_procesar")
-
-            # --- APLICACIÓN DE FILTROS ---
+            # --- APLICACIÓN DE FILTROS (automática) ---
             df_filtrado_tab2 = df_tab2_limpio.copy()
 
             if fecha_inicio_tab2 <= fecha_fin_tab2:
@@ -651,8 +645,8 @@ with tab2:
             if usuario_sel_tab2:
                 df_filtrado_tab2 = df_filtrado_tab2[df_filtrado_tab2["USUARIO_ATENCION"].isin(usuario_sel_tab2)]
 
-            # --- PROCESAMIENTO AVANZADO ---
-            if procesar_tab2 and not df_filtrado_tab2.empty and fecha_inicio_tab2 <= fecha_fin_tab2:
+            # --- PROCESAMIENTO AUTOMÁTICO (siempre que haya datos) ---
+            if not df_filtrado_tab2.empty and fecha_inicio_tab2 <= fecha_fin_tab2:
                 st.divider()
                 
                 # Mostrar configuración seleccionada
