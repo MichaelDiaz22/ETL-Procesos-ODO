@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, time
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # Configuración de la página
 st.set_page_config(page_title="Gestión de Ingresos", layout="wide")
@@ -173,10 +174,12 @@ if uploaded_file is not None:
                 # Filtrar solo lunes a viernes
                 df_proceso = df_proceso[df_proceso['DIA_SEMANA_NUM'] < 5]
                 dias_analizados = "Lunes a Viernes"
+                dia_label = "L-V"
             else:
                 # Filtrar por día específico
                 df_proceso = df_proceso[df_proceso['DIA_SEMANA'] == dia_seleccionado]
                 dias_analizados = dia_seleccionado
+                dia_label = dia_seleccionado[:3]
             
             # Verificar si hay datos después del filtro por día
             if df_proceso.empty:
@@ -219,15 +222,20 @@ if uploaded_file is not None:
                     # Agregar columna de total por usuario
                     tabla_resultados['TOTAL'] = tabla_resultados.sum(axis=1)
                     
+                    # Ordenar por total descendente
+                    tabla_resultados = tabla_resultados.sort_values('TOTAL', ascending=False)
+                    
                     # Mostrar tabla de resultados
                     st.success(f"✅ Tabla de promedios generada ({dias_analizados})")
                     
                     # Mostrar tabla con formato
                     st.dataframe(
                         tabla_resultados.style
-                        .background_gradient(cmap='YlOrRd', axis=1)
-                        .format("{:.2f}"),
-                        use_container_width=True
+                        .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
+                        .format("{:.2f}")
+                        .set_properties(**{'text-align': 'center'}),
+                        use_container_width=True,
+                        height=min(400, 50 + (len(usuarios_proceso) * 35))
                     )
                     
                     # Estadísticas resumen
@@ -239,38 +247,76 @@ if uploaded_file is not None:
                     with col2:
                         st.metric("Horas analizadas", len(horas))
                     with col3:
-                        st.metric("Promedio general por hora", 
-                                 round(tabla_resultados.iloc[:, :-1].values.mean(), 2))
+                        promedio_general = tabla_resultados.iloc[:, :-1].values.mean()
+                        st.metric("Promedio general por hora", round(promedio_general, 2))
                     with col4:
-                        st.metric("Total promedio por usuario", 
-                                 round(tabla_resultados['TOTAL'].mean(), 2))
+                        promedio_usuario = tabla_resultados['TOTAL'].mean()
+                        st.metric("Total promedio por usuario", round(promedio_usuario, 2))
                     
-                    # Gráfico de calor interactivo
-                    st.subheader("🔥 Mapa de Calor de Promedios")
+                    # Gráfico de barras para el top de usuarios
+                    st.subheader("📊 Top Usuarios por Actividad Promedio")
                     
-                    # Preparar datos para el heatmap
-                    datos_heatmap = tabla_resultados.iloc[:, :-1].values  # Excluir columna TOTAL
+                    top_n = min(10, len(tabla_resultados))
+                    top_usuarios = tabla_resultados.head(top_n)
                     
-                    fig = go.Figure(data=go.Heatmap(
-                        z=datos_heatmap,
-                        x=horas_formateadas,
-                        y=usuarios_proceso,
-                        colorscale='YlOrRd',
-                        text=np.round(datos_heatmap, 2),
-                        texttemplate='%{text}',
-                        textfont={"size": 10},
-                        hoverinfo='x+y+z',
-                        showscale=True
-                    ))
+                    # Crear gráfico de barras con matplotlib
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    bars = ax.barh(range(len(top_usuarios)), top_usuarios['TOTAL'].values)
+                    ax.set_yticks(range(len(top_usuarios)))
+                    ax.set_yticklabels(top_usuarios.index)
+                    ax.set_xlabel('Promedio Total de Registros por Día')
+                    ax.set_title(f'Top {top_n} Usuarios - Promedio Diario ({dia_label})')
                     
-                    fig.update_layout(
-                        title=f'Promedio de Registros por Hora ({dias_analizados})',
-                        xaxis_title='Hora del día',
-                        yaxis_title='Usuario',
-                        height=400 + (len(usuarios_proceso) * 20)
-                    )
+                    # Añadir valores a las barras
+                    for i, bar in enumerate(bars):
+                        width = bar.get_width()
+                        ax.text(width + 0.1, bar.get_y() + bar.get_height()/2, 
+                               f'{width:.1f}', ha='left', va='center')
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    # Invertir eje Y para mostrar el más alto primero
+                    ax.invert_yaxis()
+                    
+                    # Mostrar el gráfico en Streamlit
+                    st.pyplot(fig)
+                    plt.close(fig)
+                    
+                    # Gráfico de calor usando matplotlib
+                    st.subheader("🔥 Distribución por Hora")
+                    
+                    # Seleccionar solo las horas (excluir TOTAL)
+                    datos_heatmap = tabla_resultados[horas_formateadas].values
+                    
+                    fig2, ax2 = plt.subplots(figsize=(12, max(6, len(usuarios_proceso) * 0.4)))
+                    
+                    # Crear heatmap con matplotlib
+                    im = ax2.imshow(datos_heatmap, cmap='YlOrRd', aspect='auto')
+                    
+                    # Configurar ejes
+                    ax2.set_xticks(range(len(horas_formateadas)))
+                    ax2.set_xticklabels(horas_formateadas, rotation=45, ha='right')
+                    ax2.set_yticks(range(len(usuarios_proceso)))
+                    ax2.set_yticklabels(tabla_resultados.index)
+                    
+                    # Añadir barra de color
+                    plt.colorbar(im, ax=ax2, label='Promedio de registros')
+                    
+                    ax2.set_title(f'Mapa de Calor - Promedios por Hora ({dia_label})')
+                    ax2.set_xlabel('Hora del día')
+                    ax2.set_ylabel('Usuario')
+                    
+                    # Añadir texto en cada celda
+                    for i in range(len(usuarios_proceso)):
+                        for j in range(len(horas_formateadas)):
+                            valor = datos_heatmap[i, j]
+                            if valor > 0:
+                                text_color = 'black' if valor < np.max(datos_heatmap)/2 else 'white'
+                                ax2.text(j, i, f'{valor:.1f}', ha='center', va='center', 
+                                        color=text_color, fontsize=8)
+                    
+                    # Ajustar diseño
+                    plt.tight_layout()
+                    st.pyplot(fig2)
+                    plt.close(fig2)
                     
                     # Botón para descargar los resultados
                     st.divider()
@@ -284,23 +330,34 @@ if uploaded_file is not None:
                         st.download_button(
                             label="💾 Descargar tabla de promedios (CSV)",
                             data=csv_procesado,
-                            file_name=f"promedios_{fecha_inicio}_{fecha_fin}_{dia_seleccionado.replace(' ', '_')}.csv",
+                            file_name=f"promedios_{fecha_inicio}_{fecha_fin}_{dia_label}.csv",
                             mime="text/csv"
                         )
                     
                     with col2:
-                        # Exportar a Excel
-                        excel_buffer = pd.ExcelWriter('resultados_promedios.xlsx', engine='openpyxl')
-                        tabla_resultados.to_excel(excel_buffer, sheet_name='Promedios')
-                        excel_buffer.close()
+                        # Crear archivo Excel en memoria
+                        from io import BytesIO
+                        output = BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            tabla_resultados.to_excel(writer, sheet_name='Promedios')
+                            
+                            # Agregar hoja con estadísticas
+                            estadisticas_df = pd.DataFrame({
+                                'Métrica': ['Usuarios analizados', 'Horas analizadas', 
+                                          'Promedio general por hora', 'Total promedio por usuario',
+                                          'Rango de fechas', 'Día analizado'],
+                                'Valor': [len(usuarios_proceso), len(horas),
+                                         round(promedio_general, 2), round(promedio_usuario, 2),
+                                         f"{fecha_inicio} a {fecha_fin}", dia_seleccionado]
+                            })
+                            estadisticas_df.to_excel(writer, sheet_name='Estadísticas', index=False)
                         
-                        with open('resultados_promedios.xlsx', 'rb') as f:
-                            excel_data = f.read()
+                        excel_data = output.getvalue()
                         
                         st.download_button(
-                            label="📊 Descargar tabla de promedios (Excel)",
+                            label="📊 Descargar resultados completos (Excel)",
                             data=excel_data,
-                            file_name=f"promedios_{fecha_inicio}_{fecha_fin}_{dia_seleccionado.replace(' ', '_')}.xlsx",
+                            file_name=f"analisis_promedios_{fecha_inicio}_{fecha_fin}_{dia_label}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                     
@@ -318,6 +375,7 @@ if uploaded_file is not None:
                         - Los sábados y domingos se excluyen cuando se selecciona "Todos los días (L-V)"
                         - Los valores cero indican que no hubo registros en esa hora para el usuario
                         - Los promedios se redondean a 2 decimales
+                        - La tabla se ordena por el total promedio descendente
                         """)
 
     except Exception as e:
