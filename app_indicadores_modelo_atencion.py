@@ -209,7 +209,7 @@ if uploaded_file is not None:
                     
                     # --- TABLA 2: TIEMPOS PROMEDIOS DE ADMISIÓN ---
                     st.subheader("⏱️ Tabla de Tiempos Promedios de Admisión")
-                    st.markdown("*Tiempo promedio (minutos) que tardadn es hacer un ingreso cada hora*")
+                    st.markdown("*Tiempo promedio (minutos) que tardan en hacer un ingreso cada hora*")
                     
                     # Crear tabla de tiempos promedios (usando NaN en lugar de 'N/A' para valores vacíos)
                     tabla_tiempos = pd.DataFrame(index=usuarios_proceso, columns=horas_formateadas)
@@ -260,8 +260,8 @@ if uploaded_file is not None:
                         height=min(400, 50 + (len(usuarios_proceso) * 35))
                     )
                     
-                    # --- ESTADÍSTICAS RESUMEN ---
-                    st.subheader("📊 Estadísticas Resumen")
+                    # --- ESTADÍSTICAS RESUMEN CON ESTÁNDARES ---
+                    st.subheader("📊 Estadísticas Resumen vs Estándares")
                     
                     # Contar horas con registros
                     horas_con_registros_count = len(horas_con_registros)
@@ -277,19 +277,65 @@ if uploaded_file is not None:
                             if not pd.isna(valor):
                                 tiempos_todos.append(valor)
                     
-                    col1, col2, col3, col4 = st.columns(4)
+                    # ESTÁNDARES DEFINIDOS
+                    ESTANDAR_REGISTROS_HORA = 13  # 13 registros por hora estándar
+                    ESTANDAR_TIEMPO_ADMISION = 4  # 4 minutos por admisión estándar
+                    
+                    # Calcular diferencias vs estándar
+                    diferencia_registros = promedio_general - ESTANDAR_REGISTROS_HORA
+                    diferencia_registros_porcentaje = (diferencia_registros / ESTANDAR_REGISTROS_HORA) * 100 if ESTANDAR_REGISTROS_HORA > 0 else 0
+                    
+                    if tiempos_todos:
+                        tiempo_promedio_general = np.mean(tiempos_todos)
+                        diferencia_tiempo = tiempo_promedio_general - ESTANDAR_TIEMPO_ADMISION
+                        diferencia_tiempo_porcentaje = (diferencia_tiempo / ESTANDAR_TIEMPO_ADMISION) * 100 if ESTANDAR_TIEMPO_ADMISION > 0 else 0
+                    else:
+                        tiempo_promedio_general = None
+                        diferencia_tiempo = None
+                        diferencia_tiempo_porcentaje = None
+                    
+                    # Mostrar métricas con diferencias vs estándar
+                    col1, col2 = st.columns(2)
+                    
                     with col1:
-                        st.metric("Usuarios analizados", len(usuarios_proceso))
+                        # Métrica de registros por hora vs estándar
+                        delta_registros = f"{diferencia_registros:+.2f} vs estándar ({diferencia_registros_porcentaje:+.1f}%)"
+                        color_registros = "normal" if diferencia_registros >= 0 else "inverse"
+                        
+                        st.metric(
+                            label="📈 Promedio registros/hora", 
+                            value=f"{promedio_general:.2f}",
+                            delta=delta_registros,
+                            delta_color=color_registros,
+                            help=f"Estándar: {ESTANDAR_REGISTROS_HORA} registros/hora"
+                        )
+                        
+                        # Mostrar el estándar como referencia
+                        st.caption(f"**Estándar:** {ESTANDAR_REGISTROS_HORA} registros por hora")
+                    
                     with col2:
-                        st.metric("Horas con registros", horas_con_registros_count)
-                    with col3:
-                        st.metric("Promedio registros/hora", f"{promedio_general:.2f}")
-                    with col4:
-                        if tiempos_todos:
-                            tiempo_promedio_general = np.mean(tiempos_todos)
-                            st.metric("Tiempo promedio admisión", f"{tiempo_promedio_general:.1f} min")
+                        # Métrica de tiempo de admisión vs estándar
+                        if tiempo_promedio_general is not None:
+                            delta_tiempo = f"{diferencia_tiempo:+.1f} min vs estándar ({diferencia_tiempo_porcentaje:+.1f}%)"
+                            color_tiempo = "normal" if diferencia_tiempo <= 0 else "inverse"
+                            
+                            st.metric(
+                                label="⏱️ Tiempo promedio admisión", 
+                                value=f"{tiempo_promedio_general:.1f} min",
+                                delta=delta_tiempo,
+                                delta_color=color_tiempo,
+                                help=f"Estándar: {ESTANDAR_TIEMPO_ADMISION} minutos por admisión"
+                            )
+                            
+                            # Mostrar el estándar como referencia
+                            st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
                         else:
-                            st.metric("Tiempo promedio admisión", "-")
+                            st.metric(
+                                label="⏱️ Tiempo promedio admisión", 
+                                value="-",
+                                help="No hay datos suficientes para calcular el tiempo promedio"
+                            )
+                            st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
                     
                     # --- GRÁFICO DE BARRAS: TOP USUARIOS ---
                     st.subheader("📊 Top Usuarios por Actividad Promedio")
@@ -369,14 +415,38 @@ if uploaded_file is not None:
                             tabla_tiempos_export_excel = tabla_tiempos_export_excel.fillna("-")
                             tabla_tiempos_export_excel.to_excel(writer, sheet_name='Tiempos_Admision')
                             
-                            # Agregar hoja con estadísticas
+                            # Agregar hoja con estadísticas y comparación con estándar
                             estadisticas_df = pd.DataFrame({
-                                'Métrica': ['Usuarios analizados', 'Horas con registros', 
-                                          'Promedio registros/hora', 'Rango de fechas', 
-                                          'Día analizado', 'Fecha de generación'],
-                                'Valor': [len(usuarios_proceso), horas_con_registros_count,
-                                         f"{promedio_general:.2f}", f"{fecha_inicio} a {fecha_fin}",
-                                         dia_seleccionado, datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+                                'Métrica': [
+                                    'Usuarios analizados', 
+                                    'Horas con registros', 
+                                    'Promedio registros/hora (Real)',
+                                    'Promedio registros/hora (Estándar)',
+                                    'Diferencia registros/hora',
+                                    'Diferencia registros/hora (%)',
+                                    'Tiempo promedio admisión (Real)',
+                                    'Tiempo promedio admisión (Estándar)',
+                                    'Diferencia tiempo admisión',
+                                    'Diferencia tiempo admisión (%)',
+                                    'Rango de fechas', 
+                                    'Día analizado', 
+                                    'Fecha de generación'
+                                ],
+                                'Valor': [
+                                    len(usuarios_proceso), 
+                                    horas_con_registros_count,
+                                    f"{promedio_general:.2f}",
+                                    f"{ESTANDAR_REGISTROS_HORA}",
+                                    f"{diferencia_registros:+.2f}",
+                                    f"{diferencia_registros_porcentaje:+.1f}%",
+                                    f"{tiempo_promedio_general:.1f} min" if tiempo_promedio_general else "-",
+                                    f"{ESTANDAR_TIEMPO_ADMISION} min",
+                                    f"{diferencia_tiempo:+.1f} min" if diferencia_tiempo else "-",
+                                    f"{diferencia_tiempo_porcentaje:+.1f}%" if diferencia_tiempo_porcentaje else "-",
+                                    f"{fecha_inicio} a {fecha_fin}",
+                                    dia_seleccionado, 
+                                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                ]
                             })
                             estadisticas_df.to_excel(writer, sheet_name='Estadísticas', index=False)
                         
