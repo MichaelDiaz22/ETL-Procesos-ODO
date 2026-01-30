@@ -195,7 +195,8 @@ if uploaded_file is not None:
                     
                     # --- TABLA 1: PROMEDIOS DE REGISTROS ---
                     st.subheader("📋 Tabla de ingresos promedio abiertos por Admisionista")
-                    
+                    st.markdown("*Cantidad de ingresos que realizan por hora*")
+
                     # Mostrar tabla con formato
                     st.dataframe(
                         tabla_resultados.style
