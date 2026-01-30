@@ -490,40 +490,97 @@ with tab2:
 
     if uploaded_file_tab2 is not None:
         try:
-            # Leer el archivo
-            df_tab2 = pd.read_excel(uploaded_file_tab2)
+            # Primero, leer el archivo sin asumir que la primera fila es el encabezado
+            # Leemos las primeras filas para inspeccionar
+            df_preview = pd.read_excel(uploaded_file_tab2, nrows=5)
             
             # Mostrar información sobre las columnas disponibles
-            with st.expander("📋 Ver columnas del archivo cargado"):
-                st.write(f"Número de columnas: {len(df_tab2.columns)}")
-                st.write("Columnas disponibles:")
-                for col in df_tab2.columns:
-                    st.write(f"- {col}")
+            with st.expander("📋 Ver primeras filas del archivo cargado"):
+                st.write("Primeras 5 filas del archivo:")
+                st.dataframe(df_preview)
+                st.write(f"Número de columnas: {len(df_preview.columns)}")
+                st.write("Nombres de columnas actuales (fila 0 como encabezado):")
+                st.write(list(df_preview.columns))
+            
+            # Verificar si la primera fila contiene los nombres esperados
+            nombres_esperados = ['Turno', 'Doc Pac', 'Paciente', 'Sede', 'Sala Espera', 'Servicio', 
+                                'Llamados', 'Tipo', 'Hora Llegada', 'Hora Atención', 'Hora Finalización',
+                                'Tiempo Espera', 'Tiempo Atención', 'Modulo Atención', 'Usuario Atención',
+                                'Especialidad', 'ID Usuario', 'Estado']
+            
+            # Comprobar si la primera fila (datos, no encabezados) contiene estos valores
+            primera_fila_vals = df_preview.iloc[0].astype(str).str.strip().tolist() if len(df_preview) > 0 else []
+            
+            # Contar coincidencias con nombres esperados en la primera fila
+            coincidencias = sum(1 for val in primera_fila_vals[:len(nombres_esperados)] 
+                              if val in nombres_esperados)
+            
+            # Si hay suficientes coincidencias, probablemente la primera fila es el encabezado real
+            usar_segunda_fila_como_encabezado = coincidencias >= 3  # Si al menos 3 coinciden
+            
+            # Leer el archivo con la estrategia correcta
+            if usar_segunda_fila_como_encabezado:
+                st.info("⚠️ Detectado: La primera fila parece contener nombres de columnas. Usando segunda fila como encabezados.")
+                # Leer saltando la primera fila y usando la segunda como encabezados
+                df_tab2 = pd.read_excel(uploaded_file_tab2, skiprows=1)
+            else:
+                # Leer normalmente asumiendo que la primera fila ya es encabezado
+                df_tab2 = pd.read_excel(uploaded_file_tab2)
+            
+            # Limpiar nombres de columnas (eliminar espacios extra)
+            df_tab2.columns = df_tab2.columns.astype(str).str.strip()
+            
+            # Mostrar columnas después del procesamiento
+            with st.expander("📋 Ver estructura después del procesamiento"):
+                st.write("Nombres de columnas después de limpiar:")
+                st.write(list(df_tab2.columns))
+                st.write(f"Primeras filas de datos:")
+                st.dataframe(df_tab2.head(3))
+                st.write(f"Total de registros: {len(df_tab2)}")
             
             # --- ENCONTRAR COLUMNAS POR NOMBRES ALTERNATIVOS ---
-            # Función para encontrar columnas por nombres alternativos
+            # Función para encontrar columnas por nombres alternativos (case-insensitive)
             def encontrar_columna(df, nombres_alternativos):
+                columnas_df = [str(col).strip() for col in df.columns]
                 for nombre in nombres_alternativos:
-                    if nombre in df.columns:
-                        return nombre
+                    nombre_clean = nombre.strip()
+                    # Buscar coincidencia exacta
+                    if nombre_clean in columnas_df:
+                        return nombre_clean
+                    # Buscar coincidencia case-insensitive
+                    for col in columnas_df:
+                        if col.lower() == nombre_clean.lower():
+                            return col
+                    # Buscar coincidencia parcial
+                    for col in columnas_df:
+                        if nombre_clean.lower() in col.lower():
+                            return col
                 return None
             
-            # Nombres alternativos para cada columna clave
+            # Nombres alternativos para cada columna clave (más completos)
             nombres_hora_llegada = [
-                'HORA LLEGADA', 'Hora Llegada', 'Hora llegada', 'HORA_LLEGADA',
+                'Hora Llegada', 'HORA LLEGADA', 'Hora llegada', 'HORA_LLEGADA',
                 'Hora de Llegada', 'HORA DE LLEGADA', 'Hora de llegada',
-                'Fecha Hora Llegada', 'FECHA HORA LLEGADA'
+                'Fecha Hora Llegada', 'FECHA HORA LLEGADA', 'HoraLlegada',
+                'Hora_Llegada', 'Hora Llegada Paciente', 'Llegada',
+                'Fecha y Hora Llegada', 'FECHA Y HORA LLEGADA'
             ]
             
             nombres_servicio = [
                 'Servicio', 'SERVICIO', 'servicio', 'Servicio Atención',
-                'SERVICIO ATENCIÓN', 'Tipo Servicio'
+                'SERVICIO ATENCIÓN', 'Tipo Servicio', 'SERVICIO_ATENCION',
+                'ServicioAtencion', 'Servicio_atención', 'Tipo de Servicio',
+                'Servicio/Sala', 'Servicio/Sala Espera'
             ]
             
             nombres_usuario_atencion = [
                 'Usuario Atención', 'USUARIO ATENCIÓN', 'Usuario atención',
                 'Usuario', 'USUARIO', 'Atendido Por', 'ATENDIDO POR',
-                'Usuario que Atiende', 'USUARIO QUE ATIENDE'
+                'Usuario que Atiende', 'USUARIO QUE ATIENDE', 'UsuarioAtiende',
+                'Usuario_Atiende', 'Usuario Atencion', 'USUARIO ATENCION',
+                'Modulo Atención', 'MODULO ATENCION', 'Modulo Atencion',
+                'Módulo Atención', 'MODULO ATENCIÓN', 'Usuario Atencion',
+                'Atencion Por', 'Atendido por', 'Atendido_Por'
             ]
             
             # Encontrar las columnas reales
@@ -542,17 +599,70 @@ with tab2:
             
             if columnas_faltantes:
                 st.error(f"⚠️ No se encontraron las siguientes columnas necesarias: {', '.join(columnas_faltantes)}")
-                st.info("""
-                **Sugerencias:**
-                1. Verifica que el archivo tenga columnas con nombres similares a:
-                   - Para fecha/hora: 'HORA LLEGADA', 'Hora Llegada', 'Hora de Llegada'
-                   - Para servicio: 'Servicio', 'SERVICIO'
-                   - Para usuario: 'Usuario Atención', 'USUARIO ATENCIÓN'
-                2. Revisa la pestaña 'Ver columnas del archivo cargado' para ver los nombres exactos
-                3. Asegúrate de que no haya espacios extra al inicio o final de los nombres
+                
+                # Mostrar ayuda más detallada
+                st.info(f"""
+                **Columnas encontradas en el archivo:**
+                {list(df_tab2.columns)}
+                
+                **Sugerencias para resolver el problema:**
+                1. **Verifica los nombres exactos** en la sección "Ver estructura después del procesamiento"
+                2. **Nombres alternativos buscados:**
+                   - Hora Llegada: {', '.join(nombres_hora_llegada[:5])}...
+                   - Servicio: {', '.join(nombres_servicio[:5])}...
+                   - Usuario Atención: {', '.join(nombres_usuario_atencion[:5])}...
+                3. **Si los nombres son diferentes**, puedes:
+                   - Editar el archivo Excel para que los nombres coincidan
+                   - Modificar el código para agregar los nombres específicos de tu archivo
+                4. **Formato común de problemas:**
+                   - Espacios al inicio/final: ' Hora Llegada ' vs 'Hora Llegada'
+                   - Mayúsculas/minúsculas diferentes
+                   - Tildes o caracteres especiales
                 """)
+                
+                # Opción para continuar con columnas seleccionadas manualmente
+                st.subheader("🔧 Configuración manual de columnas")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    col_hora_manual = st.selectbox(
+                        "Selecciona columna para Hora Llegada:",
+                        options=[""] + list(df_tab2.columns),
+                        index=0,
+                        key="hora_manual"
+                    )
+                
+                with col2:
+                    col_servicio_manual = st.selectbox(
+                        "Selecciona columna para Servicio:",
+                        options=[""] + list(df_tab2.columns),
+                        index=0,
+                        key="servicio_manual"
+                    )
+                
+                with col3:
+                    col_usuario_manual = st.selectbox(
+                        "Selecciona columna para Usuario Atención:",
+                        options=[""] + list(df_tab2.columns),
+                        index=0,
+                        key="usuario_manual"
+                    )
+                
+                if col_hora_manual and col_servicio_manual and col_usuario_manual:
+                    if st.button("Usar estas columnas seleccionadas", key="usar_manual"):
+                        col_hora_llegada = col_hora_manual
+                        col_servicio = col_servicio_manual
+                        col_usuario_atencion = col_usuario_manual
+                        st.success("✅ Columnas configuradas manualmente")
+                        # Recargar para continuar
+                        st.rerun()
+                else:
+                    st.stop()
             else:
-                st.success(f"✅ Columnas encontradas: '{col_hora_llegada}', '{col_servicio}', '{col_usuario_atencion}'")
+                st.success(f"✅ Columnas encontradas automáticamente:")
+                st.write(f"- **Hora Llegada:** '{col_hora_llegada}'")
+                st.write(f"- **Servicio:** '{col_servicio}'")
+                st.write(f"- **Usuario Atención:** '{col_usuario_atencion}'")
                 
                 # Renombrar columnas para uso interno
                 df_tab2 = df_tab2.rename(columns={
@@ -658,6 +768,14 @@ with tab2:
                     if usuario_sel_tab2:
                         df_filtrado_tab2 = df_filtrado_tab2[df_filtrado_tab2["USUARIO_ATENCION"].isin(usuario_sel_tab2)]
 
+                    # Mostrar estadísticas básicas del filtrado
+                    with st.expander("📊 Estadísticas del filtrado"):
+                        st.write(f"Registros totales en archivo: {len(df_tab2)}")
+                        st.write(f"Registros con fecha válida: {len(df_tab2_limpio)}")
+                        st.write(f"Registros después de filtrar por fecha: {len(df_filtrado_tab2)}")
+                        st.write(f"Servicios únicos: {len(servicios)}")
+                        st.write(f"Usuarios únicos: {len(usuarios_tab2)}")
+
                     # --- PROCESAMIENTO AVANZADO (solo si se presiona el botón) ---
                     if procesar_tab2 and not df_filtrado_tab2.empty and fecha_inicio_tab2 <= fecha_fin_tab2:
                         st.divider()
@@ -670,6 +788,7 @@ with tab2:
                         - **Día analizado:** {dia_seleccionado_tab2}
                         - **Servicios:** {', '.join(servicio_sel) if servicio_sel else 'Todos'}
                         - **Usuarios:** {', '.join(usuario_sel_tab2) if usuario_sel_tab2 else 'Todos'}
+                        - **Registros analizados:** {len(df_filtrado_tab2)}
                         """)
                         
                         # Preparar datos para el procesamiento
@@ -1003,6 +1122,10 @@ with tab2:
             2. Asegúrate de que el archivo no esté protegido con contraseña
             3. Revisa que tenga datos en las hojas correctas
             4. Comprueba que los nombres de las columnas no tengan caracteres especiales
+            5. Si el archivo tiene múltiples hojas, especifica el nombre de la hoja:
+               ```python
+               pd.read_excel(uploaded_file_tab2, sheet_name='NombreHoja')
+               ```
             """)
     else:
         st.info("👆 Usa la barra lateral para subir un archivo Excel y activar los filtros.")
