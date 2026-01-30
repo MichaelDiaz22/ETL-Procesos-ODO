@@ -111,44 +111,6 @@ if uploaded_file is not None:
         if usuario_sel:
             df_filtrado = df_filtrado[df_filtrado["USUARIO CREA INGRESO"].isin(usuario_sel)]
 
-        # --- VISUALIZACIÓN PRINCIPAL ---
-        st.info(f"📅 Rango disponible en archivo: de **{fecha_minima_archivo}** hasta **{fecha_maxima_archivo}**")
-        
-        if fecha_inicio <= fecha_fin:
-            st.success(f"🗓️ Rango seleccionado: **{fecha_inicio}** a **{fecha_fin}**")
-        else:
-            st.warning("⚠️ Ajusta las fechas para ver los registros filtrados")
-
-        # Métricas de control
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total en Archivo", len(df))
-        col2.metric("Registros Filtrados", len(df_filtrado))
-        col3.metric("Columnas", len(df.columns))
-
-        st.divider()
-
-        # Mostrar los primeros 10 registros de la tabla filtrada
-        st.subheader("🔍 Vista Previa (Primeros 10 registros filtrados)")
-        if not df_filtrado.empty and fecha_inicio <= fecha_fin:
-            st.dataframe(df_filtrado.head(10), use_container_width=True)
-            
-            # Mostrar estadísticas
-            st.caption(f"Mostrando {min(10, len(df_filtrado))} de {len(df_filtrado)} registros")
-            
-            # Botón para descargar el resultado actual
-            csv = df_filtrado.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Descargar estos resultados",
-                data=csv,
-                file_name="registros_filtrados.csv",
-                mime="text/csv",
-                help="Descarga todos los registros filtrados en formato CSV"
-            )
-        elif fecha_inicio > fecha_fin:
-            st.warning("Por favor, ajusta las fechas: la fecha de inicio debe ser menor o igual a la fecha de fin.")
-        else:
-            st.warning("No hay registros que coincidan con los filtros seleccionados.")
-
         # --- PROCESAMIENTO AVANZADO (solo si se presiona el botón) ---
         if procesar and not df_filtrado.empty and fecha_inicio <= fecha_fin:
             st.divider()
@@ -248,7 +210,7 @@ if uploaded_file is not None:
                     st.subheader("⏱️ Tabla de Tiempos Promedios de Admisión")
                     st.markdown("*Tiempo promedio (minutos) entre admisiones por hora: 60 / promedio de registros*")
                     
-                    # Crear tabla de tiempos promedios
+                    # Crear tabla de tiempos promedios (usando NaN en lugar de 'N/A' para valores vacíos)
                     tabla_tiempos = pd.DataFrame(index=usuarios_proceso, columns=horas_formateadas)
                     
                     # Calcular tiempo promedio = 60 / promedio de registros
@@ -259,29 +221,26 @@ if uploaded_file is not None:
                                 tiempo_promedio = 60 / promedio_registros
                                 tabla_tiempos.at[usuario, hora_col] = round(tiempo_promedio, 1)
                             else:
-                                tabla_tiempos.at[usuario, hora_col] = "N/A"
+                                # Usar np.nan en lugar de 'N/A' para valores vacíos
+                                tabla_tiempos.at[usuario, hora_col] = np.nan
                     
-                    # Agregar columna de tiempo promedio total
-                    tiempos_validos = []
+                    # Agregar columna de tiempo promedio total (promedio de tiempos válidos)
                     for usuario in usuarios_proceso:
-                        tiempos_usuario = []
-                        for hora_col in horas_formateadas:
-                            valor = tabla_tiempos.at[usuario, hora_col]
-                            if valor != "N/A":
-                                tiempos_usuario.append(valor)
-                        
-                        if tiempos_usuario:
+                        tiempos_usuario = tabla_tiempos.loc[usuario, horas_formateadas].dropna().values
+                        if len(tiempos_usuario) > 0:
                             tiempo_promedio_total = np.mean(tiempos_usuario)
                             tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = round(tiempo_promedio_total, 1)
                         else:
-                            tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = "N/A"
+                            tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = np.nan
                     
-                    # Mostrar tabla de tiempos
+                    # Mostrar tabla de tiempos (usar formato condicional solo en valores numéricos)
+                    # Para evitar el error, aplicamos el gradiente solo a valores numéricos
                     st.dataframe(
                         tabla_tiempos.style
                         .background_gradient(cmap='YlGn', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
                         .set_properties(**{'text-align': 'center'})
-                        .format("{:.1f}"),
+                        .format("{:.1f}", na_rep="-")
+                        .format("{:.1f}", subset=['TIEMPO_PROMEDIO_TOTAL']),
                         use_container_width=True,
                         height=min(400, 50 + (len(usuarios_proceso) * 35))
                     )
@@ -292,28 +251,30 @@ if uploaded_file is not None:
                     # Contar horas con registros
                     horas_con_registros_count = len(horas_con_registros)
                     
+                    # Calcular promedios generales
+                    promedio_general = tabla_resultados[horas_formateadas].values.mean()
+                    
+                    # Calcular tiempo promedio general (excluyendo NaN)
+                    tiempos_todos = []
+                    for usuario in usuarios_proceso:
+                        for hora_col in horas_formateadas:
+                            valor = tabla_tiempos.at[usuario, hora_col]
+                            if not pd.isna(valor):
+                                tiempos_todos.append(valor)
+                    
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("Usuarios analizados", len(usuarios_proceso))
                     with col2:
                         st.metric("Horas con registros", horas_con_registros_count)
                     with col3:
-                        promedio_general = tabla_resultados[horas_formateadas].values.mean()
                         st.metric("Promedio registros/hora", f"{promedio_general:.2f}")
                     with col4:
-                        # Calcular tiempo promedio general (excluyendo N/A)
-                        tiempos_todos = []
-                        for usuario in usuarios_proceso:
-                            for hora_col in horas_formateadas:
-                                valor = tabla_tiempos.at[usuario, hora_col]
-                                if valor != "N/A":
-                                    tiempos_todos.append(valor)
-                        
                         if tiempos_todos:
                             tiempo_promedio_general = np.mean(tiempos_todos)
                             st.metric("Tiempo promedio admisión", f"{tiempo_promedio_general:.1f} min")
                         else:
-                            st.metric("Tiempo promedio admisión", "N/A")
+                            st.metric("Tiempo promedio admisión", "-")
                     
                     # --- GRÁFICO DE BARRAS: TOP USUARIOS ---
                     st.subheader("📊 Top Usuarios por Actividad Promedio")
@@ -370,8 +331,10 @@ if uploaded_file is not None:
                         )
                     
                     with col2:
-                        # Exportar tabla de tiempos a CSV
-                        csv_tiempos = tabla_tiempos.to_csv().encode('utf-8')
+                        # Exportar tabla de tiempos a CSV (reemplazar NaN por "-")
+                        tabla_tiempos_export = tabla_tiempos.copy()
+                        tabla_tiempos_export = tabla_tiempos_export.fillna("-")
+                        csv_tiempos = tabla_tiempos_export.to_csv().encode('utf-8')
                         st.download_button(
                             label="⏱️ Descargar tiempos (CSV)",
                             data=csv_tiempos,
@@ -385,7 +348,11 @@ if uploaded_file is not None:
                         output = BytesIO()
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
                             tabla_resultados.to_excel(writer, sheet_name='Promedios_Registros')
-                            tabla_tiempos.to_excel(writer, sheet_name='Tiempos_Admision')
+                            
+                            # Exportar tabla de tiempos reemplazando NaN por "-"
+                            tabla_tiempos_export_excel = tabla_tiempos.copy()
+                            tabla_tiempos_export_excel = tabla_tiempos_export_excel.fillna("-")
+                            tabla_tiempos_export_excel.to_excel(writer, sheet_name='Tiempos_Admision')
                             
                             # Agregar hoja con estadísticas
                             estadisticas_df = pd.DataFrame({
