@@ -469,6 +469,7 @@ with tab1:
         st.info("👆 Usa la barra lateral para subir un archivo Excel y activar los filtros.")
         st.caption("El archivo debe contener al menos las columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
 
+
 # ============================================================================
 # PESTAÑA 2: ANÁLISIS DE LLAMADOS
 # ============================================================================
@@ -621,11 +622,11 @@ with tab2:
 
                 # Selector de día de la semana
                 st.subheader("Configuración de Procesamiento")
-                dia_semana_opciones_tab2 = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos los días (L-V)"]
+                dia_semana_opciones_tab2 = ["Lunes", "Martes", "Miércoles", "Jueves", "Sábado", "Domingo", "Todos los días (L-V)"]
                 dia_seleccionado_tab2 = st.selectbox(
                     "Día de la semana a analizar:",
                     options=dia_semana_opciones_tab2,
-                    index=7,
+                    index=6,  # Por defecto selecciona "Todos los días (L-V)"
                     help="Selecciona un día específico o 'Todos los días' para promediar de lunes a viernes",
                     key="tab2_dia"
                 )
@@ -733,7 +734,7 @@ with tab2:
                         )
                         
                         # ============================================================
-                        # 2. TABLA DE LLAMADOS MANUALES VS AUTO
+                        # 2. TABLA DE LLAMADOS MANUALES VS AUTO (CORREGIDA)
                         # ============================================================
                         st.subheader("📊 Tabla 2: Llamados Manuales vs Automáticos por Usuario")
                         
@@ -746,40 +747,84 @@ with tab2:
                             manual_keywords = ['manual', 'm', 'man', 'manuales']
                             auto_keywords = ['auto', 'a', 'aut', 'automático', 'automatico', 'automáticos']
                             
-                            df_proceso_tab2['ES_MANUAL'] = df_proceso_tab2['TIPO_NORMALIZADO'].apply(
-                                lambda x: any(kw in x for kw in manual_keywords) if pd.notna(x) else False
-                            )
-                            df_proceso_tab2['ES_AUTO'] = df_proceso_tab2['TIPO_NORMALIZADO'].apply(
-                                lambda x: any(kw in x for kw in auto_keywords) if pd.notna(x) else False
-                            )
+                            # Crear clasificación más precisa
+                            def clasificar_tipo(valor):
+                                if pd.isna(valor):
+                                    return 'NO_CLASIFICADO'
+                                valor_str = str(valor).lower().strip()
+                                if any(kw in valor_str for kw in manual_keywords):
+                                    return 'MANUAL'
+                                elif any(kw in valor_str for kw in auto_keywords):
+                                    return 'AUTO'
+                                else:
+                                    return 'NO_CLASIFICADO'
                             
-                            # Crear tabla de conteo
+                            df_proceso_tab2['CLASIFICACION'] = df_proceso_tab2['TIPO_LLAMADO'].apply(clasificar_tipo)
+                            
+                            # Crear tabla de conteo CORREGIDA
                             tabla_tipos = pd.DataFrame(index=usuarios_proceso_tab2)
                             
                             for usuario in usuarios_proceso_tab2:
                                 df_usuario = df_proceso_tab2[df_proceso_tab2["USUARIO_ATENCION"] == usuario]
-                                tabla_tipos.at[usuario, 'TOTAL_LLAMADOS'] = len(df_usuario)
-                                tabla_tipos.at[usuario, 'MANUALES'] = df_usuario['ES_MANUAL'].sum()
-                                tabla_tipos.at[usuario, 'AUTOMATICOS'] = df_usuario['ES_AUTO'].sum()
-                                tabla_tipos.at[usuario, 'NO_CLASIFICADO'] = len(df_usuario) - (df_usuario['ES_MANUAL'].sum() + df_usuario['ES_AUTO'].sum())
+                                
+                                # Conteos por clasificación
+                                conteos = df_usuario['CLASIFICACION'].value_counts()
+                                
+                                # Asegurar que existan todas las categorías
+                                manuales = conteos.get('MANUAL', 0)
+                                automaticos = conteos.get('AUTO', 0)
+                                no_clasificados = conteos.get('NO_CLASIFICADO', 0)
+                                total = len(df_usuario)
+                                
+                                # Verificar que la suma sea correcta
+                                suma = manuales + automaticos + no_clasificados
+                                if suma != total:
+                                    # Ajustar para corregir discrepancias
+                                    no_clasificados = total - manuales - automaticos
+                                
+                                tabla_tipos.at[usuario, 'TOTAL_LLAMADOS'] = total
+                                tabla_tipos.at[usuario, 'MANUALES'] = manuales
+                                tabla_tipos.at[usuario, 'AUTOMATICOS'] = automaticos
+                                tabla_tipos.at[usuario, 'NO_CLASIFICADOS'] = no_clasificados
                             
-                            # Calcular porcentajes
-                            tabla_tipos['% MANUAL'] = (tabla_tipos['MANUALES'] / tabla_tipos['TOTAL_LLAMADOS'] * 100).round(1)
-                            tabla_tipos['% AUTO'] = (tabla_tipos['AUTOMATICOS'] / tabla_tipos['TOTAL_LLAMADOS'] * 100).round(1)
-                            tabla_tipos['% NO CLASIF'] = (tabla_tipos['NO_CLASIFICADO'] / tabla_tipos['TOTAL_LLAMADOS'] * 100).round(1)
+                            # Calcular porcentajes CORREGIDOS (solo sobre manuales y automáticos)
+                            for usuario in usuarios_proceso_tab2:
+                                total = tabla_tipos.at[usuario, 'TOTAL_LLAMADOS']
+                                manuales = tabla_tipos.at[usuario, 'MANUALES']
+                                automaticos = tabla_tipos.at[usuario, 'AUTOMATICOS']
+                                
+                                # Solo calcular porcentajes si hay datos
+                                if total > 0:
+                                    tabla_tipos.at[usuario, '% MANUAL'] = (manuales / total * 100).round(1)
+                                    tabla_tipos.at[usuario, '% AUTO'] = (automaticos / total * 100).round(1)
+                                    tabla_tipos.at[usuario, '% NO CLASIF'] = (tabla_tipos.at[usuario, 'NO_CLASIFICADOS'] / total * 100).round(1)
+                                else:
+                                    tabla_tipos.at[usuario, '% MANUAL'] = 0.0
+                                    tabla_tipos.at[usuario, '% AUTO'] = 0.0
+                                    tabla_tipos.at[usuario, '% NO CLASIF'] = 0.0
                             
                             # Ordenar por total
                             tabla_tipos = tabla_tipos.sort_values('TOTAL_LLAMADOS', ascending=False)
                             
-                            # Mostrar tabla
+                            # Mostrar tabla CORREGIDA
                             st.dataframe(
                                 tabla_tipos.style
                                 .background_gradient(cmap='Blues', subset=['TOTAL_LLAMADOS', 'MANUALES', 'AUTOMATICOS'])
-                                .format("{:.0f}", subset=['TOTAL_LLAMADOS', 'MANUALES', 'AUTOMATICOS', 'NO_CLASIFICADO'])
+                                .format("{:.0f}", subset=['TOTAL_LLAMADOS', 'MANUALES', 'AUTOMATICOS', 'NO_CLASIFICADOS'])
                                 .format("{:.1f}%", subset=['% MANUAL', '% AUTO', '% NO CLASIF'])
                                 .set_properties(**{'text-align': 'center'}),
                                 use_container_width=True
                             )
+                            
+                            # Resumen de totales
+                            st.markdown("**Resumen de Totales:**")
+                            col_res1, col_res2, col_res3 = st.columns(3)
+                            with col_res1:
+                                st.metric("Total Manuales", f"{int(tabla_tipos['MANUALES'].sum()):,}")
+                            with col_res2:
+                                st.metric("Total Automáticos", f"{int(tabla_tipos['AUTOMATICOS'].sum()):,}")
+                            with col_res3:
+                                st.metric("Total General", f"{int(tabla_tipos['TOTAL_LLAMADOS'].sum()):,}")
                             
                             # ============================================================
                             # 3. GRÁFICA DE LÍNEA DE TIEMPO - LLAMADOS MANUALES VS AUTO
@@ -790,21 +835,26 @@ with tab2:
                             df_temporal = df_proceso_tab2.copy()
                             df_temporal['FECHA_DT'] = pd.to_datetime(df_temporal['FECHA'])
                             
-                            # Agrupar por fecha
-                            df_agrupado = df_temporal.groupby('FECHA_DT').agg({
-                                'ES_MANUAL': 'sum',
-                                'ES_AUTO': 'sum'
-                            }).reset_index()
+                            # Agrupar por fecha y clasificación
+                            df_manual = df_temporal[df_temporal['CLASIFICACION'] == 'MANUAL'].groupby('FECHA_DT').size().reset_index(name='MANUALES')
+                            df_auto = df_temporal[df_temporal['CLASIFICACION'] == 'AUTO'].groupby('FECHA_DT').size().reset_index(name='AUTOMATICOS')
+                            df_total = df_temporal.groupby('FECHA_DT').size().reset_index(name='TOTAL')
                             
-                            df_agrupado['TOTAL'] = df_agrupado['ES_MANUAL'] + df_agrupado['ES_AUTO']
+                            # Combinar dataframes
+                            df_agrupado = pd.merge(df_total, df_manual, on='FECHA_DT', how='left')
+                            df_agrupado = pd.merge(df_agrupado, df_auto, on='FECHA_DT', how='left')
+                            
+                            # Rellenar NaN con 0
+                            df_agrupado['MANUALES'] = df_agrupado['MANUALES'].fillna(0)
+                            df_agrupado['AUTOMATICOS'] = df_agrupado['AUTOMATICOS'].fillna(0)
                             
                             # Crear gráfico
                             fig_temporal, ax_temporal = plt.subplots(figsize=(14, 6))
                             
                             # Líneas
-                            ax_temporal.plot(df_agrupado['FECHA_DT'], df_agrupado['ES_MANUAL'], 
+                            ax_temporal.plot(df_agrupado['FECHA_DT'], df_agrupado['MANUALES'], 
                                            label='Llamados Manuales', color='red', linewidth=2, marker='o')
-                            ax_temporal.plot(df_agrupado['FECHA_DT'], df_agrupado['ES_AUTO'], 
+                            ax_temporal.plot(df_agrupado['FECHA_DT'], df_agrupado['AUTOMATICOS'], 
                                            label='Llamados Automáticos', color='green', linewidth=2, marker='s')
                             ax_temporal.plot(df_agrupado['FECHA_DT'], df_agrupado['TOTAL'], 
                                            label='Total Llamados', color='blue', linewidth=2, linestyle='--', alpha=0.5)
@@ -824,15 +874,6 @@ with tab2:
                             st.pyplot(fig_temporal)
                             plt.close(fig_temporal)
                             
-                            # Resumen estadístico
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("Total Manuales", f"{int(df_agrupado['ES_MANUAL'].sum()):,}")
-                            with col2:
-                                st.metric("Total Automáticos", f"{int(df_agrupado['ES_AUTO'].sum()):,}")
-                            with col3:
-                                st.metric("Total General", f"{int(df_agrupado['TOTAL'].sum()):,}")
-                            
                         else:
                             st.warning("⚠️ No se encontró la columna 'Tipo' para clasificar llamados manuales/automáticos")
                             st.info("""
@@ -845,65 +886,26 @@ with tab2:
                             """)
                         
                         # ============================================================
-                        # TABLAS ORIGINALES (MANTENIDAS)
-                        # ============================================================
-                        st.divider()
-                        st.subheader("📋 Tabla Original: Promedios por Hora")
-                        
-                        # Mostrar tabla original de promedios por hora
-                        st.dataframe(
-                            tabla_promedios[horas_formateadas_tab2 + ['TOTAL_PROMEDIO']]
-                            .style
-                            .background_gradient(cmap='YlOrRd', axis=1)
-                            .format("{:.2f}")
-                            .set_properties(**{'text-align': 'center'}),
-                            use_container_width=True
-                        )
-                        
-                        # Tabla de tiempos
-                        st.subheader("⏱️ Tabla Original: Tiempos Promedios de Atención")
-                        
-                        tabla_tiempos_tab2 = pd.DataFrame(index=usuarios_proceso_tab2, columns=horas_formateadas_tab2)
-                        
-                        for usuario in usuarios_proceso_tab2:
-                            for hora_idx, hora_col in enumerate(horas_formateadas_tab2):
-                                promedio_registros = tabla_promedios.at[usuario, hora_col]
-                                if promedio_registros > 0:
-                                    tiempo_promedio = 60 / promedio_registros
-                                    tabla_tiempos_tab2.at[usuario, hora_col] = round(tiempo_promedio, 1)
-                                else:
-                                    tabla_tiempos_tab2.at[usuario, hora_col] = np.nan
-                        
-                        # Calcular tiempo promedio total
-                        for usuario in usuarios_proceso_tab2:
-                            tiempos_usuario = tabla_tiempos_tab2.loc[usuario, horas_formateadas_tab2].dropna().values
-                            if len(tiempos_usuario) > 0:
-                                tiempo_promedio_total = np.mean(tiempos_usuario)
-                                tabla_tiempos_tab2.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = round(tiempo_promedio_total, 1)
-                            else:
-                                tabla_tiempos_tab2.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = np.nan
-                        
-                        st.dataframe(
-                            tabla_tiempos_tab2.style
-                            .background_gradient(cmap='YlOrRd_r', axis=1, subset=pd.IndexSlice[:, horas_formateadas_tab2])
-                            .format("{:.1f}", na_rep="-")
-                            .set_properties(**{'text-align': 'center'}),
-                            use_container_width=True
-                        )
-                        
-                        # ============================================================
-                        # ESTADÍSTICAS RESUMEN
+                        # ESTADÍSTICAS RESUMEN (CORREGIDAS)
                         # ============================================================
                         st.divider()
                         st.subheader("📊 Estadísticas Resumen")
                         
-                        # Calcular estadísticas
+                        # Calcular estadísticas CORREGIDAS
                         promedio_general_tab2 = tabla_promedios[horas_formateadas_tab2].values.mean()
-                        tiempos_todos_tab2 = tabla_tiempos_tab2[horas_formateadas_tab2].values.flatten()
-                        tiempos_todos_tab2 = tiempos_todos_tab2[~np.isnan(tiempos_todos_tab2)]
                         
-                        if len(tiempos_todos_tab2) > 0:
-                            tiempo_promedio_general_tab2 = np.mean(tiempos_todos_tab2)
+                        # Calcular tiempo promedio de atención (60 / promedio de registros por hora)
+                        # Solo para horas donde hay registros
+                        tiempos_validos = []
+                        for usuario in usuarios_proceso_tab2:
+                            for hora_col in horas_formateadas_tab2:
+                                promedio_registros = tabla_promedios.at[usuario, hora_col]
+                                if promedio_registros > 0:
+                                    tiempo_promedio = 60 / promedio_registros
+                                    tiempos_validos.append(tiempo_promedio)
+                        
+                        if tiempos_validos:
+                            tiempo_promedio_general_tab2 = np.mean(tiempos_validos)
                         else:
                             tiempo_promedio_general_tab2 = None
                         
@@ -958,6 +960,7 @@ with tab2:
                         col_exp1, col_exp2, col_exp3 = st.columns(3)
                         
                         with col_exp1:
+                            # Exportar tabla de promedios por hora
                             csv_promedios = tabla_promedios.to_csv().encode('utf-8')
                             st.download_button(
                                 label="📊 Descargar promedios (CSV)",
@@ -969,6 +972,7 @@ with tab2:
                         
                         with col_exp2:
                             if 'TIPO_LLAMADO' in df_proceso_tab2.columns:
+                                # Exportar tabla de tipos de llamados
                                 csv_tipos = tabla_tipos.to_csv().encode('utf-8')
                                 st.download_button(
                                     label="📋 Descargar tipos (CSV)",
@@ -979,15 +983,24 @@ with tab2:
                                 )
                         
                         with col_exp3:
+                            # Exportar todo en Excel
                             output = BytesIO()
                             with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                                # Hoja 1: Promedios por hora
                                 tabla_promedios.to_excel(writer, sheet_name='Promedios_Hora')
-                                tabla_tiempos_tab2.to_excel(writer, sheet_name='Tiempos_Atencion')
                                 
+                                # Hoja 2: Tipos de llamados (si existe)
                                 if 'TIPO_LLAMADO' in df_proceso_tab2.columns:
                                     tabla_tipos.to_excel(writer, sheet_name='Tipos_Llamados')
                                 
-                                # Hoja de resumen
+                                # Hoja 3: Datos filtrados (muestra solo primeras columnas importantes)
+                                columnas_exportar = ['USUARIO_ATENCION', 'SERVICIO', 'HORA_LLEGADA', 'FECHA', 'HORA', 'DIA_SEMANA']
+                                if 'TIPO_LLAMADO' in df_proceso_tab2.columns:
+                                    columnas_exportar.append('TIPO_LLAMADO')
+                                df_export = df_proceso_tab2[columnas_exportar].head(1000)  # Limitar a 1000 filas
+                                df_export.to_excel(writer, sheet_name='Datos_Filtrados', index=False)
+                                
+                                # Hoja 4: Resumen
                                 resumen_df = pd.DataFrame({
                                     'Métrica': [
                                         'Fecha Inicio', 'Fecha Fin', 'Día Analizado',
@@ -1011,7 +1024,7 @@ with tab2:
                             st.download_button(
                                 label="📁 Descargar todo (Excel)",
                                 data=excel_data,
-                                file_name=f"analisis_completo_{fecha_inicio_tab2}_{fecha_fin_tab2}.xlsx",
+                                file_name=f"analisis_llamados_{fecha_inicio_tab2}_{fecha_fin_tab2}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 key="tab2_excel"
                             )
