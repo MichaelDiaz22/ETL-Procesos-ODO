@@ -194,7 +194,7 @@ if uploaded_file is not None:
                     tabla_resultados = tabla_resultados.sort_values('TOTAL', ascending=False)
                     
                     # --- TABLA 1: PROMEDIOS DE REGISTROS ---
-                    st.success(f"✅ Tabla de promedios generada ({dias_analizados})")
+                    st.subheader("📋 Tabla de ingresos promedio abiertos por Admisionista")
                     
                     # Mostrar tabla con formato
                     st.dataframe(
@@ -233,11 +233,25 @@ if uploaded_file is not None:
                         else:
                             tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = np.nan
                     
-                    # Mostrar tabla de tiempos (usar formato condicional solo en valores numéricos)
-                    # Para evitar el error, aplicamos el gradiente solo a valores numéricos
+                    # Para invertir los colores, necesitamos aplicar el gradiente de forma inversa
+                    # Primero, crear una copia con valores invertidos para el gradiente
+                    tabla_tiempos_invertida = tabla_tiempos.copy()
+                    
+                    # Para aplicar el gradiente inverso, necesitamos valores numéricos
+                    # Vamos a reemplazar NaN por un valor muy alto para que aparezcan claros
+                    for col in horas_formateadas + ['TIEMPO_PROMEDIO_TOTAL']:
+                        if col in tabla_tiempos_invertida.columns:
+                            max_val = tabla_tiempos_invertida[col].max(skipna=True)
+                            if pd.isna(max_val):
+                                max_val = 0
+                            # Reemplazar NaN con un valor mayor al máximo para que aparezcan en color más claro
+                            tabla_tiempos_invertida[col] = tabla_tiempos_invertida[col].fillna(max_val * 1.5 if max_val > 0 else 100)
+                    
+                    # Mostrar tabla de tiempos con gradiente invertido
                     st.dataframe(
                         tabla_tiempos.style
-                        .background_gradient(cmap='YlGn', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
+                        .background_gradient(cmap='YlOrRd_r', axis=1, subset=pd.IndexSlice[:, horas_formateadas], 
+                                           vmin=0, vmax=tabla_tiempos_invertida[horas_formateadas].max().max())
                         .set_properties(**{'text-align': 'center'})
                         .format("{:.1f}", na_rep="-")
                         .format("{:.1f}", subset=['TIEMPO_PROMEDIO_TOTAL']),
