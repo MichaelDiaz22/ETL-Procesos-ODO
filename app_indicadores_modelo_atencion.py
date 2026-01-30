@@ -300,11 +300,11 @@ if uploaded_file is not None:
                     
                     # Determinar colores para los deltas
                     # Para registros: Rojo si diferencia es negativa (menor que estándar)
-                    color_delta_registros = "inverse" if diferencia_registros < 0 else "normal"
+                    color_delta_registros = "inverse" if diferencia_registros > 0 else "normal"
                     
                     if tiempo_promedio_general is not None:
                         # Para tiempo: Rojo si diferencia es positiva (mayor que estándar)
-                        color_delta_tiempo = "inverse" if diferencia_tiempo < 0 else "normal"
+                        color_delta_tiempo = "inverse" if diferencia_tiempo > 0 else "normal"
                     else:
                         color_delta_tiempo = "off"
                     
