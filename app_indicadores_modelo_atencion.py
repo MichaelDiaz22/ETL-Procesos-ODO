@@ -208,7 +208,7 @@ if uploaded_file is not None:
                     
                     # --- TABLA 2: TIEMPOS PROMEDIOS DE ADMISIÓN ---
                     st.subheader("⏱️ Tabla de Tiempos Promedios de Admisión")
-                    st.markdown("*Tiempo promedio (minutos) entre admisiones por hora: 60 / promedio de registros*")
+                    st.markdown("*Tiempo promedio (minutos) que tardadn es hacer un ingreso cada hora*")
                     
                     # Crear tabla de tiempos promedios (usando NaN en lugar de 'N/A' para valores vacíos)
                     tabla_tiempos = pd.DataFrame(index=usuarios_proceso, columns=horas_formateadas)
