@@ -30,36 +30,57 @@ if uploaded_file is not None:
 
         # 1. Filtro de Fechas (Rango basado en el archivo)
         st.sidebar.subheader("Rango de Evaluación")
-        rango_fechas = st.sidebar.date_input(
-            "Selecciona el periodo:",
-            value=(fecha_minima_archivo, fecha_maxima_archivo), # Valor inicial: todo el rango
-            min_value=fecha_minima_archivo,                   # Límite mínimo permitido
-            max_value=fecha_maxima_archivo                    # Límite máximo permitido
-        )
+        
+        # Crear dos selectores separados para fecha inicial y final
+        col1, col2 = st.sidebar.columns(2)
+        
+        with col1:
+            fecha_inicio = st.date_input(
+                "Fecha de inicio:",
+                value=fecha_minima_archivo,
+                min_value=fecha_minima_archivo,
+                max_value=fecha_maxima_archivo
+            )
+        
+        with col2:
+            fecha_fin = st.date_input(
+                "Fecha de fin:",
+                value=fecha_maxima_archivo,
+                min_value=fecha_minima_archivo,
+                max_value=fecha_maxima_archivo
+            )
+        
+        # Validar que la fecha de inicio sea menor o igual a la fecha de fin
+        if fecha_inicio > fecha_fin:
+            st.sidebar.error("⚠️ La fecha de inicio no puede ser mayor que la fecha de fin")
+            st.sidebar.info(f"Selecciona fechas entre: **{fecha_minima_archivo}** y **{fecha_maxima_archivo}**")
+        else:
+            st.sidebar.success(f"✅ Rango válido: {fecha_inicio} a {fecha_fin}")
 
         # 2. Filtro de Centro de Atención
         centros = sorted(df["CENTRO ATENCION"].dropna().unique())
         centro_sel = st.sidebar.multiselect(
             "Centro de Atención:", 
-            options=centros
+            options=centros,
+            help="Selecciona uno o más centros de atención"
         )
 
         # 3. Filtro de Usuario Crea Ingreso
         usuarios = sorted(df["USUARIO CREA INGRESO"].dropna().unique())
         usuario_sel = st.sidebar.multiselect(
             "Usuario que Creó Ingreso:", 
-            options=usuarios
+            options=usuarios,
+            help="Selecciona uno o más usuarios"
         )
 
         # --- APLICACIÓN DE FILTROS ---
         df_filtrado = df.copy()
 
-        # Filtrado por Rango de Fechas (Controlando que se hayan seleccionado ambas fechas)
-        if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
-            f_inicio, f_fin = rango_fechas
+        # Filtrado por Rango de Fechas (solo si las fechas son válidas)
+        if fecha_inicio <= fecha_fin:
             df_filtrado = df_filtrado[
-                (df_filtrado["FECHA CREACION"].dt.date >= f_inicio) & 
-                (df_filtrado["FECHA CREACION"].dt.date <= f_fin)
+                (df_filtrado["FECHA CREACION"].dt.date >= fecha_inicio) & 
+                (df_filtrado["FECHA CREACION"].dt.date <= fecha_fin)
             ]
         
         # Filtrado por Centro
@@ -72,6 +93,11 @@ if uploaded_file is not None:
 
         # --- VISUALIZACIÓN ---
         st.info(f"📅 Rango disponible en archivo: de **{fecha_minima_archivo}** hasta **{fecha_maxima_archivo}**")
+        
+        if fecha_inicio <= fecha_fin:
+            st.success(f"🗓️ Rango seleccionado: **{fecha_inicio}** a **{fecha_fin}**")
+        else:
+            st.warning("⚠️ Ajusta las fechas para ver los registros filtrados")
 
         # Métricas de control
         col1, col2, col3 = st.columns(3)
@@ -83,8 +109,11 @@ if uploaded_file is not None:
 
         # Mostrar los primeros 10 registros de la tabla filtrada
         st.subheader("🔍 Vista Previa (Primeros 10 registros filtrados)")
-        if not df_filtrado.empty:
+        if not df_filtrado.empty and fecha_inicio <= fecha_fin:
             st.dataframe(df_filtrado.head(10), use_container_width=True)
+            
+            # Mostrar estadísticas
+            st.caption(f"Mostrando {min(10, len(df_filtrado))} de {len(df_filtrado)} registros")
             
             # Botón para descargar el resultado actual
             csv = df_filtrado.to_csv(index=False).encode('utf-8')
@@ -93,11 +122,16 @@ if uploaded_file is not None:
                 data=csv,
                 file_name="registros_filtrados.csv",
                 mime="text/csv",
+                help="Descarga todos los registros filtrados en formato CSV"
             )
+        elif fecha_inicio > fecha_fin:
+            st.warning("Por favor, ajusta las fechas: la fecha de inicio debe ser menor o igual a la fecha de fin.")
         else:
             st.warning("No hay registros que coincidan con los filtros seleccionados.")
 
     except Exception as e:
         st.error(f"Error técnico: {e}")
+        st.info("Verifica que el archivo tenga las columnas necesarias: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
 else:
-    st.info("Sube un archivo Excel para activar los filtros.")
+    st.info("👆 Sube un archivo Excel para activar los filtros.")
+    st.caption("El archivo debe contener al menos las columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
