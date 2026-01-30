@@ -206,15 +206,15 @@ with tab1:
                                         promedio = conteo_por_dia.mean()
                                         tabla_resultados.at[usuario, hora] = round(promedio, 2)
                                     else:
-                                        tabla_resultados.at[usuario, hora] = np.nan  # Usar NaN en lugar de 0
+                                        tabla_resultados.at[usuario, hora] = None  # Usar None en lugar de np.nan
                                 else:
-                                    tabla_resultados.at[usuario, hora] = np.nan  # Usar NaN en lugar de 0
+                                    tabla_resultados.at[usuario, hora] = None  # Usar None en lugar de np.nan
                         
                         # Formatear nombres de columnas (horas)
                         horas_formateadas = [f"{h}:00" for h in horas_con_registros]
                         tabla_resultados.columns = horas_formateadas
                         
-                        # Reemplazar NaN por 0 para la suma
+                        # Reemplazar None por 0 para la suma
                         tabla_resultados_suma = tabla_resultados.fillna(0)
                         
                         # Agregar columna de total por usuario
@@ -222,6 +222,7 @@ with tab1:
                         
                         # Ordenar por total descendente
                         tabla_resultados = tabla_resultados.reindex(tabla_resultados_suma.sort_values('TOTAL', ascending=False).index)
+                        tabla_resultados_suma = tabla_resultados_suma.reindex(tabla_resultados_suma.sort_values('TOTAL', ascending=False).index)
                         
                         # --- TABLA 1: PROMEDIOS DE REGISTROS ---
                         st.subheader("Ingresos promedio abiertos por Admisionista")
@@ -249,20 +250,20 @@ with tab1:
                         for usuario in usuarios_proceso:
                             for hora_idx, hora_col in enumerate(horas_formateadas):
                                 promedio_registros = tabla_resultados.at[usuario, hora_col]
-                                if not pd.isna(promedio_registros) and promedio_registros > 0:
+                                if promedio_registros is not None and promedio_registros > 0:
                                     tiempo_promedio = 60 / promedio_registros
                                     tabla_tiempos.at[usuario, hora_col] = round(tiempo_promedio, 1)
                                 else:
-                                    tabla_tiempos.at[usuario, hora_col] = np.nan
+                                    tabla_tiempos.at[usuario, hora_col] = None
                         
                         # Agregar columna de tiempo promedio total (promedio de tiempos válidos)
                         for usuario in usuarios_proceso:
-                            tiempos_usuario = tabla_tiempos.loc[usuario, horas_formateadas].dropna().values
-                            if len(tiempos_usuario) > 0:
+                            tiempos_usuario = [v for v in tabla_tiempos.loc[usuario, horas_formateadas].values if v is not None]
+                            if tiempos_usuario:
                                 tiempo_promedio_total = np.mean(tiempos_usuario)
                                 tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = round(tiempo_promedio_total, 1)
                             else:
-                                tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = np.nan
+                                tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = None
                         
                         # Mostrar tabla de tiempos con gradiente invertido
                         st.dataframe(
@@ -278,21 +279,25 @@ with tab1:
                         # --- ESTADÍSTICAS RESUMEN CON ESTÁNDARES ---
                         st.subheader("Estadísticas Resumen vs Estándares")
                         
-                        # Calcular promedios generales (excluyendo NaN)
-                        valores_validos = tabla_resultados[horas_formateadas].values.flatten()
-                        valores_validos = valores_validos[~np.isnan(valores_validos)]
+                        # Calcular promedios generales (excluyendo valores nulos) - CORREGIDO
+                        valores_validos = []
+                        for col in horas_formateadas:
+                            for usuario in usuarios_proceso:
+                                valor = tabla_resultados.at[usuario, col]
+                                if valor is not None and valor > 0:
+                                    valores_validos.append(valor)
                         
-                        if len(valores_validos) > 0:
+                        if valores_validos:
                             promedio_general = np.mean(valores_validos)
                         else:
                             promedio_general = 0
                         
-                        # Calcular tiempo promedio general (excluyendo NaN)
+                        # Calcular tiempo promedio general (excluyendo valores nulos)
                         tiempos_todos = []
                         for usuario in usuarios_proceso:
                             for hora_col in horas_formateadas:
                                 valor = tabla_tiempos.at[usuario, hora_col]
-                                if not pd.isna(valor):
+                                if valor is not None:
                                     tiempos_todos.append(valor)
                         
                         # ESTÁNDARES DEFINIDOS
@@ -390,7 +395,7 @@ with tab1:
             st.info("Verifica que el archivo tenga las columnas necesarias: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
     else:
         st.info("👆 Usa la barra lateral para subir un archivo Excel y activar los filtros.")
-        st.caption("El archivo debe contener al menos las columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
+        st.caption("El archivo debe contener al menos las columnas: 'FECHA CREacion', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
 
 # ============================================================================
 # PESTAÑA 2: ANÁLISIS DE LLAMADOS
@@ -651,15 +656,15 @@ with tab2:
                                         promedio = conteo_por_dia.mean()
                                         tabla_promedios.at[usuario, hora] = round(promedio, 2)
                                     else:
-                                        tabla_promedios.at[usuario, hora] = np.nan  # Usar NaN en lugar de 0
+                                        tabla_promedios.at[usuario, hora] = None  # Usar None en lugar de np.nan
                                 else:
-                                    tabla_promedios.at[usuario, hora] = np.nan  # Usar NaN en lugar de 0
+                                    tabla_promedios.at[usuario, hora] = None  # Usar None en lugar de np.nan
                         
                         # Formatear horas
                         horas_formateadas_tab2 = [f"{h}:00" for h in horas_con_registros_tab2]
                         tabla_promedios.columns = horas_formateadas_tab2
                         
-                        # Reemplazar NaN por 0 para la suma
+                        # Reemplazar None por 0 para la suma
                         tabla_promedios_suma = tabla_promedios.fillna(0)
                         
                         # Agregar columna de total por usuario (SIN las columnas eliminadas)
@@ -667,6 +672,7 @@ with tab2:
                         
                         # Ordenar por total descendente
                         tabla_promedios = tabla_promedios.reindex(tabla_promedios_suma.sort_values('TOTAL', ascending=False).index)
+                        tabla_promedios_suma = tabla_promedios_suma.reindex(tabla_promedios_suma.sort_values('TOTAL', ascending=False).index)
                         
                         # Mostrar tabla (solo con columnas necesarias)
                         tabla_visual = tabla_promedios.fillna(0)
@@ -802,11 +808,15 @@ with tab2:
                         st.divider()
                         st.subheader("Estadísticas Resumen")
                         
-                        # Calcular estadísticas
-                        valores_validos = tabla_promedios[horas_formateadas_tab2].values.flatten()
-                        valores_validos = valores_validos[~np.isnan(valores_validos)]
+                        # Calcular estadísticas - CORREGIDO
+                        valores_validos = []
+                        for col in horas_formateadas_tab2:
+                            for usuario in usuarios_proceso_tab2:
+                                valor = tabla_promedios.at[usuario, col]
+                                if valor is not None and valor > 0:
+                                    valores_validos.append(valor)
                         
-                        if len(valores_validos) > 0:
+                        if valores_validos:
                             promedio_general_tab2 = np.mean(valores_validos)
                         else:
                             promedio_general_tab2 = 0
@@ -816,7 +826,7 @@ with tab2:
                         for usuario in usuarios_proceso_tab2:
                             for hora_col in horas_formateadas_tab2:
                                 promedio_registros = tabla_promedios.at[usuario, hora_col]
-                                if not pd.isna(promedio_registros) and promedio_registros > 0:
+                                if promedio_registros is not None and promedio_registros > 0:
                                     tiempo_promedio = 60 / promedio_registros
                                     tiempos_validos.append(tiempo_promedio)
                         
