@@ -294,17 +294,19 @@ if uploaded_file is not None:
                         diferencia_tiempo = None
                         diferencia_tiempo_porcentaje = None
                     
-                    # CORREGIDO: Semáforización correcta
-                    # Para registros: ROJO si es inferior al estándar (ideal: superior)
-                    # Para tiempo: ROJO si es superior al estándar (ideal: inferior)
+                    # SEMAFORIZACIÓN CORRECTA para los deltas
+                    # Para registros: ROJO en delta si es negativo (inferior al estándar)
+                    # Para tiempo: ROJO en delta si es positivo (superior al estándar)
                     
-                    # Determinar colores basados en los estándares
-                    color_registros = "normal" if diferencia_registros >= 0 else "inverse"  # Verde si ≥ estándar, Rojo si <
+                    # Determinar colores para los deltas
+                    # Para registros: Rojo si diferencia es negativa (menor que estándar)
+                    color_delta_registros = "inverse" if diferencia_registros < 0 else "normal"
                     
                     if tiempo_promedio_general is not None:
-                        color_tiempo = "normal" if tiempo_promedio_general <= ESTANDAR_TIEMPO_ADMISION else "inverse"  # Verde si ≤ estándar, Rojo si >
+                        # Para tiempo: Rojo si diferencia es positiva (mayor que estándar)
+                        color_delta_tiempo = "inverse" if diferencia_tiempo > 0 else "normal"
                     else:
-                        color_tiempo = "off"
+                        color_delta_tiempo = "off"
                     
                     # Mostrar métricas con diferencias vs estándar
                     col1, col2 = st.columns(2)
@@ -317,18 +319,12 @@ if uploaded_file is not None:
                             label="📈 Promedio registros/hora", 
                             value=f"{promedio_general:.2f}",
                             delta=delta_registros,
-                            delta_color=color_registros,
-                            help=f"Estándar: {ESTANDAR_REGISTROS_HORA} registros/hora (ROJO si < {ESTANDAR_REGISTROS_HORA})"
+                            delta_color=color_delta_registros,
+                            help=f"Estándar: {ESTANDAR_REGISTROS_HORA} registros/hora"
                         )
                         
                         # Mostrar el estándar como referencia
                         st.caption(f"**Estándar:** {ESTANDAR_REGISTROS_HORA} registros por hora")
-                        
-                        # Indicador visual de estado
-                        if diferencia_registros >= 0:
-                            st.success(f"✅ **Superior al estándar** (+{diferencia_registros:.2f} registros/hora)")
-                        else:
-                            st.error(f"❌ **Inferior al estándar** ({diferencia_registros:.2f} registros/hora)")
                     
                     with col2:
                         # Métrica de tiempo de admisión vs estándar
@@ -339,18 +335,12 @@ if uploaded_file is not None:
                                 label="⏱️ Tiempo promedio admisión", 
                                 value=f"{tiempo_promedio_general:.1f} min",
                                 delta=delta_tiempo,
-                                delta_color=color_tiempo,
-                                help=f"Estándar: {ESTANDAR_TIEMPO_ADMISION} minutos por admisión (ROJO si > {ESTANDAR_TIEMPO_ADMISION} min)"
+                                delta_color=color_delta_tiempo,
+                                help=f"Estándar: {ESTANDAR_TIEMPO_ADMISION} minutos por admisión"
                             )
                             
                             # Mostrar el estándar como referencia
                             st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
-                            
-                            # Indicador visual de estado
-                            if tiempo_promedio_general <= ESTANDAR_TIEMPO_ADMISION:
-                                st.success(f"✅ **Dentro del estándar** ({tiempo_promedio_general:.1f} ≤ {ESTANDAR_TIEMPO_ADMISION} min)")
-                            else:
-                                st.error(f"❌ **Superior al estándar** ({tiempo_promedio_general:.1f} > {ESTANDAR_TIEMPO_ADMISION} min)")
                         else:
                             st.metric(
                                 label="⏱️ Tiempo promedio admisión", 
@@ -358,7 +348,6 @@ if uploaded_file is not None:
                                 help="No hay datos suficientes para calcular el tiempo promedio"
                             )
                             st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
-                            st.warning("⚠️ No hay datos suficientes para calcular el tiempo promedio")
                     
                     # --- GRÁFICO DE BARRAS: TOP USUARIOS ---
                     st.subheader("📊 Top Usuarios por Actividad Promedio")
@@ -447,12 +436,10 @@ if uploaded_file is not None:
                                     'Promedio registros/hora (Estándar)',
                                     'Diferencia registros/hora',
                                     'Diferencia registros/hora (%)',
-                                    'Estado registros/hora',
                                     'Tiempo promedio admisión (Real)',
                                     'Tiempo promedio admisión (Estándar)',
                                     'Diferencia tiempo admisión',
                                     'Diferencia tiempo admisión (%)',
-                                    'Estado tiempo admisión',
                                     'Rango de fechas', 
                                     'Día analizado', 
                                     'Fecha de generación'
@@ -464,12 +451,10 @@ if uploaded_file is not None:
                                     f"{ESTANDAR_REGISTROS_HORA}",
                                     f"{diferencia_registros:+.2f}",
                                     f"{diferencia_registros_porcentaje:+.1f}%",
-                                    "CUMPLE" if diferencia_registros >= 0 else "NO CUMPLE",
                                     f"{tiempo_promedio_general:.1f} min" if tiempo_promedio_general else "-",
                                     f"{ESTANDAR_TIEMPO_ADMISION} min",
                                     f"{diferencia_tiempo:+.1f} min" if diferencia_tiempo else "-",
                                     f"{diferencia_tiempo_porcentaje:+.1f}%" if diferencia_tiempo_porcentaje else "-",
-                                    "CUMPLE" if tiempo_promedio_general and tiempo_promedio_general <= ESTANDAR_TIEMPO_ADMISION else "NO CUMPLE",
                                     f"{fecha_inicio} a {fecha_fin}",
                                     dia_seleccionado, 
                                     datetime.now().strftime("%Y-%m-%d %H:%M:%S")
