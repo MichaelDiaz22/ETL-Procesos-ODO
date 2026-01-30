@@ -358,20 +358,24 @@ with tab1:
                                 )
                                 st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
                         
-                        # --- GRÁFICO DE BARRAS: TOP USUARIOS (INVERTIDO) ---
+                        # --- GRÁFICO DE BARRAS: TOP USUARIOS (CORREGIDO) ---
                         st.subheader("🏆 Top 10 Usuarios por Actividad Promedio")
                         
                         top_n = min(10, len(tabla_resultados_suma))
                         top_usuarios = tabla_resultados_suma.head(top_n)
                         
-                        # Preparar datos para el gráfico de barras HORIZONTAL
-                        top_usuarios_chart = top_usuarios[['TOTAL']].copy()
-                        top_usuarios_chart = top_usuarios_chart.sort_values('TOTAL', ascending=True)  # Orden ascendente para barras horizontales
-                        top_usuarios_chart.columns = ['Promedio Diario']
+                        # Preparar datos para el gráfico de barras - CORREGIDO
+                        top_usuarios_chart = pd.DataFrame({
+                            'Usuario': top_usuarios.index,
+                            'Promedio Diario': top_usuarios['TOTAL'].values
+                        })
                         
-                        # Gráfico de barras HORIZONTAL (invertido)
+                        # Configurar el índice como los usuarios para que aparezcan en el eje X
+                        top_usuarios_chart = top_usuarios_chart.set_index('Usuario')
+                        
+                        # Gráfico de barras CORREGIDO (usuarios en eje X, promedios en eje Y)
                         st.bar_chart(
-                            top_usuarios_chart.T,  # Transponer para barras horizontales
+                            top_usuarios_chart,
                             height=400,
                             use_container_width=True
                         )
@@ -847,21 +851,25 @@ with tab2:
                                 st.metric("Tiempo Promedio Atención", "-")
                         
                         # ============================================================
-                        # GRÁFICO DE BARRAS TOP USUARIOS (INVERTIDO)
+                        # GRÁFICO DE BARRAS TOP USUARIOS (CORREGIDO)
                         # ============================================================
                         st.subheader("🏆 Top 10 Usuarios por Actividad")
                         
                         top_n_tab2 = min(10, len(tabla_promedios_suma))
                         top_usuarios_tab2 = tabla_promedios_suma.head(top_n_tab2)
                         
-                        # Preparar datos para el gráfico de barras HORIZONTAL
-                        top_usuarios_chart = top_usuarios_tab2[['TOTAL']].copy()
-                        top_usuarios_chart = top_usuarios_chart.sort_values('TOTAL', ascending=True)  # Orden ascendente para barras horizontales
-                        top_usuarios_chart.columns = ['Promedio Diario']
+                        # Preparar datos para el gráfico de barras - CORREGIDO
+                        top_usuarios_chart = pd.DataFrame({
+                            'Usuario': top_usuarios_tab2.index,
+                            'Promedio Diario': top_usuarios_tab2['TOTAL'].values
+                        })
                         
-                        # Gráfico de barras HORIZONTAL (invertido)
+                        # Configurar el índice como los usuarios para que aparezcan en el eje X
+                        top_usuarios_chart = top_usuarios_chart.set_index('Usuario')
+                        
+                        # Gráfico de barras CORREGIDO (usuarios en eje X, promedios en eje Y)
                         st.bar_chart(
-                            top_usuarios_chart.T,  # Transponer para barras horizontales
+                            top_usuarios_chart,
                             height=400,
                             use_container_width=True
                         )
