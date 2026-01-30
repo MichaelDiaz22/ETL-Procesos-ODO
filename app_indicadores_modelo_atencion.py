@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, time
 import matplotlib.pyplot as plt
-import seaborn as sns
 from io import BytesIO
 
 # Configuración de la página
@@ -11,8 +10,12 @@ st.set_page_config(page_title="Gestión de Ingresos", layout="wide")
 
 st.title("📊 Visualizador de Registros con Filtros Dinámicos")
 
-# 1. Carga de archivo
-uploaded_file = st.file_uploader("Sube tu archivo Excel (.xlsx)", type=["xlsx"])
+# --- SECCIÓN DE FILTROS EN SIDEBAR ---
+with st.sidebar:
+    st.header("⚙️ Configuración")
+    
+    # 1. Carga de archivo en la sidebar
+    uploaded_file = st.file_uploader("Sube tu archivo Excel (.xlsx)", type=["xlsx"], help="Archivo debe contener columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
 
 if uploaded_file is not None:
     try:
@@ -30,66 +33,65 @@ if uploaded_file is not None:
         fecha_minima_archivo = df["FECHA CREACION"].min().date()
         fecha_maxima_archivo = df["FECHA CREACION"].max().date()
 
-        # --- SECCIÓN DE FILTROS EN SIDEBAR ---
-        st.sidebar.header("⚙️ Filtros de Búsqueda")
+        # --- CONTINUACIÓN DE FILTROS EN SIDEBAR ---
+        with st.sidebar:
+            # 2. Filtro de Fechas (Rango basado en el archivo)
+            st.subheader("Rango de Evaluación")
+            
+            # Crear dos selectores separados para fecha inicial y final
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                fecha_inicio = st.date_input(
+                    "Fecha de inicio:",
+                    value=fecha_minima_archivo,
+                    min_value=fecha_minima_archivo,
+                    max_value=fecha_maxima_archivo
+                )
+            
+            with col2:
+                fecha_fin = st.date_input(
+                    "Fecha de fin:",
+                    value=fecha_maxima_archivo,
+                    min_value=fecha_minima_archivo,
+                    max_value=fecha_maxima_archivo
+                )
+            
+            # Validar que la fecha de inicio sea menor o igual a la fecha de fin
+            if fecha_inicio > fecha_fin:
+                st.error("⚠️ La fecha de inicio no puede ser mayor que la fecha de fin")
+                st.info(f"Selecciona fechas entre: **{fecha_minima_archivo}** y **{fecha_maxima_archivo}**")
+            else:
+                st.success(f"✅ Rango válido: {fecha_inicio} a {fecha_fin}")
 
-        # 1. Filtro de Fechas (Rango basado en el archivo)
-        st.sidebar.subheader("Rango de Evaluación")
-        
-        # Crear dos selectores separados para fecha inicial y final
-        col1, col2 = st.sidebar.columns(2)
-        
-        with col1:
-            fecha_inicio = st.date_input(
-                "Fecha de inicio:",
-                value=fecha_minima_archivo,
-                min_value=fecha_minima_archivo,
-                max_value=fecha_maxima_archivo
+            # 3. Filtro de Centro de Atención
+            centros = sorted(df["CENTRO ATENCION"].dropna().unique())
+            centro_sel = st.multiselect(
+                "Centro de Atención:", 
+                options=centros,
+                help="Selecciona uno o más centros de atención"
             )
-        
-        with col2:
-            fecha_fin = st.date_input(
-                "Fecha de fin:",
-                value=fecha_maxima_archivo,
-                min_value=fecha_minima_archivo,
-                max_value=fecha_maxima_archivo
+
+            # 4. Filtro de Usuario Crea Ingreso
+            usuarios = sorted(df["USUARIO CREA INGRESO"].dropna().unique())
+            usuario_sel = st.multiselect(
+                "Usuario que Creó Ingreso:", 
+                options=usuarios,
+                help="Selecciona uno o más usuarios"
             )
-        
-        # Validar que la fecha de inicio sea menor o igual a la fecha de fin
-        if fecha_inicio > fecha_fin:
-            st.sidebar.error("⚠️ La fecha de inicio no puede ser mayor que la fecha de fin")
-            st.sidebar.info(f"Selecciona fechas entre: **{fecha_minima_archivo}** y **{fecha_maxima_archivo}**")
-        else:
-            st.sidebar.success(f"✅ Rango válido: {fecha_inicio} a {fecha_fin}")
 
-        # 2. Filtro de Centro de Atención
-        centros = sorted(df["CENTRO ATENCION"].dropna().unique())
-        centro_sel = st.sidebar.multiselect(
-            "Centro de Atención:", 
-            options=centros,
-            help="Selecciona uno o más centros de atención"
-        )
+            # 5. Selector de día de la semana para el procesamiento
+            st.subheader("Configuración de Procesamiento")
+            dia_semana_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos los días (L-V)"]
+            dia_seleccionado = st.selectbox(
+                "Día de la semana a analizar:",
+                options=dia_semana_opciones,
+                index=7,  # Por defecto selecciona "Todos los días (L-V)"
+                help="Selecciona un día específico o 'Todos los días' para promediar de lunes a viernes"
+            )
 
-        # 3. Filtro de Usuario Crea Ingreso
-        usuarios = sorted(df["USUARIO CREA INGRESO"].dropna().unique())
-        usuario_sel = st.sidebar.multiselect(
-            "Usuario que Creó Ingreso:", 
-            options=usuarios,
-            help="Selecciona uno o más usuarios"
-        )
-
-        # 4. Selector de día de la semana para el procesamiento
-        st.sidebar.subheader("Configuración de Procesamiento")
-        dia_semana_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos los días (L-V)"]
-        dia_seleccionado = st.sidebar.selectbox(
-            "Día de la semana a analizar:",
-            options=dia_semana_opciones,
-            index=7,  # Por defecto selecciona "Todos los días (L-V)"
-            help="Selecciona un día específico o 'Todos los días' para promediar de lunes a viernes"
-        )
-
-        # Botón para procesar
-        procesar = st.sidebar.button("🚀 Procesar", type="primary", use_container_width=True)
+            # Botón para procesar
+            procesar = st.button("🚀 Procesar", type="primary", use_container_width=True)
 
         # --- APLICACIÓN DE FILTROS ---
         df_filtrado = df.copy()
@@ -150,7 +152,7 @@ if uploaded_file is not None:
         # --- PROCESAMIENTO AVANZADO (solo si se presiona el botón) ---
         if procesar and not df_filtrado.empty and fecha_inicio <= fecha_fin:
             st.divider()
-            st.subheader("📈 Tabla Dinámica de Promedios por Hora y Día")
+            st.subheader("📈 Análisis de Promedios por Hora y Día")
             
             # Mostrar configuración seleccionada
             st.info(f"""
@@ -186,8 +188,8 @@ if uploaded_file is not None:
             if df_proceso.empty:
                 st.warning(f"No hay registros para el día seleccionado ({dia_seleccionado}) en el rango filtrado.")
             else:
-                # Definir rango de horas (6 AM a 8 PM)
-                horas = list(range(6, 21))  # 6, 7, 8, ..., 20 (8 PM)
+                # Identificar horas con registros (no usar horas fijas 6-20)
+                horas_con_registros = sorted(df_proceso['HORA'].unique())
                 
                 # Obtener lista de usuarios únicos
                 usuarios_proceso = sorted(df_proceso["USUARIO CREA INGRESO"].dropna().unique())
@@ -196,13 +198,13 @@ if uploaded_file is not None:
                     st.warning("No hay usuarios en los datos filtrados.")
                 else:
                     # Crear estructura para la tabla dinámica
-                    tabla_resultados = pd.DataFrame(index=usuarios_proceso, columns=horas)
+                    tabla_resultados = pd.DataFrame(index=usuarios_proceso, columns=horas_con_registros)
                     
                     # Calcular promedios para cada usuario y hora
                     for usuario in usuarios_proceso:
                         df_usuario = df_proceso[df_proceso["USUARIO CREA INGRESO"] == usuario]
                         
-                        for hora in horas:
+                        for hora in horas_con_registros:
                             # Filtrar registros para esta hora específica
                             df_hora = df_usuario[df_usuario['HORA'] == hora]
                             
@@ -217,7 +219,7 @@ if uploaded_file is not None:
                                 tabla_resultados.at[usuario, hora] = 0.0
                     
                     # Formatear nombres de columnas (horas)
-                    horas_formateadas = [f"{h}:00" for h in horas]
+                    horas_formateadas = [f"{h}:00" for h in horas_con_registros]
                     tabla_resultados.columns = horas_formateadas
                     
                     # Asegurar que todos los valores sean numéricos
@@ -229,7 +231,7 @@ if uploaded_file is not None:
                     # Ordenar por total descendente
                     tabla_resultados = tabla_resultados.sort_values('TOTAL', ascending=False)
                     
-                    # Mostrar tabla de resultados
+                    # --- TABLA 1: PROMEDIOS DE REGISTROS ---
                     st.success(f"✅ Tabla de promedios generada ({dias_analizados})")
                     
                     # Mostrar tabla con formato
@@ -242,168 +244,169 @@ if uploaded_file is not None:
                         height=min(400, 50 + (len(usuarios_proceso) * 35))
                     )
                     
-                    # Estadísticas resumen
+                    # --- TABLA 2: TIEMPOS PROMEDIOS DE ADMISIÓN ---
+                    st.subheader("⏱️ Tabla de Tiempos Promedios de Admisión")
+                    st.markdown("*Tiempo promedio (minutos) entre admisiones por hora: 60 / promedio de registros*")
+                    
+                    # Crear tabla de tiempos promedios
+                    tabla_tiempos = pd.DataFrame(index=usuarios_proceso, columns=horas_formateadas)
+                    
+                    # Calcular tiempo promedio = 60 / promedio de registros
+                    for usuario in usuarios_proceso:
+                        for hora_idx, hora_col in enumerate(horas_formateadas):
+                            promedio_registros = tabla_resultados.at[usuario, hora_col]
+                            if promedio_registros > 0:
+                                tiempo_promedio = 60 / promedio_registros
+                                tabla_tiempos.at[usuario, hora_col] = round(tiempo_promedio, 1)
+                            else:
+                                tabla_tiempos.at[usuario, hora_col] = "N/A"
+                    
+                    # Agregar columna de tiempo promedio total
+                    tiempos_validos = []
+                    for usuario in usuarios_proceso:
+                        tiempos_usuario = []
+                        for hora_col in horas_formateadas:
+                            valor = tabla_tiempos.at[usuario, hora_col]
+                            if valor != "N/A":
+                                tiempos_usuario.append(valor)
+                        
+                        if tiempos_usuario:
+                            tiempo_promedio_total = np.mean(tiempos_usuario)
+                            tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = round(tiempo_promedio_total, 1)
+                        else:
+                            tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = "N/A"
+                    
+                    # Mostrar tabla de tiempos
+                    st.dataframe(
+                        tabla_tiempos.style
+                        .background_gradient(cmap='YlGn', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
+                        .set_properties(**{'text-align': 'center'})
+                        .format("{:.1f}"),
+                        use_container_width=True,
+                        height=min(400, 50 + (len(usuarios_proceso) * 35))
+                    )
+                    
+                    # --- ESTADÍSTICAS RESUMEN ---
                     st.subheader("📊 Estadísticas Resumen")
+                    
+                    # Contar horas con registros
+                    horas_con_registros_count = len(horas_con_registros)
                     
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("Usuarios analizados", len(usuarios_proceso))
                     with col2:
-                        st.metric("Horas analizadas", len(horas))
+                        st.metric("Horas con registros", horas_con_registros_count)
                     with col3:
                         promedio_general = tabla_resultados[horas_formateadas].values.mean()
-                        st.metric("Promedio general por hora", round(promedio_general, 2))
+                        st.metric("Promedio registros/hora", f"{promedio_general:.2f}")
                     with col4:
-                        promedio_usuario = tabla_resultados['TOTAL'].mean()
-                        st.metric("Total promedio por usuario", round(promedio_usuario, 2))
+                        # Calcular tiempo promedio general (excluyendo N/A)
+                        tiempos_todos = []
+                        for usuario in usuarios_proceso:
+                            for hora_col in horas_formateadas:
+                                valor = tabla_tiempos.at[usuario, hora_col]
+                                if valor != "N/A":
+                                    tiempos_todos.append(valor)
+                        
+                        if tiempos_todos:
+                            tiempo_promedio_general = np.mean(tiempos_todos)
+                            st.metric("Tiempo promedio admisión", f"{tiempo_promedio_general:.1f} min")
+                        else:
+                            st.metric("Tiempo promedio admisión", "N/A")
                     
-                    # Gráfico de barras para el top de usuarios
+                    # --- GRÁFICO DE BARRAS: TOP USUARIOS ---
                     st.subheader("📊 Top Usuarios por Actividad Promedio")
                     
                     top_n = min(10, len(tabla_resultados))
                     top_usuarios = tabla_resultados.head(top_n)
                     
-                    # Crear gráfico de barras con matplotlib
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    bars = ax.barh(range(len(top_usuarios)), top_usuarios['TOTAL'].values)
-                    ax.set_yticks(range(len(top_usuarios)))
-                    ax.set_yticklabels(top_usuarios.index)
-                    ax.set_xlabel('Promedio Total de Registros por Día')
-                    ax.set_title(f'Top {top_n} Usuarios - Promedio Diario ({dia_label})')
+                    # Crear gráfico de barras con matplotlib (rotado como solicitado)
+                    fig, ax = plt.subplots(figsize=(12, 6))
                     
-                    # Añadir valores a las barras
-                    for i, bar in enumerate(bars):
-                        width = bar.get_width()
-                        ax.text(width + 0.1, bar.get_y() + bar.get_height()/2, 
-                               f'{width:.1f}', ha='left', va='center')
+                    # Preparar datos para el gráfico
+                    usuarios_nombres = top_usuarios.index.tolist()
+                    promedios_totales = top_usuarios['TOTAL'].values
                     
-                    # Invertir eje Y para mostrar el más alto primero
-                    ax.invert_yaxis()
+                    # Crear barras verticales (X: usuario, Y: promedio)
+                    bars = ax.bar(usuarios_nombres, promedios_totales, color='steelblue', alpha=0.8)
+                    
+                    # Configurar ejes
+                    ax.set_xlabel('Usuario')
+                    ax.set_ylabel('Promedio de Registros por Día')
+                    ax.set_title(f'Top {top_n} Usuarios - Promedio Diario de Registros ({dia_label})')
+                    
+                    # Rotar etiquetas del eje X para mejor visualización
+                    plt.xticks(rotation=45, ha='right')
+                    
+                    # Añadir valores en las barras
+                    for bar in bars:
+                        height = bar.get_height()
+                        ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                               f'{height:.1f}', ha='center', va='bottom', fontsize=9)
+                    
+                    # Ajustar márgenes
+                    plt.tight_layout()
                     
                     # Mostrar el gráfico en Streamlit
                     st.pyplot(fig)
                     plt.close(fig)
                     
-                    # Gráfico de calor usando matplotlib
-                    st.subheader("🔥 Distribución por Hora")
-                    
-                    # Seleccionar solo las horas (excluir TOTAL) y asegurar que sean numéricas
-                    datos_heatmap = tabla_resultados[horas_formateadas].values.astype(float)
-                    
-                    fig2, ax2 = plt.subplots(figsize=(12, max(6, len(usuarios_proceso) * 0.4)))
-                    
-                    # Crear heatmap con matplotlib
-                    im = ax2.imshow(datos_heatmap, cmap='YlOrRd', aspect='auto')
-                    
-                    # Configurar ejes
-                    ax2.set_xticks(range(len(horas_formateadas)))
-                    ax2.set_xticklabels(horas_formateadas, rotation=45, ha='right')
-                    ax2.set_yticks(range(len(usuarios_proceso)))
-                    ax2.set_yticklabels(tabla_resultados.index)
-                    
-                    # Añadir barra de color
-                    plt.colorbar(im, ax=ax2, label='Promedio de registros')
-                    
-                    ax2.set_title(f'Mapa de Calor - Promedios por Hora ({dia_label})')
-                    ax2.set_xlabel('Hora del día')
-                    ax2.set_ylabel('Usuario')
-                    
-                    # Añadir texto en cada celda
-                    for i in range(len(usuarios_proceso)):
-                        for j in range(len(horas_formateadas)):
-                            valor = datos_heatmap[i, j]
-                            if valor > 0:
-                                text_color = 'black' if valor < np.max(datos_heatmap)/2 else 'white'
-                                ax2.text(j, i, f'{valor:.1f}', ha='center', va='center', 
-                                        color=text_color, fontsize=8)
-                    
-                    # Ajustar diseño
-                    plt.tight_layout()
-                    st.pyplot(fig2)
-                    plt.close(fig2)
-                    
-                    # Gráfico de línea simple para promedio por hora
-                    st.subheader("📈 Promedio por Hora (Todos los Usuarios)")
-                    
-                    # Calcular promedio por hora
-                    promedio_por_hora = tabla_resultados[horas_formateadas].mean()
-                    
-                    fig3, ax3 = plt.subplots(figsize=(10, 4))
-                    ax3.plot(horas_formateadas, promedio_por_hora.values, marker='o', linewidth=2)
-                    ax3.set_xlabel('Hora del día')
-                    ax3.set_ylabel('Promedio de registros')
-                    ax3.set_title(f'Promedio de Registros por Hora ({dia_label})')
-                    ax3.grid(True, alpha=0.3)
-                    
-                    # Rotar etiquetas del eje X
-                    plt.xticks(rotation=45)
-                    
-                    # Añadir valores en los puntos
-                    for i, v in enumerate(promedio_por_hora.values):
-                        ax3.text(i, v + 0.05, f'{v:.2f}', ha='center', va='bottom')
-                    
-                    plt.tight_layout()
-                    st.pyplot(fig3)
-                    plt.close(fig3)
-                    
-                    # Botón para descargar los resultados
+                    # --- EXPORTAR RESULTADOS ---
                     st.divider()
                     st.subheader("📥 Exportar Resultados")
                     
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        # Exportar a CSV
-                        csv_procesado = tabla_resultados.to_csv().encode('utf-8')
+                        # Exportar tabla de promedios a CSV
+                        csv_promedios = tabla_resultados.to_csv().encode('utf-8')
                         st.download_button(
-                            label="💾 Descargar tabla de promedios (CSV)",
-                            data=csv_procesado,
-                            file_name=f"promedios_{fecha_inicio}_{fecha_fin}_{dia_label}.csv",
-                            mime="text/csv"
+                            label="📊 Descargar promedios (CSV)",
+                            data=csv_promedios,
+                            file_name=f"promedios_registros_{fecha_inicio}_{fecha_fin}_{dia_label}.csv",
+                            mime="text/csv",
+                            help="Tabla de promedios de registros por hora"
                         )
                     
                     with col2:
-                        # Crear archivo Excel en memoria
+                        # Exportar tabla de tiempos a CSV
+                        csv_tiempos = tabla_tiempos.to_csv().encode('utf-8')
+                        st.download_button(
+                            label="⏱️ Descargar tiempos (CSV)",
+                            data=csv_tiempos,
+                            file_name=f"tiempos_admision_{fecha_inicio}_{fecha_fin}_{dia_label}.csv",
+                            mime="text/csv",
+                            help="Tabla de tiempos promedios de admisión"
+                        )
+                    
+                    with col3:
+                        # Crear archivo Excel con ambas tablas
                         output = BytesIO()
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            tabla_resultados.to_excel(writer, sheet_name='Promedios')
+                            tabla_resultados.to_excel(writer, sheet_name='Promedios_Registros')
+                            tabla_tiempos.to_excel(writer, sheet_name='Tiempos_Admision')
                             
                             # Agregar hoja con estadísticas
                             estadisticas_df = pd.DataFrame({
-                                'Métrica': ['Usuarios analizados', 'Horas analizadas', 
-                                          'Promedio general por hora', 'Total promedio por usuario',
-                                          'Rango de fechas', 'Día analizado'],
-                                'Valor': [len(usuarios_proceso), len(horas),
-                                         round(promedio_general, 2), round(promedio_usuario, 2),
-                                         f"{fecha_inicio} a {fecha_fin}", dia_seleccionado]
+                                'Métrica': ['Usuarios analizados', 'Horas con registros', 
+                                          'Promedio registros/hora', 'Rango de fechas', 
+                                          'Día analizado', 'Fecha de generación'],
+                                'Valor': [len(usuarios_proceso), horas_con_registros_count,
+                                         f"{promedio_general:.2f}", f"{fecha_inicio} a {fecha_fin}",
+                                         dia_seleccionado, datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
                             })
                             estadisticas_df.to_excel(writer, sheet_name='Estadísticas', index=False)
                         
                         excel_data = output.getvalue()
                         
                         st.download_button(
-                            label="📊 Descargar resultados completos (Excel)",
+                            label="📁 Descargar todo (Excel)",
                             data=excel_data,
-                            file_name=f"analisis_promedios_{fecha_inicio}_{fecha_fin}_{dia_label}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            file_name=f"analisis_completo_{fecha_inicio}_{fecha_fin}_{dia_label}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            help="Archivo Excel con todas las tablas y estadísticas"
                         )
-                    
-                    # Información adicional
-                    with st.expander("📖 Información sobre el cálculo"):
-                        st.markdown("""
-                        **Cómo se calculan los promedios:**
-                        1. Para cada usuario y cada hora (6:00 AM a 8:00 PM)
-                        2. Se cuentan los registros por fecha única
-                        3. Se promedia esa cantidad a lo largo de todos los días del mismo tipo en el rango seleccionado
-                        4. Ejemplo: Si un usuario tuvo 2 registros a las 9:00 AM el lunes 1, 3 registros el lunes 8, y 1 registro el lunes 15,
-                           el promedio sería (2+3+1)/3 = 2.0 registros por lunes a las 9:00 AM
-                        
-                        **Notas importantes:**
-                        - Los sábados y domingos se excluyen cuando se selecciona "Todos los días (L-V)"
-                        - Los valores cero indican que no hubo registros en esa hora para el usuario
-                        - Los promedios se redondean a 2 decimales
-                        - La tabla se ordena por el total promedio descendente
-                        """)
 
     except Exception as e:
         st.error(f"Error técnico: {e}")
@@ -411,5 +414,5 @@ if uploaded_file is not None:
         st.code(traceback.format_exc())
         st.info("Verifica que el archivo tenga las columnas necesarias: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
 else:
-    st.info("👆 Sube un archivo Excel para activar los filtros.")
+    st.info("👆 Usa la barra lateral para subir un archivo Excel y activar los filtros.")
     st.caption("El archivo debe contener al menos las columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
