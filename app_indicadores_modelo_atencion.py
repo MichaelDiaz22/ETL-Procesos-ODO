@@ -193,47 +193,18 @@ if uploaded_file is not None:
                     # Ordenar por total descendente
                     tabla_resultados = tabla_resultados.sort_values('TOTAL', ascending=False)
                     
-                    # --- TABLA 1: PROMEDIOS DE REGISTROS CON TOTALES ---
+                    # --- TABLA 1: PROMEDIOS DE REGISTROS ---
                     st.subheader("📋 Tabla de ingresos promedio abiertos por Admisionista")
                     st.markdown("*Cantidad de ingresos que realizan por hora*")
-                    
-                    # Crear una copia de la tabla para agregar la fila de totales
-                    tabla_con_totales = tabla_resultados.copy()
-                    
-                    # Calcular los totales por hora (suma de todos los usuarios)
-                    totales_por_hora = {}
-                    for hora_col in horas_formateadas:
-                        total_hora = tabla_resultados[hora_col].sum()
-                        totales_por_hora[hora_col] = round(total_hora, 2)
-                    
-                    # Calcular el total general (suma de todos los totales por hora)
-                    total_general = round(sum(totales_por_hora.values()), 2)
-                    
-                    # Agregar la fila de totales al final
-                    fila_totales = pd.DataFrame([{**totales_por_hora, 'TOTAL': total_general}], 
-                                               index=['TOTAL'])
-                    
-                    # Concatenar la tabla original con la fila de totales
-                    tabla_con_totales = pd.concat([tabla_con_totales, fila_totales])
-                    
-                    # Aplicar formato especial a la fila de totales (negrita)
-                    def aplicar_estilo_totales(styler):
-                        # Aplicar estilo a la última fila (TOTAL)
-                        styler = styler.set_properties(
-                            subset=pd.IndexSlice['TOTAL', :], 
-                            **{'font-weight': 'bold', 'background-color': '#f0f0f0'}
-                        )
-                        return styler
 
                     # Mostrar tabla con formato
                     st.dataframe(
-                        tabla_con_totales.style
-                        .pipe(aplicar_estilo_totales)
-                        .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[usuarios_proceso, horas_formateadas])
+                        tabla_resultados.style
+                        .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
                         .format("{:.2f}")
                         .set_properties(**{'text-align': 'center'}),
                         use_container_width=True,
-                        height=min(400, 50 + ((len(usuarios_proceso) + 1) * 35))
+                        height=min(400, 50 + (len(usuarios_proceso) * 35))
                     )
                     
                     # --- TABLA 2: TIEMPOS PROMEDIOS DE ADMISIÓN ---
@@ -295,7 +266,7 @@ if uploaded_file is not None:
                     # Contar horas con registros
                     horas_con_registros_count = len(horas_con_registros)
                     
-                    # Calcular promedios generales (usando la tabla sin la fila de totales)
+                    # Calcular promedios generales
                     promedio_general = tabla_resultados[horas_formateadas].values.mean()
                     
                     # Calcular tiempo promedio general (excluyendo NaN)
@@ -329,7 +300,7 @@ if uploaded_file is not None:
                     
                     # Determinar colores para los deltas
                     # Para registros: Rojo si diferencia es negativa (menor que estándar)
-                    color_delta_registros = "inverse" if diferencia_registros < 0 else "normal"
+                    color_delta_registros = "inverse" if diferencia_registros > 0 else "normal"
                     
                     if tiempo_promedio_general is not None:
                         # Para tiempo: Rojo si diferencia es positiva (mayor que estándar)
@@ -422,14 +393,14 @@ if uploaded_file is not None:
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        # Exportar tabla de promedios a CSV (con totales)
-                        csv_promedios = tabla_con_totales.to_csv().encode('utf-8')
+                        # Exportar tabla de promedios a CSV
+                        csv_promedios = tabla_resultados.to_csv().encode('utf-8')
                         st.download_button(
                             label="📊 Descargar promedios (CSV)",
                             data=csv_promedios,
                             file_name=f"promedios_registros_{fecha_inicio}_{fecha_fin}_{dia_label}.csv",
                             mime="text/csv",
-                            help="Tabla de promedios de registros por hora con totales"
+                            help="Tabla de promedios de registros por hora"
                         )
                     
                     with col2:
@@ -449,8 +420,7 @@ if uploaded_file is not None:
                         # Crear archivo Excel con ambas tablas
                         output = BytesIO()
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            # Exportar tabla de promedios con totales
-                            tabla_con_totales.to_excel(writer, sheet_name='Promedios_Registros')
+                            tabla_resultados.to_excel(writer, sheet_name='Promedios_Registros')
                             
                             # Exportar tabla de tiempos reemplazando NaN por "-"
                             tabla_tiempos_export_excel = tabla_tiempos.copy()
