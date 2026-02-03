@@ -23,17 +23,29 @@ st.markdown("Carga un archivo CSV con registros de llamadas para analizar demand
 CONSTANTE_VALIDACION = 14.08
 CONSTANTE_DEMANDA_A_RECURSOS = 3.0
 
-# Lista de códigos que representan extensiones internas
-CODIGOS_EXTENSION = [
-    '(0220)', '(0221)', '(0222)', '(0303)', '(0305)', '(0308)', '(0316)', '(0320)', 
-    '(0323)', '(0324)', '(0327)', '(0331)', '(0404)', '(0407)', '(0410)', '(0412)', 
-    '(0413)', '(0414)', '(0415)', '(0417)', '(2001)', '(2002)', '(2003)', '(2004)', 
-    '(2005)', '(2006)', '(2007)', '(2008)', '(2009)', '(2010)', '(2011)', '(2012)', 
-    '(2013)', '(2014)', '(2015)', '(2016)', '(2017)', '(2018)', '(2019)', '(2021)', 
-    '(2022)', '(2023)', '(2024)', '(2025)', '(2026)', '(2028)', '(2029)', '(2030)', 
-    '(2032)', '(2034)', '(2035)', '(8000)', '(8002)', '(8003)', '(8051)', '(8052)', 
-    '(8062)', '(8063)', '(8064)', '(8071)', '(8072)', '(8079)', '(8080)'
-]
+# Diccionario de códigos de extensión por empresa
+CODIGOS_POR_EMPRESA = {
+    'UDC': [
+        '(0220)', '(0221)', '(0222)', '(0303)', '(0305)', '(0308)', '(0316)', '(0320)', 
+        '(0323)', '(0324)', '(0327)', '(0331)', '(0404)', '(0407)', '(0410)', '(0412)', 
+        '(0413)', '(0414)', '(0415)', '(0417)', '(8062)', '(8063)', '(8064)', '(8072)', 
+        '(8080)'
+    ],
+    'ODO': [
+        '(2001)', '(2002)', '(2003)', '(2004)', '(2005)', '(2006)', '(2007)', '(2008)', 
+        '(2009)', '(2010)', '(2011)', '(2012)', '(2013)', '(2014)', '(2015)', '(2016)', 
+        '(2017)', '(2018)', '(2019)', '(2021)', '(2022)', '(2023)', '(2024)', '(2025)', 
+        '(2026)', '(2032)', '(2034)', '(8000)', '(8002)', '(8003)', '(8071)', '(8079)'
+    ],
+    'CCB': [
+        '(2028)', '(2029)', '(2030)', '(2035)', '(8051)', '(8052)'
+    ]
+}
+
+# Lista completa de códigos que representan extensiones internas
+CODIGOS_EXTENSION = []
+for empresa, codigos in CODIGOS_POR_EMPRESA.items():
+    CODIGOS_EXTENSION.extend(codigos)
 
 # Horas para ingresar recursos (6:00 a 19:00)
 HORAS_DISPONIBLES = list(range(6, 20))  # 6:00 a 19:00
@@ -47,11 +59,12 @@ with st.sidebar:
     st.markdown("**Instrucciones:**")
     st.markdown("""
     1. Sube un archivo CSV con registros de llamadas
-    2. Ingresa los recursos disponibles por hora (6:00-19:00)
-    3. La app calculará la demanda promedio por hora y día
-    4. **Filtro aplicado**: Llamadas externas → internas
-    5. Compara demanda vs recursos en la gráfica
-    6. Analiza los resultados
+    2. Selecciona las empresas a filtrar
+    3. Ingresa los recursos disponibles por hora (6:00-19:00)
+    4. La app calculará la demanda promedio por hora y día
+    5. **Filtro aplicado**: Llamadas externas → internas
+    6. Compara demanda vs recursos en la gráfica
+    7. Analiza los resultados
     """)
 
 # Función para traducir días de la semana
@@ -67,19 +80,21 @@ def traducir_dia(dia_ingles):
     }
     return dias_traduccion.get(dia_ingles, dia_ingles)
 
-# Función para determinar si un número es extensión interna
-def es_extension_interna(numero):
+# Función para determinar si un número es extensión interna y a qué empresa pertenece
+def obtener_empresa_extension(numero):
     """
     Determina si un número contiene algún código de extensión interna
+    y a qué empresa pertenece
     """
     if pd.isna(numero):
-        return False
+        return None
     
     numero_str = str(numero)
-    for extension in CODIGOS_EXTENSION:
-        if extension in numero_str:
-            return True
-    return False
+    for empresa, codigos in CODIGOS_POR_EMPRESA.items():
+        for extension in codigos:
+            if extension in numero_str:
+                return empresa
+    return None
 
 # Función para ingresar recursos por hora
 def ingresar_recursos_por_hora():
@@ -124,10 +139,11 @@ def ingresar_recursos_por_hora():
     return recursos
 
 # Función para procesar los datos y calcular demanda CON FILTRO
-def procesar_datos_demanda_filtrada(df):
+def procesar_datos_demanda_filtrada(df, empresas_seleccionadas):
     """
     Procesa el DataFrame para calcular la demanda promedio por hora y día
     APLICANDO FILTRO: From = NO extensión (externo), To = SÍ extensión (interno)
+    Y filtrando por empresas seleccionadas
     """
     df_procesado = df.copy()
     
@@ -153,29 +169,58 @@ def procesar_datos_demanda_filtrada(df):
             return None
         
         # Aplicar filtro: From = NO extensión (externo), To = SÍ extensión (interno)
-        df_procesado['From_es_extension'] = df_procesado['From'].apply(es_extension_interna)
-        df_procesado['To_es_extension'] = df_procesado['To'].apply(es_extension_interna)
+        df_procesado['From_es_extension'] = df_procesado['From'].apply(obtener_empresa_extension)
+        df_procesado['To_es_extension'] = df_procesado['To'].apply(obtener_empresa_extension)
         
         # Filtrar: origen externo Y destino interno
-        mascara = (~df_procesado['From_es_extension']) & (df_procesado['To_es_extension'])
+        mascara = (df_procesado['From_es_extension'].isna()) & (df_procesado['To_es_extension'].notna())
         df_filtrado = df_procesado[mascara].copy()
         
-        # Mostrar estadísticas del filtro
+        # Mostrar estadísticas del filtro inicial
         total_registros = len(df_procesado)
         registros_filtrados = len(df_filtrado)
         porcentaje_filtrado = (registros_filtrados / total_registros * 100) if total_registros > 0 else 0
         
-        st.info(f"**Filtro aplicado:** {registros_filtrados:,} de {total_registros:,} registros ({porcentaje_filtrado:.1f}%)")
+        st.info(f"**Filtro inicial aplicado (externo → interno):** {registros_filtrados:,} de {total_registros:,} registros ({porcentaje_filtrado:.1f}%)")
         
         if registros_filtrados == 0:
-            st.warning("No se encontraron registros que cumplan el criterio de filtro.")
+            st.warning("No se encontraron registros que cumplan el criterio de filtro externo → interno.")
             return None
+        
+        # Aplicar filtro por empresas seleccionadas
+        if empresas_seleccionadas:
+            mascara_empresas = df_filtrado['To_es_extension'].isin(empresas_seleccionadas)
+            df_filtrado = df_filtrado[mascara_empresas].copy()
+            
+            # Mostrar estadísticas del filtro por empresa
+            registros_por_empresa = len(df_filtrado)
+            porcentaje_empresa = (registros_por_empresa / registros_filtrados * 100) if registros_filtrados > 0 else 0
+            st.info(f"**Filtro por empresas ({', '.join(empresas_seleccionadas)}):** {registros_por_empresa:,} de {registros_filtrados:,} registros ({porcentaje_empresa:.1f}%)")
+            
+            if registros_por_empresa == 0:
+                st.warning(f"No se encontraron registros para las empresas seleccionadas: {', '.join(empresas_seleccionadas)}")
+                return None
+        else:
+            st.warning("No se seleccionaron empresas. Mostrando todas las empresas disponibles.")
+            # Mostrar distribución por empresa
+            distribucion_empresas = df_filtrado['To_es_extension'].value_counts()
+            if not distribucion_empresas.empty:
+                st.info("**Distribución por empresa en los datos filtrados:**")
+                for empresa, count in distribucion_empresas.items():
+                    porcentaje = (count / len(df_filtrado) * 100) if len(df_filtrado) > 0 else 0
+                    st.write(f"- {empresa}: {count:,} registros ({porcentaje:.1f}%)")
         
         # Extraer hora, día de la semana y fecha
         df_filtrado['Hora'] = df_filtrado['Call Time'].dt.hour
         df_filtrado['Dia_Semana'] = df_filtrado['Call Time'].dt.day_name()
         df_filtrado['Dia_Semana'] = df_filtrado['Dia_Semana'].apply(traducir_dia)
         df_filtrado['Fecha'] = df_filtrado['Call Time'].dt.date
+        
+        # Agregar columna de empresa para análisis posterior
+        if empresas_seleccionadas:
+            df_filtrado['Empresa'] = df_filtrado['To_es_extension']
+        else:
+            df_filtrado['Empresa'] = df_filtrado['To_es_extension']
         
         # Verificar que tenemos datos
         if len(df_filtrado) == 0:
@@ -187,6 +232,14 @@ def procesar_datos_demanda_filtrada(df):
         fecha_max = df_filtrado['Fecha'].max()
         dias_totales = (fecha_max - fecha_min).days + 1
         st.info(f"**Rango de fechas:** {fecha_min} a {fecha_max} ({dias_totales} días)")
+        
+        # Mostrar distribución por empresa si hay múltiples empresas
+        if empresas_seleccionadas and len(empresas_seleccionadas) > 1:
+            distribucion_empresas = df_filtrado['Empresa'].value_counts()
+            st.info("**Distribución por empresa en los datos finales:**")
+            for empresa, count in distribucion_empresas.items():
+                porcentaje = (count / len(df_filtrado) * 100) if len(df_filtrado) > 0 else 0
+                st.write(f"- {empresa}: {count:,} registros ({porcentaje:.1f}%)")
         
         # Contar el número de días únicos por día de la semana
         dias_por_semana = df_filtrado.groupby('Dia_Semana')['Fecha'].nunique().reset_index()
@@ -212,6 +265,12 @@ def procesar_datos_demanda_filtrada(df):
         demanda_final['Dia_Semana'] = pd.Categorical(demanda_final['Dia_Semana'], categories=orden_dias, ordered=True)
         demanda_final = demanda_final.sort_values(['Dia_Semana', 'Hora'])
         
+        # Agregar información de empresas seleccionadas
+        if empresas_seleccionadas:
+            demanda_final['Empresas_Filtradas'] = ', '.join(empresas_seleccionadas)
+        else:
+            demanda_final['Empresas_Filtradas'] = 'Todas'
+        
         # Mostrar resumen estadístico
         st.success("✅ Demanda promedio calculada correctamente")
         st.write(f"**Resumen por día de la semana:**")
@@ -221,19 +280,20 @@ def procesar_datos_demanda_filtrada(df):
                 demanda_dia = demanda_final[demanda_final['Dia_Semana'] == dia]['Promedio_Demanda'].sum()
                 st.write(f"- {dia}: {dias_count} días, demanda total: {demanda_dia:.1f} llamadas")
         
-        return demanda_final[['Dia_Semana', 'Hora', 'Promedio_Demanda', 'Recursos_Necesarios', 'Num_Dias']]
+        return demanda_final[['Dia_Semana', 'Hora', 'Promedio_Demanda', 'Recursos_Necesarios', 'Num_Dias', 'Empresas_Filtradas']]
         
     except Exception as e:
         st.error(f"Error al procesar los datos: {str(e)}")
         return None
 
 # Función para calcular métricas de gráficas "por llamadas"
-def calcular_metricas_llamadas(datos_grafica, dia_seleccionado, recursos_por_hora):
+def calcular_metricas_llamadas(datos_grafica, dia_seleccionado, recursos_por_hora, max_capacidad_total=None):
     """
     Calcula métricas para gráficas "por llamadas":
     - Sumatoria demanda
     - Pico demanda
     - Demanda promedio hora
+    - Máximo capacidad disponible
     """
     # Sumatoria demanda
     suma_demanda = datos_grafica['Promedio_Demanda'].sum()
@@ -254,11 +314,15 @@ def calcular_metricas_llamadas(datos_grafica, dia_seleccionado, recursos_por_hor
     else:
         demanda_promedio_hora = 0
     
+    # Máximo capacidad disponible (máxima capacidad de todo el sistema)
+    max_capacidad_disponible = max_capacidad_total if max_capacidad_total is not None else 0
+    
     return {
         'suma_demanda': suma_demanda,
         'pico_demanda': pico_demanda,
         'hora_pico_demanda': hora_pico_demanda,
-        'demanda_promedio_hora': demanda_promedio_hora
+        'demanda_promedio_hora': demanda_promedio_hora,
+        'max_capacidad_disponible': max_capacidad_disponible
     }
 
 # Función para calcular métricas de gráficas "por recursos"
@@ -335,7 +399,7 @@ def calcular_metricas_recursos(datos_grafica, dia_seleccionado, recursos_por_hor
     }
 
 # Función para crear gráfica comparativa
-def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
+def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado, empresas_seleccionadas, max_capacidad_total):
     """
     Crea una gráfica comparando recursos disponibles vs demanda promedio
     """
@@ -398,8 +462,16 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
     # Combinar ambos DataFrames
     datos_grafica = pd.merge(recursos_completo, demanda_completo, on='Hora')
     
+    # Agregar información de empresas filtradas si está disponible
+    empresas_info = ""
+    if 'Empresas_Filtradas' in demanda_df.columns and not demanda_df.empty:
+        empresas_info = demanda_df['Empresas_Filtradas'].iloc[0]
+    
     # Crear gráficas en paralelo
-    st.write(f"### 📈 Comparación: Capacidad vs Demanda - {titulo_dia}")
+    if empresas_info:
+        st.write(f"### 📈 Comparación: Capacidad vs Demanda - {titulo_dia} ({empresas_info})")
+    else:
+        st.write(f"### 📈 Comparación: Capacidad vs Demanda - {titulo_dia}")
     
     # Dos columnas para las gráficas
     col_grafica1, col_grafica2 = st.columns(2)
@@ -421,10 +493,10 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
         st.line_chart(chart_data, height=400)
         
         # Calcular y mostrar métricas para gráfica "por llamadas"
-        metricas_llamadas = calcular_metricas_llamadas(datos_grafica, dia_seleccionado, recursos_por_hora)
+        metricas_llamadas = calcular_metricas_llamadas(datos_grafica, dia_seleccionado, recursos_por_hora, max_capacidad_total)
         
         st.write("**Métricas - Por Llamadas:**")
-        col1_ll, col2_ll, col3_ll = st.columns(3)
+        col1_ll, col2_ll, col3_ll, col4_ll = st.columns(4)
         with col1_ll:
             st.metric("Sumatoria Demanda", f"{metricas_llamadas['suma_demanda']:.0f} llamadas")
         with col2_ll:
@@ -432,6 +504,8 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
                      f"Hora: {metricas_llamadas['hora_pico_demanda']}:00")
         with col3_ll:
             st.metric("Demanda Promedio/Hora", f"{metricas_llamadas['demanda_promedio_hora']:.1f}")
+        with col4_ll:
+            st.metric("Máximo Capacidad Disponible", f"{metricas_llamadas['max_capacidad_disponible']:.1f}")
     
     with col_grafica2:
         st.write("#### 👥 Por Recursos")
@@ -474,21 +548,9 @@ def crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado):
                          f"Hora: {metricas_recursos['hora_max_deficit']}:00")
             else:
                 st.metric("Máximo Déficit Recursos", "0.0", "Sin déficit")
-    
-    # Calcular métricas generales
-    suma_demanda = datos_grafica['Promedio_Demanda'].sum()
-    suma_recursos_necesarios = (suma_demanda / CONSTANTE_DEMANDA_A_RECURSOS).round(2)
-    
-    # Calcular diferencia y encontrar picos (solo para días con capacidad disponible)
-    if dia_seleccionado in ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Todos']:
-        datos_grafica['Diferencia'] = datos_grafica['Capacidad_Disponible'] - datos_grafica['Promedio_Demanda']
-        max_exceso = datos_grafica['Diferencia'].max()
-        max_deficit = datos_grafica['Diferencia'].min()
-        hora_max_exceso = datos_grafica.loc[datos_grafica['Diferencia'].idxmax(), 'Hora'] if max_exceso > 0 else None
-        hora_max_deficit = datos_grafica.loc[datos_grafica['Diferencia'].idxmin(), 'Hora'] if max_deficit < 0 else None
 
 # Función para preparar datos para modelos de predicción
-def preparar_datos_para_prediccion(df):
+def preparar_datos_para_prediccion(df, empresas_seleccionadas):
     """
     Prepara los datos para entrenar modelos de predicción
     """
@@ -513,12 +575,20 @@ def preparar_datos_para_prediccion(df):
             return None, None, None
         
         # Aplicar filtro: From = NO extensión (externo), To = SÍ extensión (interno)
-        df_clean['From_es_extension'] = df_clean['From'].apply(es_extension_interna)
-        df_clean['To_es_extension'] = df_clean['To'].apply(es_extension_interna)
+        df_clean['From_es_extension'] = df_clean['From'].apply(obtener_empresa_extension)
+        df_clean['To_es_extension'] = df_clean['To'].apply(obtener_empresa_extension)
         
         # Filtrar: origen externo Y destino interno
-        mascara = (~df_clean['From_es_extension']) & (df_clean['To_es_extension'])
+        mascara = (df_clean['From_es_extension'].isna()) & (df_clean['To_es_extension'].notna())
         df_filtrado = df_clean[mascara].copy()
+        
+        if len(df_filtrado) == 0:
+            return None, None, None
+        
+        # Aplicar filtro por empresas seleccionadas
+        if empresas_seleccionadas:
+            mascara_empresas = df_filtrado['To_es_extension'].isin(empresas_seleccionadas)
+            df_filtrado = df_filtrado[mascara_empresas].copy()
         
         if len(df_filtrado) == 0:
             return None, None, None
@@ -643,19 +713,21 @@ def entrenar_modelos_prediccion(X, y):
         return None, None, None
 
 # Función para calcular métricas de gráficas de predicción "por llamadas"
-def calcular_metricas_prediccion_llamadas(df_grafica):
+def calcular_metricas_prediccion_llamadas(df_grafica, max_capacidad_total=None):
     """
     Calcula métricas para gráficas de predicción "por llamadas":
     - Sumatoria demanda (predicción)
     - Pico demanda (predicción)
     - Demanda promedio hora (predicción)
+    - Máximo capacidad disponible
     """
     if df_grafica.empty:
         return {
             'suma_prediccion': 0,
             'pico_prediccion': 0,
             'hora_pico_prediccion': 0,
-            'prediccion_promedio_hora': 0
+            'prediccion_promedio_hora': 0,
+            'max_capacidad_disponible': max_capacidad_total if max_capacidad_total is not None else 0
         }
     
     # Sumatoria de predicción
@@ -673,11 +745,15 @@ def calcular_metricas_prediccion_llamadas(df_grafica):
     else:
         prediccion_promedio_hora = 0
     
+    # Máximo capacidad disponible
+    max_capacidad_disponible = max_capacidad_total if max_capacidad_total is not None else 0
+    
     return {
         'suma_prediccion': suma_prediccion,
         'pico_prediccion': pico_prediccion,
         'hora_pico_prediccion': hora_pico_prediccion,
-        'prediccion_promedio_hora': prediccion_promedio_hora
+        'prediccion_promedio_hora': prediccion_promedio_hora,
+        'max_capacidad_disponible': max_capacidad_disponible
     }
 
 # Función para calcular métricas de gráficas de predicción "por recursos"
@@ -755,7 +831,7 @@ def calcular_metricas_prediccion_recursos(df_grafica, dia_seleccionado, recursos
     }
 
 # Función para crear gráfica de predicción
-def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_hora, demanda_promedio_actual):
+def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_hora, demanda_promedio_actual, empresas_info, max_capacidad_total):
     """
     Crea una gráfica con las predicciones para un día específico
     """
@@ -778,7 +854,10 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
     df_grafica = pd.DataFrame(predicciones_por_hora)
     
     # Crear gráficas en paralelo
-    st.write(f"### 📈 Predicción vs Realidad - {dia_seleccionado}")
+    if empresas_info:
+        st.write(f"### 📈 Predicción vs Realidad - {dia_seleccionado} ({empresas_info})")
+    else:
+        st.write(f"### 📈 Predicción vs Realidad - {dia_seleccionado}")
     
     # Dos columnas para las gráficas
     col_grafica1, col_grafica2 = st.columns(2)
@@ -796,10 +875,10 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
         st.line_chart(chart_data, height=400)
         
         # Calcular y mostrar métricas para gráfica de predicción "por llamadas"
-        metricas_pred_llamadas = calcular_metricas_prediccion_llamadas(df_grafica)
+        metricas_pred_llamadas = calcular_metricas_prediccion_llamadas(df_grafica, max_capacidad_total)
         
         st.write("**Métricas - Predicción Por Llamadas:**")
-        col1_pred_ll, col2_pred_ll, col3_pred_ll = st.columns(3)
+        col1_pred_ll, col2_pred_ll, col3_pred_ll, col4_pred_ll = st.columns(4)
         with col1_pred_ll:
             st.metric("Sumatoria Predicción", f"{metricas_pred_llamadas['suma_prediccion']:.0f} llamadas")
         with col2_pred_ll:
@@ -807,6 +886,8 @@ def crear_grafica_prediccion(dia_seleccionado, predicciones_dia, recursos_por_ho
                      f"Hora: {metricas_pred_llamadas['hora_pico_prediccion']}:00")
         with col3_pred_ll:
             st.metric("Predicción Promedio/Hora", f"{metricas_pred_llamadas['prediccion_promedio_hora']:.1f}")
+        with col4_pred_ll:
+            st.metric("Máximo Capacidad Disponible", f"{metricas_pred_llamadas['max_capacidad_disponible']:.1f}")
     
     with col_grafica2:
         st.write("#### 👥 Por Recursos")
@@ -886,6 +967,10 @@ def main():
         st.session_state.metricas_modelos = None
     if 'datos_prediccion' not in st.session_state:
         st.session_state.datos_prediccion = None
+    if 'empresas_seleccionadas' not in st.session_state:
+        st.session_state.empresas_seleccionadas = []
+    if 'max_capacidad_total' not in st.session_state:
+        st.session_state.max_capacidad_total = 0
     
     if uploaded_file is not None:
         try:
@@ -906,6 +991,28 @@ def main():
                 # Divider
                 st.divider()
                 
+                # Selector de empresas
+                st.subheader("🏢 Filtro por Empresa")
+                st.info("Selecciona las empresas que deseas analizar. Si no seleccionas ninguna, se mostrarán todas las empresas.")
+                
+                empresas_disponibles = ['ODO', 'CCB', 'UDC']
+                empresas_seleccionadas = st.multiselect(
+                    "Selecciona empresas a filtrar:",
+                    options=empresas_disponibles,
+                    default=[],
+                    key="selector_empresas"
+                )
+                
+                # Guardar empresas seleccionadas en session state
+                st.session_state.empresas_seleccionadas = empresas_seleccionadas
+                
+                # Mostrar información sobre las extensiones por empresa
+                with st.expander("📋 Ver distribución de extensiones por empresa"):
+                    for empresa in empresas_disponibles:
+                        num_extensiones = len(CODIGOS_POR_EMPRESA[empresa])
+                        st.write(f"**{empresa}:** {num_extensiones} extensiones")
+                        st.write(f"Extensiones: {', '.join(CODIGOS_POR_EMPRESA[empresa][:5])}..." if num_extensiones > 5 else f"Extensiones: {', '.join(CODIGOS_POR_EMPRESA[empresa])}")
+                
                 # Configuración de recursos por hora en dos columnas
                 st.subheader("👥 Configuración de Recursos por Hora")
                 st.info("Ingresa la cantidad de personas disponibles para cada hora (6:00 AM - 7:00 PM)")
@@ -920,12 +1027,15 @@ def main():
                     # Guardar recursos en session state
                     st.session_state.recursos_por_hora = recursos
                     
-                    # Calcular máximo de recursos base
+                    # Calcular máximo de recursos base y máxima capacidad
                     if recursos:
                         max_recursos_base = max(recursos.values())
                         max_capacidad = max_recursos_base * CONSTANTE_VALIDACION
                         st.metric("Máximo recursos base", f"{max_recursos_base}")
                         st.metric("Máxima capacidad", f"{max_capacidad:.1f}")
+                        
+                        # Guardar máxima capacidad en session state
+                        st.session_state.max_capacidad_total = max_capacidad
                 
                 with col_recursos2:
                     # Mostrar gráfico de recursos por hora
@@ -941,7 +1051,7 @@ def main():
                 if st.button("📊 Calcular Demanda Promedio", type="primary", use_container_width=True):
                     with st.spinner("Calculando demanda promedio..."):
                         # Procesar datos para calcular demanda CON FILTRO
-                        demanda_df = procesar_datos_demanda_filtrada(df)
+                        demanda_df = procesar_datos_demanda_filtrada(df, empresas_seleccionadas)
                         
                         if demanda_df is not None:
                             # Guardar en session state
@@ -954,6 +1064,8 @@ def main():
                 if st.session_state.demanda_df is not None and st.session_state.recursos_por_hora:
                     demanda_df = st.session_state.demanda_df
                     recursos_por_hora = st.session_state.recursos_por_hora
+                    empresas_seleccionadas = st.session_state.empresas_seleccionadas
+                    max_capacidad_total = st.session_state.max_capacidad_total
                     
                     # Obtener días disponibles en orden correcto
                     orden_dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo', 'Todos']
@@ -980,7 +1092,7 @@ def main():
                     )
                     
                     # Crear gráfica comparativa
-                    crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado)
+                    crear_grafica_comparativa(demanda_df, recursos_por_hora, dia_seleccionado, empresas_seleccionadas, max_capacidad_total)
                     
                     # Exportación de datos
                     st.divider()
@@ -1017,6 +1129,12 @@ def main():
                         export_data['Recursos_Base'] = export_data['Hora'].apply(lambda h: recursos_por_hora.get(h, 0))
                         export_data['Capacidad_Disponible'] = (export_data['Recursos_Base'] * CONSTANTE_VALIDACION).round(2)
                         export_data['Diferencia'] = (export_data['Capacidad_Disponible'] - export_data['Promedio_Demanda']).round(2)
+                    
+                    # Agregar información de empresas
+                    if empresas_seleccionadas:
+                        export_data['Empresas_Filtradas'] = ', '.join(empresas_seleccionadas)
+                    else:
+                        export_data['Empresas_Filtradas'] = 'Todas'
                     
                     # Botones de descarga
                     if formato_exportacion == "PDF":
@@ -1065,6 +1183,10 @@ def main():
                 
                 # Verificar que tenemos datos procesados
                 if st.session_state.demanda_df is not None and st.session_state.recursos_por_hora:
+                    demanda_df = st.session_state.demanda_df
+                    recursos_por_hora = st.session_state.recursos_por_hora
+                    empresas_seleccionadas = st.session_state.empresas_seleccionadas
+                    max_capacidad_total = st.session_state.max_capacidad_total
                     
                     # Botón para iniciar el procesamiento de predicción
                     st.divider()
@@ -1073,7 +1195,7 @@ def main():
                     if st.button("🤖 Ejecutar Modelos de Predicción", type="primary", use_container_width=True):
                         with st.spinner("Preparando datos y entrenando modelos..."):
                             # Preparar datos para predicción
-                            X, y, datos_agrupados = preparar_datos_para_prediccion(df)
+                            X, y, datos_agrupados = preparar_datos_para_prediccion(df, empresas_seleccionadas)
                             
                             if X is not None and y is not None:
                                 # Entrenar y evaluar modelos
@@ -1127,8 +1249,6 @@ def main():
                         st.write("### 🔍 Visualización de Predicciones")
                         
                         # Obtener datos necesarios
-                        demanda_df = st.session_state.demanda_df
-                        recursos_por_hora = st.session_state.recursos_por_hora
                         mejor_modelo_nombre = st.session_state.mejor_modelo
                         
                         # Verificar que tenemos un mejor modelo
@@ -1268,12 +1388,19 @@ def main():
                                             for hora in range(24):
                                                 demanda_promedio_actual[hora] = 0
                                     
+                                # Obtener información de empresas para mostrar en título
+                                empresas_info = ""
+                                if 'Empresas_Filtradas' in demanda_df.columns and not demanda_df.empty:
+                                    empresas_info = demanda_df['Empresas_Filtradas'].iloc[0]
+                                
                                 # Crear gráfica de predicción
                                 metricas_prediccion = crear_grafica_prediccion(
                                     dia_prediccion, 
                                     predicciones_por_hora, 
                                     recursos_por_hora,
-                                    demanda_promedio_actual
+                                    demanda_promedio_actual,
+                                    empresas_info,
+                                    max_capacidad_total
                                 )
                                 
                                 # Mostrar métricas de predicción
@@ -1364,6 +1491,12 @@ def main():
                                     df_export['Recursos_Base'] = df_export['Hora'].apply(lambda h: recursos_por_hora.get(h, 0))
                                     df_export['Capacidad_Disponible'] = (df_export['Recursos_Base'] * CONSTANTE_VALIDACION).round(2)
                                     df_export['Recursos_Disponibles'] = (df_export['Capacidad_Disponible'] / CONSTANTE_VALIDACION).round(2)
+                                
+                                # Agregar información de empresas
+                                if empresas_seleccionadas:
+                                    df_export['Empresas_Filtradas'] = ', '.join(empresas_seleccionadas)
+                                else:
+                                    df_export['Empresas_Filtradas'] = 'Todas'
                                 
                                 nombre_base = dia_prediccion.lower().replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u') if dia_prediccion != "Todos" else "prediccion_promedio"
                                 
