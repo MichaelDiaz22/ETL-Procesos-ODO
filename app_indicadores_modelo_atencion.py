@@ -238,7 +238,7 @@ with tab1:
                 tabla_visual_completa['TOTAL REGISTROS'] = tabla_resultados_suma['TOTAL REGISTROS']
                 
                 # Ordenar por total descendente
-                tabla_visual_completa = tabla_visual_completa.sort_values('TOTAL REGISTROS', ascending=False)
+                tabla_visual_completa = tabla_visual_completa.reindex(tabla_resultados_suma.sort_values('TOTAL REGISTROS', ascending=False).index)
                 tabla_resultados = tabla_resultados.reindex(tabla_visual_completa.index)
                 tabla_resultados_suma = tabla_resultados_suma.reindex(tabla_visual_completa.index)
                 
@@ -434,31 +434,22 @@ with tab1:
                             help="No hay datos suficientes"
                         )
                 
-                # --- GRÁFICO DE BARRAS: TOP USUARIOS (CORREGIDO) ---
+                # --- GRÁFICO DE BARRAS: TOP USUARIOS ---
                 st.subheader("🏆 Top 10 Usuarios por Actividad Promedio")
                 
                 top_n = min(10, len(tabla_visual_completa))
-                top_usuarios = tabla_visual_completa.head(top_n).copy()
+                top_usuarios = tabla_visual_completa.head(top_n)
                 
-                # Crear DataFrame para el gráfico asegurando el orden descendente
                 top_usuarios_chart = pd.DataFrame({
                     'Usuario': top_usuarios.index,
                     'Promedio Diario': top_usuarios['TOTAL REGISTROS'].values
-                })
+                }).set_index('Usuario')
                 
-                # Asegurar que el orden sea descendente (ya lo es por el head)
-                # Establecer el índice como los usuarios para que aparezcan en el eje X en ese orden
-                top_usuarios_chart = top_usuarios_chart.set_index('Usuario')
-                
-                # Mostrar el gráfico con las barras en orden descendente
                 st.bar_chart(
                     top_usuarios_chart,
                     height=400,
                     use_container_width=True
                 )
-                
-                # Agregar una nota sobre el orden
-                st.caption("📊 Ordenado de mayor a menor promedio de registros")
                 
                 st.divider()
                 st.subheader("📤 Exportar Resultados")
@@ -770,7 +761,7 @@ with tab2:
                 tabla_visual_tab2['TOTAL REGISTROS'] = tabla_promedios_suma['TOTAL REGISTROS']
                 
                 # Ordenar por total descendente
-                tabla_visual_tab2 = tabla_visual_tab2.sort_values('TOTAL REGISTROS', ascending=False)
+                tabla_visual_tab2 = tabla_visual_tab2.reindex(tabla_promedios_suma.sort_values('TOTAL REGISTROS', ascending=False).index)
                 tabla_promedios = tabla_promedios.reindex(tabla_visual_tab2.index)
                 
                 # Mostrar tabla
@@ -941,31 +932,23 @@ with tab2:
                         st.metric("Tiempo Promedio Atención", "-")
                 
                 # ============================================================
-                # GRÁFICO DE BARRAS TOP USUARIOS (CORREGIDO)
+                # GRÁFICO DE BARRAS TOP USUARIOS
                 # ============================================================
                 st.subheader("🏆 Top 10 Usuarios por Actividad")
                 
                 top_n_tab2 = min(10, len(tabla_visual_tab2))
-                top_usuarios_tab2 = tabla_visual_tab2.head(top_n_tab2).copy()
+                top_usuarios_tab2 = tabla_visual_tab2.head(top_n_tab2)
                 
-                # Crear DataFrame para el gráfico asegurando el orden descendente
                 top_usuarios_chart = pd.DataFrame({
                     'Usuario': top_usuarios_tab2.index,
                     'Promedio Diario': top_usuarios_tab2['TOTAL REGISTROS'].values
-                })
+                }).set_index('Usuario')
                 
-                # Establecer el índice como los usuarios para que aparezcan en el eje X en ese orden
-                top_usuarios_chart = top_usuarios_chart.set_index('Usuario')
-                
-                # Mostrar el gráfico con las barras en orden descendente
                 st.bar_chart(
                     top_usuarios_chart,
                     height=400,
                     use_container_width=True
                 )
-                
-                # Agregar una nota sobre el orden
-                st.caption("📊 Ordenado de mayor a menor promedio de registros")
                 
                 st.divider()
                 st.subheader("📤 Exportar Resultados")
