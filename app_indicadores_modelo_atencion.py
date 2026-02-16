@@ -498,7 +498,7 @@ with tab1:
         st.info("👆 Sube un archivo Excel")
 
 # ============================================================================
-# PESTAÑA 2: ANÁLISIS DE LLAMADOS
+# PESTAÑA 2: ANÁLISIS DE LLAMADOS (CORREGIDA PARA ARCHIVOS CON PRIMERA FILA INCORRECTA)
 # ============================================================================
 with tab2:
     st.header("📞 Análisis de Llamados")
@@ -512,17 +512,28 @@ with tab2:
 
     if uploaded_file_tab2 is not None:
         try:
-            # Leer archivo
-            df_tab2 = pd.read_excel(uploaded_file_tab2)
+            # Opción para que el usuario indique si debe saltar la primera fila
+            with st.sidebar:
+                st.divider()
+                st.subheader("⚙️ Configuración de archivo")
+                saltar_primera_fila = st.checkbox("Saltar primera fila (usar como encabezado)", value=True, 
+                                                  help="Activa esta opción si la primera fila no es el encabezado correcto")
             
-            # Mostrar vista previa de columnas para ayudar al usuario
+            # Leer archivo saltando la primera fila si es necesario
+            if saltar_primera_fila:
+                df_tab2 = pd.read_excel(uploaded_file_tab2, skiprows=1)
+                st.sidebar.success("✅ Se saltó la primera fila")
+            else:
+                df_tab2 = pd.read_excel(uploaded_file_tab2)
+            
+            # Mostrar vista previa de columnas
             st.sidebar.divider()
             st.sidebar.subheader("📋 Columnas encontradas:")
             columnas_encontradas = df_tab2.columns.tolist()
             for i, col in enumerate(columnas_encontradas):
                 st.sidebar.text(f"{i+1}. {col}")
             
-            # Limpiar nombres de columnas
+            # Limpiar nombres de columnas (eliminar espacios extras)
             df_tab2.columns = df_tab2.columns.astype(str).str.strip()
             
             # Función mejorada para encontrar columna
@@ -585,7 +596,7 @@ with tab2:
             if col_tipo:
                 st.sidebar.write(f"**Tipo:** {col_tipo}")
             
-            # Verificar columnas necesarias
+            # Si no se encuentran las columnas, mostrar ayuda
             if not all([col_hora, col_servicio, col_usuario]):
                 st.error("""
                 ❌ **No se encontraron las columnas necesarias.**
@@ -597,6 +608,12 @@ with tab2:
                 
                 **Columnas encontradas en tu archivo:**
                 """ + "\n".join([f"- {col}" for col in columnas_encontradas]))
+                
+                st.info("""
+                **💡 Sugerencia:** 
+                Si la primera fila de tu archivo no es el encabezado correcto, 
+                activa la opción 'Saltar primera fila' en la barra lateral.
+                """)
                 st.stop()
             
             # Renombrar columnas para uso interno
