@@ -218,45 +218,35 @@ with tab1:
                                 promedio = conteo_por_dia.mean()
                                 tabla_resultados.at[usuario, hora] = round(promedio, 2)
                             else:
-                                tabla_resultados.at[usuario, hora] = None
+                                tabla_resultados.at[usuario, hora] = 0  # Cambiar None por 0
                         else:
-                            tabla_resultados.at[usuario, hora] = None
+                            tabla_resultados.at[usuario, hora] = 0  # Cambiar None por 0
                 
                 # Formatear nombres de columnas (horas)
                 horas_formateadas = [f"{h}:00" for h in horas_con_registros]
                 tabla_resultados.columns = horas_formateadas
                 
-                # Reemplazar None por 0 para cálculos
-                tabla_resultados_suma = tabla_resultados.fillna(0)
+                # Asegurar que todos los valores sean numéricos
+                tabla_resultados = tabla_resultados.astype(float)
                 
                 # Agregar columnas de estadísticas por usuario
-                tabla_resultados_suma['TOTAL REGISTROS'] = tabla_resultados_suma.sum(axis=1)
-                tabla_resultados_suma['MÍNIMO'] = tabla_resultados_suma[horas_formateadas].min(axis=1)
-                tabla_resultados_suma['MÁXIMO'] = tabla_resultados_suma[horas_formateadas].max(axis=1)
-                
-                # Crear tabla visual con todas las columnas
-                tabla_visual_completa = tabla_resultados.copy()
-                tabla_visual_completa['TOTAL REGISTROS'] = tabla_resultados_suma['TOTAL REGISTROS']
-                tabla_visual_completa['MÍNIMO'] = tabla_resultados_suma['MÍNIMO']
-                tabla_visual_completa['MÁXIMO'] = tabla_resultados_suma['MÁXIMO']
+                tabla_resultados['TOTAL REGISTROS'] = tabla_resultados[horas_formateadas].sum(axis=1)
+                tabla_resultados['MÍNIMO'] = tabla_resultados[horas_formateadas].min(axis=1)
+                tabla_resultados['MÁXIMO'] = tabla_resultados[horas_formateadas].max(axis=1)
                 
                 # Ordenar por total descendente
-                tabla_visual_completa = tabla_visual_completa.sort_values('TOTAL REGISTROS', ascending=False)
-                tabla_resultados = tabla_resultados.reindex(tabla_visual_completa.index)
-                tabla_resultados_suma = tabla_resultados_suma.reindex(tabla_visual_completa.index)
+                tabla_resultados = tabla_resultados.sort_values('TOTAL REGISTROS', ascending=False)
                 
                 # Calcular sumatoria por hora (fila de totales)
-                suma_por_hora = tabla_resultados_suma[horas_formateadas].sum(axis=0).round(2)
+                suma_por_hora = tabla_resultados[horas_formateadas].sum(axis=0).round(2)
                 
-                # Crear fila de totales para la tabla visual
-                fila_totales = pd.Series(index=tabla_visual_completa.columns, dtype='object')
-                fila_totales[horas_formateadas] = suma_por_hora.values
-                fila_totales['TOTAL REGISTROS'] = suma_por_hora.sum()
-                fila_totales['MÍNIMO'] = ''
-                fila_totales['MÁXIMO'] = ''
+                # Crear fila de totales como un DataFrame separado
+                fila_totales = pd.DataFrame([['TOTAL'] + list(suma_por_hora.values) + [suma_por_hora.sum(), '', '']], 
+                                           columns=[''] + horas_formateadas + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO'])
+                fila_totales = fila_totales.set_index('')
                 
-                # Agregar la fila de totales a la tabla visual
-                tabla_visual_completa.loc['TOTAL'] = fila_totales
+                # Combinar tabla resultados con fila de totales
+                tabla_resultados_con_total = pd.concat([tabla_resultados, fila_totales])
                 
                 # --- TABLA 1: PROMEDIOS DE REGISTROS CON TOTAL Y ESTADÍSTICAS ---
                 st.subheader("Ingresos promedio abiertos por Admisionista")
@@ -264,9 +254,10 @@ with tab1:
 
                 # Mostrar tabla con formato
                 st.dataframe(
-                    tabla_visual_completa.style
-                    .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
-                    .format("{:.2f}", na_rep="0.00", subset=pd.IndexSlice[:, horas_formateadas + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO']])
+                    tabla_resultados_con_total.style
+                    .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[usuarios_proceso, horas_formateadas])
+                    .format("{:.2f}", subset=pd.IndexSlice[:, horas_formateadas + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO']], na_rep="0.00")
+                    .format("{:.2f}", subset=pd.IndexSlice[['TOTAL'], horas_formateadas])
                     .set_properties(**{'text-align': 'center'}),
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso) * 35))
@@ -282,15 +273,15 @@ with tab1:
                 # Calcular tiempo promedio = 60 / promedio de registros
                 for usuario in usuarios_proceso:
                     for hora_col in horas_formateadas:
-                        promedio_registros = tabla_resultados.at[usuario, hora_col]
-                        if promedio_registros is not None and promedio_registros > 0:
+                        promedio_registros = tabla_resultados.loc[usuario, hora_col]
+                        if promedio_registros > 0:
                             tiempo_promedio = 60 / promedio_registros
-                            tabla_tiempos.at[usuario, hora_col] = round(tiempo_promedio, 1)
+                            tabla_tiempos.loc[usuario, hora_col] = round(tiempo_promedio, 1)
                         else:
-                            tabla_tiempos.at[usuario, hora_col] = None
+                            tabla_tiempos.loc[usuario, hora_col] = 0  # Cambiar None por 0
                 
-                # Crear DataFrame para cálculos de tiempos (reemplazar None con infinito para min/max)
-                tabla_tiempos_calculos = tabla_tiempos.copy()
+                # Asegurar que todos los valores sean numéricos
+                tabla_tiempos = tabla_tiempos.astype(float)
                 
                 # Agregar columnas de estadísticas por usuario
                 tabla_tiempos['TIEMPO PROMEDIO TOTAL'] = None
@@ -298,22 +289,22 @@ with tab1:
                 tabla_tiempos['MÁXIMO'] = None
                 
                 for usuario in usuarios_proceso:
-                    tiempos_usuario = [v for v in tabla_tiempos.loc[usuario, horas_formateadas].values if v is not None]
+                    tiempos_usuario = [v for v in tabla_tiempos.loc[usuario, horas_formateadas].values if v > 0]
                     if tiempos_usuario:
-                        tabla_tiempos.at[usuario, 'TIEMPO PROMEDIO TOTAL'] = round(np.mean(tiempos_usuario), 1)
-                        tabla_tiempos.at[usuario, 'MÍNIMO'] = round(min(tiempos_usuario), 1)
-                        tabla_tiempos.at[usuario, 'MÁXIMO'] = round(max(tiempos_usuario), 1)
-                
-                # Ordenar tabla de tiempos según el mismo orden que la tabla de registros
-                tabla_tiempos = tabla_tiempos.reindex(tabla_visual_completa.index[:-1])  # Excluir la fila TOTAL
+                        tabla_tiempos.loc[usuario, 'TIEMPO PROMEDIO TOTAL'] = round(np.mean(tiempos_usuario), 1)
+                        tabla_tiempos.loc[usuario, 'MÍNIMO'] = round(min(tiempos_usuario), 1)
+                        tabla_tiempos.loc[usuario, 'MÁXIMO'] = round(max(tiempos_usuario), 1)
+                    else:
+                        tabla_tiempos.loc[usuario, 'TIEMPO PROMEDIO TOTAL'] = 0
+                        tabla_tiempos.loc[usuario, 'MÍNIMO'] = 0
+                        tabla_tiempos.loc[usuario, 'MÁXIMO'] = 0
                 
                 # Mostrar tabla de tiempos
                 st.dataframe(
                     tabla_tiempos.style
-                    .background_gradient(cmap='YlOrRd_r', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
+                    .background_gradient(cmap='YlOrRd_r', axis=1, subset=pd.IndexSlice[usuarios_proceso, horas_formateadas])
                     .set_properties(**{'text-align': 'center'})
-                    .format("{:.1f}", na_rep="-", subset=pd.IndexSlice[:, horas_formateadas + ['TIEMPO PROMEDIO TOTAL', 'MÍNIMO', 'MÁXIMO']])
-                    .format("{:.1f}", subset=['TIEMPO PROMEDIO TOTAL', 'MÍNIMO', 'MÁXIMO']),
+                    .format("{:.1f}", na_rep="-", subset=pd.IndexSlice[:, horas_formateadas + ['TIEMPO PROMEDIO TOTAL', 'MÍNIMO', 'MÁXIMO']]),
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso) * 35))
                 )
@@ -325,8 +316,8 @@ with tab1:
                 valores_validos = []
                 for col in horas_formateadas:
                     for usuario in usuarios_proceso:
-                        valor = tabla_resultados.at[usuario, col]
-                        if valor is not None and valor > 0:
+                        valor = tabla_resultados.loc[usuario, col]
+                        if valor > 0:
                             valores_validos.append(valor)
                 
                 if valores_validos:
@@ -338,8 +329,8 @@ with tab1:
                 tiempos_todos = []
                 for usuario in usuarios_proceso:
                     for hora_col in horas_formateadas:
-                        valor = tabla_tiempos.at[usuario, hora_col]
-                        if valor is not None:
+                        valor = tabla_tiempos.loc[usuario, hora_col]
+                        if valor > 0:
                             tiempos_todos.append(valor)
                 
                 # ENCONTRAR MÁXIMO REGISTROS/HORA Y SU USUARIO
@@ -349,8 +340,8 @@ with tab1:
                 
                 for col in horas_formateadas:
                     for usuario in usuarios_proceso:
-                        valor = tabla_resultados.at[usuario, col]
-                        if valor is not None and valor > max_registros:
+                        valor = tabla_resultados.loc[usuario, col]
+                        if valor > max_registros:
                             max_registros = valor
                             usuario_max_registros = usuario
                             hora_max_registros = col
@@ -362,8 +353,8 @@ with tab1:
                 
                 for col in horas_formateadas:
                     for usuario in usuarios_proceso:
-                        valor = tabla_tiempos.at[usuario, col]
-                        if valor is not None and valor < min_tiempo:
+                        valor = tabla_tiempos.loc[usuario, col]
+                        if valor > 0 and valor < min_tiempo:
                             min_tiempo = valor
                             usuario_min_tiempo = usuario
                             hora_min_tiempo = col
@@ -460,7 +451,7 @@ with tab1:
                 st.subheader("🏆 Top 10 Usuarios por Actividad Promedio")
                 
                 top_n = min(10, len(usuarios_proceso))
-                top_usuarios = tabla_visual_completa.iloc[:top_n].copy()
+                top_usuarios = tabla_resultados.head(top_n).copy()
                 
                 # Crear DataFrame para el gráfico
                 top_usuarios_chart = pd.DataFrame({
@@ -485,7 +476,7 @@ with tab1:
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         # Hoja 1: Ingresos promedio
-                        tabla_visual_completa.to_excel(writer, sheet_name='Ingresos Promedio')
+                        tabla_resultados_con_total.to_excel(writer, sheet_name='Ingresos Promedio')
                         
                         # Hoja 2: Tiempos promedio
                         tabla_tiempos.to_excel(writer, sheet_name='Tiempos Promedio')
@@ -554,7 +545,7 @@ with tab1:
         st.caption("El archivo debe contener al menos las columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
 
 # ============================================================================
-# PESTAÑA 2: ANÁLISIS DE LLAMADOS
+# PESTAÑA 2: ANÁLISIS DE LLAMADOS (con las mismas correcciones)
 # ============================================================================
 with tab2:
     st.header("📞 Análisis de Llamados")
@@ -824,50 +815,42 @@ with tab2:
                                 promedio = conteo_por_dia.mean()
                                 tabla_promedios.at[usuario, hora] = round(promedio, 2)
                             else:
-                                tabla_promedios.at[usuario, hora] = None
+                                tabla_promedios.at[usuario, hora] = 0
                         else:
-                            tabla_promedios.at[usuario, hora] = None
+                            tabla_promedios.at[usuario, hora] = 0
                 
                 # Formatear horas
                 horas_formateadas_tab2 = [f"{h}:00" for h in horas_con_registros_tab2]
                 tabla_promedios.columns = horas_formateadas_tab2
                 
-                # Reemplazar None por 0 para la suma
-                tabla_promedios_suma = tabla_promedios.fillna(0)
+                # Asegurar que todos los valores sean numéricos
+                tabla_promedios = tabla_promedios.astype(float)
                 
                 # Agregar columnas de estadísticas por usuario
-                tabla_promedios_suma['TOTAL REGISTROS'] = tabla_promedios_suma.sum(axis=1)
-                tabla_promedios_suma['MÍNIMO'] = tabla_promedios_suma[horas_formateadas_tab2].min(axis=1)
-                tabla_promedios_suma['MÁXIMO'] = tabla_promedios_suma[horas_formateadas_tab2].max(axis=1)
-                
-                # Crear tabla visual con total
-                tabla_visual_tab2 = tabla_promedios.copy()
-                tabla_visual_tab2['TOTAL REGISTROS'] = tabla_promedios_suma['TOTAL REGISTROS']
-                tabla_visual_tab2['MÍNIMO'] = tabla_promedios_suma['MÍNIMO']
-                tabla_visual_tab2['MÁXIMO'] = tabla_promedios_suma['MÁXIMO']
+                tabla_promedios['TOTAL REGISTROS'] = tabla_promedios[horas_formateadas_tab2].sum(axis=1)
+                tabla_promedios['MÍNIMO'] = tabla_promedios[horas_formateadas_tab2].min(axis=1)
+                tabla_promedios['MÁXIMO'] = tabla_promedios[horas_formateadas_tab2].max(axis=1)
                 
                 # Ordenar por total descendente
-                tabla_visual_tab2 = tabla_visual_tab2.sort_values('TOTAL REGISTROS', ascending=False)
-                tabla_promedios = tabla_promedios.reindex(tabla_visual_tab2.index)
+                tabla_promedios = tabla_promedios.sort_values('TOTAL REGISTROS', ascending=False)
                 
                 # Calcular sumatoria por hora
-                suma_por_hora_tab2 = tabla_promedios_suma[horas_formateadas_tab2].sum(axis=0).round(2)
+                suma_por_hora_tab2 = tabla_promedios[horas_formateadas_tab2].sum(axis=0).round(2)
                 
                 # Crear fila de totales
-                fila_totales_tab2 = pd.Series(index=tabla_visual_tab2.columns, dtype='object')
-                fila_totales_tab2[horas_formateadas_tab2] = suma_por_hora_tab2.values
-                fila_totales_tab2['TOTAL REGISTROS'] = suma_por_hora_tab2.sum()
-                fila_totales_tab2['MÍNIMO'] = ''
-                fila_totales_tab2['MÁXIMO'] = ''
+                fila_totales_tab2 = pd.DataFrame([['TOTAL'] + list(suma_por_hora_tab2.values) + [suma_por_hora_tab2.sum(), '', '']], 
+                                                 columns=[''] + horas_formateadas_tab2 + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO'])
+                fila_totales_tab2 = fila_totales_tab2.set_index('')
                 
-                # Agregar fila de totales
-                tabla_visual_tab2.loc['TOTAL'] = fila_totales_tab2
+                # Combinar tabla con totales
+                tabla_promedios_con_total = pd.concat([tabla_promedios, fila_totales_tab2])
                 
                 # Mostrar tabla
                 st.dataframe(
-                    tabla_visual_tab2.style
-                    .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas_tab2])
-                    .format("{:.2f}", na_rep="0.00", subset=pd.IndexSlice[:, horas_formateadas_tab2 + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO']])
+                    tabla_promedios_con_total.style
+                    .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[usuarios_proceso_tab2, horas_formateadas_tab2])
+                    .format("{:.2f}", subset=pd.IndexSlice[:, horas_formateadas_tab2 + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO']], na_rep="0.00")
+                    .format("{:.2f}", subset=pd.IndexSlice[['TOTAL'], horas_formateadas_tab2])
                     .set_properties(**{'text-align': 'center'}),
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso_tab2) * 35))
@@ -996,8 +979,8 @@ with tab2:
                 valores_validos = []
                 for col in horas_formateadas_tab2:
                     for usuario in usuarios_proceso_tab2:
-                        valor = tabla_promedios.at[usuario, col]
-                        if valor is not None and valor > 0:
+                        valor = tabla_promedios.loc[usuario, col]
+                        if valor > 0:
                             valores_validos.append(valor)
                 
                 if valores_validos:
@@ -1009,8 +992,8 @@ with tab2:
                 tiempos_validos = []
                 for usuario in usuarios_proceso_tab2:
                     for hora_col in horas_formateadas_tab2:
-                        promedio_registros = tabla_promedios.at[usuario, hora_col]
-                        if promedio_registros is not None and promedio_registros > 0:
+                        promedio_registros = tabla_promedios.loc[usuario, hora_col]
+                        if promedio_registros > 0:
                             tiempo_promedio = 60 / promedio_registros
                             tiempos_validos.append(tiempo_promedio)
                 
@@ -1036,7 +1019,7 @@ with tab2:
                 st.subheader("🏆 Top 10 Usuarios por Actividad")
                 
                 top_n_tab2 = min(10, len(usuarios_proceso_tab2))
-                top_usuarios_tab2 = tabla_visual_tab2.iloc[:top_n_tab2].copy()
+                top_usuarios_tab2 = tabla_promedios.head(top_n_tab2).copy()
                 
                 top_usuarios_chart = pd.DataFrame({
                     'Usuario': top_usuarios_tab2.index,
@@ -1060,7 +1043,7 @@ with tab2:
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         # Hoja 1: Llamados promedio
-                        tabla_visual_tab2.to_excel(writer, sheet_name='Llamados Promedio')
+                        tabla_promedios_con_total.to_excel(writer, sheet_name='Llamados Promedio')
                         
                         # Hoja 2: Manuales vs Automáticos
                         if 'tabla_tipos' in locals():
