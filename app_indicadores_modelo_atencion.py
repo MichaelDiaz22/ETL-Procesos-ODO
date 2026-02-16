@@ -687,7 +687,7 @@ with tab2:
                 # Mostrar estadísticas del período con porcentajes
                 col_graf1, col_graf2, col_graf3 = st.columns(3)
                 with col_graf1:
-                    delta_manual = f"{pct_manual:+.1f}% vs total ({pct_manual:.1f}%)"
+                    delta_manual = f"{pct_manual:+.1f}% del total"
                     st.metric(
                         "Total Manuales", 
                         f"{total_manuales:,}",
@@ -696,7 +696,7 @@ with tab2:
                     )
                 
                 with col_graf2:
-                    delta_auto = f"{pct_auto:+.1f}% vs total ({pct_auto:.1f}%)"
+                    delta_auto = f"{pct_auto:+.1f}% del total"
                     st.metric(
                         "Total Automáticos", 
                         f"{total_automaticos:,}",
