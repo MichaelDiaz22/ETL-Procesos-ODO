@@ -206,9 +206,21 @@ with tab1:
                 # Crear DataFrame
                 tabla_resultados = pd.DataFrame(data, index=usuarios_proceso, columns=horas_formateadas)
                 
-                # Calcular estadísticas por usuario
+                # Calcular estadísticas por usuario (excluyendo valores 0)
                 tabla_resultados['TOTAL'] = tabla_resultados[horas_formateadas].sum(axis=1).round(2)
-                tabla_resultados['MÍNIMO'] = tabla_resultados[horas_formateadas].min(axis=1).round(2)
+                
+                # Para MÍNIMO: solo considerar valores > 0
+                minimos = []
+                for idx in tabla_resultados.index:
+                    valores_fila = tabla_resultados.loc[idx, horas_formateadas]
+                    valores_positivos = valores_fila[valores_fila > 0]
+                    if len(valores_positivos) > 0:
+                        minimos.append(valores_positivos.min())
+                    else:
+                        minimos.append(0)
+                tabla_resultados['MÍNIMO'] = [round(x, 2) for x in minimos]
+                
+                # Para MÁXIMO: considerar todos los valores (incluyendo 0)
                 tabla_resultados['MÁXIMO'] = tabla_resultados[horas_formateadas].max(axis=1).round(2)
                 
                 # Ordenar por total
@@ -217,7 +229,7 @@ with tab1:
                 # Calcular totales por hora
                 totales_por_hora = tabla_resultados[horas_formateadas].sum(axis=0).round(2)
                 
-                # Crear fila de totales - CORREGIDO
+                # Crear fila de totales
                 datos_fila_total = {'TOTAL': totales_por_hora.sum()}
                 for hora in horas_formateadas:
                     datos_fila_total[hora] = totales_por_hora[hora]
@@ -274,21 +286,37 @@ with tab1:
                 
                 tabla_tiempos = pd.DataFrame(tiempos_data, index=usuarios_proceso, columns=horas_formateadas)
                 
-                # Calcular estadísticas de tiempos
+                # Calcular estadísticas de tiempos (excluyendo 0 y 60 si es necesario)
                 tabla_tiempos['PROMEDIO'] = None
                 tabla_tiempos['MÍNIMO'] = None
                 tabla_tiempos['MÁXIMO'] = None
                 
                 for usuario in usuarios_proceso:
-                    tiempos_usuario = [tabla_tiempos.loc[usuario, hora] for hora in horas_formateadas 
-                                      if tabla_tiempos.loc[usuario, hora] > 0]
-                    if tiempos_usuario:
-                        tabla_tiempos.loc[usuario, 'PROMEDIO'] = round(np.mean(tiempos_usuario), 1)
-                        tabla_tiempos.loc[usuario, 'MÍNIMO'] = round(min(tiempos_usuario), 1)
-                        tabla_tiempos.loc[usuario, 'MÁXIMO'] = round(max(tiempos_usuario), 1)
+                    # Para MÍNIMO: excluir 0
+                    tiempos_usuario_min = [tabla_tiempos.loc[usuario, hora] for hora in horas_formateadas 
+                                          if tabla_tiempos.loc[usuario, hora] > 0]
+                    
+                    # Para MÁXIMO: excluir 60 (que corresponde a 1 registro por hora)
+                    tiempos_usuario_max = [tabla_tiempos.loc[usuario, hora] for hora in horas_formateadas 
+                                          if tabla_tiempos.loc[usuario, hora] > 0 and tabla_tiempos.loc[usuario, hora] != 60]
+                    
+                    # Para PROMEDIO: usar todos los tiempos válidos (>0)
+                    tiempos_usuario_prom = [tabla_tiempos.loc[usuario, hora] for hora in horas_formateadas 
+                                           if tabla_tiempos.loc[usuario, hora] > 0]
+                    
+                    if tiempos_usuario_prom:
+                        tabla_tiempos.loc[usuario, 'PROMEDIO'] = round(np.mean(tiempos_usuario_prom), 1)
                     else:
                         tabla_tiempos.loc[usuario, 'PROMEDIO'] = 0
+                    
+                    if tiempos_usuario_min:
+                        tabla_tiempos.loc[usuario, 'MÍNIMO'] = round(min(tiempos_usuario_min), 1)
+                    else:
                         tabla_tiempos.loc[usuario, 'MÍNIMO'] = 0
+                    
+                    if tiempos_usuario_max:
+                        tabla_tiempos.loc[usuario, 'MÁXIMO'] = round(max(tiempos_usuario_max), 1)
+                    else:
                         tabla_tiempos.loc[usuario, 'MÁXIMO'] = 0
                 
                 # Ordenar por el mismo orden que la tabla anterior
@@ -320,15 +348,15 @@ with tab1:
                 
                 promedio_general = np.mean(valores_validos) if valores_validos else 0
                 
-                # Calcular tiempo promedio general
+                # Calcular tiempo promedio general (excluyendo 60)
                 tiempos_todos = []
                 for usuario in usuarios_proceso:
                     for hora in horas_formateadas:
                         valor = tabla_tiempos.loc[usuario, hora]
-                        if valor > 0:
+                        if valor > 0 and valor != 60:  # Excluir 60 (1 registro/hora)
                             tiempos_todos.append(valor)
                 
-                # Encontrar máximo registros/hora
+                # Encontrar máximo registros/hora (puede ser cualquier valor > 0)
                 max_registros = 0
                 usuario_max = "N/A"
                 hora_max = "N/A"
@@ -341,7 +369,7 @@ with tab1:
                             usuario_max = usuario
                             hora_max = col
                 
-                # Encontrar mínimo tiempo de admisión
+                # Encontrar mínimo tiempo de admisión (excluyendo 0 y considerando solo valores > 0)
                 min_tiempo = float('inf')
                 usuario_min = "N/A"
                 hora_min = "N/A"
@@ -349,7 +377,7 @@ with tab1:
                 for col in horas_formateadas:
                     for usuario in usuarios_proceso:
                         valor = tabla_tiempos.loc[usuario, col]
-                        if valor > 0 and valor < min_tiempo:
+                        if valor > 0 and valor < min_tiempo:  # Solo considerar valores positivos
                             min_tiempo = valor
                             usuario_min = usuario
                             hora_min = col
@@ -614,7 +642,19 @@ with tab2:
             
             # Estadísticas
             tabla_llamados['TOTAL'] = tabla_llamados[horas_fmt].sum(axis=1).round(2)
-            tabla_llamados['MÍNIMO'] = tabla_llamados[horas_fmt].min(axis=1).round(2)
+            
+            # Para MÍNIMO: solo considerar valores > 0
+            minimos = []
+            for idx in tabla_llamados.index:
+                valores_fila = tabla_llamados.loc[idx, horas_fmt]
+                valores_positivos = valores_fila[valores_fila > 0]
+                if len(valores_positivos) > 0:
+                    minimos.append(valores_positivos.min())
+                else:
+                    minimos.append(0)
+            tabla_llamados['MÍNIMO'] = [round(x, 2) for x in minimos]
+            
+            # Para MÁXIMO: considerar todos los valores
             tabla_llamados['MÁXIMO'] = tabla_llamados[horas_fmt].max(axis=1).round(2)
             
             tabla_llamados = tabla_llamados.sort_values('TOTAL', ascending=False)
@@ -622,7 +662,7 @@ with tab2:
             # Totales por hora
             totales_hora = tabla_llamados[horas_fmt].sum(axis=0).round(2)
             
-            # Crear fila de totales - CORREGIDO
+            # Crear fila de totales
             datos_fila_total = {'TOTAL': totales_hora.sum()}
             for hora in horas_fmt:
                 datos_fila_total[hora] = totales_hora[hora]
