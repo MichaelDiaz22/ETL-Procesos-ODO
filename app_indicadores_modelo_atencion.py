@@ -18,7 +18,7 @@ tab1, tab2 = st.tabs(["📋 Análisis de Ingresos", "📞 Análisis de Llamados"
 with tab1:
     st.header("📋 Análisis de Ingresos")
     
-    # --- CONFIGURACIÓN Y FILTROS UNIFICADOS EN UN SOLO EXPANDER ---
+    # --- ÚNICO EXPANDER PARA TODA LA CONFIGURACIÓN ---
     with st.expander("⚙️ Configuración y Filtros", expanded=True):
         col1, col2 = st.columns([1, 1])
         
@@ -30,93 +30,90 @@ with tab1:
                                             key="tab1_file")
         
         with col2:
-            st.markdown("##### 📊 Filtros disponibles")
-            st.markdown("*Los filtros se habilitarán después de cargar el archivo*")
-
-    if uploaded_file is not None:
-        try:
-            # Leer el archivo
-            df = pd.read_excel(uploaded_file)
-            
-            # --- PROCESAMIENTO DE FECHAS ---
-            df["FECHA CREACION"] = pd.to_datetime(df["FECHA CREACION"], errors='coerce')
-            df = df.dropna(subset=["FECHA CREACION"])
-
-            fecha_minima_archivo = df["FECHA CREACION"].min().date()
-            fecha_maxima_archivo = df["FECHA CREACION"].max().date()
-
-            # --- FILTROS (dentro del mismo expander) ---
-            with st.expander("⚙️ Configuración y Filtros", expanded=True):
-                st.markdown("#### 📅 Rango de fechas")
+            st.markdown("##### 📊 Configuración de análisis")
+            st.markdown("*Selecciona los filtros después de cargar el archivo*")
+        
+        # Si hay archivo cargado, mostrar los filtros dentro del MISMO expander
+        if uploaded_file is not None:
+            try:
+                # Leer el archivo para obtener opciones de filtros
+                df_temp = pd.read_excel(uploaded_file)
+                df_temp["FECHA CREACION"] = pd.to_datetime(df_temp["FECHA CREACION"], errors='coerce')
+                df_temp = df_temp.dropna(subset=["FECHA CREACION"])
+                
+                fecha_minima = df_temp["FECHA CREACION"].min().date()
+                fecha_maxima = df_temp["FECHA CREACION"].max().date()
+                centros_disponibles = sorted(df_temp["CENTRO ATENCION"].dropna().unique())
+                usuarios_disponibles = sorted(df_temp["USUARIO CREA INGRESO"].dropna().unique())
+                
+                st.markdown("---")
+                st.markdown("#### 📊 Filtros de selección")
+                
                 col_f1, col_f2, col_f3 = st.columns(3)
                 
                 with col_f1:
+                    st.markdown("##### 📅 Rango de fechas")
                     fecha_inicio = st.date_input(
                         "Fecha inicio:",
-                        value=fecha_minima_archivo,
-                        min_value=fecha_minima_archivo,
-                        max_value=fecha_maxima_archivo,
+                        value=fecha_minima,
+                        min_value=fecha_minima,
+                        max_value=fecha_maxima,
                         key="tab1_fecha_inicio"
                     )
-                
-                with col_f2:
                     fecha_fin = st.date_input(
                         "Fecha fin:",
-                        value=fecha_maxima_archivo,
-                        min_value=fecha_minima_archivo,
-                        max_value=fecha_maxima_archivo,
+                        value=fecha_maxima,
+                        min_value=fecha_minima,
+                        max_value=fecha_maxima,
                         key="tab1_fecha_fin"
                     )
-                
-                with col_f3:
-                    st.markdown("##### &nbsp;")
+                    
                     if fecha_inicio > fecha_fin:
                         st.error("⚠️ Fecha inicio no puede ser mayor que fecha fin")
-                    else:
-                        st.success("✅ Rango válido")
                 
-                col_f4, col_f5 = st.columns(2)
-                
-                with col_f4:
-                    st.markdown("#### 🏥 Centros de atención")
-                    centros = sorted(df["CENTRO ATENCION"].dropna().unique())
+                with col_f2:
+                    st.markdown("##### 🏥 Centros de atención")
                     centro_sel = st.multiselect(
                         "Seleccionar centros:", 
-                        options=centros,
+                        options=centros_disponibles,
                         help="Selecciona uno o más centros",
                         key="tab1_centro"
                     )
                 
-                with col_f5:
-                    st.markdown("#### 👤 Usuarios")
-                    usuarios = sorted(df["USUARIO CREA INGRESO"].dropna().unique())
+                with col_f3:
+                    st.markdown("##### 👤 Usuarios")
                     usuario_sel = st.multiselect(
                         "Seleccionar usuarios:", 
-                        options=usuarios,
+                        options=usuarios_disponibles,
                         help="Selecciona uno o más usuarios",
                         key="tab1_usuario"
                     )
-
-            # --- APLICACIÓN DE FILTROS ---
-            df_filtrado = df.copy()
-
-            # Filtrado por Rango de Fechas
-            if fecha_inicio <= fecha_fin:
-                df_filtrado = df_filtrado[
-                    (df_filtrado["FECHA CREACION"].dt.date >= fecha_inicio) & 
-                    (df_filtrado["FECHA CREACION"].dt.date <= fecha_fin)
-                ]
             
-            # Filtrado por Centro
+            except Exception as e:
+                st.error(f"Error al procesar el archivo: {e}")
+                st.stop()
+
+    # --- PROCESAMIENTO PRINCIPAL (fuera del expander) ---
+    if uploaded_file is not None and 'fecha_inicio' in locals() and fecha_inicio <= fecha_fin:
+        try:
+            # Leer el archivo nuevamente para procesamiento
+            df = pd.read_excel(uploaded_file)
+            df["FECHA CREACION"] = pd.to_datetime(df["FECHA CREACION"], errors='coerce')
+            df = df.dropna(subset=["FECHA CREACION"])
+            
+            # Aplicar filtros
+            df_filtrado = df[
+                (df["FECHA CREACION"].dt.date >= fecha_inicio) & 
+                (df["FECHA CREACION"].dt.date <= fecha_fin)
+            ]
+            
             if centro_sel:
                 df_filtrado = df_filtrado[df_filtrado["CENTRO ATENCION"].isin(centro_sel)]
             
-            # Filtrado por Usuario
             if usuario_sel:
                 df_filtrado = df_filtrado[df_filtrado["USUARIO CREA INGRESO"].isin(usuario_sel)]
 
-            # --- PROCESAMIENTO ---
-            if not df_filtrado.empty and fecha_inicio <= fecha_fin:
+            if not df_filtrado.empty:
                 st.divider()
                 
                 # Mostrar configuración seleccionada
@@ -454,6 +451,8 @@ with tab1:
             import traceback
             st.code(traceback.format_exc())
             st.info("Verifica las columnas del archivo")
+    elif uploaded_file is not None:
+        st.warning("⚠️ Corrige los errores en los filtros para continuar")
     else:
         st.info("👆 Configura los parámetros y sube un archivo Excel para comenzar el análisis")
 
@@ -463,7 +462,7 @@ with tab1:
 with tab2:
     st.header("📞 Análisis de Llamados")
     
-    # --- CONFIGURACIÓN Y FILTROS UNIFICADOS EN UN SOLO EXPANDER ---
+    # --- ÚNICO EXPANDER PARA TODA LA CONFIGURACIÓN ---
     with st.expander("⚙️ Configuración y Filtros", expanded=True):
         col1, col2 = st.columns([1, 1])
         
@@ -475,37 +474,103 @@ with tab2:
                                                 key="tab2_file")
         
         with col2:
-            st.markdown("##### 📊 Filtros disponibles")
-            st.markdown("*Los filtros se habilitarán después de cargar el archivo*")
+            st.markdown("##### 📊 Configuración de análisis")
+            st.markdown("*Selecciona los filtros después de cargar el archivo*")
+        
+        # Si hay archivo cargado, mostrar los filtros dentro del MISMO expander
+        if uploaded_file_tab2 is not None:
+            try:
+                # Leer archivo saltando la primera fila
+                df_temp = pd.read_excel(uploaded_file_tab2, skiprows=1)
+                df_temp.columns = df_temp.columns.astype(str).str.strip()
+                
+                # Función para encontrar columna
+                def encontrar_columna(df, posibles_nombres):
+                    columnas_lower = {col: col.lower() for col in df.columns}
+                    for posible in posibles_nombres:
+                        posible_lower = posible.lower()
+                        for col_original, col_lower in columnas_lower.items():
+                            if col_lower == posible_lower or posible_lower in col_lower:
+                                return col_original
+                    return None
+                
+                # Buscar columnas
+                col_hora = encontrar_columna(df_temp, ['hora llegada', 'hora_llegada', 'hora'])
+                col_servicio = encontrar_columna(df_temp, ['servicio'])
+                col_usuario = encontrar_columna(df_temp, ['usuario atención', 'usuario_atencion', 'usuario'])
+                
+                if not all([col_hora, col_servicio, col_usuario]):
+                    columnas_encontradas = df_temp.columns.tolist()
+                    st.error(f"No se encontraron las columnas necesarias. Columnas disponibles: {', '.join(columnas_encontradas)}")
+                    st.stop()
+                
+                # Renombrar temporalmente para obtener datos
+                rename_dict_temp = {
+                    col_hora: 'HORA_LLEGADA',
+                    col_servicio: 'SERVICIO',
+                    col_usuario: 'USUARIO_ATENCION'
+                }
+                df_temp = df_temp.rename(columns=rename_dict_temp)
+                
+                # Procesar fechas
+                df_temp["HORA_LLEGADA"] = pd.to_datetime(df_temp["HORA_LLEGADA"], errors='coerce')
+                df_temp = df_temp.dropna(subset=["HORA_LLEGADA"])
+                
+                if df_temp.empty:
+                    st.warning("No hay registros con fechas válidas")
+                    st.stop()
+                
+                fecha_min = df_temp["HORA_LLEGADA"].min().date()
+                fecha_max = df_temp["HORA_LLEGADA"].max().date()
+                servicios_disponibles = sorted(df_temp["SERVICIO"].dropna().unique())
+                usuarios_disponibles = sorted(df_temp["USUARIO_ATENCION"].dropna().unique())
+                
+                st.markdown("---")
+                st.markdown("#### 📊 Filtros de selección")
+                
+                col_f1, col_f2, col_f3 = st.columns(3)
+                
+                with col_f1:
+                    st.markdown("##### 📅 Rango de fechas")
+                    fecha_ini = st.date_input("Inicio", fecha_min, min_value=fecha_min, max_value=fecha_max, key="tab2_fecha_ini")
+                    fecha_fin = st.date_input("Fin", fecha_max, min_value=fecha_min, max_value=fecha_max, key="tab2_fecha_fin")
+                    
+                    if fecha_ini > fecha_fin:
+                        st.error("⚠️ Fecha inicio no puede ser mayor que fecha fin")
+                
+                with col_f2:
+                    st.markdown("##### 🏥 Servicios")
+                    if servicios_disponibles:
+                        servicio_sel = st.multiselect("Seleccionar servicios:", servicios_disponibles, key="tab2_servicios")
+                    else:
+                        servicio_sel = []
+                        st.info("No hay servicios disponibles")
+                
+                with col_f3:
+                    st.markdown("##### 👤 Usuarios")
+                    if usuarios_disponibles:
+                        usuario_sel = st.multiselect("Seleccionar usuarios:", usuarios_disponibles, key="tab2_usuarios")
+                    else:
+                        usuario_sel = []
+                        st.info("No hay usuarios disponibles")
+            
+            except Exception as e:
+                st.error(f"Error al procesar el archivo: {e}")
+                st.stop()
 
-    if uploaded_file_tab2 is not None:
+    # --- PROCESAMIENTO PRINCIPAL (fuera del expander) ---
+    if uploaded_file_tab2 is not None and 'fecha_ini' in locals() and fecha_ini <= fecha_fin:
         try:
-            # Leer archivo saltando la primera fila
+            # Leer archivo nuevamente para procesamiento
             df_tab2 = pd.read_excel(uploaded_file_tab2, skiprows=1)
             df_tab2.columns = df_tab2.columns.astype(str).str.strip()
             
-            # Función para encontrar columna
-            def encontrar_columna(df, posibles_nombres):
-                columnas_lower = {col: col.lower() for col in df.columns}
-                for posible in posibles_nombres:
-                    posible_lower = posible.lower()
-                    for col_original, col_lower in columnas_lower.items():
-                        if col_lower == posible_lower or posible_lower in col_lower:
-                            return col_original
-                return None
-            
-            # Buscar columnas
+            # Renombrar columnas
             col_hora = encontrar_columna(df_tab2, ['hora llegada', 'hora_llegada', 'hora'])
             col_servicio = encontrar_columna(df_tab2, ['servicio'])
             col_usuario = encontrar_columna(df_tab2, ['usuario atención', 'usuario_atencion', 'usuario'])
             col_tipo = encontrar_columna(df_tab2, ['tipo'])
             
-            if not all([col_hora, col_servicio, col_usuario]):
-                columnas_encontradas = df_tab2.columns.tolist()
-                st.error(f"No se encontraron las columnas necesarias. Columnas disponibles: {', '.join(columnas_encontradas)}")
-                st.stop()
-            
-            # Renombrar
             rename_dict = {
                 col_hora: 'HORA_LLEGADA',
                 col_servicio: 'SERVICIO',
@@ -520,50 +585,7 @@ with tab2:
             df_tab2["HORA_LLEGADA"] = pd.to_datetime(df_tab2["HORA_LLEGADA"], errors='coerce')
             df_tab2_limpio = df_tab2.dropna(subset=["HORA_LLEGADA"])
             
-            if df_tab2_limpio.empty:
-                st.warning("No hay registros con fechas válidas")
-                st.stop()
-            
-            fecha_min = df_tab2_limpio["HORA_LLEGADA"].min().date()
-            fecha_max = df_tab2_limpio["HORA_LLEGADA"].max().date()
-            
-            # --- FILTROS (dentro del mismo expander) ---
-            with st.expander("⚙️ Configuración y Filtros", expanded=True):
-                st.markdown("#### 📅 Rango de fechas")
-                col_f1, col_f2, col_f3 = st.columns(3)
-                
-                with col_f1:
-                    fecha_ini = st.date_input("Inicio", fecha_min, min_value=fecha_min, max_value=fecha_max, key="tab2_fecha_ini")
-                
-                with col_f2:
-                    fecha_fin = st.date_input("Fin", fecha_max, min_value=fecha_min, max_value=fecha_max, key="tab2_fecha_fin")
-                
-                with col_f3:
-                    st.markdown("##### &nbsp;")
-                    if fecha_ini > fecha_fin:
-                        st.error("⚠️ Fecha inicio no puede ser mayor que fecha fin")
-                    else:
-                        st.success("✅ Rango válido")
-                
-                col_f4, col_f5 = st.columns(2)
-                
-                with col_f4:
-                    st.markdown("#### 🏥 Servicios")
-                    servicios = sorted(df_tab2_limpio["SERVICIO"].dropna().unique())
-                    if servicios:
-                        servicio_sel = st.multiselect("Seleccionar servicios:", servicios, key="tab2_servicios")
-                    else:
-                        servicio_sel = []
-                
-                with col_f5:
-                    st.markdown("#### 👤 Usuarios")
-                    usuarios = sorted(df_tab2_limpio["USUARIO_ATENCION"].dropna().unique())
-                    if usuarios:
-                        usuario_sel = st.multiselect("Seleccionar usuarios:", usuarios, key="tab2_usuarios")
-                    else:
-                        usuario_sel = []
-
-            # --- APLICAR FILTROS ---
+            # Aplicar filtros
             df_filtrado = df_tab2_limpio[
                 (df_tab2_limpio["HORA_LLEGADA"].dt.date >= fecha_ini) & 
                 (df_tab2_limpio["HORA_LLEGADA"].dt.date <= fecha_fin)
