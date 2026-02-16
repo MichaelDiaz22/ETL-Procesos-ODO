@@ -1,528 +1,310 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
-import io
-import re
-import calendar
+import numpy as np
+from datetime import datetime, date
+import plotly.express as px
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Clasificador de Unidades Operativas",
-    page_icon="📊",
-    layout="wide"
+    page_title="Clasificador de Modelo PGP/EVENTO",
+    page_layout="wide"
 )
 
-# Título de la aplicación
-st.title("📊 Clasificador de Unidades por Fechas")
+st.title("📊 Clasificador de Modelo PGP y EVENTO")
 st.markdown("---")
 
-# Fechas de corte
-FECHA_CORTE_MANIZALES = datetime(2025, 9, 16)
-FECHA_CORTE_ARMENIA = datetime(2025, 11, 20)
-FECHA_INICIO = datetime(2025, 9, 16)
-
-def es_fecha_valida(valor):
+# Función para clasificar según las reglas de negocio
+def clasificar_registro(row, unidad_operativa, fecha_ingreso, fecha_factura):
     """
-    Verifica si un valor puede ser una fecha válida
+    Clasifica un registro según las reglas de negocio
     """
-    if pd.isna(valor):
-        return False
+    if pd.isna(fecha_ingreso) or pd.isna(fecha_factura) or pd.isna(unidad_operativa):
+        return "No clasificado"
     
-    # Convertir a string y limpiar
-    valor_str = str(valor).strip()
+    fecha_ingreso = pd.to_datetime(fecha_ingreso)
+    fecha_factura = pd.to_datetime(fecha_factura)
+    unidad = str(unidad_operativa).strip().upper()
     
-    # Patrones comunes de fecha
-    patrones_fecha = [
-        r'\d{4}-\d{2}-\d{2}',  # YYYY-MM-DD
-        r'\d{2}/\d{2}/\d{4}',  # DD/MM/YYYY
-        r'\d{2}-\d{2}-\d{4}',  # DD-MM-YYYY
-        r'\d{4}/\d{2}/\d{2}',  # YYYY/MM/DD
-    ]
-    
-    # Verificar si coincide con algún patrón de fecha
-    for patron in patrones_fecha:
-        if re.match(patron, valor_str):
-            return True
-    
-    # Intentar convertir con pandas
-    try:
-        pd.to_datetime(valor_str)
-        return True
-    except:
-        return False
-
-def convertir_a_fecha_seguro(valor):
-    """
-    Convierte un valor a fecha de manera segura, manejando errores
-    """
-    if pd.isna(valor) or not es_fecha_valida(valor):
-        return None
-    
-    try:
-        return pd.to_datetime(valor)
-    except:
-        return None
-
-def clasificar_unidad(row, ciudad, fecha_ingreso, fecha_factura):
-    """
-    Clasifica una unidad según la ciudad y las fechas de ingreso y factura
-    """
-    # Convertir fechas de manera segura
-    fecha_ingreso_valida = convertir_a_fecha_seguro(fecha_ingreso)
-    fecha_factura_valida = convertir_a_fecha_seguro(fecha_factura)
-    
-    # Si alguna fecha no es válida, no podemos clasificar
-    if fecha_ingreso_valida is None or fecha_factura_valida is None:
-        return "fecha no válida"
-    
-    # Determinar fecha de corte según ciudad
-    ciudad_str = str(ciudad).upper().strip() if pd.notna(ciudad) else ""
-    
-    if 'MANIZALES' in ciudad_str:
-        fecha_corte = FECHA_CORTE_MANIZALES
-        
-        # Aplicar reglas para Manizales
-        if fecha_ingreso_valida < fecha_corte and fecha_factura_valida < fecha_corte:
-            return "no incluido en el modelo"
-        elif fecha_ingreso_valida >= fecha_corte and fecha_factura_valida >= fecha_corte:
-            return "incluido en el modelo"
-        elif fecha_ingreso_valida > fecha_corte and fecha_factura_valida < fecha_corte:
-            return "no incluido en el modelo"
-        elif fecha_ingreso_valida < fecha_corte and fecha_factura_valida > fecha_corte:
-            return "no incluido en el modelo"
-        else:
-            return "clasificación pendiente"
-    
-    elif 'ARMENIA' in ciudad_str:
-        fecha_corte = FECHA_CORTE_ARMENIA
-        
-        # Aplicar reglas para Armenia
-        if fecha_ingreso_valida < fecha_corte and fecha_factura_valida < fecha_corte:
-            return "no incluido en el modelo"
-        elif fecha_ingreso_valida >= fecha_corte and fecha_factura_valida >= fecha_corte:
-            return "incluido en el modelo"
-        elif fecha_ingreso_valida > fecha_corte and fecha_factura_valida < fecha_corte:
-            return "no incluido en el modelo"
-        elif fecha_ingreso_valida < fecha_corte and fecha_factura_valida > fecha_corte:
-            return "no incluido en el modelo"
-        else:
-            return "clasificación pendiente"
-    
+    # Fechas límite según unidad operativa
+    if "MANIZALES" in unidad:
+        fecha_limite = pd.to_datetime("2025-09-16")
+    elif "ARMENIA" in unidad:
+        fecha_limite = pd.to_datetime("2025-11-20")
     else:
-        return "ciudad no identificada"
+        return "No clasificado"
+    
+    # Reglas de clasificación
+    if fecha_ingreso < fecha_limite and fecha_factura < fecha_limite:
+        return "No incluido en el modelo"
+    elif fecha_ingreso >= fecha_limite and fecha_factura >= fecha_limite:
+        return "Incluido en el modelo"
+    elif fecha_ingreso >= fecha_limite and fecha_factura < fecha_limite:
+        return "No incluido en el modelo"
+    elif fecha_ingreso < fecha_limite and fecha_factura >= fecha_limite:
+        return "No incluido en el modelo"
+    else:
+        return "No clasificado"
 
-def identificar_columnas(df, nombre_hoja):
+# Función para procesar todas las hojas
+def procesar_archivo_excel(dfs, fecha_fin_seleccionada):
     """
-    Identifica las columnas relevantes en el DataFrame
+    Procesa todas las hojas del Excel y genera la tabla resumen
     """
-    columnas_info = {
-        'ciudad': None,
-        'fecha_ingreso': None,
-        'fecha_factura': None
-    }
+    resultados = []
     
-    # Buscar columna de ciudad
-    for col in df.columns:
-        col_lower = col.lower()
-        if 'ciudad' in col_lower or 'unidad' in col_lower or 'operativa' in col_lower:
-            columnas_info['ciudad'] = col
-            break
-    
-    # Buscar columna de fecha de ingreso
-    for col in df.columns:
-        col_lower = col.lower()
-        if 'ingreso' in col_lower or 'fechaing' in col_lower or 'f_ingreso' in col_lower:
-            columnas_info['fecha_ingreso'] = col
-            break
-    
-    # Buscar columna de fecha de factura
-    for col in df.columns:
-        col_lower = col.lower()
-        if 'factura' in col_lower or 'fechafac' in col_lower or 'f_factura' in col_lower:
-            columnas_info['fecha_factura'] = col
-            break
-    
-    return columnas_info
-
-def procesar_hoja(df, nombre_hoja):
-    """
-    Procesa cada hoja del Excel agregando la columna de clasificación
-    """
-    df_procesado = df.copy()
-    
-    # Identificar columnas relevantes
-    columnas = identificar_columnas(df, nombre_hoja)
-    
-    # Verificar que se encontraron las columnas necesarias
-    columnas_faltantes = []
-    if columnas['ciudad'] is None:
-        columnas_faltantes.append('ciudad')
-    if columnas['fecha_ingreso'] is None:
-        columnas_faltantes.append('fecha ingreso')
-    if columnas['fecha_factura'] is None:
-        columnas_faltantes.append('fecha factura')
-    
-    if columnas_faltantes:
-        st.warning(f"⚠️ En la hoja {nombre_hoja} no se encontraron las columnas: {', '.join(columnas_faltantes)}")
-        df_procesado['Clasificación'] = "columnas no encontradas"
-        df_procesado['Fecha Ingreso Válida'] = False
-        df_procesado['Fecha Factura Válida'] = False
-        df_procesado['Fecha Ingreso'] = None
-        df_procesado['Fecha Factura'] = None
-        return df_procesado
-    
-    # Aplicar clasificación
-    clasificaciones = []
-    fechas_ingreso_validas = []
-    fechas_factura_validas = []
-    fechas_ingreso_proc = []
-    fechas_factura_proc = []
-    
-    # Barra de progreso para el procesamiento de la hoja
-    progress_text = f"Procesando registros de {nombre_hoja}..."
-    my_bar = st.progress(0, text=progress_text)
-    
-    total_rows = len(df_procesado)
-    for idx, row in df_procesado.iterrows():
-        # Obtener valores
-        ciudad = row[columnas['ciudad']] if pd.notna(row[columnas['ciudad']]) else ""
-        fecha_ingreso = row[columnas['fecha_ingreso']] if columnas['fecha_ingreso'] in df_procesado.columns else None
-        fecha_factura = row[columnas['fecha_factura']] if columnas['fecha_factura'] in df_procesado.columns else None
-        
-        # Convertir fechas de manera segura
-        fecha_ingreso_dt = convertir_a_fecha_seguro(fecha_ingreso)
-        fecha_factura_dt = convertir_a_fecha_seguro(fecha_factura)
-        
-        fechas_ingreso_proc.append(fecha_ingreso_dt)
-        fechas_factura_proc.append(fecha_factura_dt)
-        
-        # Verificar si las fechas son válidas
-        ingreso_valida = fecha_ingreso_dt is not None
-        factura_valida = fecha_factura_dt is not None
-        
-        fechas_ingreso_validas.append(ingreso_valida)
-        fechas_factura_validas.append(factura_valida)
-        
-        # Clasificar
-        clasificacion = clasificar_unidad(row, ciudad, fecha_ingreso, fecha_factura)
-        clasificaciones.append(clasificacion)
-        
-        # Actualizar barra de progreso
-        if idx % 100 == 0:
-            my_bar.progress((idx + 1) / total_rows, text=progress_text)
-    
-    my_bar.progress(1.0, text="¡Procesamiento completado!")
-    
-    # Agregar columnas de información
-    df_procesado['Clasificación'] = clasificaciones
-    df_procesado['Fecha Ingreso Válida'] = fechas_ingreso_validas
-    df_procesado['Fecha Factura Válida'] = fechas_factura_validas
-    df_procesado['Fecha Ingreso'] = fechas_ingreso_proc
-    df_procesado['Fecha Factura'] = fechas_factura_proc
-    
-    return df_procesado
-
-def construir_tabla_resumen(dfs_procesados, fecha_fin):
-    """
-    Construye la tabla de resumen con las métricas por fecha
-    """
-    # Crear rango de fechas desde FECHA_INICIO hasta fecha_fin
-    fechas = pd.date_range(start=FECHA_INICIO, end=fecha_fin, freq='D')
-    
-    # Inicializar lista para almacenar los datos
-    datos_resumen = []
-    
-    # Procesar cada fecha
-    for fecha in fechas:
-        fecha_str = fecha.strftime('%Y-%m-%d')
-        semana = fecha.isocalendar()[1]
-        año = fecha.year
-        
-        # Inicializar contadores
-        ingresos = 0
-        facturado_modelo = 0
-        facturado_fuera_modelo = 0
-        
-        # Procesar cada hoja
-        for nombre_hoja, df in dfs_procesados.items():
-            # Asegurar que las columnas de fecha existen
-            if 'Fecha Ingreso' not in df.columns or 'Fecha Factura' not in df.columns:
+    # Procesar cada hoja
+    for nombre_hoja, df in dfs.items():
+        if nombre_hoja in ['PGP', 'EVENTO', 'PDTE PGP', 'PDTE EVENTO']:
+            # Verificar que las columnas necesarias existan
+            columnas_requeridas = ['Fecha ingreso', 'Fecha factura', 'Unidad operativa', 'Ingreso']
+            columnas_faltantes = [col for col in columnas_requeridas if col not in df.columns]
+            
+            if columnas_faltantes:
+                st.warning(f"Hoja '{nombre_hoja}' no tiene las columnas: {columnas_faltantes}")
                 continue
             
-            # Filtrar registros con fechas válidas
-            df_validos = df.dropna(subset=['Fecha Ingreso', 'Fecha Factura', 'Clasificación'])
+            # Clasificar cada registro
+            clasificaciones = []
+            for idx, row in df.iterrows():
+                clasificacion = clasificar_registro(
+                    row, 
+                    row.get('Unidad operativa'), 
+                    row.get('Fecha ingreso'), 
+                    row.get('Fecha factura')
+                )
+                clasificaciones.append(clasificacion)
             
-            # Contar ingresos para esta fecha (basado en Fecha Ingreso)
-            ingresos_fecha = len(df_validos[
-                (df_validos['Fecha Ingreso'].dt.date == fecha.date())
-            ])
-            ingresos += ingresos_fecha
+            df['Clasificacion'] = clasificaciones
             
-            # Filtrar solo hojas PGP y EVENTO para facturación
-            if nombre_hoja in ['PGP', 'EVENTO']:
-                # Facturado modelo (incluidos)
-                modelo_fecha = len(df_validos[
-                    (df_validos['Fecha Factura'].dt.date == fecha.date()) &
-                    (df_validos['Clasificación'] == 'incluido en el modelo')
-                ])
-                facturado_modelo += modelo_fecha
-                
-                # Facturado fuera modelo (no incluidos)
-                fuera_modelo_fecha = len(df_validos[
-                    (df_validos['Fecha Factura'].dt.date == fecha.date()) &
-                    (df_validos['Clasificación'] == 'no incluido en el modelo')
-                ])
-                facturado_fuera_modelo += fuera_modelo_fecha
+            # Agregar nombre de hoja para referencia
+            df['Hoja'] = nombre_hoja
+            resultados.append(df)
+    
+    if not resultados:
+        return pd.DataFrame()
+    
+    # Combinar todos los dataframes
+    df_combinado = pd.concat(resultados, ignore_index=True)
+    
+    # Convertir fechas
+    df_combinado['Fecha ingreso'] = pd.to_datetime(df_combinado['Fecha ingreso'], errors='coerce')
+    df_combinado['Fecha factura'] = pd.to_datetime(df_combinado['Fecha factura'], errors='coerce')
+    
+    # Crear rango de fechas para la tabla resumen
+    fecha_inicio = pd.to_datetime("2025-09-16")
+    fecha_fin = pd.to_datetime(fecha_fin_seleccionada)
+    
+    # Generar todas las fechas en el rango
+    fechas = pd.date_range(start=fecha_inicio, end=fecha_fin, freq='D')
+    
+    # Crear dataframe resumen
+    resumen = []
+    
+    for fecha_actual in fechas:
+        fecha_str = fecha_actual.strftime('%Y-%m-%d')
         
-        # Calcular facturado total
-        facturado_total = facturado_modelo + facturado_fuera_modelo
+        # Ingresos (todas las hojas)
+        ingresos_fecha = df_combinado[
+            (df_combinado['Fecha ingreso'].dt.date == fecha_actual.date()) &
+            (df_combinado['Hoja'].isin(['PGP', 'EVENTO', 'PDTE PGP', 'PDTE EVENTO']))
+        ]['Ingreso'].sum()
         
-        # Agregar fila a la tabla
-        datos_resumen.append({
-            'Fecha': fecha_str,
-            'Semana del Año': semana,
-            'Año': año,
-            'Ingresos': ingresos,
-            'Facturado Modelo': facturado_modelo,
-            'Facturado Fuera Modelo': facturado_fuera_modelo,
-            'Facturado Total': facturado_total
+        # Facturado modelo (solo PGP y EVENTO, clasificados como incluido)
+        fact_modelo = df_combinado[
+            (df_combinado['Fecha factura'].dt.date == fecha_actual.date()) &
+            (df_combinado['Hoja'].isin(['PGP', 'EVENTO'])) &
+            (df_combinado['Clasificacion'] == 'Incluido en el modelo')
+        ]['Ingreso'].sum()
+        
+        # Facturado fuera modelo (solo PGP y EVENTO, clasificados como no incluido)
+        fact_fuera_modelo = df_combinado[
+            (df_combinado['Fecha factura'].dt.date == fecha_actual.date()) &
+            (df_combinado['Hoja'].isin(['PGP', 'EVENTO'])) &
+            (df_combinado['Clasificacion'] == 'No incluido en el modelo')
+        ]['Ingreso'].sum()
+        
+        resumen.append({
+            'fecha': fecha_str,
+            'semana del año': fecha_actual.isocalendar()[1],
+            'año': fecha_actual.year,
+            'ingresos': ingresos_fecha,
+            'facturado modelo': fact_modelo,
+            'facturado fuera modelo': fact_fuera_modelo,
+            'Facturado total': fact_modelo + fact_fuera_modelo
         })
     
-    return pd.DataFrame(datos_resumen)
+    df_resumen = pd.DataFrame(resumen)
+    
+    return df_resumen, df_combinado
 
-# Sidebar con información
-with st.sidebar:
-    st.header("📋 Información")
-    st.markdown("""
-    **Fechas de corte:**
-    - 🏙️ **Manizales:** 16/09/2025
-    - 🏙️ **Armenia:** 20/11/2025
-    
-    **Reglas de clasificación:**
-    - Si fecha ingreso < corte Y fecha factura < corte → "no incluido en el modelo"
-    - Si fecha ingreso ≥ corte Y fecha factura ≥ corte → "incluido en el modelo"
-    - Si fecha ingreso > corte Y fecha factura < corte → "no incluido en el modelo"
-    - Si fecha ingreso < corte Y fecha factura > corte → "no incluido en el modelo"
-    
-    **Posibles clasificaciones:**
-    - ✅ incluido en el modelo
-    - ❌ no incluido en el modelo
-    - ⚠️ fecha no válida
-    - ❓ ciudad no identificada
-    - ⏳ clasificación pendiente
-    """)
-    
-    st.markdown("---")
-    st.markdown("**Hojas esperadas en el archivo:**")
-    st.markdown("- PGP")
-    st.markdown("- EVENTO")
-    st.markdown("- PDTE PGP")
-    st.markdown("- PDTE EVENTO")
+# Interfaz de usuario
+col1, col2 = st.columns([2, 1])
 
-# Carga del archivo
-archivo_subido = st.file_uploader(
-    "Cargar archivo Excel", 
-    type=['xlsx', 'xls'],
-    help="Selecciona el archivo Excel con las 4 hojas requeridas"
-)
+with col1:
+    # Cargar archivo
+    archivo_subido = st.file_uploader(
+        "Cargar archivo Excel", 
+        type=['xlsx', 'xls'],
+        help="Selecciona el archivo Excel con las hojas: PGP, EVENTO, PDTE PGP, PDTE EVENTO"
+    )
+
+with col2:
+    # Selector de fecha fin
+    fecha_max = date.today()
+    fecha_fin = st.date_input(
+        "Fecha fin para el análisis",
+        value=date(2025, 12, 31),
+        min_value=date(2025, 9, 16),
+        max_value=fecha_max,
+        help="Selecciona la fecha hasta la cual quieres generar el análisis"
+    )
 
 if archivo_subido is not None:
     try:
         # Leer todas las hojas del Excel
-        excel_file = pd.ExcelFile(archivo_subido)
-        hojas_disponibles = excel_file.sheet_names
-        
-        # Verificar que estén todas las hojas requeridas
-        hojas_requeridas = ['PGP', 'EVENTO', 'PDTE PGP', 'PDTE EVENTO']
-        hojas_faltantes = [h for h in hojas_requeridas if h not in hojas_disponibles]
-        
-        if hojas_faltantes:
-            st.error(f"❌ Faltan las siguientes hojas: {', '.join(hojas_faltantes)}")
-        else:
-            st.success("✅ Archivo cargado correctamente con todas las hojas requeridas")
+        with st.spinner('Cargando y procesando el archivo...'):
+            excel_file = pd.ExcelFile(archivo_subido)
+            hojas = {}
             
-            # Procesar cada hoja
-            dfs_procesados = {}
+            for hoja in ['PGP', 'EVENTO', 'PDTE PGP', 'PDTE EVENTO']:
+                if hoja in excel_file.sheet_names:
+                    hojas[hoja] = pd.read_excel(archivo_subido, sheet_name=hoja)
+                    st.success(f"✅ Hoja '{hoja}' cargada correctamente")
+                else:
+                    st.warning(f"⚠️ Hoja '{hoja}' no encontrada en el archivo")
             
-            # Barra de progreso general
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            for i, hoja in enumerate(hojas_requeridas):
-                status_text.text(f"Procesando hoja: {hoja}")
+            if hojas:
+                # Procesar el archivo
+                df_resumen, df_detalle = procesar_archivo_excel(hojas, fecha_fin)
                 
-                # Leer la hoja
-                df = pd.read_excel(archivo_subido, sheet_name=hoja)
-                
-                # Mostrar información de la hoja
-                with st.expander(f"📊 Ver columnas encontradas en {hoja}"):
-                    st.write("Columnas disponibles:", list(df.columns))
-                
-                # Procesar la hoja
-                df_procesado = procesar_hoja(df, hoja)
-                dfs_procesados[hoja] = df_procesado
-                
-                # Actualizar barra de progreso
-                progress_bar.progress((i + 1) / len(hojas_requeridas))
-            
-            status_text.text("¡Procesamiento completado!")
-            progress_bar.empty()
-            
-            # Mostrar resultados por hoja
-            st.markdown("---")
-            st.header("📊 Resultados por Hoja")
-            
-            # Tabs para cada hoja
-            tabs = st.tabs(hojas_requeridas)
-            
-            for tab, hoja in zip(tabs, hojas_requeridas):
-                with tab:
-                    df_actual = dfs_procesados[hoja]
+                if not df_resumen.empty:
+                    st.markdown("---")
+                    st.subheader("📈 Tabla Resumen")
                     
-                    # Métricas
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    # Mostrar estadísticas rápidas
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Total registros", len(df_actual))
+                        st.metric("Total Ingresos", f"${df_resumen['ingresos'].sum():,.0f}")
                     with col2:
-                        incluidos = len(df_actual[df_actual['Clasificación'] == 'incluido en el modelo'])
-                        st.metric("✅ Incluidos", incluidos)
+                        st.metric("Total Facturado Modelo", f"${df_resumen['facturado modelo'].sum():,.0f}")
                     with col3:
-                        no_incluidos = len(df_actual[df_actual['Clasificación'] == 'no incluido en el modelo'])
-                        st.metric("❌ No incluidos", no_incluidos)
+                        st.metric("Total Facturado Fuera Modelo", f"${df_resumen['facturado fuera modelo'].sum():,.0f}")
                     with col4:
-                        fechas_invalidas = len(df_actual[df_actual['Clasificación'] == 'fecha no válida'])
-                        st.metric("⚠️ Fechas inválidas", fechas_invalidas)
-                    with col5:
-                        otros = len(df_actual[~df_actual['Clasificación'].isin(['incluido en el modelo', 'no incluido en el modelo', 'fecha no válida'])])
-                        st.metric("❓ Otros", otros)
+                        st.metric("Total Facturado General", f"${df_resumen['Facturado total'].sum():,.0f}")
                     
-                    # Mostrar DataFrame
-                    st.dataframe(df_actual, use_container_width=True)
-                    
-                    # Estadísticas adicionales
-                    with st.expander("📈 Ver estadísticas detalladas"):
-                        st.write("Distribución de clasificaciones:")
-                        st.write(df_actual['Clasificación'].value_counts())
-                        
-                        st.write("Fechas válidas vs inválidas:")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("Fechas ingreso válidas", df_actual['Fecha Ingreso Válida'].sum())
-                        with col2:
-                            st.metric("Fechas factura válidas", df_actual['Fecha Factura Válida'].sum())
-                    
-                    # Botón de descarga para cada hoja
-                    csv = df_actual.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label=f"📥 Descargar {hoja} como CSV",
-                        data=csv,
-                        file_name=f"{hoja}_clasificado.csv",
-                        mime="text/csv",
-                        key=f"download_{hoja}"
+                    # Mostrar tabla
+                    st.dataframe(
+                        df_resumen,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "fecha": "Fecha",
+                            "semana del año": "Semana",
+                            "año": "Año",
+                            "ingresos": st.column_config.NumberColumn("Ingresos", format="$%.0f"),
+                            "facturado modelo": st.column_config.NumberColumn("Facturado Modelo", format="$%.0f"),
+                            "facturado fuera modelo": st.column_config.NumberColumn("Facturado Fuera Modelo", format="$%.0f"),
+                            "Facturado total": st.column_config.NumberColumn("Facturado Total", format="$%.0f")
+                        }
                     )
-            
-            # Sección de tabla resumen
-            st.markdown("---")
-            st.header("📈 Tabla Resumen por Fecha")
-            
-            # Selector de fecha
-            fecha_maxima = datetime.now().date()
-            fecha_seleccionada = st.date_input(
-                "Seleccionar fecha final para el resumen",
-                value=fecha_maxima,
-                min_value=FECHA_INICIO.date(),
-                max_value=fecha_maxima,
-                help=f"Selecciona la fecha hasta la cual quieres ver el resumen (mínimo: {FECHA_INICIO.strftime('%d/%m/%Y')})"
-            )
-            
-            # Convertir a datetime
-            fecha_fin_dt = datetime.combine(fecha_seleccionada, datetime.min.time())
-            
-            # Construir tabla resumen
-            with st.spinner("Construyendo tabla resumen..."):
-                df_resumen = construir_tabla_resumen(dfs_procesados, fecha_fin_dt)
-                
-                # Mostrar métricas totales
-                st.subheader("Métricas Globales")
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Ingresos", f"{df_resumen['Ingresos'].sum():,}")
-                with col2:
-                    st.metric("Total Facturado Modelo", f"{df_resumen['Facturado Modelo'].sum():,}")
-                with col3:
-                    st.metric("Total Facturado Fuera Modelo", f"{df_resumen['Facturado Fuera Modelo'].sum():,}")
-                with col4:
-                    st.metric("Total Facturado", f"{df_resumen['Facturado Total'].sum():,}")
-                
-                # Mostrar tabla resumen
-                st.subheader("Detalle por Fecha")
-                st.dataframe(
-                    df_resumen,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
-                        "Semana del Año": st.column_config.NumberColumn("Semana", format="%d"),
-                        "Año": st.column_config.NumberColumn("Año", format="%d"),
-                        "Ingresos": st.column_config.NumberColumn("Ingresos", format="%d"),
-                        "Facturado Modelo": st.column_config.NumberColumn("Fact. Modelo", format="%d"),
-                        "Facturado Fuera Modelo": st.column_config.NumberColumn("Fact. Fuera Modelo", format="%d"),
-                        "Facturado Total": st.column_config.NumberColumn("Fact. Total", format="%d")
-                    }
-                )
-                
-                # Gráfico de evolución
-                st.subheader("Evolución Temporal")
-                chart_data = df_resumen.set_index('Fecha')[['Ingresos', 'Facturado Modelo', 'Facturado Fuera Modelo']]
-                st.line_chart(chart_data)
-                
-                # Botones de descarga para la tabla resumen
-                col1, col2 = st.columns(2)
-                with col1:
-                    csv_resumen = df_resumen.to_csv(index=False).encode('utf-8')
+                    
+                    # Gráficos
+                    st.markdown("---")
+                    st.subheader("📊 Visualizaciones")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Gráfico de líneas para ingresos y facturado
+                        fig_lineas = px.line(
+                            df_resumen, 
+                            x='fecha', 
+                            y=['ingresos', 'facturado modelo', 'facturado fuera modelo'],
+                            title='Evolución Temporal',
+                            labels={'value': 'Monto', 'variable': 'Tipo'}
+                        )
+                        st.plotly_chart(fig_lineas, use_container_width=True)
+                    
+                    with col2:
+                        # Gráfico de barras apiladas
+                        fig_barras = px.bar(
+                            df_resumen,
+                            x='fecha',
+                            y=['facturado modelo', 'facturado fuera modelo'],
+                            title='Facturado Modelo vs Fuera Modelo',
+                            labels={'value': 'Monto', 'variable': 'Tipo'},
+                            barmode='stack'
+                        )
+                        st.plotly_chart(fig_barras, use_container_width=True)
+                    
+                    # Botón para descargar
+                    st.markdown("---")
+                    csv = df_resumen.to_csv(index=False)
                     st.download_button(
-                        label="📥 Descargar tabla resumen como CSV",
-                        data=csv_resumen,
-                        file_name=f"resumen_fechas_{fecha_seleccionada.strftime('%Y%m%d')}.csv",
+                        label="📥 Descargar tabla resumen (CSV)",
+                        data=csv,
+                        file_name=f"resumen_modelo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                         mime="text/csv"
                     )
-                
-                with col2:
-                    # Excel con todas las hojas más el resumen
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        for hoja, df in dfs_procesados.items():
-                            df.to_excel(writer, sheet_name=hoja, index=False)
-                        df_resumen.to_excel(writer, sheet_name='RESUMEN', index=False)
                     
-                    st.download_button(
-                        label="📥 Descargar Excel completo con resumen",
-                        data=output.getvalue(),
-                        file_name=f"unidades_clasificadas_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-            
+                    # Mostrar detalle de clasificaciones
+                    with st.expander("Ver detalle de clasificaciones por hoja"):
+                        for nombre_hoja, df_hoja in hojas.items():
+                            st.subheader(f"Hoja: {nombre_hoja}")
+                            
+                            # Aplicar clasificación para vista previa
+                            df_vista = df_hoja.copy()
+                            clasif_temp = []
+                            for idx, row in df_vista.iterrows():
+                                clasif_temp.append(clasificar_registro(
+                                    row,
+                                    row.get('Unidad operativa'),
+                                    row.get('Fecha ingreso'),
+                                    row.get('Fecha factura')
+                                ))
+                            df_vista['Clasificacion'] = clasif_temp
+                            
+                            # Mostrar conteo
+                            conteo = df_vista['Clasificacion'].value_counts()
+                            st.write("Conteo de clasificaciones:")
+                            st.write(conteo)
+                            
+                            # Mostrar muestra de datos
+                            st.dataframe(df_vista.head(10))
+                            
+                else:
+                    st.warning("No se pudieron procesar los datos. Verifica la estructura del archivo.")
+            else:
+                st.error("No se encontraron hojas válidas en el archivo. Debe contener al menos una de las hojas: PGP, EVENTO, PDTE PGP, PDTE EVENTO")
+                
     except Exception as e:
-        st.error(f"❌ Error al procesar el archivo: {str(e)}")
+        st.error(f"Error al procesar el archivo: {str(e)}")
         st.exception(e)
 
 else:
-    # Mensaje cuando no hay archivo cargado
-    st.info("👆 Por favor, carga un archivo Excel para comenzar")
+    st.info("👆 Por favor, carga un archivo Excel para comenzar el análisis")
+
+# Instrucciones de uso
+with st.expander("📋 Instrucciones de uso"):
+    st.markdown("""
+    ### Reglas de clasificación:
+    1. **Manizales**: 
+       - Fecha ingreso < 16/09/2025 Y fecha factura < 16/09/2025 → "No incluido en el modelo"
+       - Fecha ingreso >= 16/09/2025 Y fecha factura >= 16/09/2025 → "Incluido en el modelo"
+       - Otros casos → "No incluido en el modelo"
     
-    # Ejemplo de estructura esperada
-    with st.expander("📋 Ver ejemplo de estructura esperada"):
-        ejemplo_data = {
-            'Unidad': ['U001', 'U002', 'U003', 'U004'],
-            'Ciudad': ['MANIZALES', 'ARMENIA', 'MANIZALES', 'ARMENIA'],
-            'Fecha Ingreso': ['2025-09-15', '2025-11-21', '2025-09-17', '2025-11-19'],
-            'Fecha Factura': ['2025-09-14', '2025-11-22', '2025-09-18', '2025-11-20']
-        }
-        ejemplo_df = pd.DataFrame(ejemplo_data)
-        st.dataframe(ejemplo_df)
-        st.caption("""
-        El archivo debe contener columnas con nombres similares para:
-        - Ciudad (puede llamarse 'ciudad', 'unidad', 'unidad operativa')
-        - Fecha ingreso (puede llamarse 'fecha ingreso', 'fechaing', 'f_ingreso')
-        - Fecha factura (puede llamarse 'fecha factura', 'fechafac', 'f_factura')
-        """)
+    2. **Armenia**:
+       - Mismas reglas pero con fecha límite 20/11/2025
+    
+    ### Columnas requeridas en cada hoja:
+    - Fecha ingreso
+    - Fecha factura
+    - Unidad operativa
+    - Ingreso
+    
+    ### Hojas requeridas:
+    - PGP
+    - EVENTO
+    - PDTE PGP
+    - PDTE EVENTO
+    """)
