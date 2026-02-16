@@ -21,6 +21,15 @@ FECHA_CORTE_MANIZALES = datetime(2025, 9, 16)
 FECHA_CORTE_ARMENIA = datetime(2025, 11, 20)
 FECHA_INICIO = datetime(2025, 9, 16)
 
+# Inicializar session state
+if 'dfs_procesados' not in st.session_state:
+    st.session_state.dfs_procesados = None
+if 'archivo_procesado' not in st.session_state:
+    st.session_state.archivo_procesado = None
+if 'hojas_requeridas' not in st.session_state:
+    st.session_state.hojas_requeridas = ['PGP', 'EVENTO', 'PDTE PGP', 'PDTE EVENTO']
+
+@st.cache_data
 def es_fecha_valida(valor):
     """
     Verifica si un valor puede ser una fecha válida
@@ -51,6 +60,7 @@ def es_fecha_valida(valor):
     except:
         return False
 
+@st.cache_data
 def convertir_a_fecha_seguro(valor):
     """
     Convierte un valor a fecha de manera segura, manejando errores
@@ -63,7 +73,8 @@ def convertir_a_fecha_seguro(valor):
     except:
         return None
 
-def clasificar_unidad(row, ciudad, fecha_ingreso, fecha_factura):
+@st.cache_data
+def clasificar_unidad(ciudad, fecha_ingreso, fecha_factura):
     """
     Clasifica una unidad según la ciudad y las fechas de ingreso y factura
     """
@@ -111,6 +122,7 @@ def clasificar_unidad(row, ciudad, fecha_ingreso, fecha_factura):
     else:
         return "ciudad no identificada"
 
+@st.cache_data
 def identificar_columnas(df, nombre_hoja):
     """
     Identifica las columnas relevantes en el DataFrame
@@ -144,6 +156,7 @@ def identificar_columnas(df, nombre_hoja):
     
     return columnas_info
 
+@st.cache_data
 def procesar_hoja(df, nombre_hoja):
     """
     Procesa cada hoja del Excel agregando la columna de clasificación
@@ -163,26 +176,16 @@ def procesar_hoja(df, nombre_hoja):
         columnas_faltantes.append('fecha factura')
     
     if columnas_faltantes:
-        st.warning(f"⚠️ En la hoja {nombre_hoja} no se encontraron las columnas: {', '.join(columnas_faltantes)}")
         df_procesado['Clasificación'] = "columnas no encontradas"
-        df_procesado['Fecha Ingreso Válida'] = False
-        df_procesado['Fecha Factura Válida'] = False
         df_procesado['Fecha Ingreso'] = None
         df_procesado['Fecha Factura'] = None
         return df_procesado
     
-    # Aplicar clasificación
+    # Aplicar clasificación de manera vectorizada
     clasificaciones = []
-    fechas_ingreso_validas = []
-    fechas_factura_validas = []
     fechas_ingreso_proc = []
     fechas_factura_proc = []
     
-    # Barra de progreso para el procesamiento de la hoja
-    progress_text = f"Procesando registros de {nombre_hoja}..."
-    my_bar = st.progress(0, text=progress_text)
-    
-    total_rows = len(df_procesado)
     for idx, row in df_procesado.iterrows():
         # Obtener valores
         ciudad = row[columnas['ciudad']] if pd.notna(row[columnas['ciudad']]) else ""
@@ -196,32 +199,18 @@ def procesar_hoja(df, nombre_hoja):
         fechas_ingreso_proc.append(fecha_ingreso_dt)
         fechas_factura_proc.append(fecha_factura_dt)
         
-        # Verificar si las fechas son válidas
-        ingreso_valida = fecha_ingreso_dt is not None
-        factura_valida = fecha_factura_dt is not None
-        
-        fechas_ingreso_validas.append(ingreso_valida)
-        fechas_factura_validas.append(factura_valida)
-        
         # Clasificar
-        clasificacion = clasificar_unidad(row, ciudad, fecha_ingreso, fecha_factura)
+        clasificacion = clasificar_unidad(ciudad, fecha_ingreso, fecha_factura)
         clasificaciones.append(clasificacion)
-        
-        # Actualizar barra de progreso
-        if idx % 100 == 0:
-            my_bar.progress((idx + 1) / total_rows, text=progress_text)
-    
-    my_bar.progress(1.0, text="¡Procesamiento completado!")
     
     # Agregar columnas de información
     df_procesado['Clasificación'] = clasificaciones
-    df_procesado['Fecha Ingreso Válida'] = fechas_ingreso_validas
-    df_procesado['Fecha Factura Válida'] = fechas_factura_validas
     df_procesado['Fecha Ingreso'] = fechas_ingreso_proc
     df_procesado['Fecha Factura'] = fechas_factura_proc
     
     return df_procesado
 
+@st.cache_data
 def construir_tabla_resumen(dfs_procesados, fecha_fin):
     """
     Construye la tabla de resumen con las métricas por fecha
@@ -245,16 +234,18 @@ def construir_tabla_resumen(dfs_procesados, fecha_fin):
         
         # Procesar cada hoja
         for nombre_hoja, df in dfs_procesados.items():
-            # Asegurar que las columnas de fecha existen
-            if 'Fecha Ingreso' not in df.columns or 'Fecha Factura' not in df.columns:
+            if df is None or 'Fecha Ingreso' not in df.columns or 'Fecha Factura' not in df.columns:
                 continue
             
             # Filtrar registros con fechas válidas
             df_validos = df.dropna(subset=['Fecha Ingreso', 'Fecha Factura', 'Clasificación'])
             
+            if len(df_validos) == 0:
+                continue
+            
             # Contar ingresos para esta fecha (basado en Fecha Ingreso)
             ingresos_fecha = len(df_validos[
-                (df_validos['Fecha Ingreso'].dt.date == fecha.date())
+                df_validos['Fecha Ingreso'].dt.date == fecha.date()
             ])
             ingresos += ingresos_fecha
             
@@ -274,19 +265,17 @@ def construir_tabla_resumen(dfs_procesados, fecha_fin):
                 ])
                 facturado_fuera_modelo += fuera_modelo_fecha
         
-        # Calcular facturado total
-        facturado_total = facturado_modelo + facturado_fuera_modelo
-        
-        # Agregar fila a la tabla
-        datos_resumen.append({
-            'Fecha': fecha_str,
-            'Semana del Año': semana,
-            'Año': año,
-            'Ingresos': ingresos,
-            'Facturado Modelo': facturado_modelo,
-            'Facturado Fuera Modelo': facturado_fuera_modelo,
-            'Facturado Total': facturado_total
-        })
+        # Solo agregar fila si hay algún valor
+        if ingresos > 0 or facturado_modelo > 0 or facturado_fuera_modelo > 0:
+            datos_resumen.append({
+                'Fecha': fecha_str,
+                'Semana del Año': semana,
+                'Año': año,
+                'Ingresos': ingresos,
+                'Facturado Modelo': facturado_modelo,
+                'Facturado Fuera Modelo': facturado_fuera_modelo,
+                'Facturado Total': facturado_modelo + facturado_fuera_modelo
+            })
     
     return pd.DataFrame(datos_resumen)
 
@@ -303,123 +292,92 @@ with st.sidebar:
     - Si fecha ingreso ≥ corte Y fecha factura ≥ corte → "incluido en el modelo"
     - Si fecha ingreso > corte Y fecha factura < corte → "no incluido en el modelo"
     - Si fecha ingreso < corte Y fecha factura > corte → "no incluido en el modelo"
-    
-    **Posibles clasificaciones:**
-    - ✅ incluido en el modelo
-    - ❌ no incluido en el modelo
-    - ⚠️ fecha no válida
-    - ❓ ciudad no identificada
-    - ⏳ clasificación pendiente
     """)
     
     st.markdown("---")
     st.markdown("**Hojas esperadas en el archivo:**")
-    st.markdown("- PGP")
-    st.markdown("- EVENTO")
-    st.markdown("- PDTE PGP")
-    st.markdown("- PDTE EVENTO")
+    for hoja in st.session_state.hojas_requeridas:
+        st.markdown(f"- {hoja}")
 
 # Carga del archivo
 archivo_subido = st.file_uploader(
     "Cargar archivo Excel", 
     type=['xlsx', 'xls'],
-    help="Selecciona el archivo Excel con las 4 hojas requeridas"
+    help="Selecciona el archivo Excel con las 4 hojas requeridas",
+    key="file_uploader"
 )
 
 if archivo_subido is not None:
+    # Verificar si es un archivo nuevo
+    if st.session_state.archivo_procesado != archivo_subido.name:
+        st.session_state.dfs_procesados = None
+        st.session_state.archivo_procesado = archivo_subido.name
+    
     try:
         # Leer todas las hojas del Excel
-        excel_file = pd.ExcelFile(archivo_subido)
-        hojas_disponibles = excel_file.sheet_names
+        with st.spinner("Leyendo archivo Excel..."):
+            excel_file = pd.ExcelFile(archivo_subido)
+            hojas_disponibles = excel_file.sheet_names
         
         # Verificar que estén todas las hojas requeridas
-        hojas_requeridas = ['PGP', 'EVENTO', 'PDTE PGP', 'PDTE EVENTO']
-        hojas_faltantes = [h for h in hojas_requeridas if h not in hojas_disponibles]
+        hojas_faltantes = [h for h in st.session_state.hojas_requeridas if h not in hojas_disponibles]
         
         if hojas_faltantes:
             st.error(f"❌ Faltan las siguientes hojas: {', '.join(hojas_faltantes)}")
         else:
             st.success("✅ Archivo cargado correctamente con todas las hojas requeridas")
             
-            # Procesar cada hoja
-            dfs_procesados = {}
-            
-            # Barra de progreso general
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            for i, hoja in enumerate(hojas_requeridas):
-                status_text.text(f"Procesando hoja: {hoja}")
+            # Procesar cada hoja solo si no están ya procesadas
+            if st.session_state.dfs_procesados is None:
+                st.session_state.dfs_procesados = {}
                 
-                # Leer la hoja
-                df = pd.read_excel(archivo_subido, sheet_name=hoja)
+                # Barra de progreso general
+                progress_bar = st.progress(0)
+                status_text = st.empty()
                 
-                # Mostrar información de la hoja
-                with st.expander(f"📊 Ver columnas encontradas en {hoja}"):
-                    st.write("Columnas disponibles:", list(df.columns))
+                for i, hoja in enumerate(st.session_state.hojas_requeridas):
+                    status_text.text(f"Procesando hoja: {hoja}")
+                    
+                    # Leer la hoja
+                    df = pd.read_excel(archivo_subido, sheet_name=hoja)
+                    
+                    # Procesar la hoja
+                    df_procesado = procesar_hoja(df, hoja)
+                    st.session_state.dfs_procesados[hoja] = df_procesado
+                    
+                    # Actualizar barra de progreso
+                    progress_bar.progress((i + 1) / len(st.session_state.hojas_requeridas))
                 
-                # Procesar la hoja
-                df_procesado = procesar_hoja(df, hoja)
-                dfs_procesados[hoja] = df_procesado
-                
-                # Actualizar barra de progreso
-                progress_bar.progress((i + 1) / len(hojas_requeridas))
-            
-            status_text.text("¡Procesamiento completado!")
-            progress_bar.empty()
+                status_text.text("¡Procesamiento completado!")
+                progress_bar.empty()
             
             # Mostrar resultados por hoja
-            st.markdown("---")
-            st.header("📊 Resultados por Hoja")
-            
-            # Tabs para cada hoja
-            tabs = st.tabs(hojas_requeridas)
-            
-            for tab, hoja in zip(tabs, hojas_requeridas):
-                with tab:
-                    df_actual = dfs_procesados[hoja]
-                    
-                    # Métricas
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    with col1:
-                        st.metric("Total registros", len(df_actual))
-                    with col2:
-                        incluidos = len(df_actual[df_actual['Clasificación'] == 'incluido en el modelo'])
-                        st.metric("✅ Incluidos", incluidos)
-                    with col3:
-                        no_incluidos = len(df_actual[df_actual['Clasificación'] == 'no incluido en el modelo'])
-                        st.metric("❌ No incluidos", no_incluidos)
-                    with col4:
-                        fechas_invalidas = len(df_actual[df_actual['Clasificación'] == 'fecha no válida'])
-                        st.metric("⚠️ Fechas inválidas", fechas_invalidas)
-                    with col5:
-                        otros = len(df_actual[~df_actual['Clasificación'].isin(['incluido en el modelo', 'no incluido en el modelo', 'fecha no válida'])])
-                        st.metric("❓ Otros", otros)
-                    
-                    # Mostrar DataFrame
-                    st.dataframe(df_actual, use_container_width=True)
-                    
-                    # Estadísticas adicionales
-                    with st.expander("📈 Ver estadísticas detalladas"):
-                        st.write("Distribución de clasificaciones:")
-                        st.write(df_actual['Clasificación'].value_counts())
+            with st.expander("📊 Ver resultados detallados por hoja", expanded=False):
+                # Tabs para cada hoja
+                tabs = st.tabs(st.session_state.hojas_requeridas)
+                
+                for tab, hoja in zip(tabs, st.session_state.hojas_requeridas):
+                    with tab:
+                        df_actual = st.session_state.dfs_procesados[hoja]
                         
-                        st.write("Fechas válidas vs inválidas:")
-                        col1, col2 = st.columns(2)
+                        # Métricas
+                        col1, col2, col3, col4 = st.columns(4)
                         with col1:
-                            st.metric("Fechas ingreso válidas", df_actual['Fecha Ingreso Válida'].sum())
+                            st.metric("Total registros", len(df_actual))
                         with col2:
-                            st.metric("Fechas factura válidas", df_actual['Fecha Factura Válida'].sum())
-                    
-                    # Botón de descarga para cada hoja
-                    csv = df_actual.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label=f"📥 Descargar {hoja} como CSV",
-                        data=csv,
-                        file_name=f"{hoja}_clasificado.csv",
-                        mime="text/csv",
-                        key=f"download_{hoja}"
-                    )
+                            incluidos = len(df_actual[df_actual['Clasificación'] == 'incluido en el modelo'])
+                            st.metric("✅ Incluidos", incluidos)
+                        with col3:
+                            no_incluidos = len(df_actual[df_actual['Clasificación'] == 'no incluido en el modelo'])
+                            st.metric("❌ No incluidos", no_incluidos)
+                        with col4:
+                            fechas_invalidas = len(df_actual[df_actual['Clasificación'] == 'fecha no válida'])
+                            st.metric("⚠️ Fechas inválidas", fechas_invalidas)
+                        
+                        # Mostrar DataFrame
+                        st.dataframe(df_actual.head(100), use_container_width=True)
+                        if len(df_actual) > 100:
+                            st.caption(f"Mostrando 100 de {len(df_actual)} registros")
             
             # Sección de tabla resumen
             st.markdown("---")
@@ -432,7 +390,7 @@ if archivo_subido is not None:
                 value=fecha_maxima,
                 min_value=FECHA_INICIO.date(),
                 max_value=fecha_maxima,
-                help=f"Selecciona la fecha hasta la cual quieres ver el resumen (mínimo: {FECHA_INICIO.strftime('%d/%m/%Y')})"
+                key="fecha_selector"
             )
             
             # Convertir a datetime
@@ -440,67 +398,73 @@ if archivo_subido is not None:
             
             # Construir tabla resumen
             with st.spinner("Construyendo tabla resumen..."):
-                df_resumen = construir_tabla_resumen(dfs_procesados, fecha_fin_dt)
+                df_resumen = construir_tabla_resumen(st.session_state.dfs_procesados, fecha_fin_dt)
                 
-                # Mostrar métricas totales
-                st.subheader("Métricas Globales")
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Ingresos", f"{df_resumen['Ingresos'].sum():,}")
-                with col2:
-                    st.metric("Total Facturado Modelo", f"{df_resumen['Facturado Modelo'].sum():,}")
-                with col3:
-                    st.metric("Total Facturado Fuera Modelo", f"{df_resumen['Facturado Fuera Modelo'].sum():,}")
-                with col4:
-                    st.metric("Total Facturado", f"{df_resumen['Facturado Total'].sum():,}")
-                
-                # Mostrar tabla resumen
-                st.subheader("Detalle por Fecha")
-                st.dataframe(
-                    df_resumen,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
-                        "Semana del Año": st.column_config.NumberColumn("Semana", format="%d"),
-                        "Año": st.column_config.NumberColumn("Año", format="%d"),
-                        "Ingresos": st.column_config.NumberColumn("Ingresos", format="%d"),
-                        "Facturado Modelo": st.column_config.NumberColumn("Fact. Modelo", format="%d"),
-                        "Facturado Fuera Modelo": st.column_config.NumberColumn("Fact. Fuera Modelo", format="%d"),
-                        "Facturado Total": st.column_config.NumberColumn("Fact. Total", format="%d")
-                    }
-                )
-                
-                # Gráfico de evolución
-                st.subheader("Evolución Temporal")
-                chart_data = df_resumen.set_index('Fecha')[['Ingresos', 'Facturado Modelo', 'Facturado Fuera Modelo']]
-                st.line_chart(chart_data)
-                
-                # Botones de descarga para la tabla resumen
-                col1, col2 = st.columns(2)
-                with col1:
-                    csv_resumen = df_resumen.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Descargar tabla resumen como CSV",
-                        data=csv_resumen,
-                        file_name=f"resumen_fechas_{fecha_seleccionada.strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-                
-                with col2:
-                    # Excel con todas las hojas más el resumen
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        for hoja, df in dfs_procesados.items():
-                            df.to_excel(writer, sheet_name=hoja, index=False)
-                        df_resumen.to_excel(writer, sheet_name='RESUMEN', index=False)
+                if len(df_resumen) > 0:
+                    # Mostrar métricas globales
+                    st.subheader("Métricas Globales")
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Total Ingresos", f"{df_resumen['Ingresos'].sum():,}")
+                    with col2:
+                        st.metric("Total Facturado Modelo", f"{df_resumen['Facturado Modelo'].sum():,}")
+                    with col3:
+                        st.metric("Total Facturado Fuera Modelo", f"{df_resumen['Facturado Fuera Modelo'].sum():,}")
+                    with col4:
+                        st.metric("Total Facturado", f"{df_resumen['Facturado Total'].sum():,}")
                     
-                    st.download_button(
-                        label="📥 Descargar Excel completo con resumen",
-                        data=output.getvalue(),
-                        file_name=f"unidades_clasificadas_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    # Mostrar tabla resumen
+                    st.subheader("Detalle por Fecha")
+                    st.dataframe(
+                        df_resumen,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                            "Semana del Año": st.column_config.NumberColumn("Semana", format="%d"),
+                            "Año": st.column_config.NumberColumn("Año", format="%d"),
+                            "Ingresos": st.column_config.NumberColumn("Ingresos", format="%d"),
+                            "Facturado Modelo": st.column_config.NumberColumn("Fact. Modelo", format="%d"),
+                            "Facturado Fuera Modelo": st.column_config.NumberColumn("Fact. Fuera Modelo", format="%d"),
+                            "Facturado Total": st.column_config.NumberColumn("Fact. Total", format="%d")
+                        }
                     )
+                    
+                    # Gráfico de evolución
+                    st.subheader("Evolución Temporal")
+                    if len(df_resumen) > 1:
+                        chart_data = df_resumen.set_index('Fecha')[['Ingresos', 'Facturado Modelo', 'Facturado Fuera Modelo']]
+                        st.line_chart(chart_data)
+                    else:
+                        st.info("Se necesita más de un día de datos para mostrar el gráfico de evolución")
+                    
+                    # Botones de descarga
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        csv_resumen = df_resumen.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Descargar tabla resumen como CSV",
+                            data=csv_resumen,
+                            file_name=f"resumen_fechas_{fecha_seleccionada.strftime('%Y%m%d')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                    with col2:
+                        # Excel con todas las hojas más el resumen
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            for hoja, df in st.session_state.dfs_procesados.items():
+                                df.to_excel(writer, sheet_name=hoja[:31], index=False)  # Excel limita nombres a 31 caracteres
+                            df_resumen.to_excel(writer, sheet_name='RESUMEN', index=False)
+                        
+                        st.download_button(
+                            label="📥 Descargar Excel completo con resumen",
+                            data=output.getvalue(),
+                            file_name=f"unidades_clasificadas_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                else:
+                    st.warning("No hay datos en el rango de fechas seleccionado")
             
     except Exception as e:
         st.error(f"❌ Error al procesar el archivo: {str(e)}")
