@@ -1,14 +1,16 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-from datetime import datetime, date
 
-# Configuración de la página
+# Configuración de la página - DEBE SER LO PRIMERO
 st.set_page_config(
     page_title="Clasificador de Modelo PGP/EVENTO",
     page_layout="wide"
 )
 
+import pandas as pd
+import numpy as np
+from datetime import datetime, date
+
+# El resto del código continúa aquí...
 st.title("📊 Clasificador de Modelo PGP y EVENTO")
 st.markdown("---")
 
@@ -216,21 +218,25 @@ if archivo_subido is not None:
                     with col1:
                         # Gráfico de líneas con datos agregados por semana
                         st.subheader("Evolución por Semana")
-                        df_semanal = df_resumen.groupby('semana del año').agg({
-                            'ingresos': 'sum',
-                            'facturado modelo': 'sum',
-                            'facturado fuera modelo': 'sum'
-                        }).reset_index()
-                        
-                        st.line_chart(
-                            df_semanal.set_index('semana del año')[['ingresos', 'facturado modelo', 'facturado fuera modelo']]
-                        )
+                        if not df_resumen.empty:
+                            df_semanal = df_resumen.groupby('semana del año').agg({
+                                'ingresos': 'sum',
+                                'facturado modelo': 'sum',
+                                'facturado fuera modelo': 'sum'
+                            }).reset_index()
+                            
+                            st.line_chart(
+                                df_semanal.set_index('semana del año')[['ingresos', 'facturado modelo', 'facturado fuera modelo']]
+                            )
                     
                     with col2:
                         # Gráfico de barras para facturado
                         st.subheader("Facturado Modelo vs Fuera Modelo")
-                        df_barras = df_resumen[['fecha', 'facturado modelo', 'facturado fuera modelo']].set_index('fecha')
-                        st.bar_chart(df_barras)
+                        if not df_resumen.empty and len(df_resumen) > 0:
+                            # Mostrar solo últimos 30 días para mejor visualización
+                            df_ultimos = df_resumen.tail(30)
+                            df_barras = df_ultimos[['fecha', 'facturado modelo', 'facturado fuera modelo']].set_index('fecha')
+                            st.bar_chart(df_barras)
                     
                     # Botón para descargar
                     st.markdown("---")
