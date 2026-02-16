@@ -7,10 +7,10 @@ from io import BytesIO
 # Configuración de la página
 st.set_page_config(page_title="Gestión de Ingresos y Llamados", layout="wide")
 
-st.title("📊 Visualizador de Registros con Filtros Dinámicos")
+st.title("📊 Análisis de gestiones del modelo de atención")
 
 # Crear pestañas
-tab1, tab2 = st.tabs(["📋 Análisis de Ingresos", "📞 Análisis de Llamados"])
+tab1, tab2 = st.tabs(["📋 Análisis de ingresos abiertos", "📆 Análisis de turnos atendidos"])
 
 # ============================================================================
 # PESTAÑA 1: ANÁLISIS DE INGRESOS
@@ -31,7 +31,7 @@ with tab1:
         
         with col2:
             st.markdown("##### 📊 Configuración de análisis")
-            st.markdown("*Selecciona los filtros después de cargar el archivo*")
+            st.markdown("*Actualice el informe ODO_ESTADISTICO_INGRESOS con el periodo requerido, almacene la información en un excel en blanco y cargue el archivo para analizar*")
         
         # Si hay archivo cargado, mostrar los filtros dentro del MISMO expander
         if uploaded_file is not None:
@@ -402,7 +402,7 @@ with tab1:
                 }).set_index('Usuario')
                 
                 st.bar_chart(chart_data, height=400)
-                st.caption("📊 Ordenado de mayor a menor promedio de registros")
+                #st.caption("📊 Ordenado de mayor a menor promedio de registros")
                 
                 # --- EXPORTAR ---
                 st.divider()
