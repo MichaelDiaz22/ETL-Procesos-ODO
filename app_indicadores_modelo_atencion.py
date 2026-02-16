@@ -385,7 +385,7 @@ with tab1:
                     
                     st.markdown(f"**Estándar:** {ESTANDAR_REGISTROS_HORA} registros por hora")
                     
-                    st.markdown("### 🏆 Máximo Registros/Hora")
+                    st.markdown("### 📈 Máximo Registros/Hora")
                     st.metric(
                         label="Máximo alcanzado",
                         value=f"{max_registros:.2f} registros/hora",
@@ -418,7 +418,7 @@ with tab1:
                         )
                         st.markdown(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
                     
-                    st.markdown("### ⚡ Mínimo Tiempo de Admisión")
+                    st.markdown("### ⏱️ Mínimo Tiempo de Admisión")
                     if min_tiempo is not None:
                         st.metric(
                             label="Mínimo alcanzado",
