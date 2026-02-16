@@ -226,31 +226,47 @@ with tab1:
                 horas_formateadas = [f"{h}:00" for h in horas_con_registros]
                 tabla_resultados.columns = horas_formateadas
                 
-                # Reemplazar None por 0 para la suma
+                # Reemplazar None por 0 para cálculos
                 tabla_resultados_suma = tabla_resultados.fillna(0)
                 
-                # Agregar columna de total por usuario (SUMATORIA DE REGISTROS)
+                # Agregar columnas de estadísticas por usuario
                 tabla_resultados_suma['TOTAL REGISTROS'] = tabla_resultados_suma.sum(axis=1)
+                tabla_resultados_suma['MÍNIMO'] = tabla_resultados_suma[horas_formateadas].min(axis=1)
+                tabla_resultados_suma['MÁXIMO'] = tabla_resultados_suma[horas_formateadas].max(axis=1)
                 
-                # Crear una versión para visualización que incluya el total
+                # Crear tabla visual con todas las columnas
                 tabla_visual_completa = tabla_resultados.copy()
-                # Agregar la columna de total a la tabla visual (con valores originales, no sumados)
                 tabla_visual_completa['TOTAL REGISTROS'] = tabla_resultados_suma['TOTAL REGISTROS']
+                tabla_visual_completa['MÍNIMO'] = tabla_resultados_suma['MÍNIMO']
+                tabla_visual_completa['MÁXIMO'] = tabla_resultados_suma['MÁXIMO']
                 
                 # Ordenar por total descendente
-                tabla_visual_completa = tabla_visual_completa.reindex(tabla_resultados_suma.sort_values('TOTAL REGISTROS', ascending=False).index)
+                tabla_visual_completa = tabla_visual_completa.sort_values('TOTAL REGISTROS', ascending=False)
                 tabla_resultados = tabla_resultados.reindex(tabla_visual_completa.index)
                 tabla_resultados_suma = tabla_resultados_suma.reindex(tabla_visual_completa.index)
                 
-                # --- TABLA 1: PROMEDIOS DE REGISTROS CON TOTAL ---
+                # Calcular sumatoria por hora (fila de totales)
+                suma_por_hora = tabla_resultados_suma[horas_formateadas].sum(axis=0).round(2)
+                
+                # Crear fila de totales para la tabla visual
+                fila_totales = pd.Series(index=tabla_visual_completa.columns, dtype='object')
+                fila_totales[horas_formateadas] = suma_por_hora.values
+                fila_totales['TOTAL REGISTROS'] = suma_por_hora.sum()
+                fila_totales['MÍNIMO'] = ''
+                fila_totales['MÁXIMO'] = ''
+                
+                # Agregar la fila de totales a la tabla visual
+                tabla_visual_completa.loc['TOTAL'] = fila_totales
+                
+                # --- TABLA 1: PROMEDIOS DE REGISTROS CON TOTAL Y ESTADÍSTICAS ---
                 st.subheader("Ingresos promedio abiertos por Admisionista")
                 st.markdown("*Cantidad de ingresos que realizan por hora*")
 
-                # Mostrar tabla con formato (incluyendo la columna TOTAL)
+                # Mostrar tabla con formato
                 st.dataframe(
                     tabla_visual_completa.style
                     .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
-                    .format("{:.2f}", na_rep="0.00")
+                    .format("{:.2f}", na_rep="0.00", subset=pd.IndexSlice[:, horas_formateadas + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO']])
                     .set_properties(**{'text-align': 'center'}),
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso) * 35))
@@ -273,25 +289,31 @@ with tab1:
                         else:
                             tabla_tiempos.at[usuario, hora_col] = None
                 
-                # Agregar columna de tiempo promedio total
+                # Crear DataFrame para cálculos de tiempos (reemplazar None con infinito para min/max)
+                tabla_tiempos_calculos = tabla_tiempos.copy()
+                
+                # Agregar columnas de estadísticas por usuario
+                tabla_tiempos['TIEMPO PROMEDIO TOTAL'] = None
+                tabla_tiempos['MÍNIMO'] = None
+                tabla_tiempos['MÁXIMO'] = None
+                
                 for usuario in usuarios_proceso:
                     tiempos_usuario = [v for v in tabla_tiempos.loc[usuario, horas_formateadas].values if v is not None]
                     if tiempos_usuario:
-                        tiempo_promedio_total = np.mean(tiempos_usuario)
-                        tabla_tiempos.at[usuario, 'TIEMPO PROMEDIO TOTAL'] = round(tiempo_promedio_total, 1)
-                    else:
-                        tabla_tiempos.at[usuario, 'TIEMPO PROMEDIO TOTAL'] = None
+                        tabla_tiempos.at[usuario, 'TIEMPO PROMEDIO TOTAL'] = round(np.mean(tiempos_usuario), 1)
+                        tabla_tiempos.at[usuario, 'MÍNIMO'] = round(min(tiempos_usuario), 1)
+                        tabla_tiempos.at[usuario, 'MÁXIMO'] = round(max(tiempos_usuario), 1)
                 
                 # Ordenar tabla de tiempos según el mismo orden que la tabla de registros
-                tabla_tiempos = tabla_tiempos.reindex(tabla_visual_completa.index)
+                tabla_tiempos = tabla_tiempos.reindex(tabla_visual_completa.index[:-1])  # Excluir la fila TOTAL
                 
                 # Mostrar tabla de tiempos
                 st.dataframe(
                     tabla_tiempos.style
                     .background_gradient(cmap='YlOrRd_r', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
                     .set_properties(**{'text-align': 'center'})
-                    .format("{:.1f}", na_rep="-")
-                    .format("{:.1f}", subset=['TIEMPO PROMEDIO TOTAL']),
+                    .format("{:.1f}", na_rep="-", subset=pd.IndexSlice[:, horas_formateadas + ['TIEMPO PROMEDIO TOTAL', 'MÍNIMO', 'MÁXIMO']])
+                    .format("{:.1f}", subset=['TIEMPO PROMEDIO TOTAL', 'MÍNIMO', 'MÁXIMO']),
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso) * 35))
                 )
@@ -385,7 +407,7 @@ with tab1:
                     
                     st.markdown(f"**Estándar:** {ESTANDAR_REGISTROS_HORA} registros por hora")
                     
-                    st.markdown("### 🏆 Máximo Registros/Hora")
+                    st.markdown("### 📈 Máximo Registros/Hora")
                     st.metric(
                         label="Máximo alcanzado",
                         value=f"{max_registros:.2f} registros/hora",
@@ -418,7 +440,7 @@ with tab1:
                         )
                         st.markdown(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
                     
-                    st.markdown("### ⚡ Mínimo Tiempo de Admisión")
+                    st.markdown("### ⏱️ Mínimo Tiempo de Admisión")
                     if min_tiempo is not None:
                         st.metric(
                             label="Mínimo alcanzado",
@@ -437,9 +459,10 @@ with tab1:
                 # --- GRÁFICO DE BARRAS: TOP USUARIOS ---
                 st.subheader("🏆 Top 10 Usuarios por Actividad Promedio")
                 
-                top_n = min(10, len(tabla_visual_completa))
-                top_usuarios = tabla_visual_completa.head(top_n)
+                top_n = min(10, len(usuarios_proceso))
+                top_usuarios = tabla_visual_completa.iloc[:top_n].copy()
                 
+                # Crear DataFrame para el gráfico
                 top_usuarios_chart = pd.DataFrame({
                     'Usuario': top_usuarios.index,
                     'Promedio Diario': top_usuarios['TOTAL REGISTROS'].values
@@ -451,15 +474,74 @@ with tab1:
                     use_container_width=True
                 )
                 
+                st.caption("📊 Ordenado de mayor a menor promedio de registros")
+                
+                # --- SECCIÓN DE EXPORTACIÓN A EXCEL ---
                 st.divider()
-                st.subheader("📤 Exportar Resultados")
+                st.subheader("📤 Exportar Resultados a Excel")
+                
+                # Preparar dataframes para exportar
+                def exportar_a_excel():
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        # Hoja 1: Ingresos promedio
+                        tabla_visual_completa.to_excel(writer, sheet_name='Ingresos Promedio')
+                        
+                        # Hoja 2: Tiempos promedio
+                        tabla_tiempos.to_excel(writer, sheet_name='Tiempos Promedio')
+                        
+                        # Hoja 3: Estadísticas resumen
+                        stats_data = {
+                            'Métrica': ['Promedio registros/hora', 'Máximo registros/hora', 'Tiempo promedio admisión', 'Mínimo tiempo admisión'],
+                            'Valor': [
+                                f"{promedio_general:.2f}",
+                                f"{max_registros:.2f} (Usuario: {usuario_max_registros}, Hora: {hora_max_registros})",
+                                f"{tiempo_promedio_general:.1f} min" if tiempo_promedio_general else "N/A",
+                                f"{min_tiempo:.1f} min (Usuario: {usuario_min_tiempo}, Hora: {hora_min_tiempo})" if min_tiempo else "N/A"
+                            ],
+                            'Estándar': [f"{ESTANDAR_REGISTROS_HORA}", f"{ESTANDAR_REGISTROS_HORA}", f"{ESTANDAR_TIEMPO_ADMISION} min", f"{ESTANDAR_TIEMPO_ADMISION} min"],
+                            'Diferencia': [
+                                f"{diferencia_registros:+.2f} ({diferencia_registros_porcentaje:+.1f}%)",
+                                f"{max_registros - ESTANDAR_REGISTROS_HORA:+.2f}",
+                                f"{diferencia_tiempo:+.1f} min ({diferencia_tiempo_porcentaje:+.1f}%)" if diferencia_tiempo else "N/A",
+                                f"{ESTANDAR_TIEMPO_ADMISION - min_tiempo:.1f} min" if min_tiempo else "N/A"
+                            ]
+                        }
+                        stats_df = pd.DataFrame(stats_data)
+                        stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
+                        
+                        # Hoja 4: Configuración de filtros
+                        config_data = {
+                            'Parámetro': ['Rango de fechas', 'Día analizado', 'Centros', 'Usuarios', 'Registros analizados'],
+                            'Valor': [
+                                f"{fecha_inicio} a {fecha_fin}",
+                                dia_seleccionado,
+                                ', '.join(centro_sel) if centro_sel else 'Todos',
+                                ', '.join(usuario_sel) if usuario_sel else 'Todos',
+                                len(df_proceso)
+                            ]
+                        }
+                        config_df = pd.DataFrame(config_data)
+                        config_df.to_excel(writer, sheet_name='Configuración', index=False)
+                    
+                    output.seek(0)
+                    return output
+                
+                # Botón de descarga
+                st.download_button(
+                    label="📥 Descargar todo en Excel",
+                    data=exportar_a_excel(),
+                    file_name=f"analisis_ingresos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Descarga todas las tablas y estadísticas en un archivo Excel"
+                )
                 
                 st.info("""
-                **Nota:** Streamlit no tiene funcionalidad nativa para exportar a PDF.
-                **Alternativas sugeridas:**
-                1. Use los botones de descarga CSV/Excel y convierta a PDF desde Excel
-                2. Tome capturas de pantalla de las tablas importantes
-                3. Use la funcionalidad de impresión del navegador (Ctrl+P) para guardar como PDF
+                **El archivo Excel incluye:**
+                - Hoja 'Ingresos Promedio': Tabla completa de ingresos por usuario y hora
+                - Hoja 'Tiempos Promedio': Tabla de tiempos de admisión
+                - Hoja 'Estadísticas': Resumen de métricas y comparativas con estándares
+                - Hoja 'Configuración': Filtros aplicados al análisis
                 """)
 
         except Exception as e:
@@ -753,22 +835,39 @@ with tab2:
                 # Reemplazar None por 0 para la suma
                 tabla_promedios_suma = tabla_promedios.fillna(0)
                 
-                # Agregar columna de total por usuario
+                # Agregar columnas de estadísticas por usuario
                 tabla_promedios_suma['TOTAL REGISTROS'] = tabla_promedios_suma.sum(axis=1)
+                tabla_promedios_suma['MÍNIMO'] = tabla_promedios_suma[horas_formateadas_tab2].min(axis=1)
+                tabla_promedios_suma['MÁXIMO'] = tabla_promedios_suma[horas_formateadas_tab2].max(axis=1)
                 
                 # Crear tabla visual con total
                 tabla_visual_tab2 = tabla_promedios.copy()
                 tabla_visual_tab2['TOTAL REGISTROS'] = tabla_promedios_suma['TOTAL REGISTROS']
+                tabla_visual_tab2['MÍNIMO'] = tabla_promedios_suma['MÍNIMO']
+                tabla_visual_tab2['MÁXIMO'] = tabla_promedios_suma['MÁXIMO']
                 
                 # Ordenar por total descendente
-                tabla_visual_tab2 = tabla_visual_tab2.reindex(tabla_promedios_suma.sort_values('TOTAL REGISTROS', ascending=False).index)
+                tabla_visual_tab2 = tabla_visual_tab2.sort_values('TOTAL REGISTROS', ascending=False)
                 tabla_promedios = tabla_promedios.reindex(tabla_visual_tab2.index)
+                
+                # Calcular sumatoria por hora
+                suma_por_hora_tab2 = tabla_promedios_suma[horas_formateadas_tab2].sum(axis=0).round(2)
+                
+                # Crear fila de totales
+                fila_totales_tab2 = pd.Series(index=tabla_visual_tab2.columns, dtype='object')
+                fila_totales_tab2[horas_formateadas_tab2] = suma_por_hora_tab2.values
+                fila_totales_tab2['TOTAL REGISTROS'] = suma_por_hora_tab2.sum()
+                fila_totales_tab2['MÍNIMO'] = ''
+                fila_totales_tab2['MÁXIMO'] = ''
+                
+                # Agregar fila de totales
+                tabla_visual_tab2.loc['TOTAL'] = fila_totales_tab2
                 
                 # Mostrar tabla
                 st.dataframe(
                     tabla_visual_tab2.style
                     .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas_tab2])
-                    .format("{:.2f}", na_rep="0.00")
+                    .format("{:.2f}", na_rep="0.00", subset=pd.IndexSlice[:, horas_formateadas_tab2 + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO']])
                     .set_properties(**{'text-align': 'center'}),
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso_tab2) * 35))
@@ -936,8 +1035,8 @@ with tab2:
                 # ============================================================
                 st.subheader("🏆 Top 10 Usuarios por Actividad")
                 
-                top_n_tab2 = min(10, len(tabla_visual_tab2))
-                top_usuarios_tab2 = tabla_visual_tab2.head(top_n_tab2)
+                top_n_tab2 = min(10, len(usuarios_proceso_tab2))
+                top_usuarios_tab2 = tabla_visual_tab2.iloc[:top_n_tab2].copy()
                 
                 top_usuarios_chart = pd.DataFrame({
                     'Usuario': top_usuarios_tab2.index,
@@ -950,15 +1049,54 @@ with tab2:
                     use_container_width=True
                 )
                 
+                st.caption("📊 Ordenado de mayor a menor promedio de registros")
+                
+                # --- SECCIÓN DE EXPORTACIÓN A EXCEL PARA LLAMADOS ---
                 st.divider()
-                st.subheader("📤 Exportar Resultados")
+                st.subheader("📤 Exportar Resultados a Excel")
+                
+                # Preparar dataframes para exportar
+                def exportar_a_excel_tab2():
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        # Hoja 1: Llamados promedio
+                        tabla_visual_tab2.to_excel(writer, sheet_name='Llamados Promedio')
+                        
+                        # Hoja 2: Manuales vs Automáticos
+                        if 'tabla_tipos' in locals():
+                            tabla_tipos.to_excel(writer, sheet_name='Manuales vs Automáticos')
+                        
+                        # Hoja 3: Configuración de filtros
+                        config_data = {
+                            'Parámetro': ['Rango de fechas', 'Día analizado', 'Servicios', 'Usuarios', 'Registros analizados'],
+                            'Valor': [
+                                f"{fecha_inicio_tab2} a {fecha_fin_tab2}",
+                                dia_seleccionado_tab2,
+                                ', '.join(servicio_sel) if servicio_sel else 'Todos',
+                                ', '.join(usuario_sel_tab2) if usuario_sel_tab2 else 'Todos',
+                                len(df_proceso_tab2)
+                            ]
+                        }
+                        config_df = pd.DataFrame(config_data)
+                        config_df.to_excel(writer, sheet_name='Configuración', index=False)
+                    
+                    output.seek(0)
+                    return output
+                
+                # Botón de descarga
+                st.download_button(
+                    label="📥 Descargar todo en Excel",
+                    data=exportar_a_excel_tab2(),
+                    file_name=f"analisis_llamados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Descarga todas las tablas en un archivo Excel"
+                )
                 
                 st.info("""
-                **Nota:** Streamlit no tiene funcionalidad nativa para exportar a PDF.
-                **Alternativas sugeridas:**
-                1. Use los botones de descarga CSV/Excel y convierta a PDF desde Excel
-                2. Tome capturas de pantalla de las tablas importantes
-                3. Use la funcionalidad de impresión del navegador (Ctrl+P) para guardar como PDF
+                **El archivo Excel incluye:**
+                - Hoja 'Llamados Promedio': Tabla completa de llamados por usuario y hora
+                - Hoja 'Manuales vs Automáticos': Clasificación de llamados
+                - Hoja 'Configuración': Filtros aplicados al análisis
                 """)
 
         except Exception as e:
