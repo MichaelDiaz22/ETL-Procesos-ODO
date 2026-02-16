@@ -478,7 +478,8 @@ with tab2:
         
         with col2:
             st.markdown("##### 📊 Configuración de análisis")
-            st.markdown("*Selecciona los filtros después de cargar el archivo*")
+            st.markdown("*Extraiga de Tramita un informe de atenciones del gestor de turnos con el periodo requerido. Cargue el archivo generado por tramita para analizar*")
+            st.markdown("*Posteriormente, seleccione un rango de fechas, un servicio y los usuarios (Gestores de acceso) a analizar*")
         
         # Si hay archivo cargado, mostrar los filtros dentro del MISMO expander
         if uploaded_file_tab2 is not None:
@@ -554,7 +555,7 @@ with tab2:
                         st.info("No hay servicios disponibles")
                 
                 with col_f3:
-                    st.markdown("##### 👤 Usuarios")
+                    st.markdown("##### 👤 Usuarios (Gestor de acceso)")
                     if usuarios_disponibles:
                         usuario_sel = st.multiselect("Seleccionar usuarios:", usuarios_disponibles, key="tab2_usuarios")
                     else:
