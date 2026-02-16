@@ -18,30 +18,20 @@ tab1, tab2 = st.tabs(["📋 Análisis de Ingresos", "📞 Análisis de Llamados"
 with tab1:
     st.header("📋 Análisis de Ingresos")
     
-    # --- CONFIGURACIÓN EN EXPANDER ---
-    with st.expander("⚙️ Configuración de Análisis - Ingresos", expanded=True):
-        col_config1, col_config2 = st.columns([1, 1])
+    # --- CONFIGURACIÓN Y FILTROS UNIFICADOS EN EXPANDER ---
+    with st.expander("⚙️ Configuración y Filtros", expanded=True):
+        col1, col2 = st.columns([1, 1])
         
-        with col_config1:
-            # 1. Carga de archivo
+        with col1:
+            # Carga de archivo
             uploaded_file = st.file_uploader("📁 Sube tu archivo Excel (.xlsx)", 
                                             type=["xlsx"], 
                                             help="Archivo debe contener columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'",
                                             key="tab1_file")
-            
-            # 2. Selector de día de la semana
-            dia_semana_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos los días (L-V)"]
-            dia_seleccionado = st.selectbox(
-                "📅 Día de la semana a analizar:",
-                options=dia_semana_opciones,
-                index=7,
-                help="Selecciona un día específico o 'Todos los días' para promediar de lunes a viernes",
-                key="tab1_dia"
-            )
         
-        with col_config2:
-            st.markdown("##### 📊 Filtros adicionales")
-            st.markdown("*Se aplicarán después de cargar el archivo*")
+        with col2:
+            st.markdown("##### 📊 Filtros disponibles")
+            st.markdown("*Los filtros se habilitarán después de cargar el archivo*")
 
     if uploaded_file is not None:
         try:
@@ -55,13 +45,12 @@ with tab1:
             fecha_minima_archivo = df["FECHA CREACION"].min().date()
             fecha_maxima_archivo = df["FECHA CREACION"].max().date()
 
-            # --- FILTROS ADICIONALES EN EXPANDER ---
-            with st.expander("🔍 Filtros de selección", expanded=True):
-                col_filtros1, col_filtros2, col_filtros3 = st.columns(3)
+            # --- FILTROS (dentro del mismo expander) ---
+            with st.expander("⚙️ Configuración y Filtros", expanded=True):
+                st.markdown("#### 📅 Rango de fechas")
+                col_f1, col_f2, col_f3 = st.columns(3)
                 
-                with col_filtros1:
-                    # Filtro de Fechas
-                    st.markdown("##### 📅 Rango de fechas")
+                with col_f1:
                     fecha_inicio = st.date_input(
                         "Fecha inicio:",
                         value=fecha_minima_archivo,
@@ -69,6 +58,8 @@ with tab1:
                         max_value=fecha_maxima_archivo,
                         key="tab1_fecha_inicio"
                     )
+                
+                with col_f2:
                     fecha_fin = st.date_input(
                         "Fecha fin:",
                         value=fecha_maxima_archivo,
@@ -76,14 +67,18 @@ with tab1:
                         max_value=fecha_maxima_archivo,
                         key="tab1_fecha_fin"
                     )
-                    
+                
+                with col_f3:
+                    st.markdown("##### &nbsp;")
                     if fecha_inicio > fecha_fin:
                         st.error("⚠️ Fecha inicio no puede ser mayor que fecha fin")
-                        st.stop()
+                    else:
+                        st.success("✅ Rango válido")
                 
-                with col_filtros2:
-                    # Filtro de Centro de Atención
-                    st.markdown("##### 🏥 Centros de atención")
+                col_f4, col_f5 = st.columns(2)
+                
+                with col_f4:
+                    st.markdown("#### 🏥 Centros de atención")
                     centros = sorted(df["CENTRO ATENCION"].dropna().unique())
                     centro_sel = st.multiselect(
                         "Seleccionar centros:", 
@@ -92,9 +87,8 @@ with tab1:
                         key="tab1_centro"
                     )
                 
-                with col_filtros3:
-                    # Filtro de Usuario
-                    st.markdown("##### 👤 Usuarios")
+                with col_f5:
+                    st.markdown("#### 👤 Usuarios")
                     usuarios = sorted(df["USUARIO CREA INGRESO"].dropna().unique())
                     usuario_sel = st.multiselect(
                         "Seleccionar usuarios:", 
@@ -107,10 +101,11 @@ with tab1:
             df_filtrado = df.copy()
 
             # Filtrado por Rango de Fechas
-            df_filtrado = df_filtrado[
-                (df_filtrado["FECHA CREACION"].dt.date >= fecha_inicio) & 
-                (df_filtrado["FECHA CREACION"].dt.date <= fecha_fin)
-            ]
+            if fecha_inicio <= fecha_fin:
+                df_filtrado = df_filtrado[
+                    (df_filtrado["FECHA CREACION"].dt.date >= fecha_inicio) & 
+                    (df_filtrado["FECHA CREACION"].dt.date <= fecha_fin)
+                ]
             
             # Filtrado por Centro
             if centro_sel:
@@ -121,17 +116,27 @@ with tab1:
                 df_filtrado = df_filtrado[df_filtrado["USUARIO CREA INGRESO"].isin(usuario_sel)]
 
             # --- PROCESAMIENTO ---
-            if not df_filtrado.empty:
+            if not df_filtrado.empty and fecha_inicio <= fecha_fin:
                 st.divider()
                 
                 # Mostrar configuración seleccionada
                 st.info(f"""
                 **Configuración de análisis:**
                 - **Rango:** {fecha_inicio} a {fecha_fin}
-                - **Día analizado:** {dia_seleccionado}
                 - **Centros:** {', '.join(centro_sel) if centro_sel else 'Todos'}
                 - **Usuarios:** {', '.join(usuario_sel) if usuario_sel else 'Todos'}
                 """)
+                
+                # --- SELECTOR DE DÍA (fuera del expander, después del resumen) ---
+                st.markdown("### 📅 Selección de día para análisis")
+                dia_semana_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos los días (L-V)"]
+                dia_seleccionado = st.selectbox(
+                    "Día de la semana a analizar:",
+                    options=dia_semana_opciones,
+                    index=7,
+                    help="Selecciona un día específico o 'Todos los días' para promediar de lunes a viernes",
+                    key="tab1_dia"
+                )
                 
                 # Preparar datos
                 df_proceso = df_filtrado.copy()
@@ -457,24 +462,20 @@ with tab1:
 with tab2:
     st.header("📞 Análisis de Llamados")
     
-    # --- CONFIGURACIÓN EN EXPANDER ---
-    with st.expander("⚙️ Configuración de Análisis - Llamados", expanded=True):
-        col_config1, col_config2 = st.columns([1, 1])
+    # --- CONFIGURACIÓN Y FILTROS UNIFICADOS EN EXPANDER ---
+    with st.expander("⚙️ Configuración y Filtros", expanded=True):
+        col1, col2 = st.columns([1, 1])
         
-        with col_config1:
-            # 1. Carga de archivo
+        with col1:
+            # Carga de archivo
             uploaded_file_tab2 = st.file_uploader("📁 Sube tu archivo Excel (.xlsx)", 
                                                 type=["xlsx"], 
                                                 help="Archivo con información de llamados",
                                                 key="tab2_file")
-            
-            # 2. Selector de día
-            dias_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos (L-V)"]
-            dia_sel = st.selectbox("📅 Día a analizar", dias_opciones, index=7, key="tab2_dia")
         
-        with col_config2:
-            st.markdown("##### 📊 Filtros adicionales")
-            st.markdown("*Se aplicarán después de cargar el archivo*")
+        with col2:
+            st.markdown("##### 📊 Filtros disponibles")
+            st.markdown("*Los filtros se habilitarán después de cargar el archivo*")
 
     if uploaded_file_tab2 is not None:
         try:
@@ -525,29 +526,36 @@ with tab2:
             fecha_min = df_tab2_limpio["HORA_LLEGADA"].min().date()
             fecha_max = df_tab2_limpio["HORA_LLEGADA"].max().date()
             
-            # --- FILTROS ADICIONALES EN EXPANDER ---
-            with st.expander("🔍 Filtros de selección", expanded=True):
-                col_filtros1, col_filtros2, col_filtros3 = st.columns(3)
+            # --- FILTROS (dentro del mismo expander) ---
+            with st.expander("⚙️ Configuración y Filtros", expanded=True):
+                st.markdown("#### 📅 Rango de fechas")
+                col_f1, col_f2, col_f3 = st.columns(3)
                 
-                with col_filtros1:
-                    st.markdown("##### 📅 Rango de fechas")
+                with col_f1:
                     fecha_ini = st.date_input("Inicio", fecha_min, min_value=fecha_min, max_value=fecha_max, key="tab2_fecha_ini")
+                
+                with col_f2:
                     fecha_fin = st.date_input("Fin", fecha_max, min_value=fecha_min, max_value=fecha_max, key="tab2_fecha_fin")
-                    
+                
+                with col_f3:
+                    st.markdown("##### &nbsp;")
                     if fecha_ini > fecha_fin:
                         st.error("⚠️ Fecha inicio no puede ser mayor que fecha fin")
-                        st.stop()
+                    else:
+                        st.success("✅ Rango válido")
                 
-                with col_filtros2:
-                    st.markdown("##### 🏥 Servicios")
+                col_f4, col_f5 = st.columns(2)
+                
+                with col_f4:
+                    st.markdown("#### 🏥 Servicios")
                     servicios = sorted(df_tab2_limpio["SERVICIO"].dropna().unique())
                     if servicios:
                         servicio_sel = st.multiselect("Seleccionar servicios:", servicios, key="tab2_servicios")
                     else:
                         servicio_sel = []
                 
-                with col_filtros3:
-                    st.markdown("##### 👤 Usuarios")
+                with col_f5:
+                    st.markdown("#### 👤 Usuarios")
                     usuarios = sorted(df_tab2_limpio["USUARIO_ATENCION"].dropna().unique())
                     if usuarios:
                         usuario_sel = st.multiselect("Seleccionar usuarios:", usuarios, key="tab2_usuarios")
@@ -575,11 +583,15 @@ with tab2:
             st.info(f"""
             **Configuración de análisis:**
             - **Rango:** {fecha_ini} a {fecha_fin}
-            - **Día analizado:** {dia_sel}
             - **Servicios:** {len(servicio_sel)} seleccionados
             - **Usuarios:** {len(usuario_sel)} seleccionados
             - **Registros analizados:** {len(df_filtrado):,}
             """)
+            
+            # --- SELECTOR DE DÍA (fuera del expander, después del resumen) ---
+            st.markdown("### 📅 Selección de día para análisis")
+            dias_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos (L-V)"]
+            dia_sel = st.selectbox("Día a analizar", dias_opciones, index=7, key="tab2_dia")
             
             # Preparar datos
             df_proceso = df_filtrado.copy()
