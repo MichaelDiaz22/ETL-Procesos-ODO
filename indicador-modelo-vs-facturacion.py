@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, date
-import plotly.express as px
 
 # Configuración de la página
 st.set_page_config(
@@ -208,34 +207,30 @@ if archivo_subido is not None:
                         }
                     )
                     
-                    # Gráficos
+                    # Gráficos con Streamlit (sin plotly)
                     st.markdown("---")
                     st.subheader("📊 Visualizaciones")
                     
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        # Gráfico de líneas para ingresos y facturado
-                        fig_lineas = px.line(
-                            df_resumen, 
-                            x='fecha', 
-                            y=['ingresos', 'facturado modelo', 'facturado fuera modelo'],
-                            title='Evolución Temporal',
-                            labels={'value': 'Monto', 'variable': 'Tipo'}
+                        # Gráfico de líneas con datos agregados por semana
+                        st.subheader("Evolución por Semana")
+                        df_semanal = df_resumen.groupby('semana del año').agg({
+                            'ingresos': 'sum',
+                            'facturado modelo': 'sum',
+                            'facturado fuera modelo': 'sum'
+                        }).reset_index()
+                        
+                        st.line_chart(
+                            df_semanal.set_index('semana del año')[['ingresos', 'facturado modelo', 'facturado fuera modelo']]
                         )
-                        st.plotly_chart(fig_lineas, use_container_width=True)
                     
                     with col2:
-                        # Gráfico de barras apiladas
-                        fig_barras = px.bar(
-                            df_resumen,
-                            x='fecha',
-                            y=['facturado modelo', 'facturado fuera modelo'],
-                            title='Facturado Modelo vs Fuera Modelo',
-                            labels={'value': 'Monto', 'variable': 'Tipo'},
-                            barmode='stack'
-                        )
-                        st.plotly_chart(fig_barras, use_container_width=True)
+                        # Gráfico de barras para facturado
+                        st.subheader("Facturado Modelo vs Fuera Modelo")
+                        df_barras = df_resumen[['fecha', 'facturado modelo', 'facturado fuera modelo']].set_index('fecha')
+                        st.bar_chart(df_barras)
                     
                     # Botón para descargar
                     st.markdown("---")
