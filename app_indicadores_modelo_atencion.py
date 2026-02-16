@@ -143,8 +143,8 @@ with tab1:
                 # Extraer información de fecha y hora
                 df_proceso['FECHA'] = df_proceso['FECHA CREACION'].dt.date
                 df_proceso['HORA'] = df_proceso['FECHA CREACION'].dt.hour
-                df_proceso['DIA_SEMANA'] = df_proceso['FECHA CREACION'].dt.day_name()  # Esto da nombres en inglés
-                df_proceso['DIA_SEMANA_NUM'] = df_proceso['FECHA CREACION'].dt.dayofweek  # 0=Lunes, 6=Domingo
+                df_proceso['DIA_SEMANA'] = df_proceso['FECHA CREACION'].dt.day_name()
+                df_proceso['DIA_SEMANA_NUM'] = df_proceso['FECHA CREACION'].dt.dayofweek
                 
                 # Mapeo de días en español a inglés
                 mapa_dias = {
@@ -161,33 +161,24 @@ with tab1:
                 if dia_seleccionado == "Todos los días (L-V)":
                     # Filtrar solo lunes a viernes
                     df_proceso = df_proceso[df_proceso['DIA_SEMANA_NUM'] < 5]
-                    dias_analizados = "Lunes a Viernes"
-                    dia_label = "L-V"
                     
-                    # Verificar si hay datos después del filtro
                     if df_proceso.empty:
-                        st.warning(f"No hay registros para el rango seleccionado (Lunes a Viernes).")
+                        st.warning("No hay registros para el rango seleccionado (Lunes a Viernes).")
                         st.stop()
                 else:
-                    # Obtener el nombre del día en inglés
                     dia_ingles = mapa_dias[dia_seleccionado]
-                    
-                    # Filtrar por día específico usando el nombre en inglés
                     df_proceso = df_proceso[df_proceso['DIA_SEMANA'] == dia_ingles]
-                    dias_analizados = dia_seleccionado
-                    dia_label = dia_seleccionado[:3]
                     
-                    # Verificar si hay al menos un registro
                     if df_proceso.empty:
                         st.warning(f"No hay registros para el día seleccionado ({dia_seleccionado}) en el rango filtrado.")
                         st.stop()
                     
-                    # Mostrar información sobre cuántos días se están promediando
                     dias_unicos = df_proceso['FECHA'].nunique()
-                    st.caption(f"📊 Promediando {dias_unicos} día(s) de {dia_seleccionado} en el rango seleccionado")
+                    st.caption(f"📊 Promediando {dias_unicos} día(s) de {dia_seleccionado}")
                 
                 # Identificar horas con registros
                 horas_con_registros = sorted(df_proceso['HORA'].unique())
+                horas_formateadas = [f"{h}:00" for h in horas_con_registros]
                 
                 # Obtener lista de usuarios únicos
                 usuarios_proceso = sorted(df_proceso["USUARIO CREA INGRESO"].dropna().unique())
@@ -196,69 +187,71 @@ with tab1:
                     st.warning("No hay usuarios en los datos filtrados.")
                     st.stop()
                 
-                # Crear estructura para la tabla dinámica
-                tabla_resultados = pd.DataFrame(index=usuarios_proceso, columns=horas_con_registros)
-                
-                # Calcular promedios para cada usuario y hora
+                # Crear tabla de promedios
+                data = []
                 for usuario in usuarios_proceso:
                     df_usuario = df_proceso[df_proceso["USUARIO CREA INGRESO"] == usuario]
-                    
+                    fila = []
                     for hora in horas_con_registros:
-                        # Filtrar registros para esta hora específica
                         df_hora = df_usuario[df_usuario['HORA'] == hora]
-                        
                         if not df_hora.empty:
-                            # Contar registros por fecha única
                             conteo_por_dia = df_hora.groupby('FECHA').size()
-                            
-                            # Excluir días con 0 registros para evitar sesgos
                             conteo_por_dia = conteo_por_dia[conteo_por_dia > 0]
-                            
-                            if not conteo_por_dia.empty:
-                                promedio = conteo_por_dia.mean()
-                                tabla_resultados.at[usuario, hora] = round(promedio, 2)
-                            else:
-                                tabla_resultados.at[usuario, hora] = 0  # Cambiar None por 0
+                            promedio = conteo_por_dia.mean() if not conteo_por_dia.empty else 0
+                            fila.append(round(promedio, 2))
                         else:
-                            tabla_resultados.at[usuario, hora] = 0  # Cambiar None por 0
+                            fila.append(0)
+                    data.append(fila)
                 
-                # Formatear nombres de columnas (horas)
-                horas_formateadas = [f"{h}:00" for h in horas_con_registros]
-                tabla_resultados.columns = horas_formateadas
+                # Crear DataFrame
+                tabla_resultados = pd.DataFrame(data, index=usuarios_proceso, columns=horas_formateadas)
                 
-                # Asegurar que todos los valores sean numéricos
-                tabla_resultados = tabla_resultados.astype(float)
+                # Calcular estadísticas por usuario
+                tabla_resultados['TOTAL'] = tabla_resultados[horas_formateadas].sum(axis=1).round(2)
+                tabla_resultados['MÍNIMO'] = tabla_resultados[horas_formateadas].min(axis=1).round(2)
+                tabla_resultados['MÁXIMO'] = tabla_resultados[horas_formateadas].max(axis=1).round(2)
                 
-                # Agregar columnas de estadísticas por usuario
-                tabla_resultados['TOTAL REGISTROS'] = tabla_resultados[horas_formateadas].sum(axis=1)
-                tabla_resultados['MÍNIMO'] = tabla_resultados[horas_formateadas].min(axis=1)
-                tabla_resultados['MÁXIMO'] = tabla_resultados[horas_formateadas].max(axis=1)
+                # Ordenar por total
+                tabla_resultados = tabla_resultados.sort_values('TOTAL', ascending=False)
                 
-                # Ordenar por total descendente
-                tabla_resultados = tabla_resultados.sort_values('TOTAL REGISTROS', ascending=False)
+                # Calcular totales por hora
+                totales_por_hora = tabla_resultados[horas_formateadas].sum(axis=0).round(2)
                 
-                # Calcular sumatoria por hora (fila de totales)
-                suma_por_hora = tabla_resultados[horas_formateadas].sum(axis=0).round(2)
+                # Crear fila de totales como un nuevo DataFrame
+                fila_total = pd.DataFrame({
+                    col: [totales_por_hora[col] if col in horas_formateadas else '' 
+                          for col in tabla_resultados.columns]
+                }, index=['TOTAL']).T
                 
-                # Crear fila de totales como un DataFrame separado
-                fila_totales = pd.DataFrame([['TOTAL'] + list(suma_por_hora.values) + [suma_por_hora.sum(), '', '']], 
-                                           columns=[''] + horas_formateadas + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO'])
-                fila_totales = fila_totales.set_index('')
+                # Para MÍNIMO y MÁXIMO de la fila total, poner vacío
+                fila_total['MÍNIMO'] = ''
+                fila_total['MÁXIMO'] = ''
                 
-                # Combinar tabla resultados con fila de totales
-                tabla_resultados_con_total = pd.concat([tabla_resultados, fila_totales])
+                # Combinar tabla con totales
+                tabla_resultados_con_total = pd.concat([tabla_resultados, fila_total])
                 
-                # --- TABLA 1: PROMEDIOS DE REGISTROS CON TOTAL Y ESTADÍSTICAS ---
+                # --- TABLA 1: PROMEDIOS DE REGISTROS ---
                 st.subheader("Ingresos promedio abiertos por Admisionista")
                 st.markdown("*Cantidad de ingresos que realizan por hora*")
 
-                # Mostrar tabla con formato
+                # Aplicar formato diferenciado
+                styler = tabla_resultados_con_total.style
+                
+                # Formato para filas de usuarios (índices que no son 'TOTAL')
+                mascara_usuarios = tabla_resultados_con_total.index != 'TOTAL'
+                styler = styler.format("{:.2f}", subset=pd.IndexSlice[tabla_resultados_con_total.index[mascara_usuarios], horas_formateadas + ['TOTAL', 'MÍNIMO', 'MÁXIMO']])
+                
+                # Formato para fila TOTAL (solo horas y TOTAL, no MÍNIMO/MÁXIMO)
+                styler = styler.format("{:.2f}", subset=pd.IndexSlice[['TOTAL'], horas_formateadas + ['TOTAL']])
+                
+                # Gradiente de colores
+                styler = styler.background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[tabla_resultados.index, horas_formateadas])
+                
+                # Alineación centrada
+                styler = styler.set_properties(**{'text-align': 'center'})
+                
                 st.dataframe(
-                    tabla_resultados_con_total.style
-                    .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[usuarios_proceso, horas_formateadas])
-                    .format("{:.2f}", subset=pd.IndexSlice[:, horas_formateadas + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO']], na_rep="0.00")
-                    .format("{:.2f}", subset=pd.IndexSlice[['TOTAL'], horas_formateadas])
-                    .set_properties(**{'text-align': 'center'}),
+                    styler,
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso) * 35))
                 )
@@ -267,49 +260,55 @@ with tab1:
                 st.subheader("Tiempos Promedios de Admisión")
                 st.markdown("*Tiempo promedio (minutos) que tardan en hacer un ingreso cada hora*")
                 
-                # Crear tabla de tiempos promedios
-                tabla_tiempos = pd.DataFrame(index=usuarios_proceso, columns=horas_formateadas)
-                
-                # Calcular tiempo promedio = 60 / promedio de registros
+                # Crear tabla de tiempos
+                tiempos_data = []
                 for usuario in usuarios_proceso:
-                    for hora_col in horas_formateadas:
-                        promedio_registros = tabla_resultados.loc[usuario, hora_col]
-                        if promedio_registros > 0:
-                            tiempo_promedio = 60 / promedio_registros
-                            tabla_tiempos.loc[usuario, hora_col] = round(tiempo_promedio, 1)
+                    fila_tiempos = []
+                    for hora in horas_formateadas:
+                        promedio = tabla_resultados.loc[usuario, hora]
+                        if promedio > 0:
+                            tiempo = round(60 / promedio, 1)
+                            fila_tiempos.append(tiempo)
                         else:
-                            tabla_tiempos.loc[usuario, hora_col] = 0  # Cambiar None por 0
+                            fila_tiempos.append(0)
+                    tiempos_data.append(fila_tiempos)
                 
-                # Asegurar que todos los valores sean numéricos
-                tabla_tiempos = tabla_tiempos.astype(float)
+                tabla_tiempos = pd.DataFrame(tiempos_data, index=usuarios_proceso, columns=horas_formateadas)
                 
-                # Agregar columnas de estadísticas por usuario
-                tabla_tiempos['TIEMPO PROMEDIO TOTAL'] = None
+                # Calcular estadísticas de tiempos
+                tabla_tiempos['PROMEDIO'] = None
                 tabla_tiempos['MÍNIMO'] = None
                 tabla_tiempos['MÁXIMO'] = None
                 
                 for usuario in usuarios_proceso:
-                    tiempos_usuario = [v for v in tabla_tiempos.loc[usuario, horas_formateadas].values if v > 0]
+                    tiempos_usuario = [tabla_tiempos.loc[usuario, hora] for hora in horas_formateadas 
+                                      if tabla_tiempos.loc[usuario, hora] > 0]
                     if tiempos_usuario:
-                        tabla_tiempos.loc[usuario, 'TIEMPO PROMEDIO TOTAL'] = round(np.mean(tiempos_usuario), 1)
+                        tabla_tiempos.loc[usuario, 'PROMEDIO'] = round(np.mean(tiempos_usuario), 1)
                         tabla_tiempos.loc[usuario, 'MÍNIMO'] = round(min(tiempos_usuario), 1)
                         tabla_tiempos.loc[usuario, 'MÁXIMO'] = round(max(tiempos_usuario), 1)
                     else:
-                        tabla_tiempos.loc[usuario, 'TIEMPO PROMEDIO TOTAL'] = 0
+                        tabla_tiempos.loc[usuario, 'PROMEDIO'] = 0
                         tabla_tiempos.loc[usuario, 'MÍNIMO'] = 0
                         tabla_tiempos.loc[usuario, 'MÁXIMO'] = 0
                 
+                # Ordenar por el mismo orden que la tabla anterior
+                tabla_tiempos = tabla_tiempos.loc[tabla_resultados.index]
+                
                 # Mostrar tabla de tiempos
+                styler_tiempos = tabla_tiempos.style
+                styler_tiempos = styler_tiempos.format("{:.1f}", na_rep="-")
+                styler_tiempos = styler_tiempos.background_gradient(cmap='YlOrRd_r', axis=1, 
+                                                                   subset=pd.IndexSlice[usuarios_proceso, horas_formateadas])
+                styler_tiempos = styler_tiempos.set_properties(**{'text-align': 'center'})
+                
                 st.dataframe(
-                    tabla_tiempos.style
-                    .background_gradient(cmap='YlOrRd_r', axis=1, subset=pd.IndexSlice[usuarios_proceso, horas_formateadas])
-                    .set_properties(**{'text-align': 'center'})
-                    .format("{:.1f}", na_rep="-", subset=pd.IndexSlice[:, horas_formateadas + ['TIEMPO PROMEDIO TOTAL', 'MÍNIMO', 'MÁXIMO']]),
+                    styler_tiempos,
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso) * 35))
                 )
                 
-                # --- ESTADÍSTICAS RESUMEN CON ESTÁNDARES Y MÁXIMOS/MÍNIMOS ---
+                # --- ESTADÍSTICAS RESUMEN ---
                 st.subheader("Estadísticas Resumen vs Estándares")
                 
                 # Calcular promedios generales
@@ -320,772 +319,411 @@ with tab1:
                         if valor > 0:
                             valores_validos.append(valor)
                 
-                if valores_validos:
-                    promedio_general = np.mean(valores_validos)
-                else:
-                    promedio_general = 0
+                promedio_general = np.mean(valores_validos) if valores_validos else 0
                 
                 # Calcular tiempo promedio general
                 tiempos_todos = []
                 for usuario in usuarios_proceso:
-                    for hora_col in horas_formateadas:
-                        valor = tabla_tiempos.loc[usuario, hora_col]
+                    for hora in horas_formateadas:
+                        valor = tabla_tiempos.loc[usuario, hora]
                         if valor > 0:
                             tiempos_todos.append(valor)
                 
-                # ENCONTRAR MÁXIMO REGISTROS/HORA Y SU USUARIO
+                # Encontrar máximo registros/hora
                 max_registros = 0
-                usuario_max_registros = "N/A"
-                hora_max_registros = "N/A"
+                usuario_max = "N/A"
+                hora_max = "N/A"
                 
                 for col in horas_formateadas:
                     for usuario in usuarios_proceso:
                         valor = tabla_resultados.loc[usuario, col]
                         if valor > max_registros:
                             max_registros = valor
-                            usuario_max_registros = usuario
-                            hora_max_registros = col
+                            usuario_max = usuario
+                            hora_max = col
                 
-                # ENCONTRAR MÍNIMO TIEMPO DE ADMISIÓN Y SU USUARIO
+                # Encontrar mínimo tiempo de admisión
                 min_tiempo = float('inf')
-                usuario_min_tiempo = "N/A"
-                hora_min_tiempo = "N/A"
+                usuario_min = "N/A"
+                hora_min = "N/A"
                 
                 for col in horas_formateadas:
                     for usuario in usuarios_proceso:
                         valor = tabla_tiempos.loc[usuario, col]
                         if valor > 0 and valor < min_tiempo:
                             min_tiempo = valor
-                            usuario_min_tiempo = usuario
-                            hora_min_tiempo = col
+                            usuario_min = usuario
+                            hora_min = col
                 
-                if min_tiempo == float('inf'):
-                    min_tiempo = None
+                min_tiempo = None if min_tiempo == float('inf') else min_tiempo
                 
-                # ESTÁNDARES DEFINIDOS
-                ESTANDAR_REGISTROS_HORA = 13
-                ESTANDAR_TIEMPO_ADMISION = 4
+                # Estándares
+                ESTANDAR_REGISTROS = 13
+                ESTANDAR_TIEMPO = 4
                 
-                # Calcular diferencias vs estándar para promedios generales
-                diferencia_registros = promedio_general - ESTANDAR_REGISTROS_HORA
-                diferencia_registros_porcentaje = (diferencia_registros / ESTANDAR_REGISTROS_HORA) * 100 if ESTANDAR_REGISTROS_HORA > 0 else 0
+                # Diferencias
+                diff_registros = promedio_general - ESTANDAR_REGISTROS
+                diff_registros_pct = (diff_registros / ESTANDAR_REGISTROS) * 100 if ESTANDAR_REGISTROS > 0 else 0
                 
-                if tiempos_todos:
-                    tiempo_promedio_general = np.mean(tiempos_todos)
-                    diferencia_tiempo = tiempo_promedio_general - ESTANDAR_TIEMPO_ADMISION
-                    diferencia_tiempo_porcentaje = (diferencia_tiempo / ESTANDAR_TIEMPO_ADMISION) * 100 if ESTANDAR_TIEMPO_ADMISION > 0 else 0
-                else:
-                    tiempo_promedio_general = None
-                    diferencia_tiempo = None
-                    diferencia_tiempo_porcentaje = None
+                tiempo_promedio_general = np.mean(tiempos_todos) if tiempos_todos else None
                 
-                # Crear columnas para las métricas
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("### 📈 Promedio General vs Estándar")
-                    # Métrica de registros por hora vs estándar
-                    delta_registros = f"{diferencia_registros:+.2f} vs estándar ({diferencia_registros_porcentaje:+.1f}%)"
-                    color_delta_registros = "inverse" if diferencia_registros > 0 else "normal"
-                    
-                    st.metric(
-                        label="Promedio registros/hora", 
-                        value=f"{promedio_general:.2f}",
-                        delta=delta_registros,
-                        delta_color=color_delta_registros,
-                        help=f"Estándar: {ESTANDAR_REGISTROS_HORA} registros/hora"
-                    )
-                    
-                    st.markdown(f"**Estándar:** {ESTANDAR_REGISTROS_HORA} registros por hora")
-                    
-                    st.markdown("### 📈 Máximo Registros/Hora")
-                    st.metric(
-                        label="Máximo alcanzado",
-                        value=f"{max_registros:.2f} registros/hora",
-                        help=f"Supera el estándar en {max_registros - ESTANDAR_REGISTROS_HORA:.2f} registros"
-                    )
-                    st.markdown(f"**Usuario:** {usuario_max_registros}")
-                    st.markdown(f"**Hora:** {hora_max_registros}")
-                
-                with col2:
-                    st.markdown("### ⏱️ Tiempo Promedio vs Estándar")
-                    # Métrica de tiempo de admisión vs estándar
-                    if tiempo_promedio_general is not None:
-                        delta_tiempo = f"{diferencia_tiempo:+.1f} min vs estándar ({diferencia_tiempo_porcentaje:+.1f}%)"
-                        color_delta_tiempo = "inverse" if diferencia_tiempo > 0 else "normal"
-                        
-                        st.metric(
-                            label="Tiempo promedio admisión", 
-                            value=f"{tiempo_promedio_general:.1f} min",
-                            delta=delta_tiempo,
-                            delta_color=color_delta_tiempo,
-                            help=f"Estándar: {ESTANDAR_TIEMPO_ADMISION} minutos por admisión"
-                        )
-                        
-                        st.markdown(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
-                    else:
-                        st.metric(
-                            label="Tiempo promedio admisión", 
-                            value="-",
-                            help="No hay datos suficientes para calcular el tiempo promedio"
-                        )
-                        st.markdown(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
-                    
-                    st.markdown("### ⏱️ Mínimo Tiempo de Admisión")
-                    if min_tiempo is not None:
-                        st.metric(
-                            label="Mínimo alcanzado",
-                            value=f"{min_tiempo:.1f} minutos",
-                            help=f"Está {ESTANDAR_TIEMPO_ADMISION - min_tiempo:.1f} minutos por debajo del estándar"
-                        )
-                        st.markdown(f"**Usuario:** {usuario_min_tiempo}")
-                        st.markdown(f"**Hora:** {hora_min_tiempo}")
-                    else:
-                        st.metric(
-                            label="Mínimo alcanzado",
-                            value="N/A",
-                            help="No hay datos suficientes"
-                        )
-                
-                # --- GRÁFICO DE BARRAS: TOP USUARIOS ---
-                st.subheader("🏆 Top 10 Usuarios por Actividad Promedio")
-                
-                top_n = min(10, len(usuarios_proceso))
-                top_usuarios = tabla_resultados.head(top_n).copy()
-                
-                # Crear DataFrame para el gráfico
-                top_usuarios_chart = pd.DataFrame({
-                    'Usuario': top_usuarios.index,
-                    'Promedio Diario': top_usuarios['TOTAL REGISTROS'].values
-                }).set_index('Usuario')
-                
-                st.bar_chart(
-                    top_usuarios_chart,
-                    height=400,
-                    use_container_width=True
-                )
-                
-                st.caption("📊 Ordenado de mayor a menor promedio de registros")
-                
-                # --- SECCIÓN DE EXPORTACIÓN A EXCEL ---
-                st.divider()
-                st.subheader("📤 Exportar Resultados a Excel")
-                
-                # Preparar dataframes para exportar
-                def exportar_a_excel():
-                    output = BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        # Hoja 1: Ingresos promedio
-                        tabla_resultados_con_total.to_excel(writer, sheet_name='Ingresos Promedio')
-                        
-                        # Hoja 2: Tiempos promedio
-                        tabla_tiempos.to_excel(writer, sheet_name='Tiempos Promedio')
-                        
-                        # Hoja 3: Estadísticas resumen
-                        stats_data = {
-                            'Métrica': ['Promedio registros/hora', 'Máximo registros/hora', 'Tiempo promedio admisión', 'Mínimo tiempo admisión'],
-                            'Valor': [
-                                f"{promedio_general:.2f}",
-                                f"{max_registros:.2f} (Usuario: {usuario_max_registros}, Hora: {hora_max_registros})",
-                                f"{tiempo_promedio_general:.1f} min" if tiempo_promedio_general else "N/A",
-                                f"{min_tiempo:.1f} min (Usuario: {usuario_min_tiempo}, Hora: {hora_min_tiempo})" if min_tiempo else "N/A"
-                            ],
-                            'Estándar': [f"{ESTANDAR_REGISTROS_HORA}", f"{ESTANDAR_REGISTROS_HORA}", f"{ESTANDAR_TIEMPO_ADMISION} min", f"{ESTANDAR_TIEMPO_ADMISION} min"],
-                            'Diferencia': [
-                                f"{diferencia_registros:+.2f} ({diferencia_registros_porcentaje:+.1f}%)",
-                                f"{max_registros - ESTANDAR_REGISTROS_HORA:+.2f}",
-                                f"{diferencia_tiempo:+.1f} min ({diferencia_tiempo_porcentaje:+.1f}%)" if diferencia_tiempo else "N/A",
-                                f"{ESTANDAR_TIEMPO_ADMISION - min_tiempo:.1f} min" if min_tiempo else "N/A"
-                            ]
-                        }
-                        stats_df = pd.DataFrame(stats_data)
-                        stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
-                        
-                        # Hoja 4: Configuración de filtros
-                        config_data = {
-                            'Parámetro': ['Rango de fechas', 'Día analizado', 'Centros', 'Usuarios', 'Registros analizados'],
-                            'Valor': [
-                                f"{fecha_inicio} a {fecha_fin}",
-                                dia_seleccionado,
-                                ', '.join(centro_sel) if centro_sel else 'Todos',
-                                ', '.join(usuario_sel) if usuario_sel else 'Todos',
-                                len(df_proceso)
-                            ]
-                        }
-                        config_df = pd.DataFrame(config_data)
-                        config_df.to_excel(writer, sheet_name='Configuración', index=False)
-                    
-                    output.seek(0)
-                    return output
-                
-                # Botón de descarga
-                st.download_button(
-                    label="📥 Descargar todo en Excel",
-                    data=exportar_a_excel(),
-                    file_name=f"analisis_ingresos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help="Descarga todas las tablas y estadísticas en un archivo Excel"
-                )
-                
-                st.info("""
-                **El archivo Excel incluye:**
-                - Hoja 'Ingresos Promedio': Tabla completa de ingresos por usuario y hora
-                - Hoja 'Tiempos Promedio': Tabla de tiempos de admisión
-                - Hoja 'Estadísticas': Resumen de métricas y comparativas con estándares
-                - Hoja 'Configuración': Filtros aplicados al análisis
-                """)
-
-        except Exception as e:
-            st.error(f"Error técnico: {e}")
-            import traceback
-            st.code(traceback.format_exc())
-            st.info("Verifica que el archivo tenga las columnas necesarias: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
-    else:
-        st.info("👆 Usa la barra lateral para subir un archivo Excel y activar los filtros.")
-        st.caption("El archivo debe contener al menos las columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
-
-# ============================================================================
-# PESTAÑA 2: ANÁLISIS DE LLAMADOS (con las mismas correcciones)
-# ============================================================================
-with tab2:
-    st.header("📞 Análisis de Llamados")
-    
-    # --- SECCIÓN DE FILTROS EN SIDEBAR ---
-    with st.sidebar:
-        st.header("⚙️ Configuración Pestaña 2")
-        
-        # 1. Carga de archivo en la sidebar
-        uploaded_file_tab2 = st.file_uploader("Sube tu archivo Excel (.xlsx)", 
-                                            type=["xlsx"], 
-                                            help="Archivo debe contener columnas relacionadas con llamados: Hora Llegada, Servicio, Usuario Atención",
-                                            key="tab2_file")
-
-    if uploaded_file_tab2 is not None:
-        try:
-            # Leer y procesar el archivo
-            df_preview = pd.read_excel(uploaded_file_tab2, nrows=5)
-            
-            # Verificar si la primera fila contiene los nombres esperados
-            nombres_esperados = ['Turno', 'Doc Pac', 'Paciente', 'Sede', 'Sala Espera', 'Servicio', 
-                                'Llamados', 'Tipo', 'Hora Llegada', 'Hora Atención', 'Hora Finalización',
-                                'Tiempo Espera', 'Tiempo Atención', 'Modulo Atención', 'Usuario Atención',
-                                'Especialidad', 'ID Usuario', 'Estado']
-            
-            # Comprobar si la primera fila (datos, no encabezados) contiene estos valores
-            primera_fila_vals = df_preview.iloc[0].astype(str).str.strip().tolist() if len(df_preview) > 0 else []
-            
-            # Contar coincidencias con nombres esperados en la primera fila
-            coincidencias = sum(1 for val in primera_fila_vals[:len(nombres_esperados)] 
-                              if val in nombres_esperados)
-            
-            # Si hay suficientes coincidencias, probablemente la primera fila es el encabezado real
-            usar_segunda_fila_como_encabezado = coincidencias >= 3
-            
-            # Leer el archivo con la estrategia correcta
-            if usar_segunda_fila_como_encabezado:
-                df_tab2 = pd.read_excel(uploaded_file_tab2, skiprows=1)
-            else:
-                df_tab2 = pd.read_excel(uploaded_file_tab2)
-            
-            # Limpiar nombres de columnas
-            df_tab2.columns = df_tab2.columns.astype(str).str.strip()
-            
-            # Función para encontrar columnas por nombres alternativos
-            def encontrar_columna(df, nombres_alternativos):
-                columnas_df = [str(col).strip() for col in df.columns]
-                for nombre in nombres_alternativos:
-                    nombre_clean = nombre.strip()
-                    if nombre_clean in columnas_df:
-                        return nombre_clean
-                    for col in columnas_df:
-                        if col.lower() == nombre_clean.lower():
-                            return col
-                    for col in columnas_df:
-                        if nombre_clean.lower() in col.lower():
-                            return col
-                return None
-            
-            # Nombres alternativos
-            nombres_hora_llegada = ['Hora Llegada', 'HORA LLEGADA', 'Hora llegada', 'HORA_LLEGADA']
-            nombres_servicio = ['Servicio', 'SERVICIO', 'servicio']
-            nombres_usuario_atencion = ['Usuario Atención', 'USUARIO ATENCIÓN', 'Usuario atención']
-            nombres_tipo = ['Tipo', 'TIPO', 'tipo']
-            
-            # Encontrar las columnas reales
-            col_hora_llegada = encontrar_columna(df_tab2, nombres_hora_llegada)
-            col_servicio = encontrar_columna(df_tab2, nombres_servicio)
-            col_usuario_atencion = encontrar_columna(df_tab2, nombres_usuario_atencion)
-            col_tipo = encontrar_columna(df_tab2, nombres_tipo)
-            
-            # Verificar columnas necesarias
-            if not all([col_hora_llegada, col_servicio, col_usuario_atencion]):
-                st.error("No se encontraron las columnas necesarias. Verifica que el archivo tenga: Hora Llegada, Servicio, Usuario Atención")
-                st.stop()
-            
-            # Renombrar columnas para uso interno
-            rename_dict = {
-                col_hora_llegada: 'HORA_LLEGADA',
-                col_servicio: 'SERVICIO',
-                col_usuario_atencion: 'USUARIO_ATENCION'
-            }
-            
-            if col_tipo:
-                rename_dict[col_tipo] = 'TIPO_LLAMADO'
-            
-            df_tab2 = df_tab2.rename(columns=rename_dict)
-            
-            # --- PROCESAMIENTO DE FECHAS ---
-            df_tab2["HORA_LLEGADA"] = pd.to_datetime(df_tab2["HORA_LLEGADA"], errors='coerce')
-            df_tab2_limpio = df_tab2.dropna(subset=["HORA_LLEGADA"])
-
-            if df_tab2_limpio.empty:
-                st.warning("No hay registros con fechas válidas en la columna de hora de llegada.")
-                st.stop()
-            
-            # Identificar los límites reales del archivo
-            fecha_minima_archivo_tab2 = df_tab2_limpio["HORA_LLEGADA"].min().date()
-            fecha_maxima_archivo_tab2 = df_tab2_limpio["HORA_LLEGADA"].max().date()
-
-            # --- FILTROS PRINCIPALES EN SIDEBAR ---
-            with st.sidebar:
-                # Filtro de Fechas
-                st.subheader("Rango de Evaluación")
-                
-                col1_tab2, col2_tab2 = st.columns(2)
-                
-                with col1_tab2:
-                    fecha_inicio_tab2 = st.date_input(
-                        "Fecha de inicio:",
-                        value=fecha_minima_archivo_tab2,
-                        min_value=fecha_minima_archivo_tab2,
-                        max_value=fecha_maxima_archivo_tab2,
-                        key="tab2_fecha_inicio"
-                    )
-                
-                with col2_tab2:
-                    fecha_fin_tab2 = st.date_input(
-                        "Fecha de fin:",
-                        value=fecha_maxima_archivo_tab2,
-                        min_value=fecha_minima_archivo_tab2,
-                        max_value=fecha_maxima_archivo_tab2,
-                        key="tab2_fecha_fin"
-                    )
-                
-                if fecha_inicio_tab2 > fecha_fin_tab2:
-                    st.error("⚠️ La fecha de inicio no puede ser mayor que la fecha de fin")
-                else:
-                    st.success(f"✅ Rango válido")
-
-                # LISTA DESPLEGABLE DE SERVICIOS
-                servicios = sorted(df_tab2_limpio["SERVICIO"].dropna().unique())
-                servicio_sel = st.multiselect(
-                    "Servicio:", 
-                    options=servicios,
-                    help="Selecciona uno o más servicios",
-                    key="tab2_servicio"
-                )
-
-                # Filtro de Usuario Atención
-                usuarios_tab2 = sorted(df_tab2_limpio["USUARIO_ATENCION"].dropna().unique())
-                usuario_sel_tab2 = st.multiselect(
-                    "Usuario Atención:", 
-                    options=usuarios_tab2,
-                    help="Selecciona uno o más usuarios",
-                    key="tab2_usuario"
-                )
-
-                # Selector de día de la semana
-                st.subheader("Configuración de Procesamiento")
-                dia_semana_opciones_tab2 = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos los días (L-V)"]
-                dia_seleccionado_tab2 = st.selectbox(
-                    "Día de la semana a analizar:",
-                    options=dia_semana_opciones_tab2,
-                    index=6,  # Por defecto selecciona "Todos los días (L-V)"
-                    help="Selecciona un día específico o 'Todos los días' para promediar de lunes a viernes",
-                    key="tab2_dia"
-                )
-
-            # --- APLICACIÓN DE FILTROS ---
-            df_filtrado_tab2 = df_tab2_limpio.copy()
-
-            if fecha_inicio_tab2 <= fecha_fin_tab2:
-                df_filtrado_tab2 = df_filtrado_tab2[
-                    (df_filtrado_tab2["HORA_LLEGADA"].dt.date >= fecha_inicio_tab2) & 
-                    (df_filtrado_tab2["HORA_LLEGADA"].dt.date <= fecha_fin_tab2)
-                ]
-            
-            if servicio_sel:
-                df_filtrado_tab2 = df_filtrado_tab2[df_filtrado_tab2["SERVICIO"].isin(servicio_sel)]
-            
-            if usuario_sel_tab2:
-                df_filtrado_tab2 = df_filtrado_tab2[df_filtrado_tab2["USUARIO_ATENCION"].isin(usuario_sel_tab2)]
-
-            # --- PROCESAMIENTO AUTOMÁTICO ---
-            if not df_filtrado_tab2.empty and fecha_inicio_tab2 <= fecha_fin_tab2:
-                st.divider()
-                
-                # Mostrar configuración seleccionada
-                st.info(f"""
-                **Configuración de análisis:**
-                - **Rango:** {fecha_inicio_tab2} a {fecha_fin_tab2}
-                - **Día analizado:** {dia_seleccionado_tab2}
-                - **Servicios:** {', '.join(servicio_sel) if servicio_sel else 'Todos'}
-                - **Usuarios:** {', '.join(usuario_sel_tab2) if usuario_sel_tab2 else 'Todos'}
-                - **Registros analizados:** {len(df_filtrado_tab2):,}
-                """)
-                
-                # Preparar datos para el procesamiento
-                df_proceso_tab2 = df_filtrado_tab2.copy()
-                
-                # Extraer información de fecha y hora
-                df_proceso_tab2['FECHA'] = df_proceso_tab2['HORA_LLEGADA'].dt.date
-                df_proceso_tab2['HORA'] = df_proceso_tab2['HORA_LLEGADA'].dt.hour
-                df_proceso_tab2['DIA_SEMANA'] = df_proceso_tab2['HORA_LLEGADA'].dt.day_name()  # Nombres en inglés
-                df_proceso_tab2['DIA_SEMANA_NUM'] = df_proceso_tab2['HORA_LLEGADA'].dt.dayofweek
-                
-                # Mapeo de días en español a inglés
-                mapa_dias = {
-                    'Lunes': 'Monday',
-                    'Martes': 'Tuesday',
-                    'Miércoles': 'Wednesday',
-                    'Jueves': 'Thursday',
-                    'Viernes': 'Friday',
-                    'Sábado': 'Saturday',
-                    'Domingo': 'Sunday'
-                }
-                
-                # Verificar si se seleccionó un día específico o todos los días
-                if dia_seleccionado_tab2 == "Todos los días (L-V)":
-                    # Filtrar solo lunes a viernes
-                    df_proceso_tab2 = df_proceso_tab2[df_proceso_tab2['DIA_SEMANA_NUM'] < 5]
-                    dias_analizados_tab2 = "Lunes a Viernes"
-                    dia_label_tab2 = "L-V"
-                    
-                    # Verificar si hay datos después del filtro
-                    if df_proceso_tab2.empty:
-                        st.warning(f"No hay registros para el rango seleccionado (Lunes a Viernes).")
-                        st.stop()
-                else:
-                    # Obtener el nombre del día en inglés
-                    dia_ingles = mapa_dias[dia_seleccionado_tab2]
-                    
-                    # Filtrar por día específico usando el nombre en inglés
-                    df_proceso_tab2 = df_proceso_tab2[df_proceso_tab2['DIA_SEMANA'] == dia_ingles]
-                    dias_analizados_tab2 = dia_seleccionado_tab2
-                    dia_label_tab2 = dia_seleccionado_tab2[:3]
-                    
-                    # Verificar si hay al menos un registro
-                    if df_proceso_tab2.empty:
-                        st.warning(f"No hay registros para el día seleccionado ({dia_seleccionado_tab2}) en el rango filtrado.")
-                        st.stop()
-                    
-                    # Mostrar información sobre cuántos días se están promediando
-                    dias_unicos = df_proceso_tab2['FECHA'].nunique()
-                    st.caption(f"📊 Promediando {dias_unicos} día(s) de {dia_seleccionado_tab2} en el rango seleccionado")
-                
-                # ============================================================
-                # 1. TABLA DE PROMEDIO DE LLAMADOS POR AGENTE POR HORA Y DÍA
-                # ============================================================
-                st.subheader("Promedio de Llamados por Agente, Hora y Día")
-                
-                # Obtener usuarios únicos
-                usuarios_proceso_tab2 = sorted(df_proceso_tab2["USUARIO_ATENCION"].dropna().unique())
-                horas_con_registros_tab2 = sorted(df_proceso_tab2['HORA'].unique())
-                
-                if not usuarios_proceso_tab2:
-                    st.warning("No hay usuarios en los datos filtrados.")
-                    st.stop()
-                
-                # Crear tabla de promedios
-                tabla_promedios = pd.DataFrame(index=usuarios_proceso_tab2, columns=horas_con_registros_tab2)
-                
-                for usuario in usuarios_proceso_tab2:
-                    df_usuario = df_proceso_tab2[df_proceso_tab2["USUARIO_ATENCION"] == usuario]
-                    
-                    for hora in horas_con_registros_tab2:
-                        df_hora = df_usuario[df_usuario['HORA'] == hora]
-                        
-                        if not df_hora.empty:
-                            # Contar registros por fecha única
-                            conteo_por_dia = df_hora.groupby('FECHA').size()
-                            
-                            conteo_por_dia = conteo_por_dia[conteo_por_dia > 0]
-                            
-                            if not conteo_por_dia.empty:
-                                promedio = conteo_por_dia.mean()
-                                tabla_promedios.at[usuario, hora] = round(promedio, 2)
-                            else:
-                                tabla_promedios.at[usuario, hora] = 0
-                        else:
-                            tabla_promedios.at[usuario, hora] = 0
-                
-                # Formatear horas
-                horas_formateadas_tab2 = [f"{h}:00" for h in horas_con_registros_tab2]
-                tabla_promedios.columns = horas_formateadas_tab2
-                
-                # Asegurar que todos los valores sean numéricos
-                tabla_promedios = tabla_promedios.astype(float)
-                
-                # Agregar columnas de estadísticas por usuario
-                tabla_promedios['TOTAL REGISTROS'] = tabla_promedios[horas_formateadas_tab2].sum(axis=1)
-                tabla_promedios['MÍNIMO'] = tabla_promedios[horas_formateadas_tab2].min(axis=1)
-                tabla_promedios['MÁXIMO'] = tabla_promedios[horas_formateadas_tab2].max(axis=1)
-                
-                # Ordenar por total descendente
-                tabla_promedios = tabla_promedios.sort_values('TOTAL REGISTROS', ascending=False)
-                
-                # Calcular sumatoria por hora
-                suma_por_hora_tab2 = tabla_promedios[horas_formateadas_tab2].sum(axis=0).round(2)
-                
-                # Crear fila de totales
-                fila_totales_tab2 = pd.DataFrame([['TOTAL'] + list(suma_por_hora_tab2.values) + [suma_por_hora_tab2.sum(), '', '']], 
-                                                 columns=[''] + horas_formateadas_tab2 + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO'])
-                fila_totales_tab2 = fila_totales_tab2.set_index('')
-                
-                # Combinar tabla con totales
-                tabla_promedios_con_total = pd.concat([tabla_promedios, fila_totales_tab2])
-                
-                # Mostrar tabla
-                st.dataframe(
-                    tabla_promedios_con_total.style
-                    .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[usuarios_proceso_tab2, horas_formateadas_tab2])
-                    .format("{:.2f}", subset=pd.IndexSlice[:, horas_formateadas_tab2 + ['TOTAL REGISTROS', 'MÍNIMO', 'MÁXIMO']], na_rep="0.00")
-                    .format("{:.2f}", subset=pd.IndexSlice[['TOTAL'], horas_formateadas_tab2])
-                    .set_properties(**{'text-align': 'center'}),
-                    use_container_width=True,
-                    height=min(400, 50 + (len(usuarios_proceso_tab2) * 35))
-                )
-                
-                # ============================================================
-                # 2. TABLA DE LLAMADOS MANUALES VS AUTO
-                # ============================================================
-                st.subheader("Llamados Manuales vs Automáticos por Usuario")
-                
-                # Verificar si existe columna de tipo
-                if 'TIPO_LLAMADO' in df_proceso_tab2.columns:
-                    # Normalizar valores de tipo
-                    df_proceso_tab2['TIPO_NORMALIZADO'] = df_proceso_tab2['TIPO_LLAMADO'].astype(str).str.lower().str.strip()
-                    
-                    # Identificar manuales y auto
-                    manual_keywords = ['manual', 'm', 'man', 'manuales']
-                    auto_keywords = ['auto', 'a', 'aut', 'automático', 'automatico', 'automáticos']
-                    
-                    # Crear clasificación
-                    def clasificar_tipo(valor):
-                        if pd.isna(valor):
-                            return 'NO_CLASIFICADO'
-                        valor_str = str(valor).lower().strip()
-                        if any(kw in valor_str for kw in manual_keywords):
-                            return 'MANUAL'
-                        elif any(kw in valor_str for kw in auto_keywords):
-                            return 'AUTO'
-                        else:
-                            return 'NO_CLASIFICADO'
-                    
-                    df_proceso_tab2['CLASIFICACION'] = df_proceso_tab2['TIPO_LLAMADO'].apply(clasificar_tipo)
-                    
-                    # Crear tabla de conteo
-                    tabla_tipos = pd.DataFrame(index=usuarios_proceso_tab2)
-                    
-                    for usuario in usuarios_proceso_tab2:
-                        df_usuario = df_proceso_tab2[df_proceso_tab2["USUARIO_ATENCION"] == usuario]
-                        
-                        conteos = df_usuario['CLASIFICACION'].value_counts()
-                        
-                        manuales = conteos.get('MANUAL', 0)
-                        automaticos = conteos.get('AUTO', 0)
-                        total = manuales + automaticos
-                        
-                        tabla_tipos.at[usuario, 'TOTAL_LLAMADOS'] = total
-                        tabla_tipos.at[usuario, 'MANUALES'] = manuales
-                        tabla_tipos.at[usuario, 'AUTOMATICOS'] = automaticos
-                    
-                    # Calcular porcentajes
-                    for usuario in usuarios_proceso_tab2:
-                        total = tabla_tipos.at[usuario, 'TOTAL_LLAMADOS']
-                        manuales = tabla_tipos.at[usuario, 'MANUALES']
-                        
-                        if total > 0:
-                            tabla_tipos.at[usuario, '% MANUAL'] = (manuales / total * 100).round(1)
-                            tabla_tipos.at[usuario, '% AUTO'] = (100 - (manuales / total * 100)).round(1)
-                        else:
-                            tabla_tipos.at[usuario, '% MANUAL'] = 0.0
-                            tabla_tipos.at[usuario, '% AUTO'] = 0.0
-                    
-                    # Ordenar por total
-                    tabla_tipos = tabla_tipos.sort_values('TOTAL_LLAMADOS', ascending=False)
-                    
-                    # Mostrar tabla
-                    st.dataframe(
-                        tabla_tipos.style
-                        .format("{:.0f}", subset=['TOTAL_LLAMADOS', 'MANUALES', 'AUTOMATICOS'])
-                        .format("{:.1f}%", subset=['% MANUAL', '% AUTO'])
-                        .set_properties(**{'text-align': 'center'}),
-                        use_container_width=True
-                    )
-                    
-                    # Resumen de totales
-                    st.markdown("**Resumen de Totales:**")
-                    col_res1, col_res2, col_res3 = st.columns(3)
-                    with col_res1:
-                        st.metric("Total Manuales", f"{int(tabla_tipos['MANUALES'].sum()):,}")
-                    with col_res2:
-                        st.metric("Total Automáticos", f"{int(tabla_tipos['AUTOMATICOS'].sum()):,}")
-                    with col_res3:
-                        st.metric("Total General", f"{int(tabla_tipos['TOTAL_LLAMADOS'].sum()):,}")
-                    
-                    # ============================================================
-                    # 3. GRÁFICA DE LÍNEA DE TIEMPO
-                    # ============================================================
-                    st.subheader("Evolución Temporal de Llamados Manuales vs Automáticos")
-                    
-                    # Preparar datos para la gráfica
-                    df_temporal = df_proceso_tab2.copy()
-                    df_temporal['FECHA_DT'] = pd.to_datetime(df_temporal['FECHA'])
-                    
-                    # Agrupar por fecha y clasificación
-                    df_manual = df_temporal[df_temporal['CLASIFICACION'] == 'MANUAL'].groupby('FECHA_DT').size().reset_index(name='MANUALES')
-                    df_auto = df_temporal[df_temporal['CLASIFICACION'] == 'AUTO'].groupby('FECHA_DT').size().reset_index(name='AUTOMATICOS')
-                    df_total = df_temporal[df_temporal['CLASIFICACION'].isin(['MANUAL', 'AUTO'])].groupby('FECHA_DT').size().reset_index(name='TOTAL')
-                    
-                    # Combinar dataframes
-                    df_agrupado = pd.merge(df_total, df_manual, on='FECHA_DT', how='left')
-                    df_agrupado = pd.merge(df_agrupado, df_auto, on='FECHA_DT', how='left')
-                    
-                    # Rellenar NaN con 0
-                    df_agrupado['MANUALES'] = df_agrupado['MANUALES'].fillna(0)
-                    df_agrupado['AUTOMATICOS'] = df_agrupado['AUTOMATICOS'].fillna(0)
-                    
-                    # Configurar índice para el gráfico
-                    df_grafico = df_agrupado.set_index('FECHA_DT')[['MANUALES', 'AUTOMATICOS', 'TOTAL']]
-                    
-                    # Gráfico de líneas
-                    st.line_chart(
-                        df_grafico,
-                        height=400,
-                        use_container_width=True
-                    )
-                    
-                else:
-                    st.warning("⚠️ No se encontró la columna 'Tipo' para clasificar llamados manuales/automáticos")
-                
-                # ============================================================
-                # ESTADÍSTICAS RESUMEN
-                # ============================================================
-                st.divider()
-                st.subheader("Estadísticas Resumen")
-                
-                # Calcular estadísticas
-                valores_validos = []
-                for col in horas_formateadas_tab2:
-                    for usuario in usuarios_proceso_tab2:
-                        valor = tabla_promedios.loc[usuario, col]
-                        if valor > 0:
-                            valores_validos.append(valor)
-                
-                if valores_validos:
-                    promedio_general_tab2 = np.mean(valores_validos)
-                else:
-                    promedio_general_tab2 = 0
-                
-                # Calcular tiempo promedio de atención
-                tiempos_validos = []
-                for usuario in usuarios_proceso_tab2:
-                    for hora_col in horas_formateadas_tab2:
-                        promedio_registros = tabla_promedios.loc[usuario, hora_col]
-                        if promedio_registros > 0:
-                            tiempo_promedio = 60 / promedio_registros
-                            tiempos_validos.append(tiempo_promedio)
-                
-                if tiempos_validos:
-                    tiempo_promedio_general_tab2 = np.mean(tiempos_validos)
-                else:
-                    tiempo_promedio_general_tab2 = None
+                if tiempo_promedio_general:
+                    diff_tiempo = tiempo_promedio_general - ESTANDAR_TIEMPO
+                    diff_tiempo_pct = (diff_tiempo / ESTANDAR_TIEMPO) * 100 if ESTANDAR_TIEMPO > 0 else 0
                 
                 # Mostrar métricas
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.metric("Promedio Llamados/Hora", f"{promedio_general_tab2:.2f}")
+                    st.markdown("### 📈 Promedio General vs Estándar")
+                    delta_reg = f"{diff_registros:+.2f} vs estándar ({diff_registros_pct:+.1f}%)"
+                    st.metric("Promedio registros/hora", f"{promedio_general:.2f}", 
+                             delta=delta_reg, delta_color="inverse" if diff_registros > 0 else "normal")
+                    st.markdown(f"**Estándar:** {ESTANDAR_REGISTROS}")
+                    
+                    st.markdown("### 📈 Máximo Registros/Hora")
+                    st.metric("Máximo alcanzado", f"{max_registros:.2f}")
+                    st.markdown(f"**Usuario:** {usuario_max}")
+                    st.markdown(f"**Hora:** {hora_max}")
+                
                 with col2:
-                    if tiempo_promedio_general_tab2:
-                        st.metric("Tiempo Promedio Atención", f"{tiempo_promedio_general_tab2:.1f} min")
+                    st.markdown("### ⏱️ Tiempo Promedio vs Estándar")
+                    if tiempo_promedio_general:
+                        delta_t = f"{diff_tiempo:+.1f} min vs estándar ({diff_tiempo_pct:+.1f}%)"
+                        st.metric("Tiempo promedio admisión", f"{tiempo_promedio_general:.1f} min",
+                                 delta=delta_t, delta_color="inverse" if diff_tiempo > 0 else "normal")
                     else:
-                        st.metric("Tiempo Promedio Atención", "-")
+                        st.metric("Tiempo promedio admisión", "-")
+                    st.markdown(f"**Estándar:** {ESTANDAR_TIEMPO} min")
+                    
+                    st.markdown("### ⏱️ Mínimo Tiempo de Admisión")
+                    if min_tiempo:
+                        st.metric("Mínimo alcanzado", f"{min_tiempo:.1f} min")
+                        st.markdown(f"**Usuario:** {usuario_min}")
+                        st.markdown(f"**Hora:** {hora_min}")
+                    else:
+                        st.metric("Mínimo alcanzado", "N/A")
                 
-                # ============================================================
-                # GRÁFICO DE BARRAS TOP USUARIOS
-                # ============================================================
-                st.subheader("🏆 Top 10 Usuarios por Actividad")
+                # --- GRÁFICO DE BARRAS ---
+                st.subheader("🏆 Top 10 Usuarios por Actividad Promedio")
                 
-                top_n_tab2 = min(10, len(usuarios_proceso_tab2))
-                top_usuarios_tab2 = tabla_promedios.head(top_n_tab2).copy()
+                top_n = min(10, len(tabla_resultados))
+                top_usuarios = tabla_resultados.head(top_n)
                 
-                top_usuarios_chart = pd.DataFrame({
-                    'Usuario': top_usuarios_tab2.index,
-                    'Promedio Diario': top_usuarios_tab2['TOTAL REGISTROS'].values
+                chart_data = pd.DataFrame({
+                    'Usuario': top_usuarios.index,
+                    'Promedio Diario': top_usuarios['TOTAL'].values
                 }).set_index('Usuario')
                 
-                st.bar_chart(
-                    top_usuarios_chart,
-                    height=400,
-                    use_container_width=True
-                )
+                st.bar_chart(chart_data, height=400)
+                st.caption("📊 Ordenado de mayor a menor")
                 
-                st.caption("📊 Ordenado de mayor a menor promedio de registros")
-                
-                # --- SECCIÓN DE EXPORTACIÓN A EXCEL PARA LLAMADOS ---
+                # --- EXPORTACIÓN A EXCEL ---
                 st.divider()
                 st.subheader("📤 Exportar Resultados a Excel")
                 
-                # Preparar dataframes para exportar
-                def exportar_a_excel_tab2():
+                def crear_excel():
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        # Hoja 1: Llamados promedio
-                        tabla_promedios_con_total.to_excel(writer, sheet_name='Llamados Promedio')
+                        tabla_resultados_con_total.to_excel(writer, sheet_name='Ingresos Promedio')
+                        tabla_tiempos.to_excel(writer, sheet_name='Tiempos Promedio')
                         
-                        # Hoja 2: Manuales vs Automáticos
-                        if 'tabla_tipos' in locals():
-                            tabla_tipos.to_excel(writer, sheet_name='Manuales vs Automáticos')
-                        
-                        # Hoja 3: Configuración de filtros
-                        config_data = {
-                            'Parámetro': ['Rango de fechas', 'Día analizado', 'Servicios', 'Usuarios', 'Registros analizados'],
+                        stats_df = pd.DataFrame({
+                            'Métrica': ['Promedio registros/hora', 'Máximo registros/hora', 
+                                       'Tiempo promedio admisión', 'Mínimo tiempo admisión'],
                             'Valor': [
-                                f"{fecha_inicio_tab2} a {fecha_fin_tab2}",
-                                dia_seleccionado_tab2,
-                                ', '.join(servicio_sel) if servicio_sel else 'Todos',
-                                ', '.join(usuario_sel_tab2) if usuario_sel_tab2 else 'Todos',
-                                len(df_proceso_tab2)
+                                f"{promedio_general:.2f}",
+                                f"{max_registros:.2f} (Usuario: {usuario_max}, Hora: {hora_max})",
+                                f"{tiempo_promedio_general:.1f} min" if tiempo_promedio_general else "N/A",
+                                f"{min_tiempo:.1f} min (Usuario: {usuario_min}, Hora: {hora_min})" if min_tiempo else "N/A"
                             ]
-                        }
-                        config_df = pd.DataFrame(config_data)
+                        })
+                        stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
+                        
+                        config_df = pd.DataFrame({
+                            'Parámetro': ['Rango', 'Día', 'Centros', 'Usuarios', 'Registros'],
+                            'Valor': [
+                                f"{fecha_inicio} a {fecha_fin}",
+                                dia_seleccionado,
+                                'Todos' if not centro_sel else ', '.join(centro_sel),
+                                'Todos' if not usuario_sel else ', '.join(usuario_sel),
+                                len(df_proceso)
+                            ]
+                        })
                         config_df.to_excel(writer, sheet_name='Configuración', index=False)
                     
                     output.seek(0)
                     return output
                 
-                # Botón de descarga
                 st.download_button(
-                    label="📥 Descargar todo en Excel",
-                    data=exportar_a_excel_tab2(),
-                    file_name=f"analisis_llamados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help="Descarga todas las tablas en un archivo Excel"
+                    label="📥 Descargar Excel",
+                    data=crear_excel(),
+                    file_name=f"analisis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-                
-                st.info("""
-                **El archivo Excel incluye:**
-                - Hoja 'Llamados Promedio': Tabla completa de llamados por usuario y hora
-                - Hoja 'Manuales vs Automáticos': Clasificación de llamados
-                - Hoja 'Configuración': Filtros aplicados al análisis
-                """)
 
         except Exception as e:
             st.error(f"Error técnico: {e}")
             import traceback
             st.code(traceback.format_exc())
+            st.info("Verifica las columnas del archivo")
     else:
-        st.info("👆 Usa la barra lateral para subir un archivo Excel y activar los filtros.")
-        st.caption("El archivo debe contener columnas relacionadas con llamados: Hora de Llegada, Servicio, Usuario que Atiende")
+        st.info("👆 Sube un archivo Excel")
+
+# ============================================================================
+# PESTAÑA 2: ANÁLISIS DE LLAMADOS
+# ============================================================================
+with tab2:
+    st.header("📞 Análisis de Llamados")
+    
+    with st.sidebar:
+        st.header("⚙️ Configuración Pestaña 2")
+        uploaded_file_tab2 = st.file_uploader("Sube tu archivo Excel (.xlsx)", 
+                                            type=["xlsx"], 
+                                            help="Archivo con: Hora Llegada, Servicio, Usuario Atención",
+                                            key="tab2_file")
+
+    if uploaded_file_tab2 is not None:
+        try:
+            # Leer archivo
+            df_tab2 = pd.read_excel(uploaded_file_tab2)
+            
+            # Buscar columnas necesarias
+            df_tab2.columns = df_tab2.columns.astype(str).str.strip()
+            
+            # Función para encontrar columna
+            def encontrar_columna(df, posibles):
+                for col in df.columns:
+                    if any(p.lower() in col.lower() for p in posibles):
+                        return col
+                return None
+            
+            col_hora = encontrar_columna(df_tab2, ['hora llegada', 'hora_llegada'])
+            col_servicio = encontrar_columna(df_tab2, ['servicio'])
+            col_usuario = encontrar_columna(df_tab2, ['usuario atención', 'usuario_atencion'])
+            col_tipo = encontrar_columna(df_tab2, ['tipo'])
+            
+            if not all([col_hora, col_servicio, col_usuario]):
+                st.error("No se encontraron las columnas necesarias")
+                st.stop()
+            
+            # Renombrar
+            rename_dict = {
+                col_hora: 'HORA_LLEGADA',
+                col_servicio: 'SERVICIO',
+                col_usuario: 'USUARIO_ATENCION'
+            }
+            if col_tipo:
+                rename_dict[col_tipo] = 'TIPO'
+            
+            df_tab2 = df_tab2.rename(columns=rename_dict)
+            
+            # Procesar fechas
+            df_tab2["HORA_LLEGADA"] = pd.to_datetime(df_tab2["HORA_LLEGADA"], errors='coerce')
+            df_tab2 = df_tab2.dropna(subset=["HORA_LLEGADA"])
+            
+            if df_tab2.empty:
+                st.warning("No hay fechas válidas")
+                st.stop()
+            
+            # Filtros en sidebar
+            with st.sidebar:
+                st.subheader("Rango de Fechas")
+                fecha_min = df_tab2["HORA_LLEGADA"].min().date()
+                fecha_max = df_tab2["HORA_LLEGADA"].max().date()
+                
+                fecha_ini = st.date_input("Inicio", fecha_min, min_value=fecha_min, max_value=fecha_max, key="tab2_fecha_ini")
+                fecha_fin = st.date_input("Fin", fecha_max, min_value=fecha_min, max_value=fecha_max, key="tab2_fecha_fin")
+                
+                if fecha_ini > fecha_fin:
+                    st.error("Fecha inicio > fecha fin")
+                    st.stop()
+                
+                servicios = sorted(df_tab2["SERVICIO"].dropna().unique())
+                servicio_sel = st.multiselect("Servicios", servicios, key="tab2_servicios")
+                
+                usuarios = sorted(df_tab2["USUARIO_ATENCION"].dropna().unique())
+                usuario_sel = st.multiselect("Usuarios", usuarios, key="tab2_usuarios")
+                
+                dias_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos (L-V)"]
+                dia_sel = st.selectbox("Día", dias_opciones, index=7, key="tab2_dia")
+            
+            # Aplicar filtros
+            df_filtrado = df_tab2[
+                (df_tab2["HORA_LLEGADA"].dt.date >= fecha_ini) & 
+                (df_tab2["HORA_LLEGADA"].dt.date <= fecha_fin)
+            ]
+            
+            if servicio_sel:
+                df_filtrado = df_filtrado[df_filtrado["SERVICIO"].isin(servicio_sel)]
+            if usuario_sel:
+                df_filtrado = df_filtrado[df_filtrado["USUARIO_ATENCION"].isin(usuario_sel)]
+            
+            if df_filtrado.empty:
+                st.warning("No hay datos con los filtros seleccionados")
+                st.stop()
+            
+            st.divider()
+            st.info(f"**Registros analizados:** {len(df_filtrado):,}")
+            
+            # Preparar datos
+            df_proceso = df_filtrado.copy()
+            df_proceso['FECHA'] = df_proceso['HORA_LLEGADA'].dt.date
+            df_proceso['HORA'] = df_proceso['HORA_LLEGADA'].dt.hour
+            df_proceso['DIA_SEMANA'] = df_proceso['HORA_LLEGADA'].dt.day_name()
+            df_proceso['DIA_SEMANA_NUM'] = df_proceso['HORA_LLEGADA'].dt.dayofweek
+            
+            mapa_dias = {
+                'Lunes': 'Monday', 'Martes': 'Tuesday', 'Miércoles': 'Wednesday',
+                'Jueves': 'Thursday', 'Viernes': 'Friday', 'Sábado': 'Saturday', 'Domingo': 'Sunday'
+            }
+            
+            if dia_sel == "Todos (L-V)":
+                df_proceso = df_proceso[df_proceso['DIA_SEMANA_NUM'] < 5]
+            else:
+                df_proceso = df_proceso[df_proceso['DIA_SEMANA'] == mapa_dias[dia_sel]]
+            
+            if df_proceso.empty:
+                st.warning("No hay datos para el día seleccionado")
+                st.stop()
+            
+            if dia_sel != "Todos (L-V)":
+                st.caption(f"📊 Promediando {df_proceso['FECHA'].nunique()} día(s)")
+            
+            # Obtener horas y usuarios
+            horas = sorted(df_proceso['HORA'].unique())
+            horas_fmt = [f"{h}:00" for h in horas]
+            usuarios_proc = sorted(df_proceso["USUARIO_ATENCION"].unique())
+            
+            # Crear tabla de promedios
+            data = []
+            for usuario in usuarios_proc:
+                df_u = df_proceso[df_proceso["USUARIO_ATENCION"] == usuario]
+                fila = []
+                for h in horas:
+                    df_h = df_u[df_u['HORA'] == h]
+                    if not df_h.empty:
+                        conteo = df_h.groupby('FECHA').size()
+                        conteo = conteo[conteo > 0]
+                        prom = conteo.mean() if not conteo.empty else 0
+                        fila.append(round(prom, 2))
+                    else:
+                        fila.append(0)
+                data.append(fila)
+            
+            tabla_llamados = pd.DataFrame(data, index=usuarios_proc, columns=horas_fmt)
+            
+            # Estadísticas
+            tabla_llamados['TOTAL'] = tabla_llamados[horas_fmt].sum(axis=1).round(2)
+            tabla_llamados['MÍNIMO'] = tabla_llamados[horas_fmt].min(axis=1).round(2)
+            tabla_llamados['MÁXIMO'] = tabla_llamados[horas_fmt].max(axis=1).round(2)
+            
+            tabla_llamados = tabla_llamados.sort_values('TOTAL', ascending=False)
+            
+            # Totales por hora
+            totales_hora = tabla_llamados[horas_fmt].sum(axis=0).round(2)
+            
+            # Fila total
+            fila_total = pd.DataFrame({
+                col: [totales_hora[col] if col in horas_fmt else '' for col in tabla_llamados.columns]
+            }, index=['TOTAL']).T
+            fila_total['MÍNIMO'] = ''
+            fila_total['MÁXIMO'] = ''
+            
+            tabla_llamados_con_total = pd.concat([tabla_llamados, fila_total])
+            
+            # Mostrar tabla
+            st.subheader("Promedio de Llamados por Agente")
+            
+            styler = tabla_llamados_con_total.style
+            mascara_usuarios = tabla_llamados_con_total.index != 'TOTAL'
+            styler = styler.format("{:.2f}", subset=pd.IndexSlice[tabla_llamados_con_total.index[mascara_usuarios], horas_fmt + ['TOTAL', 'MÍNIMO', 'MÁXIMO']])
+            styler = styler.format("{:.2f}", subset=pd.IndexSlice[['TOTAL'], horas_fmt + ['TOTAL']])
+            styler = styler.background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[tabla_llamados.index, horas_fmt])
+            styler = styler.set_properties(**{'text-align': 'center'})
+            
+            st.dataframe(styler, use_container_width=True, height=min(400, 50 + (len(usuarios_proc) * 35)))
+            
+            # Tabla de tipos si existe
+            if 'TIPO' in df_proceso.columns:
+                st.subheader("Llamados Manuales vs Automáticos")
+                
+                df_proceso['TIPO_NORM'] = df_proceso['TIPO'].astype(str).str.lower().str.strip()
+                
+                def clasificar(val):
+                    if pd.isna(val):
+                        return 'NO_CLASIFICADO'
+                    v = str(val).lower().strip()
+                    if any(k in v for k in ['manual', 'm']):
+                        return 'MANUAL'
+                    elif any(k in v for k in ['auto', 'a', 'autom']):
+                        return 'AUTO'
+                    return 'NO_CLASIFICADO'
+                
+                df_proceso['CLASIF'] = df_proceso['TIPO'].apply(clasificar)
+                
+                tipos_data = []
+                for u in usuarios_proc:
+                    df_u = df_proceso[df_proceso["USUARIO_ATENCION"] == u]
+                    conteo = df_u['CLASIF'].value_counts()
+                    manual = conteo.get('MANUAL', 0)
+                    auto = conteo.get('AUTO', 0)
+                    total = manual + auto
+                    tipos_data.append([u, total, manual, auto])
+                
+                tipos_df = pd.DataFrame(tipos_data, columns=['Usuario', 'TOTAL', 'MANUALES', 'AUTOMÁTICOS'])
+                tipos_df['% MANUAL'] = (tipos_df['MANUALES'] / tipos_df['TOTAL'] * 100).round(1)
+                tipos_df['% AUTO'] = (tipos_df['AUTOMÁTICOS'] / tipos_df['TOTAL'] * 100).round(1)
+                tipos_df = tipos_df.set_index('Usuario').fillna(0)
+                tipos_df = tipos_df.sort_values('TOTAL', ascending=False)
+                
+                st.dataframe(tipos_df.style.format("{:.0f}", subset=['TOTAL', 'MANUALES', 'AUTOMÁTICOS'])
+                                           .format("{:.1f}%", subset=['% MANUAL', '% AUTO']))
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Manuales", f"{int(tipos_df['MANUALES'].sum()):,}")
+                with col2:
+                    st.metric("Total Automáticos", f"{int(tipos_df['AUTOMÁTICOS'].sum()):,}")
+                with col3:
+                    st.metric("Total General", f"{int(tipos_df['TOTAL'].sum()):,}")
+            
+            # Exportar
+            st.divider()
+            st.subheader("📤 Exportar Resultados")
+            
+            def crear_excel_tab2():
+                out = BytesIO()
+                with pd.ExcelWriter(out, engine='openpyxl') as w:
+                    tabla_llamados_con_total.to_excel(w, sheet_name='Llamados Promedio')
+                    if 'tipos_df' in locals():
+                        tipos_df.to_excel(w, sheet_name='Manuales vs Automáticos')
+                    
+                    config = pd.DataFrame({
+                        'Parámetro': ['Rango', 'Día', 'Servicios', 'Usuarios', 'Registros'],
+                        'Valor': [
+                            f"{fecha_ini} a {fecha_fin}",
+                            dia_sel,
+                            'Todos' if not servicio_sel else ', '.join(servicio_sel),
+                            'Todos' if not usuario_sel else ', '.join(usuario_sel),
+                            len(df_proceso)
+                        ]
+                    })
+                    config.to_excel(w, sheet_name='Configuración', index=False)
+                
+                out.seek(0)
+                return out
+            
+            st.download_button(
+                label="📥 Descargar Excel",
+                data=crear_excel_tab2(),
+                file_name=f"llamados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+    else:
+        st.info("👆 Sube un archivo Excel")
