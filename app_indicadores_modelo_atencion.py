@@ -152,243 +152,243 @@ with tab1:
                     df_proceso = df_proceso[df_proceso['DIA_SEMANA_NUM'] < 5]
                     dias_analizados = "Lunes a Viernes"
                     dia_label = "L-V"
+                    
+                    # Verificar si hay datos después del filtro
+                    if df_proceso.empty:
+                        st.warning(f"No hay registros para el rango seleccionado (Lunes a Viernes).")
+                        st.stop()
                 else:
-                    # Filtrar por día específico - SIEMPRE debemos tomar TODOS los días de ese tipo
-                    # en el rango seleccionado para promediarlos
+                    # Filtrar por día específico
                     df_proceso = df_proceso[df_proceso['DIA_SEMANA'] == dia_seleccionado]
                     dias_analizados = dia_seleccionado
                     dia_label = dia_seleccionado[:3]
                     
-                    # Verificar si hay al menos un día
-                    dias_unicos = df_proceso['FECHA'].nunique()
-                    
-                    if dias_unicos == 0:
+                    # Verificar si hay al menos un registro
+                    if df_proceso.empty:
                         st.warning(f"No hay registros para el día seleccionado ({dia_seleccionado}) en el rango filtrado.")
                         st.stop()
                     
                     # Mostrar información sobre cuántos días se están promediando
+                    dias_unicos = df_proceso['FECHA'].nunique()
                     st.caption(f"📊 Promediando {dias_unicos} día(s) de {dia_seleccionado} en el rango seleccionado")
                 
-                # Verificar si hay datos después del filtro por día
-                if df_proceso.empty:
-                    st.warning(f"No hay registros para el día seleccionado ({dia_seleccionado}) en el rango filtrado.")
-                else:
-                    # Identificar horas con registros (no usar horas fijas 6-20)
-                    horas_con_registros = sorted(df_proceso['HORA'].unique())
+                # Identificar horas con registros (no usar horas fijas 6-20)
+                horas_con_registros = sorted(df_proceso['HORA'].unique())
+                
+                # Obtener lista de usuarios únicos
+                usuarios_proceso = sorted(df_proceso["USUARIO CREA INGRESO"].dropna().unique())
+                
+                if not usuarios_proceso:
+                    st.warning("No hay usuarios en los datos filtrados.")
+                    st.stop()
+                
+                # Crear estructura para la tabla dinámica
+                tabla_resultados = pd.DataFrame(index=usuarios_proceso, columns=horas_con_registros)
+                
+                # Calcular promedios para cada usuario y hora
+                for usuario in usuarios_proceso:
+                    df_usuario = df_proceso[df_proceso["USUARIO CREA INGRESO"] == usuario]
                     
-                    # Obtener lista de usuarios únicos
-                    usuarios_proceso = sorted(df_proceso["USUARIO CREA INGRESO"].dropna().unique())
-                    
-                    if not usuarios_proceso:
-                        st.warning("No hay usuarios en los datos filtrados.")
-                    else:
-                        # Crear estructura para la tabla dinámica
-                        tabla_resultados = pd.DataFrame(index=usuarios_proceso, columns=horas_con_registros)
+                    for hora in horas_con_registros:
+                        # Filtrar registros para esta hora específica
+                        df_hora = df_usuario[df_usuario['HORA'] == hora]
                         
-                        # Calcular promedios para cada usuario y hora
-                        for usuario in usuarios_proceso:
-                            df_usuario = df_proceso[df_proceso["USUARIO CREA INGRESO"] == usuario]
+                        if not df_hora.empty:
+                            # Contar registros por fecha única
+                            conteo_por_dia = df_hora.groupby('FECHA').size()
                             
-                            for hora in horas_con_registros:
-                                # Filtrar registros para esta hora específica
-                                df_hora = df_usuario[df_usuario['HORA'] == hora]
-                                
-                                if not df_hora.empty:
-                                    # Contar registros por fecha única
-                                    conteo_por_dia = df_hora.groupby('FECHA').size()
-                                    
-                                    # MEJORA: Excluir días con 0 registros para evitar sesgos
-                                    conteo_por_dia = conteo_por_dia[conteo_por_dia > 0]
-                                    
-                                    if not conteo_por_dia.empty:
-                                        promedio = conteo_por_dia.mean()
-                                        tabla_resultados.at[usuario, hora] = round(promedio, 2)
-                                    else:
-                                        tabla_resultados.at[usuario, hora] = None  # Usar None en lugar de np.nan
-                                else:
-                                    tabla_resultados.at[usuario, hora] = None  # Usar None en lugar de np.nan
-                        
-                        # Formatear nombres de columnas (horas)
-                        horas_formateadas = [f"{h}:00" for h in horas_con_registros]
-                        tabla_resultados.columns = horas_formateadas
-                        
-                        # Reemplazar None por 0 para la suma
-                        tabla_resultados_suma = tabla_resultados.fillna(0)
-                        
-                        # Agregar columna de total por usuario
-                        tabla_resultados_suma['TOTAL'] = tabla_resultados_suma.sum(axis=1)
-                        
-                        # Ordenar por total descendente
-                        tabla_resultados = tabla_resultados.reindex(tabla_resultados_suma.sort_values('TOTAL', ascending=False).index)
-                        tabla_resultados_suma = tabla_resultados_suma.reindex(tabla_resultados_suma.sort_values('TOTAL', ascending=False).index)
-                        
-                        # --- TABLA 1: PROMEDIOS DE REGISTROS ---
-                        st.subheader("Ingresos promedio abiertos por Admisionista")
-                        st.markdown("*Cantidad de ingresos que realizan por hora*")
+                            # MEJORA: Excluir días con 0 registros para evitar sesgos
+                            conteo_por_dia = conteo_por_dia[conteo_por_dia > 0]
+                            
+                            if not conteo_por_dia.empty:
+                                promedio = conteo_por_dia.mean()
+                                tabla_resultados.at[usuario, hora] = round(promedio, 2)
+                            else:
+                                tabla_resultados.at[usuario, hora] = None  # Usar None en lugar de np.nan
+                        else:
+                            tabla_resultados.at[usuario, hora] = None  # Usar None en lugar de np.nan
+                
+                # Formatear nombres de columnas (horas)
+                horas_formateadas = [f"{h}:00" for h in horas_con_registros]
+                tabla_resultados.columns = horas_formateadas
+                
+                # Reemplazar None por 0 para la suma
+                tabla_resultados_suma = tabla_resultados.fillna(0)
+                
+                # Agregar columna de total por usuario
+                tabla_resultados_suma['TOTAL'] = tabla_resultados_suma.sum(axis=1)
+                
+                # Ordenar por total descendente
+                tabla_resultados = tabla_resultados.reindex(tabla_resultados_suma.sort_values('TOTAL', ascending=False).index)
+                tabla_resultados_suma = tabla_resultados_suma.reindex(tabla_resultados_suma.sort_values('TOTAL', ascending=False).index)
+                
+                # --- TABLA 1: PROMEDIOS DE REGISTROS ---
+                st.subheader("Ingresos promedio abiertos por Admisionista")
+                st.markdown("*Cantidad de ingresos que realizan por hora*")
 
-                        # Mostrar tabla con formato (sin NaN en la visualización)
-                        tabla_visual = tabla_resultados.fillna(0)
-                        st.dataframe(
-                            tabla_visual.style
-                            .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
-                            .format("{:.2f}")
-                            .set_properties(**{'text-align': 'center'}),
-                            use_container_width=True,
-                            height=min(400, 50 + (len(usuarios_proceso) * 35))
-                        )
-                        
-                        # --- TABLA 2: TIEMPOS PROMEDIOS DE ADMISIÓN ---
-                        st.subheader("Tiempos Promedios de Admisión")
-                        st.markdown("*Tiempo promedio (minutos) que tardan en hacer un ingreso cada hora*")
-                        
-                        # Crear tabla de tiempos promedios
-                        tabla_tiempos = pd.DataFrame(index=usuarios_proceso, columns=horas_formateadas)
-                        
-                        # Calcular tiempo promedio = 60 / promedio de registros
-                        for usuario in usuarios_proceso:
-                            for hora_idx, hora_col in enumerate(horas_formateadas):
-                                promedio_registros = tabla_resultados.at[usuario, hora_col]
-                                if promedio_registros is not None and promedio_registros > 0:
-                                    tiempo_promedio = 60 / promedio_registros
-                                    tabla_tiempos.at[usuario, hora_col] = round(tiempo_promedio, 1)
-                                else:
-                                    tabla_tiempos.at[usuario, hora_col] = None
-                        
-                        # Agregar columna de tiempo promedio total (promedio de tiempos válidos)
-                        for usuario in usuarios_proceso:
-                            tiempos_usuario = [v for v in tabla_tiempos.loc[usuario, horas_formateadas].values if v is not None]
-                            if tiempos_usuario:
-                                tiempo_promedio_total = np.mean(tiempos_usuario)
-                                tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = round(tiempo_promedio_total, 1)
-                            else:
-                                tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = None
-                        
-                        # Mostrar tabla de tiempos con gradiente invertido
-                        st.dataframe(
-                            tabla_tiempos.style
-                            .background_gradient(cmap='YlOrRd_r', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
-                            .set_properties(**{'text-align': 'center'})
-                            .format("{:.1f}", na_rep="-")
-                            .format("{:.1f}", subset=['TIEMPO_PROMEDIO_TOTAL']),
-                            use_container_width=True,
-                            height=min(400, 50 + (len(usuarios_proceso) * 35))
-                        )
-                        
-                        # --- ESTADÍSTICAS RESUMEN CON ESTÁNDARES ---
-                        st.subheader("Estadísticas Resumen vs Estándares")
-                        
-                        # Calcular promedios generales (excluyendo valores nulos) - CORREGIDO
-                        valores_validos = []
-                        for col in horas_formateadas:
-                            for usuario in usuarios_proceso:
-                                valor = tabla_resultados.at[usuario, col]
-                                if valor is not None and valor > 0:
-                                    valores_validos.append(valor)
-                        
-                        if valores_validos:
-                            promedio_general = np.mean(valores_validos)
+                # Mostrar tabla con formato (sin NaN en la visualización)
+                tabla_visual = tabla_resultados.fillna(0)
+                st.dataframe(
+                    tabla_visual.style
+                    .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
+                    .format("{:.2f}")
+                    .set_properties(**{'text-align': 'center'}),
+                    use_container_width=True,
+                    height=min(400, 50 + (len(usuarios_proceso) * 35))
+                )
+                
+                # --- TABLA 2: TIEMPOS PROMEDIOS DE ADMISIÓN ---
+                st.subheader("Tiempos Promedios de Admisión")
+                st.markdown("*Tiempo promedio (minutos) que tardan en hacer un ingreso cada hora*")
+                
+                # Crear tabla de tiempos promedios
+                tabla_tiempos = pd.DataFrame(index=usuarios_proceso, columns=horas_formateadas)
+                
+                # Calcular tiempo promedio = 60 / promedio de registros
+                for usuario in usuarios_proceso:
+                    for hora_idx, hora_col in enumerate(horas_formateadas):
+                        promedio_registros = tabla_resultados.at[usuario, hora_col]
+                        if promedio_registros is not None and promedio_registros > 0:
+                            tiempo_promedio = 60 / promedio_registros
+                            tabla_tiempos.at[usuario, hora_col] = round(tiempo_promedio, 1)
                         else:
-                            promedio_general = 0
+                            tabla_tiempos.at[usuario, hora_col] = None
+                
+                # Agregar columna de tiempo promedio total (promedio de tiempos válidos)
+                for usuario in usuarios_proceso:
+                    tiempos_usuario = [v for v in tabla_tiempos.loc[usuario, horas_formateadas].values if v is not None]
+                    if tiempos_usuario:
+                        tiempo_promedio_total = np.mean(tiempos_usuario)
+                        tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = round(tiempo_promedio_total, 1)
+                    else:
+                        tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = None
+                
+                # Mostrar tabla de tiempos con gradiente invertido
+                st.dataframe(
+                    tabla_tiempos.style
+                    .background_gradient(cmap='YlOrRd_r', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
+                    .set_properties(**{'text-align': 'center'})
+                    .format("{:.1f}", na_rep="-")
+                    .format("{:.1f}", subset=['TIEMPO_PROMEDIO_TOTAL']),
+                    use_container_width=True,
+                    height=min(400, 50 + (len(usuarios_proceso) * 35))
+                )
+                
+                # --- ESTADÍSTICAS RESUMEN CON ESTÁNDARES ---
+                st.subheader("Estadísticas Resumen vs Estándares")
+                
+                # Calcular promedios generales (excluyendo valores nulos) - CORREGIDO
+                valores_validos = []
+                for col in horas_formateadas:
+                    for usuario in usuarios_proceso:
+                        valor = tabla_resultados.at[usuario, col]
+                        if valor is not None and valor > 0:
+                            valores_validos.append(valor)
+                
+                if valores_validos:
+                    promedio_general = np.mean(valores_validos)
+                else:
+                    promedio_general = 0
+                
+                # Calcular tiempo promedio general (excluyendo valores nulos)
+                tiempos_todos = []
+                for usuario in usuarios_proceso:
+                    for hora_col in horas_formateadas:
+                        valor = tabla_tiempos.at[usuario, hora_col]
+                        if valor is not None:
+                            tiempos_todos.append(valor)
+                
+                # ESTÁNDARES DEFINIDOS
+                ESTANDAR_REGISTROS_HORA = 13  # 13 registros por hora estándar
+                ESTANDAR_TIEMPO_ADMISION = 4  # 4 minutos por admisión estándar
+                
+                # Calcular diferencias vs estándar
+                diferencia_registros = promedio_general - ESTANDAR_REGISTROS_HORA
+                diferencia_registros_porcentaje = (diferencia_registros / ESTANDAR_REGISTROS_HORA) * 100 if ESTANDAR_REGISTROS_HORA > 0 else 0
+                
+                if tiempos_todos:
+                    tiempo_promedio_general = np.mean(tiempos_todos)
+                    diferencia_tiempo = tiempo_promedio_general - ESTANDAR_TIEMPO_ADMISION
+                    diferencia_tiempo_porcentaje = (diferencia_tiempo / ESTANDAR_TIEMPO_ADMISION) * 100 if ESTANDAR_TIEMPO_ADMISION > 0 else 0
+                else:
+                    tiempo_promedio_general = None
+                    diferencia_tiempo = None
+                    diferencia_tiempo_porcentaje = None
+                
+                # Mostrar métricas con diferencias vs estándar
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Métrica de registros por hora vs estándar
+                    delta_registros = f"{diferencia_registros:+.2f} vs estándar ({diferencia_registros_porcentaje:+.1f}%)"
+                    color_delta_registros = "inverse" if diferencia_registros > 0 else "normal"
+                    
+                    st.metric(
+                        label="📈 Promedio registros/hora", 
+                        value=f"{promedio_general:.2f}",
+                        delta=delta_registros,
+                        delta_color=color_delta_registros,
+                        help=f"Estándar: {ESTANDAR_REGISTROS_HORA} registros/hora"
+                    )
+                    
+                    st.caption(f"**Estándar:** {ESTANDAR_REGISTROS_HORA} registros por hora")
+                
+                with col2:
+                    # Métrica de tiempo de admisión vs estándar
+                    if tiempo_promedio_general is not None:
+                        delta_tiempo = f"{diferencia_tiempo:+.1f} min vs estándar ({diferencia_tiempo_porcentaje:+.1f}%)"
+                        color_delta_tiempo = "inverse" if diferencia_tiempo > 0 else "normal"
                         
-                        # Calcular tiempo promedio general (excluyendo valores nulos)
-                        tiempos_todos = []
-                        for usuario in usuarios_proceso:
-                            for hora_col in horas_formateadas:
-                                valor = tabla_tiempos.at[usuario, hora_col]
-                                if valor is not None:
-                                    tiempos_todos.append(valor)
-                        
-                        # ESTÁNDARES DEFINIDOS
-                        ESTANDAR_REGISTROS_HORA = 13  # 13 registros por hora estándar
-                        ESTANDAR_TIEMPO_ADMISION = 4  # 4 minutos por admisión estándar
-                        
-                        # Calcular diferencias vs estándar
-                        diferencia_registros = promedio_general - ESTANDAR_REGISTROS_HORA
-                        diferencia_registros_porcentaje = (diferencia_registros / ESTANDAR_REGISTROS_HORA) * 100 if ESTANDAR_REGISTROS_HORA > 0 else 0
-                        
-                        if tiempos_todos:
-                            tiempo_promedio_general = np.mean(tiempos_todos)
-                            diferencia_tiempo = tiempo_promedio_general - ESTANDAR_TIEMPO_ADMISION
-                            diferencia_tiempo_porcentaje = (diferencia_tiempo / ESTANDAR_TIEMPO_ADMISION) * 100 if ESTANDAR_TIEMPO_ADMISION > 0 else 0
-                        else:
-                            tiempo_promedio_general = None
-                            diferencia_tiempo = None
-                            diferencia_tiempo_porcentaje = None
-                        
-                        # Mostrar métricas con diferencias vs estándar
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            # Métrica de registros por hora vs estándar
-                            delta_registros = f"{diferencia_registros:+.2f} vs estándar ({diferencia_registros_porcentaje:+.1f}%)"
-                            color_delta_registros = "inverse" if diferencia_registros > 0 else "normal"
-                            
-                            st.metric(
-                                label="📈 Promedio registros/hora", 
-                                value=f"{promedio_general:.2f}",
-                                delta=delta_registros,
-                                delta_color=color_delta_registros,
-                                help=f"Estándar: {ESTANDAR_REGISTROS_HORA} registros/hora"
-                            )
-                            
-                            st.caption(f"**Estándar:** {ESTANDAR_REGISTROS_HORA} registros por hora")
-                        
-                        with col2:
-                            # Métrica de tiempo de admisión vs estándar
-                            if tiempo_promedio_general is not None:
-                                delta_tiempo = f"{diferencia_tiempo:+.1f} min vs estándar ({diferencia_tiempo_porcentaje:+.1f}%)"
-                                color_delta_tiempo = "inverse" if diferencia_tiempo > 0 else "normal"
-                                
-                                st.metric(
-                                    label="⏱️ Tiempo promedio admisión", 
-                                    value=f"{tiempo_promedio_general:.1f} min",
-                                    delta=delta_tiempo,
-                                    delta_color=color_delta_tiempo,
-                                    help=f"Estándar: {ESTANDAR_TIEMPO_ADMISION} minutos por admisión"
-                                )
-                                
-                                st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
-                            else:
-                                st.metric(
-                                    label="⏱️ Tiempo promedio admisión", 
-                                    value="-",
-                                    help="No hay datos suficientes para calcular el tiempo promedio"
-                                )
-                                st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
-                        
-                        # --- GRÁFICO DE BARRAS: TOP USUARIOS (CORREGIDO) ---
-                        st.subheader("🏆 Top 10 Usuarios por Actividad Promedio")
-                        
-                        top_n = min(10, len(tabla_resultados_suma))
-                        top_usuarios = tabla_resultados_suma.head(top_n)
-                        
-                        # Preparar datos para el gráfico de barras - CORREGIDO
-                        top_usuarios_chart = pd.DataFrame({
-                            'Usuario': top_usuarios.index,
-                            'Promedio Diario': top_usuarios['TOTAL'].values
-                        })
-                        
-                        # Configurar el índice como los usuarios para que aparezcan en el eje X
-                        top_usuarios_chart = top_usuarios_chart.set_index('Usuario')
-                        
-                        # Gráfico de barras CORREGIDO (usuarios en eje X, promedios en eje Y)
-                        st.bar_chart(
-                            top_usuarios_chart,
-                            height=400,
-                            use_container_width=True
+                        st.metric(
+                            label="⏱️ Tiempo promedio admisión", 
+                            value=f"{tiempo_promedio_general:.1f} min",
+                            delta=delta_tiempo,
+                            delta_color=color_delta_tiempo,
+                            help=f"Estándar: {ESTANDAR_TIEMPO_ADMISION} minutos por admisión"
                         )
                         
-                        # Botón para exportar como PDF (placeholder - Streamlit no tiene PDF nativo)
-                        st.divider()
-                        st.subheader("📤 Exportar Resultados")
-                        
-                        st.info("""
-                        **Nota:** Streamlit no tiene funcionalidad nativa para exportar a PDF.
-                        **Alternativas sugeridas:**
-                        1. Use los botones de descarga CSV/Excel y convierta a PDF desde Excel
-                        2. Tome capturas de pantalla de las tablas importantes
-                        3. Use la funcionalidad de impresión del navegador (Ctrl+P) para guardar como PDF
-                        """)
+                        st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
+                    else:
+                        st.metric(
+                            label="⏱️ Tiempo promedio admisión", 
+                            value="-",
+                            help="No hay datos suficientes para calcular el tiempo promedio"
+                        )
+                        st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
+                
+                # --- GRÁFICO DE BARRAS: TOP USUARIOS (CORREGIDO) ---
+                st.subheader("🏆 Top 10 Usuarios por Actividad Promedio")
+                
+                top_n = min(10, len(tabla_resultados_suma))
+                top_usuarios = tabla_resultados_suma.head(top_n)
+                
+                # Preparar datos para el gráfico de barras - CORREGIDO
+                top_usuarios_chart = pd.DataFrame({
+                    'Usuario': top_usuarios.index,
+                    'Promedio Diario': top_usuarios['TOTAL'].values
+                })
+                
+                # Configurar el índice como los usuarios para que aparezcan en el eje X
+                top_usuarios_chart = top_usuarios_chart.set_index('Usuario')
+                
+                # Gráfico de barras CORREGIDO (usuarios en eje X, promedios en eje Y)
+                st.bar_chart(
+                    top_usuarios_chart,
+                    height=400,
+                    use_container_width=True
+                )
+                
+                # Botón para exportar como PDF (placeholder - Streamlit no tiene PDF nativo)
+                st.divider()
+                st.subheader("📤 Exportar Resultados")
+                
+                st.info("""
+                **Nota:** Streamlit no tiene funcionalidad nativa para exportar a PDF.
+                **Alternativas sugeridas:**
+                1. Use los botones de descarga CSV/Excel y convierta a PDF desde Excel
+                2. Tome capturas de pantalla de las tablas importantes
+                3. Use la funcionalidad de impresión del navegador (Ctrl+P) para guardar como PDF
+                """)
 
         except Exception as e:
             st.error(f"Error técnico: {e}")
@@ -604,282 +604,284 @@ with tab2:
                     df_proceso_tab2 = df_proceso_tab2[df_proceso_tab2['DIA_SEMANA_NUM'] < 5]
                     dias_analizados_tab2 = "Lunes a Viernes"
                     dia_label_tab2 = "L-V"
+                    
+                    # Verificar si hay datos después del filtro
+                    if df_proceso_tab2.empty:
+                        st.warning(f"No hay registros para el rango seleccionado (Lunes a Viernes).")
+                        st.stop()
                 else:
-                    # Filtrar por día específico - SIEMPRE tomar TODOS los días de ese tipo
+                    # Filtrar por día específico
                     df_proceso_tab2 = df_proceso_tab2[df_proceso_tab2['DIA_SEMANA'] == dia_seleccionado_tab2]
                     dias_analizados_tab2 = dia_seleccionado_tab2
                     dia_label_tab2 = dia_seleccionado_tab2[:3]
                     
-                    # Verificar si hay al menos un día
-                    dias_unicos = df_proceso_tab2['FECHA'].nunique()
-                    
-                    if dias_unicos == 0:
+                    # Verificar si hay al menos un registro
+                    if df_proceso_tab2.empty:
                         st.warning(f"No hay registros para el día seleccionado ({dia_seleccionado_tab2}) en el rango filtrado.")
                         st.stop()
                     
                     # Mostrar información sobre cuántos días se están promediando
+                    dias_unicos = df_proceso_tab2['FECHA'].nunique()
                     st.caption(f"📊 Promediando {dias_unicos} día(s) de {dia_seleccionado_tab2} en el rango seleccionado")
                 
-                if df_proceso_tab2.empty:
-                    st.warning(f"No hay registros para el día seleccionado ({dia_seleccionado_tab2}) en el rango filtrado.")
-                else:
-                    # ============================================================
-                    # 1. TABLA DE PROMEDIO DE LLAMADOS POR AGENTE POR HORA Y DÍA
-                    # ============================================================
-                    st.subheader("Promedio de Llamados por Agente, Hora y Día")
+                # ============================================================
+                # 1. TABLA DE PROMEDIO DE LLAMADOS POR AGENTE POR HORA Y DÍA
+                # ============================================================
+                st.subheader("Promedio de Llamados por Agente, Hora y Día")
+                
+                # Obtener usuarios únicos
+                usuarios_proceso_tab2 = sorted(df_proceso_tab2["USUARIO_ATENCION"].dropna().unique())
+                horas_con_registros_tab2 = sorted(df_proceso_tab2['HORA'].unique())
+                
+                if not usuarios_proceso_tab2:
+                    st.warning("No hay usuarios en los datos filtrados.")
+                    st.stop()
+                
+                # Crear tabla de promedios
+                tabla_promedios = pd.DataFrame(index=usuarios_proceso_tab2, columns=horas_con_registros_tab2)
+                
+                for usuario in usuarios_proceso_tab2:
+                    df_usuario = df_proceso_tab2[df_proceso_tab2["USUARIO_ATENCION"] == usuario]
                     
-                    # Obtener usuarios únicos
-                    usuarios_proceso_tab2 = sorted(df_proceso_tab2["USUARIO_ATENCION"].dropna().unique())
-                    horas_con_registros_tab2 = sorted(df_proceso_tab2['HORA'].unique())
-                    
-                    if not usuarios_proceso_tab2:
-                        st.warning("No hay usuarios en los datos filtrados.")
-                    else:
-                        # Crear tabla de promedios
-                        tabla_promedios = pd.DataFrame(index=usuarios_proceso_tab2, columns=horas_con_registros_tab2)
+                    for hora in horas_con_registros_tab2:
+                        df_hora = df_usuario[df_usuario['HORA'] == hora]
                         
-                        for usuario in usuarios_proceso_tab2:
-                            df_usuario = df_proceso_tab2[df_proceso_tab2["USUARIO_ATENCION"] == usuario]
+                        if not df_hora.empty:
+                            # Contar registros por fecha única
+                            conteo_por_dia = df_hora.groupby('FECHA').size()
                             
-                            for hora in horas_con_registros_tab2:
-                                df_hora = df_usuario[df_usuario['HORA'] == hora]
-                                
-                                if not df_hora.empty:
-                                    # Contar registros por fecha única
-                                    conteo_por_dia = df_hora.groupby('FECHA').size()
-                                    
-                                    # MEJORA: Excluir días con 0 registros para evitar sesgos
-                                    conteo_por_dia = conteo_por_dia[conteo_por_dia > 0]
-                                    
-                                    if not conteo_por_dia.empty:
-                                        promedio = conteo_por_dia.mean()
-                                        tabla_promedios.at[usuario, hora] = round(promedio, 2)
-                                    else:
-                                        tabla_promedios.at[usuario, hora] = None  # Usar None en lugar de np.nan
-                                else:
-                                    tabla_promedios.at[usuario, hora] = None  # Usar None en lugar de np.nan
-                        
-                        # Formatear horas
-                        horas_formateadas_tab2 = [f"{h}:00" for h in horas_con_registros_tab2]
-                        tabla_promedios.columns = horas_formateadas_tab2
-                        
-                        # Reemplazar None por 0 para la suma
-                        tabla_promedios_suma = tabla_promedios.fillna(0)
-                        
-                        # Agregar columna de total por usuario (SIN las columnas eliminadas)
-                        tabla_promedios_suma['TOTAL'] = tabla_promedios_suma.sum(axis=1)
-                        
-                        # Ordenar por total descendente
-                        tabla_promedios = tabla_promedios.reindex(tabla_promedios_suma.sort_values('TOTAL', ascending=False).index)
-                        tabla_promedios_suma = tabla_promedios_suma.reindex(tabla_promedios_suma.sort_values('TOTAL', ascending=False).index)
-                        
-                        # Mostrar tabla (solo con columnas necesarias)
-                        tabla_visual = tabla_promedios.fillna(0)
-                        st.dataframe(
-                            tabla_visual.style
-                            .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas_tab2])
-                            .format("{:.2f}")
-                            .set_properties(**{'text-align': 'center'}),
-                            use_container_width=True,
-                            height=min(400, 50 + (len(usuarios_proceso_tab2) * 35))
-                        )
-                        
-                        # ============================================================
-                        # 2. TABLA DE LLAMADOS MANUALES VS AUTO (SIN COLORES Y SIN NO CLASIFICADOS)
-                        # ============================================================
-                        st.subheader("Llamados Manuales vs Automáticos por Usuario")
-                        
-                        # Verificar si existe columna de tipo
-                        if 'TIPO_LLAMADO' in df_proceso_tab2.columns:
-                            # Normalizar valores de tipo
-                            df_proceso_tab2['TIPO_NORMALIZADO'] = df_proceso_tab2['TIPO_LLAMADO'].astype(str).str.lower().str.strip()
+                            # MEJORA: Excluir días con 0 registros para evitar sesgos
+                            conteo_por_dia = conteo_por_dia[conteo_por_dia > 0]
                             
-                            # Identificar manuales y auto
-                            manual_keywords = ['manual', 'm', 'man', 'manuales']
-                            auto_keywords = ['auto', 'a', 'aut', 'automático', 'automatico', 'automáticos']
-                            
-                            # Crear clasificación más precisa
-                            def clasificar_tipo(valor):
-                                if pd.isna(valor):
-                                    return 'NO_CLASIFICADO'
-                                valor_str = str(valor).lower().strip()
-                                if any(kw in valor_str for kw in manual_keywords):
-                                    return 'MANUAL'
-                                elif any(kw in valor_str for kw in auto_keywords):
-                                    return 'AUTO'
-                                else:
-                                    return 'NO_CLASIFICADO'
-                            
-                            df_proceso_tab2['CLASIFICACION'] = df_proceso_tab2['TIPO_LLAMADO'].apply(clasificar_tipo)
-                            
-                            # Crear tabla de conteo
-                            tabla_tipos = pd.DataFrame(index=usuarios_proceso_tab2)
-                            
-                            for usuario in usuarios_proceso_tab2:
-                                df_usuario = df_proceso_tab2[df_proceso_tab2["USUARIO_ATENCION"] == usuario]
-                                
-                                # Conteos por clasificación
-                                conteos = df_usuario['CLASIFICACION'].value_counts()
-                                
-                                # Solo manuales y automáticos
-                                manuales = conteos.get('MANUAL', 0)
-                                automaticos = conteos.get('AUTO', 0)
-                                total = manuales + automaticos  # Solo contar manuales y automáticos
-                                
-                                tabla_tipos.at[usuario, 'TOTAL_LLAMADOS'] = total
-                                tabla_tipos.at[usuario, 'MANUALES'] = manuales
-                                tabla_tipos.at[usuario, 'AUTOMATICOS'] = automaticos
-                            
-                            # Calcular porcentajes
-                            for usuario in usuarios_proceso_tab2:
-                                total = tabla_tipos.at[usuario, 'TOTAL_LLAMADOS']
-                                manuales = tabla_tipos.at[usuario, 'MANUALES']
-                                automaticos = tabla_tipos.at[usuario, 'AUTOMATICOS']
-                                
-                                # Solo calcular porcentajes si hay datos
-                                if total > 0:
-                                    tabla_tipos.at[usuario, '% MANUAL'] = (manuales / total * 100).round(1)
-                                    tabla_tipos.at[usuario, '% AUTO'] = (automaticos / total * 100).round(1)
-                                else:
-                                    tabla_tipos.at[usuario, '% MANUAL'] = 0.0
-                                    tabla_tipos.at[usuario, '% AUTO'] = 0.0
-                            
-                            # Ordenar por total
-                            tabla_tipos = tabla_tipos.sort_values('TOTAL_LLAMADOS', ascending=False)
-                            
-                            # Mostrar tabla SIN COLORES y SIN NO CLASIFICADOS
-                            st.dataframe(
-                                tabla_tipos.style
-                                .format("{:.0f}", subset=['TOTAL_LLAMADOS', 'MANUALES', 'AUTOMATICOS'])
-                                .format("{:.1f}%", subset=['% MANUAL', '% AUTO'])
-                                .set_properties(**{'text-align': 'center'}),
-                                use_container_width=True
-                            )
-                            
-                            # Resumen de totales
-                            st.markdown("**Resumen de Totales:**")
-                            col_res1, col_res2, col_res3 = st.columns(3)
-                            with col_res1:
-                                st.metric("Total Manuales", f"{int(tabla_tipos['MANUALES'].sum()):,}")
-                            with col_res2:
-                                st.metric("Total Automáticos", f"{int(tabla_tipos['AUTOMATICOS'].sum()):,}")
-                            with col_res3:
-                                st.metric("Total General", f"{int(tabla_tipos['TOTAL_LLAMADOS'].sum()):,}")
-                            
-                            # ============================================================
-                            # 3. GRÁFICA DE LÍNEA DE TIEMPO - LLAMADOS MANUALES VS AUTO
-                            # ============================================================
-                            st.subheader("Evolución Temporal de Llamados Manuales vs Automáticos")
-                            
-                            # Preparar datos para la gráfica
-                            df_temporal = df_proceso_tab2.copy()
-                            df_temporal['FECHA_DT'] = pd.to_datetime(df_temporal['FECHA'])
-                            
-                            # Agrupar por fecha y clasificación (solo manuales y automáticos)
-                            df_manual = df_temporal[df_temporal['CLASIFICACION'] == 'MANUAL'].groupby('FECHA_DT').size().reset_index(name='MANUALES')
-                            df_auto = df_temporal[df_temporal['CLASIFICACION'] == 'AUTO'].groupby('FECHA_DT').size().reset_index(name='AUTOMATICOS')
-                            df_total = df_temporal[df_temporal['CLASIFICACION'].isin(['MANUAL', 'AUTO'])].groupby('FECHA_DT').size().reset_index(name='TOTAL')
-                            
-                            # Combinar dataframes
-                            df_agrupado = pd.merge(df_total, df_manual, on='FECHA_DT', how='left')
-                            df_agrupado = pd.merge(df_agrupado, df_auto, on='FECHA_DT', how='left')
-                            
-                            # Rellenar NaN con 0
-                            df_agrupado['MANUALES'] = df_agrupado['MANUALES'].fillna(0)
-                            df_agrupado['AUTOMATICOS'] = df_agrupado['AUTOMATICOS'].fillna(0)
-                            
-                            # Configurar índice para el gráfico
-                            df_grafico = df_agrupado.set_index('FECHA_DT')[['MANUALES', 'AUTOMATICOS', 'TOTAL']]
-                            
-                            # Gráfico de líneas con Streamlit
-                            st.line_chart(
-                                df_grafico,
-                                height=400,
-                                use_container_width=True
-                            )
-                            
-                        else:
-                            st.warning("⚠️ No se encontró la columna 'Tipo' para clasificar llamados manuales/automáticos")
-                        
-                        # ============================================================
-                        # ESTADÍSTICAS RESUMEN (SIN USUARIOS ANALIZADOS Y HORAS CON REGISTROS)
-                        # ============================================================
-                        st.divider()
-                        st.subheader("Estadísticas Resumen")
-                        
-                        # Calcular estadísticas - CORREGIDO
-                        valores_validos = []
-                        for col in horas_formateadas_tab2:
-                            for usuario in usuarios_proceso_tab2:
-                                valor = tabla_promedios.at[usuario, col]
-                                if valor is not None and valor > 0:
-                                    valores_validos.append(valor)
-                        
-                        if valores_validos:
-                            promedio_general_tab2 = np.mean(valores_validos)
-                        else:
-                            promedio_general_tab2 = 0
-                        
-                        # Calcular tiempo promedio de atención (60 / promedio de registros por hora)
-                        tiempos_validos = []
-                        for usuario in usuarios_proceso_tab2:
-                            for hora_col in horas_formateadas_tab2:
-                                promedio_registros = tabla_promedios.at[usuario, hora_col]
-                                if promedio_registros is not None and promedio_registros > 0:
-                                    tiempo_promedio = 60 / promedio_registros
-                                    tiempos_validos.append(tiempo_promedio)
-                        
-                        if tiempos_validos:
-                            tiempo_promedio_general_tab2 = np.mean(tiempos_validos)
-                        else:
-                            tiempo_promedio_general_tab2 = None
-                        
-                        # Mostrar métricas (SIN USUARIOS ANALIZADOS Y HORAS CON REGISTROS)
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.metric("Promedio Llamados/Hora", f"{promedio_general_tab2:.2f}")
-                        with col2:
-                            if tiempo_promedio_general_tab2:
-                                st.metric("Tiempo Promedio Atención", f"{tiempo_promedio_general_tab2:.1f} min")
+                            if not conteo_por_dia.empty:
+                                promedio = conteo_por_dia.mean()
+                                tabla_promedios.at[usuario, hora] = round(promedio, 2)
                             else:
-                                st.metric("Tiempo Promedio Atención", "-")
+                                tabla_promedios.at[usuario, hora] = None  # Usar None en lugar de np.nan
+                        else:
+                            tabla_promedios.at[usuario, hora] = None  # Usar None en lugar de np.nan
+                
+                # Formatear horas
+                horas_formateadas_tab2 = [f"{h}:00" for h in horas_con_registros_tab2]
+                tabla_promedios.columns = horas_formateadas_tab2
+                
+                # Reemplazar None por 0 para la suma
+                tabla_promedios_suma = tabla_promedios.fillna(0)
+                
+                # Agregar columna de total por usuario (SIN las columnas eliminadas)
+                tabla_promedios_suma['TOTAL'] = tabla_promedios_suma.sum(axis=1)
+                
+                # Ordenar por total descendente
+                tabla_promedios = tabla_promedios.reindex(tabla_promedios_suma.sort_values('TOTAL', ascending=False).index)
+                tabla_promedios_suma = tabla_promedios_suma.reindex(tabla_promedios_suma.sort_values('TOTAL', ascending=False).index)
+                
+                # Mostrar tabla (solo con columnas necesarias)
+                tabla_visual = tabla_promedios.fillna(0)
+                st.dataframe(
+                    tabla_visual.style
+                    .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas_tab2])
+                    .format("{:.2f}")
+                    .set_properties(**{'text-align': 'center'}),
+                    use_container_width=True,
+                    height=min(400, 50 + (len(usuarios_proceso_tab2) * 35))
+                )
+                
+                # ============================================================
+                # 2. TABLA DE LLAMADOS MANUALES VS AUTO (SIN COLORES Y SIN NO CLASIFICADOS)
+                # ============================================================
+                st.subheader("Llamados Manuales vs Automáticos por Usuario")
+                
+                # Verificar si existe columna de tipo
+                if 'TIPO_LLAMADO' in df_proceso_tab2.columns:
+                    # Normalizar valores de tipo
+                    df_proceso_tab2['TIPO_NORMALIZADO'] = df_proceso_tab2['TIPO_LLAMADO'].astype(str).str.lower().str.strip()
+                    
+                    # Identificar manuales y auto
+                    manual_keywords = ['manual', 'm', 'man', 'manuales']
+                    auto_keywords = ['auto', 'a', 'aut', 'automático', 'automatico', 'automáticos']
+                    
+                    # Crear clasificación más precisa
+                    def clasificar_tipo(valor):
+                        if pd.isna(valor):
+                            return 'NO_CLASIFICADO'
+                        valor_str = str(valor).lower().strip()
+                        if any(kw in valor_str for kw in manual_keywords):
+                            return 'MANUAL'
+                        elif any(kw in valor_str for kw in auto_keywords):
+                            return 'AUTO'
+                        else:
+                            return 'NO_CLASIFICADO'
+                    
+                    df_proceso_tab2['CLASIFICACION'] = df_proceso_tab2['TIPO_LLAMADO'].apply(clasificar_tipo)
+                    
+                    # Crear tabla de conteo
+                    tabla_tipos = pd.DataFrame(index=usuarios_proceso_tab2)
+                    
+                    for usuario in usuarios_proceso_tab2:
+                        df_usuario = df_proceso_tab2[df_proceso_tab2["USUARIO_ATENCION"] == usuario]
                         
-                        # ============================================================
-                        # GRÁFICO DE BARRAS TOP USUARIOS (CORREGIDO)
-                        # ============================================================
-                        st.subheader("🏆 Top 10 Usuarios por Actividad")
+                        # Conteos por clasificación
+                        conteos = df_usuario['CLASIFICACION'].value_counts()
                         
-                        top_n_tab2 = min(10, len(tabla_promedios_suma))
-                        top_usuarios_tab2 = tabla_promedios_suma.head(top_n_tab2)
+                        # Solo manuales y automáticos
+                        manuales = conteos.get('MANUAL', 0)
+                        automaticos = conteos.get('AUTO', 0)
+                        total = manuales + automaticos  # Solo contar manuales y automáticos
                         
-                        # Preparar datos para el gráfico de barras - CORREGIDO
-                        top_usuarios_chart = pd.DataFrame({
-                            'Usuario': top_usuarios_tab2.index,
-                            'Promedio Diario': top_usuarios_tab2['TOTAL'].values
-                        })
+                        tabla_tipos.at[usuario, 'TOTAL_LLAMADOS'] = total
+                        tabla_tipos.at[usuario, 'MANUALES'] = manuales
+                        tabla_tipos.at[usuario, 'AUTOMATICOS'] = automaticos
+                    
+                    # Calcular porcentajes
+                    for usuario in usuarios_proceso_tab2:
+                        total = tabla_tipos.at[usuario, 'TOTAL_LLAMADOS']
+                        manuales = tabla_tipos.at[usuario, 'MANUALES']
+                        automaticos = tabla_tipos.at[usuario, 'AUTOMATICOS']
                         
-                        # Configurar el índice como los usuarios para que aparezcan en el eje X
-                        top_usuarios_chart = top_usuarios_chart.set_index('Usuario')
-                        
-                        # Gráfico de barras CORREGIDO (usuarios en eje X, promedios en eje Y)
-                        st.bar_chart(
-                            top_usuarios_chart,
-                            height=400,
-                            use_container_width=True
-                        )
-                        
-                        # Botón para exportar como PDF (placeholder)
-                        st.divider()
-                        st.subheader("📤 Exportar Resultados")
-                        
-                        st.info("""
-                        **Nota:** Streamlit no tiene funcionalidad nativa para exportar a PDF.
-                        **Alternativas sugeridas:**
-                        1. Use los botones de descarga CSV/Excel y convierta a PDF desde Excel
-                        2. Tome capturas de pantalla de las tablas importantes
-                        3. Use la funcionalidad de impresión del navegador (Ctrl+P) para guardar como PDF
-                        """)
+                        # Solo calcular porcentajes si hay datos
+                        if total > 0:
+                            tabla_tipos.at[usuario, '% MANUAL'] = (manuales / total * 100).round(1)
+                            tabla_tipos.at[usuario, '% AUTO'] = (automaticos / total * 100).round(1)
+                        else:
+                            tabla_tipos.at[usuario, '% MANUAL'] = 0.0
+                            tabla_tipos.at[usuario, '% AUTO'] = 0.0
+                    
+                    # Ordenar por total
+                    tabla_tipos = tabla_tipos.sort_values('TOTAL_LLAMADOS', ascending=False)
+                    
+                    # Mostrar tabla SIN COLORES y SIN NO CLASIFICADOS
+                    st.dataframe(
+                        tabla_tipos.style
+                        .format("{:.0f}", subset=['TOTAL_LLAMADOS', 'MANUALES', 'AUTOMATICOS'])
+                        .format("{:.1f}%", subset=['% MANUAL', '% AUTO'])
+                        .set_properties(**{'text-align': 'center'}),
+                        use_container_width=True
+                    )
+                    
+                    # Resumen de totales
+                    st.markdown("**Resumen de Totales:**")
+                    col_res1, col_res2, col_res3 = st.columns(3)
+                    with col_res1:
+                        st.metric("Total Manuales", f"{int(tabla_tipos['MANUALES'].sum()):,}")
+                    with col_res2:
+                        st.metric("Total Automáticos", f"{int(tabla_tipos['AUTOMATICOS'].sum()):,}")
+                    with col_res3:
+                        st.metric("Total General", f"{int(tabla_tipos['TOTAL_LLAMADOS'].sum()):,}")
+                    
+                    # ============================================================
+                    # 3. GRÁFICA DE LÍNEA DE TIEMPO - LLAMADOS MANUALES VS AUTO
+                    # ============================================================
+                    st.subheader("Evolución Temporal de Llamados Manuales vs Automáticos")
+                    
+                    # Preparar datos para la gráfica
+                    df_temporal = df_proceso_tab2.copy()
+                    df_temporal['FECHA_DT'] = pd.to_datetime(df_temporal['FECHA'])
+                    
+                    # Agrupar por fecha y clasificación (solo manuales y automáticos)
+                    df_manual = df_temporal[df_temporal['CLASIFICACION'] == 'MANUAL'].groupby('FECHA_DT').size().reset_index(name='MANUALES')
+                    df_auto = df_temporal[df_temporal['CLASIFICACION'] == 'AUTO'].groupby('FECHA_DT').size().reset_index(name='AUTOMATICOS')
+                    df_total = df_temporal[df_temporal['CLASIFICACION'].isin(['MANUAL', 'AUTO'])].groupby('FECHA_DT').size().reset_index(name='TOTAL')
+                    
+                    # Combinar dataframes
+                    df_agrupado = pd.merge(df_total, df_manual, on='FECHA_DT', how='left')
+                    df_agrupado = pd.merge(df_agrupado, df_auto, on='FECHA_DT', how='left')
+                    
+                    # Rellenar NaN con 0
+                    df_agrupado['MANUALES'] = df_agrupado['MANUALES'].fillna(0)
+                    df_agrupado['AUTOMATICOS'] = df_agrupado['AUTOMATICOS'].fillna(0)
+                    
+                    # Configurar índice para el gráfico
+                    df_grafico = df_agrupado.set_index('FECHA_DT')[['MANUALES', 'AUTOMATICOS', 'TOTAL']]
+                    
+                    # Gráfico de líneas con Streamlit
+                    st.line_chart(
+                        df_grafico,
+                        height=400,
+                        use_container_width=True
+                    )
+                    
+                else:
+                    st.warning("⚠️ No se encontró la columna 'Tipo' para clasificar llamados manuales/automáticos")
+                
+                # ============================================================
+                # ESTADÍSTICAS RESUMEN (SIN USUARIOS ANALIZADOS Y HORAS CON REGISTROS)
+                # ============================================================
+                st.divider()
+                st.subheader("Estadísticas Resumen")
+                
+                # Calcular estadísticas - CORREGIDO
+                valores_validos = []
+                for col in horas_formateadas_tab2:
+                    for usuario in usuarios_proceso_tab2:
+                        valor = tabla_promedios.at[usuario, col]
+                        if valor is not None and valor > 0:
+                            valores_validos.append(valor)
+                
+                if valores_validos:
+                    promedio_general_tab2 = np.mean(valores_validos)
+                else:
+                    promedio_general_tab2 = 0
+                
+                # Calcular tiempo promedio de atención (60 / promedio de registros por hora)
+                tiempos_validos = []
+                for usuario in usuarios_proceso_tab2:
+                    for hora_col in horas_formateadas_tab2:
+                        promedio_registros = tabla_promedios.at[usuario, hora_col]
+                        if promedio_registros is not None and promedio_registros > 0:
+                            tiempo_promedio = 60 / promedio_registros
+                            tiempos_validos.append(tiempo_promedio)
+                
+                if tiempos_validos:
+                    tiempo_promedio_general_tab2 = np.mean(tiempos_validos)
+                else:
+                    tiempo_promedio_general_tab2 = None
+                
+                # Mostrar métricas (SIN USUARIOS ANALIZADOS Y HORAS CON REGISTROS)
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.metric("Promedio Llamados/Hora", f"{promedio_general_tab2:.2f}")
+                with col2:
+                    if tiempo_promedio_general_tab2:
+                        st.metric("Tiempo Promedio Atención", f"{tiempo_promedio_general_tab2:.1f} min")
+                    else:
+                        st.metric("Tiempo Promedio Atención", "-")
+                
+                # ============================================================
+                # GRÁFICO DE BARRAS TOP USUARIOS (CORREGIDO)
+                # ============================================================
+                st.subheader("🏆 Top 10 Usuarios por Actividad")
+                
+                top_n_tab2 = min(10, len(tabla_promedios_suma))
+                top_usuarios_tab2 = tabla_promedios_suma.head(top_n_tab2)
+                
+                # Preparar datos para el gráfico de barras - CORREGIDO
+                top_usuarios_chart = pd.DataFrame({
+                    'Usuario': top_usuarios_tab2.index,
+                    'Promedio Diario': top_usuarios_tab2['TOTAL'].values
+                })
+                
+                # Configurar el índice como los usuarios para que aparezcan en el eje X
+                top_usuarios_chart = top_usuarios_chart.set_index('Usuario')
+                
+                # Gráfico de barras CORREGIDO (usuarios en eje X, promedios en eje Y)
+                st.bar_chart(
+                    top_usuarios_chart,
+                    height=400,
+                    use_container_width=True
+                )
+                
+                # Botón para exportar como PDF (placeholder)
+                st.divider()
+                st.subheader("📤 Exportar Resultados")
+                
+                st.info("""
+                **Nota:** Streamlit no tiene funcionalidad nativa para exportar a PDF.
+                **Alternativas sugeridas:**
+                1. Use los botones de descarga CSV/Excel y convierta a PDF desde Excel
+                2. Tome capturas de pantalla de las tablas importantes
+                3. Use la funcionalidad de impresión del navegador (Ctrl+P) para guardar como PDF
+                """)
 
         except Exception as e:
             st.error(f"Error técnico: {e}")
