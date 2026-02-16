@@ -229,23 +229,28 @@ with tab1:
                 # Reemplazar None por 0 para la suma
                 tabla_resultados_suma = tabla_resultados.fillna(0)
                 
-                # Agregar columna de total por usuario
-                tabla_resultados_suma['TOTAL'] = tabla_resultados_suma.sum(axis=1)
+                # Agregar columna de total por usuario (SUMATORIA DE REGISTROS)
+                tabla_resultados_suma['TOTAL REGISTROS'] = tabla_resultados_suma.sum(axis=1)
+                
+                # Crear una versión para visualización que incluya el total
+                tabla_visual_completa = tabla_resultados.copy()
+                # Agregar la columna de total a la tabla visual (con valores originales, no sumados)
+                tabla_visual_completa['TOTAL REGISTROS'] = tabla_resultados_suma['TOTAL REGISTROS']
                 
                 # Ordenar por total descendente
-                tabla_resultados = tabla_resultados.reindex(tabla_resultados_suma.sort_values('TOTAL', ascending=False).index)
-                tabla_resultados_suma = tabla_resultados_suma.reindex(tabla_resultados_suma.sort_values('TOTAL', ascending=False).index)
+                tabla_visual_completa = tabla_visual_completa.reindex(tabla_resultados_suma.sort_values('TOTAL REGISTROS', ascending=False).index)
+                tabla_resultados = tabla_resultados.reindex(tabla_visual_completa.index)
+                tabla_resultados_suma = tabla_resultados_suma.reindex(tabla_visual_completa.index)
                 
-                # --- TABLA 1: PROMEDIOS DE REGISTROS ---
+                # --- TABLA 1: PROMEDIOS DE REGISTROS CON TOTAL ---
                 st.subheader("Ingresos promedio abiertos por Admisionista")
                 st.markdown("*Cantidad de ingresos que realizan por hora*")
 
-                # Mostrar tabla con formato
-                tabla_visual = tabla_resultados.fillna(0)
+                # Mostrar tabla con formato (incluyendo la columna TOTAL)
                 st.dataframe(
-                    tabla_visual.style
+                    tabla_visual_completa.style
                     .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
-                    .format("{:.2f}")
+                    .format("{:.2f}", na_rep="0.00")
                     .set_properties(**{'text-align': 'center'}),
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso) * 35))
@@ -273,9 +278,12 @@ with tab1:
                     tiempos_usuario = [v for v in tabla_tiempos.loc[usuario, horas_formateadas].values if v is not None]
                     if tiempos_usuario:
                         tiempo_promedio_total = np.mean(tiempos_usuario)
-                        tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = round(tiempo_promedio_total, 1)
+                        tabla_tiempos.at[usuario, 'TIEMPO PROMEDIO TOTAL'] = round(tiempo_promedio_total, 1)
                     else:
-                        tabla_tiempos.at[usuario, 'TIEMPO_PROMEDIO_TOTAL'] = None
+                        tabla_tiempos.at[usuario, 'TIEMPO PROMEDIO TOTAL'] = None
+                
+                # Ordenar tabla de tiempos según el mismo orden que la tabla de registros
+                tabla_tiempos = tabla_tiempos.reindex(tabla_visual_completa.index)
                 
                 # Mostrar tabla de tiempos
                 st.dataframe(
@@ -283,12 +291,12 @@ with tab1:
                     .background_gradient(cmap='YlOrRd_r', axis=1, subset=pd.IndexSlice[:, horas_formateadas])
                     .set_properties(**{'text-align': 'center'})
                     .format("{:.1f}", na_rep="-")
-                    .format("{:.1f}", subset=['TIEMPO_PROMEDIO_TOTAL']),
+                    .format("{:.1f}", subset=['TIEMPO PROMEDIO TOTAL']),
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso) * 35))
                 )
                 
-                # --- ESTADÍSTICAS RESUMEN CON ESTÁNDARES ---
+                # --- ESTADÍSTICAS RESUMEN CON ESTÁNDARES Y MÁXIMOS/MÍNIMOS ---
                 st.subheader("Estadísticas Resumen vs Estándares")
                 
                 # Calcular promedios generales
@@ -312,11 +320,40 @@ with tab1:
                         if valor is not None:
                             tiempos_todos.append(valor)
                 
+                # ENCONTRAR MÁXIMO REGISTROS/HORA Y SU USUARIO
+                max_registros = 0
+                usuario_max_registros = "N/A"
+                hora_max_registros = "N/A"
+                
+                for col in horas_formateadas:
+                    for usuario in usuarios_proceso:
+                        valor = tabla_resultados.at[usuario, col]
+                        if valor is not None and valor > max_registros:
+                            max_registros = valor
+                            usuario_max_registros = usuario
+                            hora_max_registros = col
+                
+                # ENCONTRAR MÍNIMO TIEMPO DE ADMISIÓN Y SU USUARIO
+                min_tiempo = float('inf')
+                usuario_min_tiempo = "N/A"
+                hora_min_tiempo = "N/A"
+                
+                for col in horas_formateadas:
+                    for usuario in usuarios_proceso:
+                        valor = tabla_tiempos.at[usuario, col]
+                        if valor is not None and valor < min_tiempo:
+                            min_tiempo = valor
+                            usuario_min_tiempo = usuario
+                            hora_min_tiempo = col
+                
+                if min_tiempo == float('inf'):
+                    min_tiempo = None
+                
                 # ESTÁNDARES DEFINIDOS
                 ESTANDAR_REGISTROS_HORA = 13
                 ESTANDAR_TIEMPO_ADMISION = 4
                 
-                # Calcular diferencias vs estándar
+                # Calcular diferencias vs estándar para promedios generales
                 diferencia_registros = promedio_general - ESTANDAR_REGISTROS_HORA
                 diferencia_registros_porcentaje = (diferencia_registros / ESTANDAR_REGISTROS_HORA) * 100 if ESTANDAR_REGISTROS_HORA > 0 else 0
                 
@@ -329,54 +366,83 @@ with tab1:
                     diferencia_tiempo = None
                     diferencia_tiempo_porcentaje = None
                 
-                # Mostrar métricas
+                # Crear columnas para las métricas
                 col1, col2 = st.columns(2)
                 
                 with col1:
+                    st.markdown("### 📈 Promedio General vs Estándar")
+                    # Métrica de registros por hora vs estándar
                     delta_registros = f"{diferencia_registros:+.2f} vs estándar ({diferencia_registros_porcentaje:+.1f}%)"
                     color_delta_registros = "inverse" if diferencia_registros > 0 else "normal"
                     
                     st.metric(
-                        label="📈 Promedio registros/hora", 
+                        label="Promedio registros/hora", 
                         value=f"{promedio_general:.2f}",
                         delta=delta_registros,
                         delta_color=color_delta_registros,
                         help=f"Estándar: {ESTANDAR_REGISTROS_HORA} registros/hora"
                     )
                     
-                    st.caption(f"**Estándar:** {ESTANDAR_REGISTROS_HORA} registros por hora")
+                    st.markdown(f"**Estándar:** {ESTANDAR_REGISTROS_HORA} registros por hora")
+                    
+                    st.markdown("### 🏆 Máximo Registros/Hora")
+                    st.metric(
+                        label="Máximo alcanzado",
+                        value=f"{max_registros:.2f} registros/hora",
+                        help=f"Supera el estándar en {max_registros - ESTANDAR_REGISTROS_HORA:.2f} registros"
+                    )
+                    st.markdown(f"**Usuario:** {usuario_max_registros}")
+                    st.markdown(f"**Hora:** {hora_max_registros}")
                 
                 with col2:
+                    st.markdown("### ⏱️ Tiempo Promedio vs Estándar")
+                    # Métrica de tiempo de admisión vs estándar
                     if tiempo_promedio_general is not None:
                         delta_tiempo = f"{diferencia_tiempo:+.1f} min vs estándar ({diferencia_tiempo_porcentaje:+.1f}%)"
                         color_delta_tiempo = "inverse" if diferencia_tiempo > 0 else "normal"
                         
                         st.metric(
-                            label="⏱️ Tiempo promedio admisión", 
+                            label="Tiempo promedio admisión", 
                             value=f"{tiempo_promedio_general:.1f} min",
                             delta=delta_tiempo,
                             delta_color=color_delta_tiempo,
                             help=f"Estándar: {ESTANDAR_TIEMPO_ADMISION} minutos por admisión"
                         )
                         
-                        st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
+                        st.markdown(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
                     else:
                         st.metric(
-                            label="⏱️ Tiempo promedio admisión", 
+                            label="Tiempo promedio admisión", 
                             value="-",
                             help="No hay datos suficientes para calcular el tiempo promedio"
                         )
-                        st.caption(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
+                        st.markdown(f"**Estándar:** {ESTANDAR_TIEMPO_ADMISION} minutos por admisión")
+                    
+                    st.markdown("### ⚡ Mínimo Tiempo de Admisión")
+                    if min_tiempo is not None:
+                        st.metric(
+                            label="Mínimo alcanzado",
+                            value=f"{min_tiempo:.1f} minutos",
+                            help=f"Está {ESTANDAR_TIEMPO_ADMISION - min_tiempo:.1f} minutos por debajo del estándar"
+                        )
+                        st.markdown(f"**Usuario:** {usuario_min_tiempo}")
+                        st.markdown(f"**Hora:** {hora_min_tiempo}")
+                    else:
+                        st.metric(
+                            label="Mínimo alcanzado",
+                            value="N/A",
+                            help="No hay datos suficientes"
+                        )
                 
                 # --- GRÁFICO DE BARRAS: TOP USUARIOS ---
                 st.subheader("🏆 Top 10 Usuarios por Actividad Promedio")
                 
-                top_n = min(10, len(tabla_resultados_suma))
-                top_usuarios = tabla_resultados_suma.head(top_n)
+                top_n = min(10, len(tabla_visual_completa))
+                top_usuarios = tabla_visual_completa.head(top_n)
                 
                 top_usuarios_chart = pd.DataFrame({
                     'Usuario': top_usuarios.index,
-                    'Promedio Diario': top_usuarios['TOTAL'].values
+                    'Promedio Diario': top_usuarios['TOTAL REGISTROS'].values
                 }).set_index('Usuario')
                 
                 st.bar_chart(
@@ -688,18 +754,21 @@ with tab2:
                 tabla_promedios_suma = tabla_promedios.fillna(0)
                 
                 # Agregar columna de total por usuario
-                tabla_promedios_suma['TOTAL'] = tabla_promedios_suma.sum(axis=1)
+                tabla_promedios_suma['TOTAL REGISTROS'] = tabla_promedios_suma.sum(axis=1)
+                
+                # Crear tabla visual con total
+                tabla_visual_tab2 = tabla_promedios.copy()
+                tabla_visual_tab2['TOTAL REGISTROS'] = tabla_promedios_suma['TOTAL REGISTROS']
                 
                 # Ordenar por total descendente
-                tabla_promedios = tabla_promedios.reindex(tabla_promedios_suma.sort_values('TOTAL', ascending=False).index)
-                tabla_promedios_suma = tabla_promedios_suma.reindex(tabla_promedios_suma.sort_values('TOTAL', ascending=False).index)
+                tabla_visual_tab2 = tabla_visual_tab2.reindex(tabla_promedios_suma.sort_values('TOTAL REGISTROS', ascending=False).index)
+                tabla_promedios = tabla_promedios.reindex(tabla_visual_tab2.index)
                 
                 # Mostrar tabla
-                tabla_visual = tabla_promedios.fillna(0)
                 st.dataframe(
-                    tabla_visual.style
+                    tabla_visual_tab2.style
                     .background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[:, horas_formateadas_tab2])
-                    .format("{:.2f}")
+                    .format("{:.2f}", na_rep="0.00")
                     .set_properties(**{'text-align': 'center'}),
                     use_container_width=True,
                     height=min(400, 50 + (len(usuarios_proceso_tab2) * 35))
@@ -867,12 +936,12 @@ with tab2:
                 # ============================================================
                 st.subheader("🏆 Top 10 Usuarios por Actividad")
                 
-                top_n_tab2 = min(10, len(tabla_promedios_suma))
-                top_usuarios_tab2 = tabla_promedios_suma.head(top_n_tab2)
+                top_n_tab2 = min(10, len(tabla_visual_tab2))
+                top_usuarios_tab2 = tabla_visual_tab2.head(top_n_tab2)
                 
                 top_usuarios_chart = pd.DataFrame({
                     'Usuario': top_usuarios_tab2.index,
-                    'Promedio Diario': top_usuarios_tab2['TOTAL'].values
+                    'Promedio Diario': top_usuarios_tab2['TOTAL REGISTROS'].values
                 }).set_index('Usuario')
                 
                 st.bar_chart(
