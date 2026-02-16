@@ -152,24 +152,22 @@ with tab1:
                     df_proceso = df_proceso[df_proceso['DIA_SEMANA_NUM'] < 5]
                     dias_analizados = "Lunes a Viernes"
                     dia_label = "L-V"
-                    tipo_analisis = "promedio"
                 else:
-                    # Filtrar por día específico
-                    df_dia = df_proceso[df_proceso['DIA_SEMANA'] == dia_seleccionado]
+                    # Filtrar por día específico - SIEMPRE debemos tomar TODOS los días de ese tipo
+                    # en el rango seleccionado para promediarlos
+                    df_proceso = df_proceso[df_proceso['DIA_SEMANA'] == dia_seleccionado]
                     dias_analizados = dia_seleccionado
                     dia_label = dia_seleccionado[:3]
                     
-                    # Verificar cuántos días únicos hay para este día de la semana
-                    dias_unicos = df_dia['FECHA'].nunique()
+                    # Verificar si hay al menos un día
+                    dias_unicos = df_proceso['FECHA'].nunique()
                     
-                    if dias_unicos <= 1:
-                        # Si solo hay 0 o 1 día, usar los datos tal cual
-                        df_proceso = df_dia
-                        tipo_analisis = "único"
-                    else:
-                        # Si hay más de 1 día, promediar por hora
-                        df_proceso = df_dia
-                        tipo_analisis = "promedio"
+                    if dias_unicos == 0:
+                        st.warning(f"No hay registros para el día seleccionado ({dia_seleccionado}) en el rango filtrado.")
+                        st.stop()
+                    
+                    # Mostrar información sobre cuántos días se están promediando
+                    st.caption(f"📊 Promediando {dias_unicos} día(s) de {dia_seleccionado} en el rango seleccionado")
                 
                 # Verificar si hay datos después del filtro por día
                 if df_proceso.empty:
@@ -399,7 +397,7 @@ with tab1:
             st.info("Verifica que el archivo tenga las columnas necesarias: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
     else:
         st.info("👆 Usa la barra lateral para subir un archivo Excel y activar los filtros.")
-        st.caption("El archivo debe contener al menos las columnas: 'FECHA CREacion', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
+        st.caption("El archivo debe contener al menos las columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'")
 
 # ============================================================================
 # PESTAÑA 2: ANÁLISIS DE LLAMADOS
@@ -553,7 +551,7 @@ with tab2:
 
                 # Selector de día de la semana
                 st.subheader("Configuración de Procesamiento")
-                dia_semana_opciones_tab2 = ["Lunes", "Martes", "Miércoles", "Jueves", "Sábado", "Domingo", "Todos los días (L-V)"]
+                dia_semana_opciones_tab2 = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos los días (L-V)"]
                 dia_seleccionado_tab2 = st.selectbox(
                     "Día de la semana a analizar:",
                     options=dia_semana_opciones_tab2,
@@ -606,24 +604,21 @@ with tab2:
                     df_proceso_tab2 = df_proceso_tab2[df_proceso_tab2['DIA_SEMANA_NUM'] < 5]
                     dias_analizados_tab2 = "Lunes a Viernes"
                     dia_label_tab2 = "L-V"
-                    tipo_analisis = "promedio"
                 else:
-                    # Filtrar por día específico
-                    df_dia = df_proceso_tab2[df_proceso_tab2['DIA_SEMANA'] == dia_seleccionado_tab2]
+                    # Filtrar por día específico - SIEMPRE tomar TODOS los días de ese tipo
+                    df_proceso_tab2 = df_proceso_tab2[df_proceso_tab2['DIA_SEMANA'] == dia_seleccionado_tab2]
                     dias_analizados_tab2 = dia_seleccionado_tab2
                     dia_label_tab2 = dia_seleccionado_tab2[:3]
                     
-                    # Verificar cuántos días únicos hay para este día de la semana
-                    dias_unicos = df_dia['FECHA'].nunique()
+                    # Verificar si hay al menos un día
+                    dias_unicos = df_proceso_tab2['FECHA'].nunique()
                     
-                    if dias_unicos <= 1:
-                        # Si solo hay 0 o 1 día, usar los datos tal cual
-                        df_proceso_tab2 = df_dia
-                        tipo_analisis = "único"
-                    else:
-                        # Si hay más de 1 día, promediar por hora
-                        df_proceso_tab2 = df_dia
-                        tipo_analisis = "promedio"
+                    if dias_unicos == 0:
+                        st.warning(f"No hay registros para el día seleccionado ({dia_seleccionado_tab2}) en el rango filtrado.")
+                        st.stop()
+                    
+                    # Mostrar información sobre cuántos días se están promediando
+                    st.caption(f"📊 Promediando {dias_unicos} día(s) de {dia_seleccionado_tab2} en el rango seleccionado")
                 
                 if df_proceso_tab2.empty:
                     st.warning(f"No hay registros para el día seleccionado ({dia_seleccionado_tab2}) en el rango filtrado.")
