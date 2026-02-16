@@ -498,6 +498,7 @@ with tab2:
                 col_hora = encontrar_columna(df_temp, ['hora llegada', 'hora_llegada', 'hora'])
                 col_servicio = encontrar_columna(df_temp, ['servicio'])
                 col_usuario = encontrar_columna(df_temp, ['usuario atención', 'usuario_atencion', 'usuario'])
+                col_tipo = encontrar_columna(df_temp, ['tipo'])
                 
                 if not all([col_hora, col_servicio, col_usuario]):
                     columnas_encontradas = df_temp.columns.tolist()
@@ -510,6 +511,9 @@ with tab2:
                     col_servicio: 'SERVICIO',
                     col_usuario: 'USUARIO_ATENCION'
                 }
+                if col_tipo:
+                    rename_dict_temp[col_tipo] = 'TIPO'
+                
                 df_temp = df_temp.rename(columns=rename_dict_temp)
                 
                 # Procesar fechas
@@ -641,7 +645,73 @@ with tab2:
             if dia_sel != "Todos (L-V)":
                 st.caption(f"📊 Promediando {df_proceso['FECHA'].nunique()} día(s) de {dia_sel}")
             
-            # Obtener horas y usuarios
+            # ============================================================
+            # GRÁFICO DE LÍNEA DE TIEMPO: MANUALES VS AUTOMÁTICOS
+            # ============================================================
+            if 'TIPO' in df_proceso.columns:
+                st.divider()
+                st.subheader("📈 Evolución Temporal: Llamados Manuales vs Automáticos")
+                
+                # Clasificar llamados
+                def clasificar_llamado(valor):
+                    if pd.isna(valor):
+                        return 'NO CLASIFICADO'
+                    v = str(valor).lower().strip()
+                    if any(p in v for p in ['manual', 'm', 'man']):
+                        return 'MANUAL'
+                    elif any(p in v for p in ['auto', 'a', 'aut', 'autom']):
+                        return 'AUTOMÁTICO'
+                    return 'OTRO'
+                
+                df_proceso['CLASIFICACION'] = df_proceso['TIPO'].apply(clasificar_llamado)
+                
+                # Agrupar por fecha y clasificación
+                df_temporal = df_proceso.copy()
+                df_temporal['FECHA_DT'] = pd.to_datetime(df_temporal['FECHA'])
+                
+                # Filtrar solo manuales y automáticos
+                df_manual = df_temporal[df_temporal['CLASIFICACION'] == 'MANUAL'].groupby('FECHA_DT').size().reset_index(name='MANUALES')
+                df_auto = df_temporal[df_temporal['CLASIFICACION'] == 'AUTOMÁTICO'].groupby('FECHA_DT').size().reset_index(name='AUTOMÁTICOS')
+                
+                # Crear rango completo de fechas
+                fecha_inicio_dt = pd.to_datetime(fecha_ini)
+                fecha_fin_dt = pd.to_datetime(fecha_fin)
+                rango_fechas = pd.date_range(start=fecha_inicio_dt, end=fecha_fin_dt, freq='D')
+                
+                # Crear DataFrame con todas las fechas
+                df_completo = pd.DataFrame({'FECHA_DT': rango_fechas})
+                
+                # Merge con los datos
+                df_completo = df_completo.merge(df_manual, on='FECHA_DT', how='left')
+                df_completo = df_completo.merge(df_auto, on='FECHA_DT', how='left')
+                
+                # Rellenar NaN con 0
+                df_completo['MANUALES'] = df_completo['MANUALES'].fillna(0).astype(int)
+                df_completo['AUTOMÁTICOS'] = df_completo['AUTOMÁTICOS'].fillna(0).astype(int)
+                
+                # Configurar índice para el gráfico
+                df_completo.set_index('FECHA_DT', inplace=True)
+                
+                # Crear gráfico de líneas
+                st.line_chart(
+                    df_completo[['MANUALES', 'AUTOMÁTICOS']],
+                    height=400,
+                    use_container_width=True
+                )
+                
+                # Mostrar estadísticas del período
+                col_graf1, col_graf2, col_graf3 = st.columns(3)
+                with col_graf1:
+                    st.metric("Total Manuales", f"{int(df_completo['MANUALES'].sum()):,}")
+                with col_graf2:
+                    st.metric("Total Automáticos", f"{int(df_completo['AUTOMÁTICOS'].sum()):,}")
+                with col_graf3:
+                    total = int(df_completo['MANUALES'].sum() + df_completo['AUTOMÁTICOS'].sum())
+                    st.metric("Total General", f"{total:,}")
+                
+                st.caption(f"📊 Evolución diaria de llamados del {fecha_ini} al {fecha_fin}")
+            
+            # Obtener horas y usuarios para tablas de promedios
             horas = sorted(df_proceso['HORA'].unique())
             horas_fmt = [f"{h}:00" for h in horas]
             usuarios_proc = sorted(df_proceso["USUARIO_ATENCION"].unique())
@@ -699,7 +769,8 @@ with tab2:
             fila_total = pd.DataFrame([datos_fila_total], index=['TOTAL'])
             tabla_llamados_con_total = pd.concat([tabla_llamados, fila_total])
             
-            # Mostrar tabla
+            # Mostrar tabla de promedios
+            st.divider()
             st.subheader("📞 Promedio de Llamados por Agente")
             st.markdown("*Cantidad promedio de llamados por hora*")
             
@@ -711,32 +782,6 @@ with tab2:
             styler = styler.set_properties(**{'text-align': 'center'})
             
             st.dataframe(styler, use_container_width=True, height=min(400, 50 + (len(usuarios_proc) * 35)))
-            
-            # --- TABLA DE TIPOS ---
-            if 'TIPO' in df_proceso.columns:
-                st.divider()
-                st.subheader("🔄 Llamados Manuales vs Automáticos")
-                
-                def clasificar_llamado(valor):
-                    if pd.isna(valor):
-                        return 'NO CLASIFICADO'
-                    v = str(valor).lower().strip()
-                    if any(p in v for p in ['manual', 'm', 'man']):
-                        return 'MANUAL'
-                    elif any(p in v for p in ['auto', 'a', 'aut', 'autom']):
-                        return 'AUTOMÁTICO'
-                    return 'OTRO'
-                
-                df_proceso['CLASIFICACION'] = df_proceso['TIPO'].apply(clasificar_llamado)
-                
-                resumen_tipos = pd.crosstab(
-                    df_proceso['USUARIO_ATENCION'], 
-                    df_proceso['CLASIFICACION'],
-                    margins=True,
-                    margins_name='TOTAL'
-                )
-                
-                st.dataframe(resumen_tipos, use_container_width=True)
             
             # --- GRÁFICO TOP USUARIOS ---
             st.divider()
@@ -751,7 +796,7 @@ with tab2:
             }).set_index('Usuario')
             
             st.bar_chart(chart_data, height=400)
-            st.caption("📊 Ordenado de mayor a menor")
+            st.caption("📊 Ordenado de mayor a menor promedio de llamados")
             
             # --- EXPORTAR ---
             st.divider()
@@ -762,8 +807,8 @@ with tab2:
                 with pd.ExcelWriter(out, engine='openpyxl') as w:
                     tabla_llamados_con_total.to_excel(w, sheet_name='Llamados Promedio')
                     
-                    if 'resumen_tipos' in locals():
-                        resumen_tipos.to_excel(w, sheet_name='Clasificación Llamados')
+                    if 'df_completo' in locals():
+                        df_completo.reset_index().to_excel(w, sheet_name='Evolución Diaria', index=False)
                     
                     config = pd.DataFrame({
                         'Parámetro': ['Rango', 'Día', 'Servicios', 'Usuarios', 'Registros'],
