@@ -7,4 +7,3 @@ xlsxwriter
 matplotlib
 seaborn
 fpdf
-ploty
