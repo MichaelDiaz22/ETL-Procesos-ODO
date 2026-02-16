@@ -18,7 +18,7 @@ tab1, tab2 = st.tabs(["📋 Análisis de Ingresos", "📞 Análisis de Llamados"
 with tab1:
     st.header("📋 Análisis de Ingresos")
     
-    # --- CONFIGURACIÓN Y FILTROS UNIFICADOS EN EXPANDER ---
+    # --- CONFIGURACIÓN Y FILTROS UNIFICADOS EN UN SOLO EXPANDER ---
     with st.expander("⚙️ Configuración y Filtros", expanded=True):
         col1, col2 = st.columns([1, 1])
         
@@ -125,6 +125,7 @@ with tab1:
                 - **Rango:** {fecha_inicio} a {fecha_fin}
                 - **Centros:** {', '.join(centro_sel) if centro_sel else 'Todos'}
                 - **Usuarios:** {', '.join(usuario_sel) if usuario_sel else 'Todos'}
+                - **Registros analizados:** {len(df_filtrado):,}
                 """)
                 
                 # --- SELECTOR DE DÍA (fuera del expander, después del resumen) ---
@@ -462,7 +463,7 @@ with tab1:
 with tab2:
     st.header("📞 Análisis de Llamados")
     
-    # --- CONFIGURACIÓN Y FILTROS UNIFICADOS EN EXPANDER ---
+    # --- CONFIGURACIÓN Y FILTROS UNIFICADOS EN UN SOLO EXPANDER ---
     with st.expander("⚙️ Configuración y Filtros", expanded=True):
         col1, col2 = st.columns([1, 1])
         
