@@ -208,7 +208,7 @@ with tab1:
                 
                 tabla_resultados['MÁXIMO'] = tabla_resultados[horas_formateadas].max(axis=1).round(2)
                 
-                # Ordenar
+                # Ordenar por TOTAL descendente para que el gráfico de barras también salga ordenado
                 tabla_resultados = tabla_resultados.sort_values('TOTAL', ascending=False)
                 
                 # Totales por hora
@@ -285,6 +285,7 @@ with tab1:
                     else:
                         tabla_tiempos.loc[usuario, 'MÁXIMO'] = 0
                 
+                # Ordenar por el mismo orden que la tabla anterior
                 tabla_tiempos = tabla_tiempos.loc[tabla_resultados.index]
                 
                 styler_tiempos = tabla_tiempos.style
@@ -394,13 +395,14 @@ with tab1:
                 top_n = min(10, len(tabla_resultados))
                 top_usuarios = tabla_resultados.head(top_n)
                 
+                # Crear DataFrame para el gráfico - ya viene ordenado por tabla_resultados.sort_values('TOTAL', ascending=False)
                 chart_data = pd.DataFrame({
                     'Usuario': top_usuarios.index,
                     'Promedio Diario': top_usuarios['TOTAL'].values
                 }).set_index('Usuario')
                 
                 st.bar_chart(chart_data, height=400)
-                st.caption("📊 Ordenado de mayor a menor")
+                st.caption("📊 Ordenado de mayor a menor promedio de registros")
                 
                 # --- EXPORTAR ---
                 st.divider()
@@ -589,19 +591,23 @@ with tab2:
             df_tab2["HORA_LLEGADA"] = pd.to_datetime(df_tab2["HORA_LLEGADA"], errors='coerce')
             df_tab2_limpio = df_tab2.dropna(subset=["HORA_LLEGADA"])
             
-            # Aplicar filtros
-            df_filtrado = df_tab2_limpio[
+            # DataFrame para gráfico temporal (sin filtro de usuarios)
+            df_grafico = df_tab2_limpio[
                 (df_tab2_limpio["HORA_LLEGADA"].dt.date >= fecha_ini) & 
                 (df_tab2_limpio["HORA_LLEGADA"].dt.date <= fecha_fin)
             ]
             
+            # Aplicar filtro de servicios al gráfico
             if servicio_sel:
-                df_filtrado = df_filtrado[df_filtrado["SERVICIO"].isin(servicio_sel)]
+                df_grafico = df_grafico[df_grafico["SERVICIO"].isin(servicio_sel)]
+            
+            # Aplicar filtros completos para el resto del análisis
+            df_filtrado = df_grafico.copy()
             
             if usuario_sel:
                 df_filtrado = df_filtrado[df_filtrado["USUARIO_ATENCION"].isin(usuario_sel)]
             
-            if df_filtrado.empty:
+            if df_grafico.empty:
                 st.warning("No hay datos con los filtros seleccionados")
                 st.stop()
             
@@ -612,15 +618,108 @@ with tab2:
             - **Rango:** {fecha_ini} a {fecha_fin}
             - **Servicios:** {len(servicio_sel)} seleccionados
             - **Usuarios:** {len(usuario_sel)} seleccionados
-            - **Registros analizados:** {len(df_filtrado):,}
+            - **Registros analizados (con filtro usuarios):** {len(df_filtrado):,}
             """)
             
-            # --- SELECTOR DE DÍA (fuera del expander, después del resumen) ---
-            st.markdown("### 📅 Selección de día para análisis")
+            # ============================================================
+            # GRÁFICO DE LÍNEA DE TIEMPO: MANUALES VS AUTOMÁTICOS (SIN FILTRO DE USUARIOS)
+            # ============================================================
+            if 'TIPO' in df_grafico.columns:
+                st.subheader("📈 Evolución Temporal: Llamados Manuales vs Automáticos")
+                st.markdown("*Datos sin filtrar por usuarios (solo rango de fechas y servicios)*")
+                
+                # Clasificar llamados
+                def clasificar_llamado(valor):
+                    if pd.isna(valor):
+                        return 'NO CLASIFICADO'
+                    v = str(valor).lower().strip()
+                    if any(p in v for p in ['manual', 'm', 'man']):
+                        return 'MANUAL'
+                    elif any(p in v for p in ['auto', 'a', 'aut', 'autom']):
+                        return 'AUTOMÁTICO'
+                    return 'OTRO'
+                
+                df_grafico['CLASIFICACION'] = df_grafico['TIPO'].apply(clasificar_llamado)
+                
+                # Agrupar por fecha y clasificación
+                df_temporal = df_grafico.copy()
+                df_temporal['FECHA_DT'] = pd.to_datetime(df_temporal['FECHA'] if 'FECHA' in df_temporal.columns else df_temporal['HORA_LLEGADA'].dt.date)
+                
+                # Filtrar solo manuales y automáticos
+                df_manual = df_temporal[df_temporal['CLASIFICACION'] == 'MANUAL'].groupby('FECHA_DT').size().reset_index(name='MANUALES')
+                df_auto = df_temporal[df_temporal['CLASIFICACION'] == 'AUTOMÁTICO'].groupby('FECHA_DT').size().reset_index(name='AUTOMÁTICOS')
+                
+                # Crear rango completo de fechas
+                fecha_inicio_dt = pd.to_datetime(fecha_ini)
+                fecha_fin_dt = pd.to_datetime(fecha_fin)
+                rango_fechas = pd.date_range(start=fecha_inicio_dt, end=fecha_fin_dt, freq='D')
+                
+                # Crear DataFrame con todas las fechas
+                df_completo = pd.DataFrame({'FECHA_DT': rango_fechas})
+                
+                # Merge con los datos
+                df_completo = df_completo.merge(df_manual, on='FECHA_DT', how='left')
+                df_completo = df_completo.merge(df_auto, on='FECHA_DT', how='left')
+                
+                # Rellenar NaN con 0
+                df_completo['MANUALES'] = df_completo['MANUALES'].fillna(0).astype(int)
+                df_completo['AUTOMÁTICOS'] = df_completo['AUTOMÁTICOS'].fillna(0).astype(int)
+                
+                # Calcular totales
+                total_manuales = df_completo['MANUALES'].sum()
+                total_automaticos = df_completo['AUTOMÁTICOS'].sum()
+                total_general = total_manuales + total_automaticos
+                
+                # Calcular porcentajes
+                pct_manual = (total_manuales / total_general * 100) if total_general > 0 else 0
+                pct_auto = (total_automaticos / total_general * 100) if total_general > 0 else 0
+                
+                # Configurar índice para el gráfico
+                df_completo.set_index('FECHA_DT', inplace=True)
+                
+                # Crear gráfico de líneas
+                st.line_chart(
+                    df_completo[['MANUALES', 'AUTOMÁTICOS']],
+                    height=400,
+                    use_container_width=True
+                )
+                
+                # Mostrar estadísticas del período con porcentajes
+                col_graf1, col_graf2, col_graf3 = st.columns(3)
+                with col_graf1:
+                    delta_manual = f"{pct_manual:+.1f}% vs total ({pct_manual:.1f}%)"
+                    st.metric(
+                        "Total Manuales", 
+                        f"{total_manuales:,}",
+                        delta=delta_manual,
+                        delta_color="off"
+                    )
+                
+                with col_graf2:
+                    delta_auto = f"{pct_auto:+.1f}% vs total ({pct_auto:.1f}%)"
+                    st.metric(
+                        "Total Automáticos", 
+                        f"{total_automaticos:,}",
+                        delta=delta_auto,
+                        delta_color="off"
+                    )
+                
+                with col_graf3:
+                    st.metric("Total General", f"{total_general:,}")
+                
+                st.caption(f"📊 Evolución diaria de llamados del {fecha_ini} al {fecha_fin} (sin filtro de usuarios)")
+            
+            # --- SELECTOR DE DÍA (antes de la tabla de promedios) ---
+            st.divider()
+            st.markdown("### 📅 Selección de día para análisis de promedios por agente")
             dias_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos (L-V)"]
             dia_sel = st.selectbox("Día a analizar", dias_opciones, index=7, key="tab2_dia")
             
-            # Preparar datos
+            # Preparar datos para promedios (con filtro de usuarios)
+            if df_filtrado.empty:
+                st.warning("No hay datos con los filtros seleccionados")
+                st.stop()
+            
             df_proceso = df_filtrado.copy()
             df_proceso['FECHA'] = df_proceso['HORA_LLEGADA'].dt.date
             df_proceso['HORA'] = df_proceso['HORA_LLEGADA'].dt.hour
@@ -644,72 +743,6 @@ with tab2:
             
             if dia_sel != "Todos (L-V)":
                 st.caption(f"📊 Promediando {df_proceso['FECHA'].nunique()} día(s) de {dia_sel}")
-            
-            # ============================================================
-            # GRÁFICO DE LÍNEA DE TIEMPO: MANUALES VS AUTOMÁTICOS
-            # ============================================================
-            if 'TIPO' in df_proceso.columns:
-                st.divider()
-                st.subheader("📈 Evolución Temporal: Llamados Manuales vs Automáticos")
-                
-                # Clasificar llamados
-                def clasificar_llamado(valor):
-                    if pd.isna(valor):
-                        return 'NO CLASIFICADO'
-                    v = str(valor).lower().strip()
-                    if any(p in v for p in ['manual', 'm', 'man']):
-                        return 'MANUAL'
-                    elif any(p in v for p in ['auto', 'a', 'aut', 'autom']):
-                        return 'AUTOMÁTICO'
-                    return 'OTRO'
-                
-                df_proceso['CLASIFICACION'] = df_proceso['TIPO'].apply(clasificar_llamado)
-                
-                # Agrupar por fecha y clasificación
-                df_temporal = df_proceso.copy()
-                df_temporal['FECHA_DT'] = pd.to_datetime(df_temporal['FECHA'])
-                
-                # Filtrar solo manuales y automáticos
-                df_manual = df_temporal[df_temporal['CLASIFICACION'] == 'MANUAL'].groupby('FECHA_DT').size().reset_index(name='MANUALES')
-                df_auto = df_temporal[df_temporal['CLASIFICACION'] == 'AUTOMÁTICO'].groupby('FECHA_DT').size().reset_index(name='AUTOMÁTICOS')
-                
-                # Crear rango completo de fechas
-                fecha_inicio_dt = pd.to_datetime(fecha_ini)
-                fecha_fin_dt = pd.to_datetime(fecha_fin)
-                rango_fechas = pd.date_range(start=fecha_inicio_dt, end=fecha_fin_dt, freq='D')
-                
-                # Crear DataFrame con todas las fechas
-                df_completo = pd.DataFrame({'FECHA_DT': rango_fechas})
-                
-                # Merge con los datos
-                df_completo = df_completo.merge(df_manual, on='FECHA_DT', how='left')
-                df_completo = df_completo.merge(df_auto, on='FECHA_DT', how='left')
-                
-                # Rellenar NaN con 0
-                df_completo['MANUALES'] = df_completo['MANUALES'].fillna(0).astype(int)
-                df_completo['AUTOMÁTICOS'] = df_completo['AUTOMÁTICOS'].fillna(0).astype(int)
-                
-                # Configurar índice para el gráfico
-                df_completo.set_index('FECHA_DT', inplace=True)
-                
-                # Crear gráfico de líneas
-                st.line_chart(
-                    df_completo[['MANUALES', 'AUTOMÁTICOS']],
-                    height=400,
-                    use_container_width=True
-                )
-                
-                # Mostrar estadísticas del período
-                col_graf1, col_graf2, col_graf3 = st.columns(3)
-                with col_graf1:
-                    st.metric("Total Manuales", f"{int(df_completo['MANUALES'].sum()):,}")
-                with col_graf2:
-                    st.metric("Total Automáticos", f"{int(df_completo['AUTOMÁTICOS'].sum()):,}")
-                with col_graf3:
-                    total = int(df_completo['MANUALES'].sum() + df_completo['AUTOMÁTICOS'].sum())
-                    st.metric("Total General", f"{total:,}")
-                
-                st.caption(f"📊 Evolución diaria de llamados del {fecha_ini} al {fecha_fin}")
             
             # Obtener horas y usuarios para tablas de promedios
             horas = sorted(df_proceso['HORA'].unique())
@@ -753,7 +786,7 @@ with tab2:
             
             tabla_llamados['MÁXIMO'] = tabla_llamados[horas_fmt].max(axis=1).round(2)
             
-            # Ordenar
+            # Ordenar por TOTAL descendente
             tabla_llamados = tabla_llamados.sort_values('TOTAL', ascending=False)
             
             # Totales por hora
@@ -770,7 +803,6 @@ with tab2:
             tabla_llamados_con_total = pd.concat([tabla_llamados, fila_total])
             
             # Mostrar tabla de promedios
-            st.divider()
             st.subheader("📞 Promedio de Llamados por Agente")
             st.markdown("*Cantidad promedio de llamados por hora*")
             
@@ -790,6 +822,7 @@ with tab2:
             top_n = min(10, len(tabla_llamados))
             top_usuarios = tabla_llamados.head(top_n)
             
+            # Crear DataFrame para el gráfico - ya viene ordenado por tabla_llamados.sort_values('TOTAL', ascending=False)
             chart_data = pd.DataFrame({
                 'Usuario': top_usuarios.index,
                 'Promedio Diario': top_usuarios['TOTAL'].values
