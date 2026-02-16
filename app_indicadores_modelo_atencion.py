@@ -498,7 +498,7 @@ with tab1:
         st.info("👆 Sube un archivo Excel")
 
 # ============================================================================
-# PESTAÑA 2: ANÁLISIS DE LLAMADOS (CORREGIDA PARA ARCHIVOS CON PRIMERA FILA INCORRECTA)
+# PESTAÑA 2: ANÁLISIS DE LLAMADOS (SIN MENSAJES ADICIONALES)
 # ============================================================================
 with tab2:
     st.header("📞 Análisis de Llamados")
@@ -512,31 +512,13 @@ with tab2:
 
     if uploaded_file_tab2 is not None:
         try:
-            # Opción para que el usuario indique si debe saltar la primera fila
-            with st.sidebar:
-                st.divider()
-                st.subheader("⚙️ Configuración de archivo")
-                saltar_primera_fila = st.checkbox("Saltar primera fila (usar como encabezado)", value=True, 
-                                                  help="Activa esta opción si la primera fila no es el encabezado correcto")
-            
-            # Leer archivo saltando la primera fila si es necesario
-            if saltar_primera_fila:
-                df_tab2 = pd.read_excel(uploaded_file_tab2, skiprows=1)
-                st.sidebar.success("✅ Se saltó la primera fila")
-            else:
-                df_tab2 = pd.read_excel(uploaded_file_tab2)
-            
-            # Mostrar vista previa de columnas
-            st.sidebar.divider()
-            st.sidebar.subheader("📋 Columnas encontradas:")
-            columnas_encontradas = df_tab2.columns.tolist()
-            for i, col in enumerate(columnas_encontradas):
-                st.sidebar.text(f"{i+1}. {col}")
+            # Leer archivo saltando la primera fila por defecto
+            df_tab2 = pd.read_excel(uploaded_file_tab2, skiprows=1)
             
             # Limpiar nombres de columnas (eliminar espacios extras)
             df_tab2.columns = df_tab2.columns.astype(str).str.strip()
             
-            # Función mejorada para encontrar columna
+            # Función para encontrar columna
             def encontrar_columna(df, posibles_nombres):
                 """
                 Busca una columna que coincida con alguno de los nombres posibles
@@ -555,65 +537,28 @@ with tab2:
                     for col_original, col_lower in columnas_lower.items():
                         if posible_lower in col_lower:
                             return col_original
-                    
-                    # Búsqueda por palabras clave
-                    palabras_clave = posible_lower.split()
-                    for col_original, col_lower in columnas_lower.items():
-                        if all(palabra in col_lower for palabra in palabras_clave):
-                            return col_original
                 
                 return None
             
-            # Buscar columnas necesarias con múltiples variantes
-            col_hora = encontrar_columna(df_tab2, [
-                'hora llegada', 'hora_llegada', 'hora de llegada', 
-                'horallegada', 'fecha hora llegada', 'fecha llegada',
-                'hora', 'llegada', 'fecha'
-            ])
+            # Buscar columnas necesarias
+            col_hora = encontrar_columna(df_tab2, ['hora llegada', 'hora_llegada', 'hora de llegada', 'hora'])
+            col_servicio = encontrar_columna(df_tab2, ['servicio'])
+            col_usuario = encontrar_columna(df_tab2, ['usuario atención', 'usuario_atencion', 'usuario'])
+            col_tipo = encontrar_columna(df_tab2, ['tipo'])
             
-            col_servicio = encontrar_columna(df_tab2, [
-                'servicio', 'servicios', 'nombre servicio',
-                'serv', 'area', 'especialidad'
-            ])
-            
-            col_usuario = encontrar_columna(df_tab2, [
-                'usuario atención', 'usuario_atencion', 'usuario atencion',
-                'usuario', 'usuario que atiende', 'atendio', 'atendió',
-                'nombre usuario', 'operador', 'agente'
-            ])
-            
-            col_tipo = encontrar_columna(df_tab2, [
-                'tipo', 'tipo llamado', 'tipo llamada',
-                'tipollamado', 'clase', 'categoria', 'categoría'
-            ])
-            
-            # Mostrar qué columnas se encontraron
-            st.sidebar.divider()
-            st.sidebar.subheader("✅ Columnas identificadas:")
-            st.sidebar.write(f"**Hora llegada:** {col_hora if col_hora else '❌ No encontrada'}")
-            st.sidebar.write(f"**Servicio:** {col_servicio if col_servicio else '❌ No encontrada'}")
-            st.sidebar.write(f"**Usuario:** {col_usuario if col_usuario else '❌ No encontrada'}")
-            if col_tipo:
-                st.sidebar.write(f"**Tipo:** {col_tipo}")
-            
-            # Si no se encuentran las columnas, mostrar ayuda
+            # Verificar columnas necesarias
             if not all([col_hora, col_servicio, col_usuario]):
+                columnas_encontradas = df_tab2.columns.tolist()
                 st.error("""
                 ❌ **No se encontraron las columnas necesarias.**
                 
                 El archivo debe tener columnas que contengan:
-                - Hora de llegada (ej: 'Hora Llegada', 'HORA_LLEGADA', 'fecha')
-                - Servicio (ej: 'Servicio', 'SERVICIO', 'area')
-                - Usuario que atiende (ej: 'Usuario Atención', 'USUARIO', 'agente')
+                - Hora de llegada (ej: 'Hora Llegada')
+                - Servicio (ej: 'Servicio')
+                - Usuario que atiende (ej: 'Usuario Atención')
                 
                 **Columnas encontradas en tu archivo:**
                 """ + "\n".join([f"- {col}" for col in columnas_encontradas]))
-                
-                st.info("""
-                **💡 Sugerencia:** 
-                Si la primera fila de tu archivo no es el encabezado correcto, 
-                activa la opción 'Saltar primera fila' en la barra lateral.
-                """)
                 st.stop()
             
             # Renombrar columnas para uso interno
@@ -629,17 +574,7 @@ with tab2:
             df_tab2 = df_tab2.rename(columns=rename_dict)
             
             # --- PROCESAMIENTO DE FECHAS ---
-            # Intentar diferentes formatos de fecha
             df_tab2["HORA_LLEGADA"] = pd.to_datetime(df_tab2["HORA_LLEGADA"], errors='coerce')
-            
-            # Si hay muchos errores, intentar con formato de Excel
-            if df_tab2["HORA_LLEGADA"].isna().sum() > len(df_tab2) * 0.5:
-                try:
-                    # Intentar convertir como número de Excel
-                    df_tab2["HORA_LLEGADA"] = pd.to_datetime(df_tab2["HORA_LLEGADA"].astype(float), 
-                                                             origin='1899-12-30', unit='D', errors='coerce')
-                except:
-                    pass
             
             df_tab2_limpio = df_tab2.dropna(subset=["HORA_LLEGADA"])
             
@@ -672,7 +607,6 @@ with tab2:
                     servicio_sel = st.multiselect("📋 Servicios", servicios, key="tab2_servicios")
                 else:
                     servicio_sel = []
-                    st.warning("No hay servicios en los datos")
                 
                 # Filtro de usuarios
                 usuarios = sorted(df_tab2_limpio["USUARIO_ATENCION"].dropna().unique())
@@ -680,7 +614,6 @@ with tab2:
                     usuario_sel = st.multiselect("👤 Usuarios", usuarios, key="tab2_usuarios")
                 else:
                     usuario_sel = []
-                    st.warning("No hay usuarios en los datos")
                 
                 # Selector de día
                 st.subheader("⚙️ Configuración")
