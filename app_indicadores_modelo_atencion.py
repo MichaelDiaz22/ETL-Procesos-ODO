@@ -32,7 +32,8 @@ with tab1:
         with col2:
             st.markdown("##### 📊 Configuración de análisis")
             st.markdown("*Actualice el informe ODO_ESTADISTICO_INGRESOS con el periodo requerido, almacene la información en un excel en blanco y cargue el archivo para analizar*")
-        
+            st.markdown("*Posteriormente, seleccione un rango de fechas, un centro de atención y los usuarios (Gestores de acceso) a analizar*")
+
         # Si hay archivo cargado, mostrar los filtros dentro del MISMO expander
         if uploaded_file is not None:
             try:
@@ -81,7 +82,7 @@ with tab1:
                     )
                 
                 with col_f3:
-                    st.markdown("##### 👤 Usuarios")
+                    st.markdown("##### 👤 Usuarios (Gestor de acceso)")
                     usuario_sel = st.multiselect(
                         "Seleccionar usuarios:", 
                         options=usuarios_disponibles,
