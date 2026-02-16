@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas aspd
+import pandas as pd
 import numpy as np
 from datetime import datetime, time
 from io import BytesIO
@@ -498,7 +498,7 @@ with tab1:
         st.info("👆 Sube un archivo Excel")
 
 # ============================================================================
-# PESTAÑA 2: ANÁLISIS DE LLAMADOS (CORREGIDA)
+# PESTAÑA 2: ANÁLISIS DE LLAMADOS
 # ============================================================================
 with tab2:
     st.header("📞 Análisis de Llamados")
