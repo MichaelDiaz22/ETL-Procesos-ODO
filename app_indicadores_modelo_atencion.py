@@ -217,15 +217,14 @@ with tab1:
                 # Calcular totales por hora
                 totales_por_hora = tabla_resultados[horas_formateadas].sum(axis=0).round(2)
                 
-                # Crear fila de totales como un nuevo DataFrame
-                fila_total = pd.DataFrame({
-                    col: [totales_por_hora[col] if col in horas_formateadas else '' 
-                          for col in tabla_resultados.columns]
-                }, index=['TOTAL']).T
+                # Crear fila de totales - CORREGIDO
+                datos_fila_total = {'TOTAL': totales_por_hora.sum()}
+                for hora in horas_formateadas:
+                    datos_fila_total[hora] = totales_por_hora[hora]
+                datos_fila_total['MÍNIMO'] = ''
+                datos_fila_total['MÁXIMO'] = ''
                 
-                # Para MÍNIMO y MÁXIMO de la fila total, poner vacío
-                fila_total['MÍNIMO'] = ''
-                fila_total['MÁXIMO'] = ''
+                fila_total = pd.DataFrame([datos_fila_total], index=['TOTAL'])
                 
                 # Combinar tabla con totales
                 tabla_resultados_con_total = pd.concat([tabla_resultados, fila_total])
@@ -623,12 +622,14 @@ with tab2:
             # Totales por hora
             totales_hora = tabla_llamados[horas_fmt].sum(axis=0).round(2)
             
-            # Fila total
-            fila_total = pd.DataFrame({
-                col: [totales_hora[col] if col in horas_fmt else '' for col in tabla_llamados.columns]
-            }, index=['TOTAL']).T
-            fila_total['MÍNIMO'] = ''
-            fila_total['MÁXIMO'] = ''
+            # Crear fila de totales - CORREGIDO
+            datos_fila_total = {'TOTAL': totales_hora.sum()}
+            for hora in horas_fmt:
+                datos_fila_total[hora] = totales_hora[hora]
+            datos_fila_total['MÍNIMO'] = ''
+            datos_fila_total['MÁXIMO'] = ''
+            
+            fila_total = pd.DataFrame([datos_fila_total], index=['TOTAL'])
             
             tabla_llamados_con_total = pd.concat([tabla_llamados, fila_total])
             
