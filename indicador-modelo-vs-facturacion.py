@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 import re
+import calendar
 
 # Configuración de la página
 st.set_page_config(
@@ -18,6 +19,7 @@ st.markdown("---")
 # Fechas de corte
 FECHA_CORTE_MANIZALES = datetime(2025, 9, 16)
 FECHA_CORTE_ARMENIA = datetime(2025, 11, 20)
+FECHA_INICIO = datetime(2025, 9, 16)
 
 def es_fecha_valida(valor):
     """
@@ -165,12 +167,16 @@ def procesar_hoja(df, nombre_hoja):
         df_procesado['Clasificación'] = "columnas no encontradas"
         df_procesado['Fecha Ingreso Válida'] = False
         df_procesado['Fecha Factura Válida'] = False
+        df_procesado['Fecha Ingreso'] = None
+        df_procesado['Fecha Factura'] = None
         return df_procesado
     
     # Aplicar clasificación
     clasificaciones = []
     fechas_ingreso_validas = []
     fechas_factura_validas = []
+    fechas_ingreso_proc = []
+    fechas_factura_proc = []
     
     # Barra de progreso para el procesamiento de la hoja
     progress_text = f"Procesando registros de {nombre_hoja}..."
@@ -183,9 +189,16 @@ def procesar_hoja(df, nombre_hoja):
         fecha_ingreso = row[columnas['fecha_ingreso']] if columnas['fecha_ingreso'] in df_procesado.columns else None
         fecha_factura = row[columnas['fecha_factura']] if columnas['fecha_factura'] in df_procesado.columns else None
         
+        # Convertir fechas de manera segura
+        fecha_ingreso_dt = convertir_a_fecha_seguro(fecha_ingreso)
+        fecha_factura_dt = convertir_a_fecha_seguro(fecha_factura)
+        
+        fechas_ingreso_proc.append(fecha_ingreso_dt)
+        fechas_factura_proc.append(fecha_factura_dt)
+        
         # Verificar si las fechas son válidas
-        ingreso_valida = es_fecha_valida(fecha_ingreso)
-        factura_valida = es_fecha_valida(fecha_factura)
+        ingreso_valida = fecha_ingreso_dt is not None
+        factura_valida = fecha_factura_dt is not None
         
         fechas_ingreso_validas.append(ingreso_valida)
         fechas_factura_validas.append(factura_valida)
@@ -195,7 +208,7 @@ def procesar_hoja(df, nombre_hoja):
         clasificaciones.append(clasificacion)
         
         # Actualizar barra de progreso
-        if idx % 100 == 0:  # Actualizar cada 100 registros para mejorar rendimiento
+        if idx % 100 == 0:
             my_bar.progress((idx + 1) / total_rows, text=progress_text)
     
     my_bar.progress(1.0, text="¡Procesamiento completado!")
@@ -204,8 +217,78 @@ def procesar_hoja(df, nombre_hoja):
     df_procesado['Clasificación'] = clasificaciones
     df_procesado['Fecha Ingreso Válida'] = fechas_ingreso_validas
     df_procesado['Fecha Factura Válida'] = fechas_factura_validas
+    df_procesado['Fecha Ingreso'] = fechas_ingreso_proc
+    df_procesado['Fecha Factura'] = fechas_factura_proc
     
     return df_procesado
+
+def construir_tabla_resumen(dfs_procesados, fecha_fin):
+    """
+    Construye la tabla de resumen con las métricas por fecha
+    """
+    # Crear rango de fechas desde FECHA_INICIO hasta fecha_fin
+    fechas = pd.date_range(start=FECHA_INICIO, end=fecha_fin, freq='D')
+    
+    # Inicializar lista para almacenar los datos
+    datos_resumen = []
+    
+    # Procesar cada fecha
+    for fecha in fechas:
+        fecha_str = fecha.strftime('%Y-%m-%d')
+        semana = fecha.isocalendar()[1]
+        año = fecha.year
+        
+        # Inicializar contadores
+        ingresos = 0
+        facturado_modelo = 0
+        facturado_fuera_modelo = 0
+        
+        # Procesar cada hoja
+        for nombre_hoja, df in dfs_procesados.items():
+            # Asegurar que las columnas de fecha existen
+            if 'Fecha Ingreso' not in df.columns or 'Fecha Factura' not in df.columns:
+                continue
+            
+            # Filtrar registros con fechas válidas
+            df_validos = df.dropna(subset=['Fecha Ingreso', 'Fecha Factura', 'Clasificación'])
+            
+            # Contar ingresos para esta fecha (basado en Fecha Ingreso)
+            ingresos_fecha = len(df_validos[
+                (df_validos['Fecha Ingreso'].dt.date == fecha.date())
+            ])
+            ingresos += ingresos_fecha
+            
+            # Filtrar solo hojas PGP y EVENTO para facturación
+            if nombre_hoja in ['PGP', 'EVENTO']:
+                # Facturado modelo (incluidos)
+                modelo_fecha = len(df_validos[
+                    (df_validos['Fecha Factura'].dt.date == fecha.date()) &
+                    (df_validos['Clasificación'] == 'incluido en el modelo')
+                ])
+                facturado_modelo += modelo_fecha
+                
+                # Facturado fuera modelo (no incluidos)
+                fuera_modelo_fecha = len(df_validos[
+                    (df_validos['Fecha Factura'].dt.date == fecha.date()) &
+                    (df_validos['Clasificación'] == 'no incluido en el modelo')
+                ])
+                facturado_fuera_modelo += fuera_modelo_fecha
+        
+        # Calcular facturado total
+        facturado_total = facturado_modelo + facturado_fuera_modelo
+        
+        # Agregar fila a la tabla
+        datos_resumen.append({
+            'Fecha': fecha_str,
+            'Semana del Año': semana,
+            'Año': año,
+            'Ingresos': ingresos,
+            'Facturado Modelo': facturado_modelo,
+            'Facturado Fuera Modelo': facturado_fuera_modelo,
+            'Facturado Total': facturado_total
+        })
+    
+    return pd.DataFrame(datos_resumen)
 
 # Sidebar con información
 with st.sidebar:
@@ -285,9 +368,9 @@ if archivo_subido is not None:
             status_text.text("¡Procesamiento completado!")
             progress_bar.empty()
             
-            # Mostrar resultados
+            # Mostrar resultados por hoja
             st.markdown("---")
-            st.header("📊 Resultados")
+            st.header("📊 Resultados por Hoja")
             
             # Tabs para cada hoja
             tabs = st.tabs(hojas_requeridas)
@@ -338,20 +421,86 @@ if archivo_subido is not None:
                         key=f"download_{hoja}"
                     )
             
-            # Botón para descargar todo como Excel
+            # Sección de tabla resumen
             st.markdown("---")
-            with st.expander("📥 Descargar todas las hojas en un archivo Excel"):
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    for hoja, df in dfs_procesados.items():
-                        df.to_excel(writer, sheet_name=hoja, index=False)
+            st.header("📈 Tabla Resumen por Fecha")
+            
+            # Selector de fecha
+            fecha_maxima = datetime.now().date()
+            fecha_seleccionada = st.date_input(
+                "Seleccionar fecha final para el resumen",
+                value=fecha_maxima,
+                min_value=FECHA_INICIO.date(),
+                max_value=fecha_maxima,
+                help=f"Selecciona la fecha hasta la cual quieres ver el resumen (mínimo: {FECHA_INICIO.strftime('%d/%m/%Y')})"
+            )
+            
+            # Convertir a datetime
+            fecha_fin_dt = datetime.combine(fecha_seleccionada, datetime.min.time())
+            
+            # Construir tabla resumen
+            with st.spinner("Construyendo tabla resumen..."):
+                df_resumen = construir_tabla_resumen(dfs_procesados, fecha_fin_dt)
                 
-                st.download_button(
-                    label="📥 Descargar Excel completo",
-                    data=output.getvalue(),
-                    file_name="unidades_clasificadas.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                # Mostrar métricas totales
+                st.subheader("Métricas Globales")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Ingresos", f"{df_resumen['Ingresos'].sum():,}")
+                with col2:
+                    st.metric("Total Facturado Modelo", f"{df_resumen['Facturado Modelo'].sum():,}")
+                with col3:
+                    st.metric("Total Facturado Fuera Modelo", f"{df_resumen['Facturado Fuera Modelo'].sum():,}")
+                with col4:
+                    st.metric("Total Facturado", f"{df_resumen['Facturado Total'].sum():,}")
+                
+                # Mostrar tabla resumen
+                st.subheader("Detalle por Fecha")
+                st.dataframe(
+                    df_resumen,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                        "Semana del Año": st.column_config.NumberColumn("Semana", format="%d"),
+                        "Año": st.column_config.NumberColumn("Año", format="%d"),
+                        "Ingresos": st.column_config.NumberColumn("Ingresos", format="%d"),
+                        "Facturado Modelo": st.column_config.NumberColumn("Fact. Modelo", format="%d"),
+                        "Facturado Fuera Modelo": st.column_config.NumberColumn("Fact. Fuera Modelo", format="%d"),
+                        "Facturado Total": st.column_config.NumberColumn("Fact. Total", format="%d")
+                    }
                 )
+                
+                # Gráfico de evolución
+                st.subheader("Evolución Temporal")
+                chart_data = df_resumen.set_index('Fecha')[['Ingresos', 'Facturado Modelo', 'Facturado Fuera Modelo']]
+                st.line_chart(chart_data)
+                
+                # Botones de descarga para la tabla resumen
+                col1, col2 = st.columns(2)
+                with col1:
+                    csv_resumen = df_resumen.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Descargar tabla resumen como CSV",
+                        data=csv_resumen,
+                        file_name=f"resumen_fechas_{fecha_seleccionada.strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+                
+                with col2:
+                    # Excel con todas las hojas más el resumen
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        for hoja, df in dfs_procesados.items():
+                            df.to_excel(writer, sheet_name=hoja, index=False)
+                        df_resumen.to_excel(writer, sheet_name='RESUMEN', index=False)
+                    
+                    st.download_button(
+                        label="📥 Descargar Excel completo con resumen",
+                        data=output.getvalue(),
+                        file_name=f"unidades_clasificadas_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
             
     except Exception as e:
         st.error(f"❌ Error al procesar el archivo: {str(e)}")
@@ -366,8 +515,8 @@ else:
         ejemplo_data = {
             'Unidad': ['U001', 'U002', 'U003', 'U004'],
             'Ciudad': ['MANIZALES', 'ARMENIA', 'MANIZALES', 'ARMENIA'],
-            'Fecha Ingreso': ['2025-09-15', '2025-11-21', 'ARM112318', '2025-11-19'],
-            'Fecha Factura': ['2025-09-14', '2025-11-22', '2025-09-17', 'TEXTO_INVALIDO']
+            'Fecha Ingreso': ['2025-09-15', '2025-11-21', '2025-09-17', '2025-11-19'],
+            'Fecha Factura': ['2025-09-14', '2025-11-22', '2025-09-18', '2025-11-20']
         }
         ejemplo_df = pd.DataFrame(ejemplo_data)
         st.dataframe(ejemplo_df)
@@ -376,6 +525,4 @@ else:
         - Ciudad (puede llamarse 'ciudad', 'unidad', 'unidad operativa')
         - Fecha ingreso (puede llamarse 'fecha ingreso', 'fechaing', 'f_ingreso')
         - Fecha factura (puede llamarse 'fecha factura', 'fechafac', 'f_factura')
-        
-        Los valores no válidos en fechas serán marcados como "fecha no válida"
         """)
