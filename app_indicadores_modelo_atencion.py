@@ -1312,22 +1312,35 @@ with tab3:
                     
                     st.divider()
                     
-                    # --- GRÁFICO TOP USUARIOS (TOTAL DE REGISTROS) ---
+                    # --- GRÁFICO Y TABLA TOP USUARIOS (TOTAL DE REGISTROS) ---
                     st.subheader("🏆 Top 10 Usuarios por Total de Auditorías")
                     
                     # Calcular total de registros por usuario (sin promediar por hora)
                     usuarios_totales = df_completo_filtrado[col_nombre].value_counts().head(10)
                     
                     if not usuarios_totales.empty:
+                        # Crear DataFrame para la tabla
+                        top_usuarios_tabla = pd.DataFrame({
+                            'Usuario': usuarios_totales.index,
+                            'Total Registros Auditados': usuarios_totales.values
+                        }).reset_index(drop=True)
+                        
+                        # Mostrar tabla con los datos
+                        st.dataframe(top_usuarios_tabla, use_container_width=True, hide_index=True)
+                        
                         # Crear DataFrame para el gráfico
                         top_usuarios_chart = pd.DataFrame({
                             'Usuario': usuarios_totales.index,
                             'Total Registros': usuarios_totales.values
                         }).set_index('Usuario')
                         
+                        # Mostrar gráfico de barras
                         st.bar_chart(top_usuarios_chart, height=400)
+                        
+                        # Mostrar métrica adicional
+                        st.caption(f"📊 Total de registros en el top 10: {usuarios_totales.sum():,} de {len(df_completo_filtrado):,} registros totales")
                     else:
-                        st.warning("No hay datos suficientes para mostrar el gráfico de top usuarios")
+                        st.warning("No hay datos suficientes para mostrar el top de usuarios")
                     
                     st.divider()
                     
