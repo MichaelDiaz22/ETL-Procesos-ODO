@@ -1335,7 +1335,7 @@ with tab3:
                     
                     # --- TOP 10 USUARIOS ---
                     st.subheader("🏆 Top 10 Usuarios por Total de Auditorías")
-                    st.markdown(f"*Basado en los {len(df_proceso):,} registros del período analizado*")
+                    st.markdown(f"*Basado en los {len(df_proceso):,} registros del período analizado (con usuario y filtro de día)*")
                     
                     # Calcular total de registros por usuario con los mismos datos filtrados
                     usuarios_totales = df_proceso[col_nombre].value_counts().head(10)
@@ -1352,14 +1352,14 @@ with tab3:
                         # Tabla detalle
                         st.subheader("📋 Detalle Top 10 Usuarios")
                         
-                        # Calcular porcentajes sobre el total del período
-                        total_periodo = len(df_proceso)
-                        usuarios_pct = (usuarios_totales / total_periodo * 100).round(1)
+                        # Calcular porcentajes sobre el total de registros del análisis de motivos (Nivel 1)
+                        total_registros_motivos = len(df_base_filtrado)
+                        usuarios_pct = (usuarios_totales / total_registros_motivos * 100).round(1)
                         
                         top_usuarios_tabla = pd.DataFrame({
                             'Usuario': usuarios_totales.index,
                             'Cantidad': usuarios_totales.values,
-                            'Porcentaje': [f"{pct}%" for pct in usuarios_pct.values]
+                            'Porcentaje del Total General': [f"{pct}%" for pct in usuarios_pct.values]
                         }).reset_index(drop=True)
                         
                         st.dataframe(top_usuarios_tabla, use_container_width=True, hide_index=True)
@@ -1369,10 +1369,12 @@ with tab3:
                         with col_top1:
                             st.metric("Total Registros Top 10", f"{usuarios_totales.sum():,}")
                         with col_top2:
-                            st.metric("% del Total Analizado", f"{(usuarios_totales.sum()/total_periodo*100):.1f}%")
+                            st.metric("% del Total General", f"{(usuarios_totales.sum()/total_registros_motivos*100):.1f}%")
                         with col_top3:
                             usuario_top = usuarios_totales.index[0]
                             st.metric("Usuario con más registros", usuario_top)
+                        
+                        st.caption(f"📊 Total general de registros (incluye {registros_sin_usuario:,} sin usuario): {total_registros_motivos:,}")
                     else:
                         st.warning("No hay datos suficientes para mostrar el top de usuarios")
                     
@@ -1397,7 +1399,7 @@ with tab3:
                                 top_usuarios_export = pd.DataFrame({
                                     'Usuario': usuarios_totales.index,
                                     'Total Registros': usuarios_totales.values,
-                                    'Porcentaje': [f"{pct}%" for pct in (usuarios_totales/total_periodo*100).round(1).values]
+                                    'Porcentaje del Total General': [f"{(valor/total_registros_motivos*100):.1f}%" for valor in usuarios_totales.values]
                                 })
                                 top_usuarios_export.to_excel(writer, sheet_name='Top 10 Usuarios', index=False)
                             
@@ -1405,12 +1407,13 @@ with tab3:
                             stats_df = pd.DataFrame({
                                 'Métrica': [
                                     'Promedio gestiones/hora',
-                                    'Total registros período',
+                                    'Total registros período (con filtro día)',
                                     'Días analizados',
                                     'Máximo gestiones/hora',
                                     'Mínimo gestiones/hora',
                                     'Estándar',
-                                    'Registros sin usuario (excluidos)'
+                                    'Registros sin usuario (excluidos)',
+                                    'Total registros análisis motivos'
                                 ],
                                 'Valor': [
                                     f"{promedio_general:.2f}",
@@ -1419,7 +1422,8 @@ with tab3:
                                     f"{max_registros_hora:.2f} (Usuario: {usuario_max}, Hora: {hora_max})",
                                     f"{min_registros_hora:.2f} (Usuario: {usuario_min}, Hora: {hora_min})" if min_registros_hora else "N/A",
                                     f"{ESTANDAR_GESTIONES} gestiones/hora",
-                                    f"{registros_sin_usuario:,}"
+                                    f"{registros_sin_usuario:,}",
+                                    f"{total_registros_motivos:,}"
                                 ]
                             })
                             stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
