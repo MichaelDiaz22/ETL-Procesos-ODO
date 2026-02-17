@@ -893,7 +893,7 @@ with tab3:
         
         with col2:
             st.markdown("##### 📊 Configuración de análisis")
-            st.markdown("*Cargue el archivo de auditoría de admisiones para analizar los registros por fecha y motivo*")
+            st.markdown("*Cargue el archivo de auditoría de admisiones para analizar los registros por fecha y sede*")
             st.markdown("*La columna 'fechaRegistro' será utilizada como referencia para los promedios diarios y por hora*")
         
         # Si hay archivo cargado, mostrar los filtros
@@ -902,28 +902,27 @@ with tab3:
                 # Leer el archivo para obtener opciones de filtros
                 df_temp = pd.read_excel(uploaded_file_tab3)
                 
-                # Buscar columna de fecha (prioridad a fechaRegistro)
-                columnas_fecha = [col for col in df_temp.columns if 'fecha' in col.lower()]
-                col_fecha = 'fechaRegistro' if 'fechaRegistro' in df_temp.columns else (columnas_fecha[0] if columnas_fecha else None)
-                
-                if not col_fecha:
-                    st.error("No se encontró una columna de fecha en el archivo. Se requiere una columna que contenga 'fecha' en el nombre.")
+                # Verificar que existe la columna fechaRegistro
+                if 'fechaRegistro' not in df_temp.columns:
+                    st.error("No se encontró la columna 'fechaRegistro' en el archivo. Esta columna es requerida.")
                     st.stop()
                 
                 # Procesar fechas
-                df_temp[col_fecha] = pd.to_datetime(df_temp[col_fecha], errors='coerce')
-                df_temp = df_temp.dropna(subset=[col_fecha])
+                df_temp["fechaRegistro"] = pd.to_datetime(df_temp["fechaRegistro"], errors='coerce')
+                df_temp = df_temp.dropna(subset=["fechaRegistro"])
                 
-                fecha_minima = df_temp[col_fecha].min().date()
-                fecha_maxima = df_temp[col_fecha].max().date()
+                fecha_minima = df_temp["fechaRegistro"].min().date()
+                fecha_maxima = df_temp["fechaRegistro"].max().date()
                 
-                # Buscar columna de nombre/usuario
-                columnas_nombre = [col for col in df_temp.columns if any(x in col.lower() for x in ['nombre', 'usuario', 'admisionista', 'gestor'])]
-                col_nombre = columnas_nombre[0] if columnas_nombre else None
+                # Verificar que existe la columna nombre
+                if 'nombre' not in df_temp.columns:
+                    st.error("No se encontró la columna 'nombre' en el archivo. Esta columna es requerida.")
+                    st.stop()
                 
-                # Buscar columna de motivo
-                columnas_motivo = [col for col in df_temp.columns if 'motivo' in col.lower()]
-                col_motivo = columnas_motivo[0] if columnas_motivo else None
+                # Verificar que existe la columna sede
+                if 'sede' not in df_temp.columns:
+                    st.error("No se encontró la columna 'sede' en el archivo. Esta columna es requerida.")
+                    st.stop()
                 
                 st.markdown("---")
                 st.markdown("#### 📊 Filtros de selección")
@@ -951,32 +950,24 @@ with tab3:
                         st.error("⚠️ Fecha inicio no puede ser mayor que fecha fin")
                 
                 with col_f2:
-                    st.markdown("##### 👤 Usuarios")
-                    if col_nombre:
-                        nombres_disponibles = sorted(df_temp[col_nombre].dropna().unique())
-                        usuario_sel_tab3 = st.multiselect(
-                            "Seleccionar usuarios:", 
-                            options=nombres_disponibles,
-                            help="Selecciona uno o más usuarios",
-                            key="tab3_usuario"
-                        )
-                    else:
-                        st.warning("No se encontró columna de nombres/usuarios")
-                        usuario_sel_tab3 = []
+                    st.markdown("##### 👤 Usuarios (campo 'nombre')")
+                    nombres_disponibles = sorted(df_temp["nombre"].dropna().unique())
+                    usuario_sel_tab3 = st.multiselect(
+                        "Seleccionar usuarios:", 
+                        options=nombres_disponibles,
+                        help="Selecciona uno o más usuarios",
+                        key="tab3_usuario"
+                    )
                 
                 with col_f3:
-                    st.markdown("##### 📋 Motivos")
-                    if col_motivo:
-                        motivos_disponibles = sorted(df_temp[col_motivo].dropna().unique())
-                        motivo_sel_tab3 = st.multiselect(
-                            "Seleccionar motivos:", 
-                            options=motivos_disponibles,
-                            help="Selecciona uno o más motivos para filtrar",
-                            key="tab3_motivo"
-                        )
-                    else:
-                        st.warning("No se encontró columna de motivos")
-                        motivo_sel_tab3 = []
+                    st.markdown("##### 🏢 Sedes")
+                    sedes_disponibles = sorted(df_temp["sede"].dropna().unique())
+                    sede_sel_tab3 = st.multiselect(
+                        "Seleccionar sedes:", 
+                        options=sedes_disponibles,
+                        help="Selecciona una o más sedes",
+                        key="tab3_sede"
+                    )
             
             except Exception as e:
                 st.error(f"Error al procesar el archivo: {e}")
@@ -988,28 +979,21 @@ with tab3:
             # Leer el archivo nuevamente para procesamiento
             df = pd.read_excel(uploaded_file_tab3)
             
-            # Identificar columnas nuevamente
-            col_fecha = 'fechaRegistro' if 'fechaRegistro' in df.columns else [col for col in df.columns if 'fecha' in col.lower()][0]
-            columnas_nombre = [col for col in df.columns if any(x in col.lower() for x in ['nombre', 'usuario', 'admisionista', 'gestor'])]
-            col_nombre = columnas_nombre[0] if columnas_nombre else None
-            columnas_motivo = [col for col in df.columns if 'motivo' in col.lower()]
-            col_motivo = columnas_motivo[0] if columnas_motivo else None
-            
             # Procesar fechas
-            df[col_fecha] = pd.to_datetime(df[col_fecha], errors='coerce')
-            df = df.dropna(subset=[col_fecha])
+            df["fechaRegistro"] = pd.to_datetime(df["fechaRegistro"], errors='coerce')
+            df = df.dropna(subset=["fechaRegistro"])
             
             # Aplicar filtros
             df_filtrado = df[
-                (df[col_fecha].dt.date >= fecha_inicio_tab3) & 
-                (df[col_fecha].dt.date <= fecha_fin_tab3)
+                (df["fechaRegistro"].dt.date >= fecha_inicio_tab3) & 
+                (df["fechaRegistro"].dt.date <= fecha_fin_tab3)
             ]
             
-            if col_nombre and usuario_sel_tab3:
-                df_filtrado = df_filtrado[df_filtrado[col_nombre].isin(usuario_sel_tab3)]
+            if usuario_sel_tab3:
+                df_filtrado = df_filtrado[df_filtrado["nombre"].isin(usuario_sel_tab3)]
             
-            if col_motivo and motivo_sel_tab3:
-                df_filtrado = df_filtrado[df_filtrado[col_motivo].isin(motivo_sel_tab3)]
+            if sede_sel_tab3:
+                df_filtrado = df_filtrado[df_filtrado["sede"].isin(sede_sel_tab3)]
 
             if not df_filtrado.empty:
                 st.divider()
@@ -1019,41 +1003,57 @@ with tab3:
                 **Configuración de análisis:**
                 - **Rango:** {fecha_inicio_tab3} a {fecha_fin_tab3}
                 - **Usuarios:** {', '.join(usuario_sel_tab3) if usuario_sel_tab3 else 'Todos'}
-                - **Motivos:** {', '.join(motivo_sel_tab3) if motivo_sel_tab3 else 'Todos'}
+                - **Sedes:** {', '.join(sede_sel_tab3) if sede_sel_tab3 else 'Todos'}
                 - **Registros analizados:** {len(df_filtrado):,}
                 """)
                 
-                # --- GRÁFICO DE DISTRIBUCIÓN DE MOTIVOS ---
-                if col_motivo:
-                    st.subheader("📊 Distribución de Motivos de Auditoría")
-                    
-                    # Calcular distribución de motivos
-                    motivo_counts = df_filtrado[col_motivo].value_counts()
-                    
-                    # Crear DataFrame para el gráfico
-                    motivo_df = pd.DataFrame({
-                        'Motivo': motivo_counts.index,
-                        'Cantidad': motivo_counts.values
-                    })
-                    
-                    # Mostrar gráfico de barras
-                    st.bar_chart(motivo_df.set_index('Motivo'), height=400)
-                    
-                    # Mostrar tabla con porcentajes
-                    st.subheader("📋 Detalle de Motivos")
-                    motivo_pct = (motivo_counts / motivo_counts.sum() * 100).round(1)
-                    motivo_resumen = pd.DataFrame({
-                        'Motivo': motivo_counts.index,
-                        'Cantidad': motivo_counts.values,
-                        'Porcentaje': motivo_pct.values
-                    }).sort_values('Cantidad', ascending=False)
-                    
-                    st.dataframe(motivo_resumen, use_container_width=True, hide_index=True)
-                    
-                    st.divider()
+                # --- GRÁFICO DE DISTRIBUCIÓN POR SEDE ---
+                st.subheader("📊 Distribución de Auditorías por Sede")
+                
+                # Calcular distribución por sede
+                sede_counts = df_filtrado["sede"].value_counts()
+                
+                # Crear DataFrame para el gráfico
+                sede_df = pd.DataFrame({
+                    'Sede': sede_counts.index,
+                    'Cantidad': sede_counts.values
+                })
+                
+                # Mostrar gráfico de barras
+                st.bar_chart(sede_df.set_index('Sede'), height=400)
+                
+                # Mostrar tabla con porcentajes
+                st.subheader("📋 Detalle por Sede")
+                total_registros = sede_counts.sum()
+                sede_pct = (sede_counts / total_registros * 100).round(1)
+                sede_resumen = pd.DataFrame({
+                    'Sede': sede_counts.index,
+                    'Cantidad': sede_counts.values,
+                    'Porcentaje': [f"{pct}%" for pct in sede_pct.values]
+                }).sort_values('Cantidad', ascending=False)
+                
+                st.dataframe(sede_resumen, use_container_width=True, hide_index=True)
+                
+                st.divider()
+                
+                # --- GRÁFICO TOP USUARIOS (TOTAL DE REGISTROS) ---
+                st.subheader("🏆 Top 10 Usuarios por Total de Auditorías")
+                
+                # Calcular total de registros por usuario (sin promediar por hora)
+                usuarios_totales = df_filtrado["nombre"].value_counts().head(10)
+                
+                # Crear DataFrame para el gráfico
+                top_usuarios_chart = pd.DataFrame({
+                    'Usuario': usuarios_totales.index,
+                    'Total Registros': usuarios_totales.values
+                }).set_index('Usuario')
+                
+                st.bar_chart(top_usuarios_chart, height=400)
+                
+                st.divider()
                 
                 # --- SELECTOR DE DÍA PARA ANÁLISIS DE PROMEDIOS ---
-                st.markdown("### 📅 Selección de día para análisis de promedios")
+                st.markdown("### 📅 Selección de día para análisis de promedios por hora")
                 dia_semana_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos los días (L-V)"]
                 dia_seleccionado_tab3 = st.selectbox(
                     "Día de la semana a analizar:",
@@ -1065,10 +1065,10 @@ with tab3:
                 
                 # Preparar datos para promedios
                 df_proceso = df_filtrado.copy()
-                df_proceso['FECHA'] = df_proceso[col_fecha].dt.date
-                df_proceso['HORA'] = df_proceso[col_fecha].dt.hour
-                df_proceso['DIA_SEMANA'] = df_proceso[col_fecha].dt.day_name()
-                df_proceso['DIA_SEMANA_NUM'] = df_proceso[col_fecha].dt.dayofweek
+                df_proceso['FECHA'] = df_proceso["fechaRegistro"].dt.date
+                df_proceso['HORA'] = df_proceso["fechaRegistro"].dt.hour
+                df_proceso['DIA_SEMANA'] = df_proceso["fechaRegistro"].dt.day_name()
+                df_proceso['DIA_SEMANA_NUM'] = df_proceso["fechaRegistro"].dt.dayofweek
                 
                 # Mapeo de días
                 mapa_dias = {
@@ -1095,125 +1095,117 @@ with tab3:
                 horas_con_registros = sorted(df_proceso['HORA'].unique())
                 horas_formateadas = [f"{h}:00" for h in horas_con_registros]
                 
-                # Obtener usuarios
-                if col_nombre:
-                    usuarios_proceso = sorted(df_proceso[col_nombre].dropna().unique())
-                    
-                    if not usuarios_proceso:
-                        st.warning("No hay usuarios en los datos filtrados.")
-                        st.stop()
-                    
-                    # Crear tabla de promedios
-                    data = []
-                    for usuario in usuarios_proceso:
-                        df_usuario = df_proceso[df_proceso[col_nombre] == usuario]
-                        fila = []
-                        for hora in horas_con_registros:
-                            df_hora = df_usuario[df_usuario['HORA'] == hora]
-                            if not df_hora.empty:
-                                conteo_por_dia = df_hora.groupby('FECHA').size()
-                                conteo_por_dia = conteo_por_dia[conteo_por_dia > 0]
-                                promedio = conteo_por_dia.mean() if not conteo_por_dia.empty else 0
-                                fila.append(round(promedio, 2))
-                            else:
-                                fila.append(0)
-                        data.append(fila)
-                    
-                    tabla_resultados = pd.DataFrame(data, index=usuarios_proceso, columns=horas_formateadas)
-                    
-                    # Calcular estadísticas
-                    tabla_resultados['TOTAL'] = tabla_resultados[horas_formateadas].sum(axis=1).round(2)
-                    
-                    minimos = []
-                    for idx in tabla_resultados.index:
-                        valores_fila = tabla_resultados.loc[idx, horas_formateadas]
-                        valores_positivos = valores_fila[valores_fila > 0]
-                        if len(valores_positivos) > 0:
-                            minimos.append(valores_positivos.min())
+                # Obtener usuarios del filtro (o todos si no hay filtro)
+                usuarios_proceso = sorted(df_proceso["nombre"].unique())
+                
+                if not usuarios_proceso:
+                    st.warning("No hay usuarios en los datos filtrados.")
+                    st.stop()
+                
+                # Crear tabla de promedios por hora
+                data = []
+                for usuario in usuarios_proceso:
+                    df_usuario = df_proceso[df_proceso["nombre"] == usuario]
+                    fila = []
+                    for hora in horas_con_registros:
+                        df_hora = df_usuario[df_usuario['HORA'] == hora]
+                        if not df_hora.empty:
+                            conteo_por_dia = df_hora.groupby('FECHA').size()
+                            conteo_por_dia = conteo_por_dia[conteo_por_dia > 0]
+                            promedio = conteo_por_dia.mean() if not conteo_por_dia.empty else 0
+                            fila.append(round(promedio, 2))
                         else:
-                            minimos.append(0)
-                    tabla_resultados['MÍNIMO'] = [round(x, 2) for x in minimos]
-                    
-                    tabla_resultados['MÁXIMO'] = tabla_resultados[horas_formateadas].max(axis=1).round(2)
-                    
-                    # Ordenar por TOTAL descendente
-                    tabla_resultados = tabla_resultados.sort_values('TOTAL', ascending=False)
-                    
-                    # Totales por hora
-                    totales_por_hora = tabla_resultados[horas_formateadas].sum(axis=0).round(2)
-                    
-                    # Fila de totales
-                    datos_fila_total = {'TOTAL': totales_por_hora.sum()}
-                    for hora in horas_formateadas:
-                        datos_fila_total[hora] = totales_por_hora[hora]
-                    datos_fila_total['MÍNIMO'] = ''
-                    datos_fila_total['MÁXIMO'] = ''
-                    
-                    fila_total = pd.DataFrame([datos_fila_total], index=['TOTAL'])
-                    tabla_resultados_con_total = pd.concat([tabla_resultados, fila_total])
-                    
-                    # Mostrar tabla de promedios
-                    st.subheader("📊 Promedio de Auditorías por Usuario")
-                    st.markdown("*Cantidad promedio de auditorías realizadas por hora*")
-                    
-                    styler = tabla_resultados_con_total.style
-                    mascara_usuarios = tabla_resultados_con_total.index != 'TOTAL'
-                    styler = styler.format("{:.2f}", subset=pd.IndexSlice[tabla_resultados_con_total.index[mascara_usuarios], horas_formateadas + ['TOTAL', 'MÍNIMO', 'MÁXIMO']])
-                    styler = styler.format("{:.2f}", subset=pd.IndexSlice[['TOTAL'], horas_formateadas + ['TOTAL']])
-                    styler = styler.background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[tabla_resultados.index, horas_formateadas])
-                    styler = styler.set_properties(**{'text-align': 'center'})
-                    
-                    st.dataframe(styler, use_container_width=True, height=min(400, 50 + (len(usuarios_proceso) * 35)))
-                    
-                    # --- GRÁFICO DE BARRAS TOP USUARIOS ---
-                    st.subheader("🏆 Top 10 Usuarios por Actividad de Auditoría")
-                    
-                    top_n = min(10, len(tabla_resultados))
-                    top_usuarios = tabla_resultados.head(top_n)
-                    
-                    chart_data = pd.DataFrame({
-                        'Usuario': top_usuarios.index,
-                        'Promedio Diario': top_usuarios['TOTAL'].values
-                    }).set_index('Usuario')
-                    
-                    st.bar_chart(chart_data, height=400)
-                    
-                    # --- EXPORTAR ---
-                    st.divider()
-                    st.subheader("📤 Exportar Resultados a Excel")
-                    
-                    def crear_excel_tab3():
-                        output = BytesIO()
-                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            if col_nombre:
-                                tabla_resultados_con_total.to_excel(writer, sheet_name='Auditorías Promedio')
-                            
-                            if col_motivo:
-                                motivo_resumen.to_excel(writer, sheet_name='Distribución Motivos', index=False)
-                            
-                            config_df = pd.DataFrame({
-                                'Parámetro': ['Rango', 'Día', 'Usuarios', 'Motivos', 'Registros'],
-                                'Valor': [
-                                    f"{fecha_inicio_tab3} a {fecha_fin_tab3}",
-                                    dia_seleccionado_tab3,
-                                    'Todos' if not usuario_sel_tab3 else ', '.join(usuario_sel_tab3),
-                                    'Todos' if not motivo_sel_tab3 else ', '.join(motivo_sel_tab3),
-                                    len(df_proceso)
-                                ]
-                            })
-                            config_df.to_excel(writer, sheet_name='Configuración', index=False)
+                            fila.append(0)
+                    data.append(fila)
+                
+                tabla_resultados = pd.DataFrame(data, index=usuarios_proceso, columns=horas_formateadas)
+                
+                # Calcular estadísticas
+                tabla_resultados['TOTAL'] = tabla_resultados[horas_formateadas].sum(axis=1).round(2)
+                
+                minimos = []
+                for idx in tabla_resultados.index:
+                    valores_fila = tabla_resultados.loc[idx, horas_formateadas]
+                    valores_positivos = valores_fila[valores_fila > 0]
+                    if len(valores_positivos) > 0:
+                        minimos.append(valores_positivos.min())
+                    else:
+                        minimos.append(0)
+                tabla_resultados['MÍNIMO'] = [round(x, 2) for x in minimos]
+                
+                tabla_resultados['MÁXIMO'] = tabla_resultados[horas_formateadas].max(axis=1).round(2)
+                
+                # Ordenar por TOTAL descendente
+                tabla_resultados = tabla_resultados.sort_values('TOTAL', ascending=False)
+                
+                # Totales por hora
+                totales_por_hora = tabla_resultados[horas_formateadas].sum(axis=0).round(2)
+                
+                # Fila de totales
+                datos_fila_total = {'TOTAL': totales_por_hora.sum()}
+                for hora in horas_formateadas:
+                    datos_fila_total[hora] = totales_por_hora[hora]
+                datos_fila_total['MÍNIMO'] = ''
+                datos_fila_total['MÁXIMO'] = ''
+                
+                fila_total = pd.DataFrame([datos_fila_total], index=['TOTAL'])
+                tabla_resultados_con_total = pd.concat([tabla_resultados, fila_total])
+                
+                # Mostrar tabla de promedios
+                st.subheader("📊 Promedio de Auditorías por Usuario (por hora)")
+                st.markdown("*Cantidad promedio de auditorías realizadas por hora (basado en fechaRegistro)*")
+                
+                styler = tabla_resultados_con_total.style
+                mascara_usuarios = tabla_resultados_con_total.index != 'TOTAL'
+                styler = styler.format("{:.2f}", subset=pd.IndexSlice[tabla_resultados_con_total.index[mascara_usuarios], horas_formateadas + ['TOTAL', 'MÍNIMO', 'MÁXIMO']])
+                styler = styler.format("{:.2f}", subset=pd.IndexSlice[['TOTAL'], horas_formateadas + ['TOTAL']])
+                styler = styler.background_gradient(cmap='YlOrRd', axis=1, subset=pd.IndexSlice[tabla_resultados.index, horas_formateadas])
+                styler = styler.set_properties(**{'text-align': 'center'})
+                
+                st.dataframe(styler, use_container_width=True, height=min(400, 50 + (len(usuarios_proceso) * 35)))
+                
+                # --- EXPORTAR ---
+                st.divider()
+                st.subheader("📤 Exportar Resultados a Excel")
+                
+                def crear_excel_tab3():
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        # Hoja de promedios por hora
+                        tabla_resultados_con_total.to_excel(writer, sheet_name='Auditorías Promedio')
                         
-                        output.seek(0)
-                        return output
+                        # Hoja de distribución por sede
+                        sede_resumen.to_excel(writer, sheet_name='Distribución por Sede', index=False)
+                        
+                        # Hoja de totales por usuario
+                        totales_usuario = pd.DataFrame({
+                            'Usuario': df_filtrado["nombre"].value_counts().index,
+                            'Total Registros': df_filtrado["nombre"].value_counts().values
+                        })
+                        totales_usuario.to_excel(writer, sheet_name='Totales por Usuario', index=False)
+                        
+                        # Hoja de configuración
+                        config_df = pd.DataFrame({
+                            'Parámetro': ['Rango', 'Día', 'Usuarios', 'Sedes', 'Registros'],
+                            'Valor': [
+                                f"{fecha_inicio_tab3} a {fecha_fin_tab3}",
+                                dia_seleccionado_tab3,
+                                'Todos' if not usuario_sel_tab3 else ', '.join(usuario_sel_tab3),
+                                'Todos' if not sede_sel_tab3 else ', '.join(sede_sel_tab3),
+                                len(df_proceso)
+                            ]
+                        })
+                        config_df.to_excel(writer, sheet_name='Configuración', index=False)
                     
-                    st.download_button(
-                        label="📥 Descargar Excel",
-                        data=crear_excel_tab3(),
-                        file_name=f"analisis_auditoria_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                else:
-                    st.warning("No se encontró columna de usuarios para el análisis de promedios")
+                    output.seek(0)
+                    return output
+                
+                st.download_button(
+                    label="📥 Descargar Excel",
+                    data=crear_excel_tab3(),
+                    file_name=f"analisis_auditoria_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
             
             else:
                 st.warning("No hay datos con los filtros seleccionados")
@@ -1222,8 +1214,9 @@ with tab3:
             st.error(f"Error técnico: {e}")
             import traceback
             st.code(traceback.format_exc())
-            st.info("Verifica las columnas del archivo")
+            st.info("Verifica las columnas del archivo (debe contener: fechaRegistro, nombre, sede)")
     elif uploaded_file_tab3 is not None:
         st.warning("⚠️ Corrige los errores en los filtros para continuar")
     else:
         st.info("👆 Configura los parámetros y sube un archivo Excel para comenzar el análisis de auditoría")
+
