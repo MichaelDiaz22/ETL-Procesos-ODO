@@ -924,7 +924,15 @@ with tab3:
                 # Seleccionar el último campo 'nombre' (el que aparece al final de la tabla)
                 col_nombre = columnas_nombre[-1]
                 
-                # Verificar que existe la columna motivo
+                # Verificar que existe la columna sede (para filtrar)
+                columnas_sede = [col for col in df_temp.columns if 'sede' in col.lower()]
+                if not columnas_sede:
+                    st.error("No se encontró ninguna columna con 'sede' en el archivo.")
+                    st.stop()
+                
+                col_sede = columnas_sede[0]  # Tomamos la primera columna que contenga 'sede'
+                
+                # Verificar que existe la columna motivo (para los gráficos)
                 columnas_motivo = [col for col in df_temp.columns if 'motivo' in col.lower()]
                 if not columnas_motivo:
                     st.error("No se encontró ninguna columna con 'motivo' en el archivo.")
@@ -958,7 +966,7 @@ with tab3:
                         st.error("⚠️ Fecha inicio no puede ser mayor que fecha fin")
                 
                 with col_f2:
-                    st.markdown(f"##### 👤 Usuarios (Gestor de acceso - Back Office)")
+                    st.markdown(f"##### 👤 Usuarios (campo '{col_nombre}')")
                     nombres_disponibles = sorted(df_temp[col_nombre].dropna().unique())
                     usuario_sel_tab3 = st.multiselect(
                         "Seleccionar usuarios:", 
@@ -968,13 +976,13 @@ with tab3:
                     )
                 
                 with col_f3:
-                    st.markdown(f"##### 📋 Motivos (campo '{col_motivo}')")
-                    motivos_disponibles = sorted(df_temp[col_motivo].dropna().unique())
-                    motivo_sel_tab3 = st.multiselect(
-                        "Seleccionar motivos:", 
-                        options=motivos_disponibles,
-                        help="Selecciona uno o más motivos",
-                        key="tab3_motivo"
+                    st.markdown(f"##### 🏢 Sedes (campo '{col_sede}')")
+                    sedes_disponibles = sorted(df_temp[col_sede].dropna().unique())
+                    sede_sel_tab3 = st.multiselect(
+                        "Seleccionar sedes:", 
+                        options=sedes_disponibles,
+                        help="Selecciona una o más sedes para filtrar los datos",
+                        key="tab3_sede"
                     )
             
             except Exception as e:
@@ -990,6 +998,9 @@ with tab3:
             # Identificar columnas nuevamente
             columnas_nombre = [col for col in df.columns if 'nombre' in col.lower()]
             col_nombre = columnas_nombre[-1]  # Último campo 'nombre'
+            
+            columnas_sede = [col for col in df.columns if 'sede' in col.lower()]
+            col_sede = columnas_sede[0]  # Primer campo 'sede'
             
             columnas_motivo = [col for col in df.columns if 'motivo' in col.lower()]
             col_motivo = columnas_motivo[0]  # Primer campo 'motivo'
@@ -1007,8 +1018,8 @@ with tab3:
             if usuario_sel_tab3:
                 df_filtrado = df_filtrado[df_filtrado[col_nombre].isin(usuario_sel_tab3)]
             
-            if motivo_sel_tab3:
-                df_filtrado = df_filtrado[df_filtrado[col_motivo].isin(motivo_sel_tab3)]
+            if sede_sel_tab3:
+                df_filtrado = df_filtrado[df_filtrado[col_sede].isin(sede_sel_tab3)]
 
             if not df_filtrado.empty:
                 st.divider()
@@ -1018,12 +1029,12 @@ with tab3:
                 **Configuración de análisis:**
                 - **Rango:** {fecha_inicio_tab3} a {fecha_fin_tab3}
                 - **Usuarios (campo '{col_nombre}'):** {', '.join(usuario_sel_tab3) if usuario_sel_tab3 else 'Todos'}
-                - **Motivos (campo '{col_motivo}'):** {', '.join(motivo_sel_tab3) if motivo_sel_tab3 else 'Todos'}
+                - **Sedes (campo '{col_sede}'):** {', '.join(sede_sel_tab3) if sede_sel_tab3 else 'Todos'}
                 - **Registros analizados:** {len(df_filtrado):,}
                 """)
                 
                 # --- GRÁFICO DE DISTRIBUCIÓN POR MOTIVO ---
-                st.subheader("📊 Distribución de Auditorías por Motivo")
+                st.subheader(f"📊 Distribución de Auditorías por Motivo (campo '{col_motivo}')")
                 
                 # Calcular distribución por motivo
                 motivo_counts = df_filtrado[col_motivo].value_counts()
@@ -1201,12 +1212,12 @@ with tab3:
                         
                         # Hoja de configuración
                         config_df = pd.DataFrame({
-                            'Parámetro': ['Rango', 'Día', 'Usuarios', 'Motivos', 'Registros'],
+                            'Parámetro': ['Rango', 'Día', 'Usuarios', 'Sedes', 'Registros'],
                             'Valor': [
                                 f"{fecha_inicio_tab3} a {fecha_fin_tab3}",
                                 dia_seleccionado_tab3,
                                 'Todos' if not usuario_sel_tab3 else ', '.join(usuario_sel_tab3),
-                                'Todos' if not motivo_sel_tab3 else ', '.join(motivo_sel_tab3),
+                                'Todos' if not sede_sel_tab3 else ', '.join(sede_sel_tab3),
                                 len(df_proceso)
                             ]
                         })
@@ -1229,7 +1240,7 @@ with tab3:
             st.error(f"Error técnico: {e}")
             import traceback
             st.code(traceback.format_exc())
-            st.info("Verifica las columnas del archivo (debe contener: fechaRegistro, al menos un campo 'nombre' y un campo 'motivo')")
+            st.info("Verifica las columnas del archivo (debe contener: fechaRegistro, nombre, sede y motivo)")
     elif uploaded_file_tab3 is not None:
         st.warning("⚠️ Corrige los errores en los filtros para continuar")
     else:
