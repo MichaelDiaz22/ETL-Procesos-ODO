@@ -460,10 +460,10 @@ with tab1:
         st.info("👆 Configura los parámetros y sube un archivo Excel para comenzar el análisis")
 
 # ============================================================================
-# PESTAÑA 2: ANÁLISIS DE LLAMADOS
+# PESTAÑA 2: ANÁLISIS DETURNOS ATENDIDOS
 # ============================================================================
 with tab2:
-    st.header("📞 Análisis de Llamados")
+    st.header("📆 Análisis de turnos atendidos")
     
     # --- ÚNICO EXPANDER PARA TODA LA CONFIGURACIÓN ---
     with st.expander("⚙️ Configuración y Filtros", expanded=True):
