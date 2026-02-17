@@ -958,7 +958,7 @@ with tab3:
                         st.error("⚠️ Fecha inicio no puede ser mayor que fecha fin")
                 
                 with col_f2:
-                    st.markdown(f"##### 👤 Usuarios (campo '{col_nombre}')")
+                    st.markdown(f"##### 👤 Usuarios (Gestor de acceso - Back Office)")
                     nombres_disponibles = sorted(df_temp[col_nombre].dropna().unique())
                     usuario_sel_tab3 = st.multiselect(
                         "Seleccionar usuarios:", 
