@@ -1319,15 +1319,6 @@ with tab3:
                     usuarios_totales = df_completo_filtrado[col_nombre].value_counts().head(10)
                     
                     if not usuarios_totales.empty:
-                        # Crear DataFrame para la tabla
-                        top_usuarios_tabla = pd.DataFrame({
-                            'Usuario': usuarios_totales.index,
-                            'Total Registros Auditados': usuarios_totales.values
-                        }).reset_index(drop=True)
-                        
-                        # Mostrar tabla con los datos
-                        st.dataframe(top_usuarios_tabla, use_container_width=True, hide_index=True)
-                        
                         # Crear DataFrame para el gráfico
                         top_usuarios_chart = pd.DataFrame({
                             'Usuario': usuarios_totales.index,
@@ -1337,8 +1328,33 @@ with tab3:
                         # Mostrar gráfico de barras
                         st.bar_chart(top_usuarios_chart, height=400)
                         
-                        # Mostrar métrica adicional
-                        st.caption(f"📊 Total de registros en el top 10: {usuarios_totales.sum():,} de {len(df_completo_filtrado):,} registros totales")
+                        # Mostrar tabla con los datos (similar a la tabla de motivos)
+                        st.subheader("📋 Detalle Top 10 Usuarios")
+                        
+                        # Calcular porcentajes sobre el total de registros
+                        total_registros_top = usuarios_totales.sum()
+                        total_registros_general = len(df_completo_filtrado)
+                        usuarios_pct = (usuarios_totales / total_registros_general * 100).round(1)
+                        
+                        top_usuarios_tabla = pd.DataFrame({
+                            'Usuario': usuarios_totales.index,
+                            'Cantidad': usuarios_totales.values,
+                            'Porcentaje': [f"{pct}%" for pct in usuarios_pct.values]
+                        }).reset_index(drop=True)
+                        
+                        st.dataframe(top_usuarios_tabla, use_container_width=True, hide_index=True)
+                        
+                        # Métricas de totales (similar a las de motivos)
+                        col_top1, col_top2, col_top3 = st.columns(3)
+                        with col_top1:
+                            st.metric("Total Registros Top 10", f"{total_registros_top:,}")
+                        with col_top2:
+                            st.metric("% del Total General", f"{(total_registros_top/total_registros_general*100):.1f}%")
+                        with col_top3:
+                            usuario_top = usuarios_totales.index[0] if not usuarios_totales.empty else "N/A"
+                            st.metric("Usuario con más registros", usuario_top)
+                        
+                        st.caption(f"📊 Total general de registros: {total_registros_general:,}")
                     else:
                         st.warning("No hay datos suficientes para mostrar el top de usuarios")
                     
@@ -1358,13 +1374,14 @@ with tab3:
                             if 'motivo_resumen' in locals():
                                 motivo_resumen.to_excel(writer, sheet_name='Distribución por Motivo', index=False)
                             
-                            # Hoja de totales por usuario
-                            if not df_completo_filtrado.empty:
-                                totales_usuario = pd.DataFrame({
-                                    'Usuario': df_completo_filtrado[col_nombre].value_counts().index,
-                                    'Total Registros': df_completo_filtrado[col_nombre].value_counts().values
+                            # Hoja de top 10 usuarios
+                            if not usuarios_totales.empty:
+                                top_usuarios_export = pd.DataFrame({
+                                    'Usuario': usuarios_totales.index,
+                                    'Total Registros': usuarios_totales.values,
+                                    'Porcentaje': [f"{pct}%" for pct in (usuarios_totales/len(df_completo_filtrado)*100).round(1).values]
                                 })
-                                totales_usuario.to_excel(writer, sheet_name='Totales por Usuario', index=False)
+                                top_usuarios_export.to_excel(writer, sheet_name='Top 10 Usuarios', index=False)
                             
                             # Hoja de estadísticas
                             stats_df = pd.DataFrame({
