@@ -894,8 +894,8 @@ with tab3:
         
         with col2:
             st.markdown("##### 📊 Configuración de análisis")
-            st.markdown("*Cargue el archivo de auditoría de admisiones para analizar los registros por fecha y motivo*")
-            st.markdown("*La columna 'fechaRegistro' será utilizada como referencia para los promedios diarios y por hora*")
+            st.markdown("*Cargue el archivo de auditoría de admisiones obtenido de Tramita para analizar los registros por fecha y motivo*")
+            st.markdown("*Posteriormente, seleccione un rango de fechas, sede y los usuarios (Gestores de acceso - Back Office) a analizar*")
         
         # Si hay archivo cargado, mostrar los filtros
         if uploaded_file_tab3 is not None:
