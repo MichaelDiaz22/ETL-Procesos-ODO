@@ -995,6 +995,7 @@ with tab3:
                         df_filtro_usuarios = df_filtro_usuarios[df_filtro_usuarios[col_sede].isin(sede_sel_tab3)]
                     
                     # Obtener usuarios únicos que tienen registros en el rango de fechas y sedes seleccionadas
+                    # Excluimos valores nulos para el filtro de usuarios
                     nombres_disponibles = sorted(df_filtro_usuarios[col_nombre].dropna().unique())
                     
                     # Mostrar información de cuántos usuarios están disponibles
@@ -1032,7 +1033,8 @@ with tab3:
             df["fechaRegistro"] = pd.to_datetime(df["fechaRegistro"], errors='coerce')
             df = df.dropna(subset=["fechaRegistro"])
             
-            # Aplicar filtros base (fecha y sede) para análisis de motivos
+            # NIVEL 1: FILTROS BASE (fecha y sede) - para análisis de motivos
+            # Incluye todos los registros, incluso aquellos sin usuario
             df_base_filtrado = df[
                 (df["fechaRegistro"].dt.date >= fecha_inicio_tab3) & 
                 (df["fechaRegistro"].dt.date <= fecha_fin_tab3)
@@ -1041,28 +1043,43 @@ with tab3:
             if sede_sel_tab3:
                 df_base_filtrado = df_base_filtrado[df_base_filtrado[col_sede].isin(sede_sel_tab3)]
             
-            # Aplicar filtros completos (incluyendo usuario) para análisis de promedios
-            df_completo_filtrado = df_base_filtrado.copy()
+            # NIVEL 2: FILTROS COMPLETOS (fecha, sede y usuario) - excluye registros sin usuario
+            # Primero filtramos registros que tienen usuario asignado
+            df_con_usuario = df_base_filtrado[df_base_filtrado[col_nombre].notna()].copy()
             
+            # Luego aplicamos filtro de usuarios si hay selección
+            df_completo_filtrado = df_con_usuario.copy()
             if usuario_sel_tab3:
                 df_completo_filtrado = df_completo_filtrado[df_completo_filtrado[col_nombre].isin(usuario_sel_tab3)]
 
             if not df_base_filtrado.empty:
                 st.divider()
                 
-                # Mostrar configuración seleccionada
+                # Calcular registros sin usuario para información
+                registros_sin_usuario = len(df_base_filtrado) - len(df_con_usuario)
+                
+                # Mostrar configuración seleccionada con todos los niveles
                 st.info(f"""
-                **Configuración de análisis:**
+                **Configuración de análisis por niveles:**
+                
+                **Nivel 1 - Análisis de Motivos (fecha + sede):**
+                - Total registros: {len(df_base_filtrado):,}
+                - Registros sin usuario: {registros_sin_usuario:,} (excluidos del análisis de rendimiento)
+                
+                **Nivel 2 - Base para Rendimiento (fecha + sede + usuario):**
+                - Registros con usuario: {len(df_con_usuario):,}
+                - Registros después de filtro de usuarios: {len(df_completo_filtrado):,}
+                
+                **Detalles de filtros:**
                 - **Rango:** {fecha_inicio_tab3} a {fecha_fin_tab3}
                 - **Sedes seleccionadas:** {', '.join(sede_sel_tab3) if sede_sel_tab3 else 'Todas las sedes'}
                 - **Usuarios disponibles:** {len(nombres_disponibles) if 'nombres_disponibles' in locals() else 0}
                 - **Usuarios seleccionados:** {', '.join(usuario_sel_tab3) if usuario_sel_tab3 else 'Todos los disponibles'}
-                - **Registros totales:** {len(df_base_filtrado):,}
                 """)
                 
-                # --- GRÁFICO DE DISTRIBUCIÓN POR MOTIVO ---
+                # --- GRÁFICO DE DISTRIBUCIÓN POR MOTIVO (NIVEL 1) ---
                 st.subheader("📊 Distribución de Auditorías por Motivo")
-                st.markdown("*Análisis basado en filtros de fecha y sede*")
+                st.markdown(f"*Análisis basado en filtros de fecha y sede (incluye {registros_sin_usuario:,} registros sin usuario)*")
                 
                 # Calcular distribución por motivo
                 motivo_counts = df_base_filtrado[col_motivo].value_counts()
@@ -1107,11 +1124,13 @@ with tab3:
                 
                 st.divider()
                 
-                # --- ANÁLISIS DE RENDIMIENTO POR USUARIO ---
+                # --- ANÁLISIS DE RENDIMIENTO POR USUARIO (NIVEL 2) ---
                 if not df_completo_filtrado.empty:
                 
-                    # --- SELECTOR DE DÍA ---
+                    # --- SELECTOR DE DÍA (NIVEL 3) ---
                     st.markdown("### 📅 Selección de día para análisis de promedios por hora")
+                    st.markdown(f"*Base inicial: {len(df_completo_filtrado):,} registros con usuario (fecha + sede + filtro de usuarios)*")
+                    
                     dia_semana_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos los días (L-V)"]
                     dia_seleccionado_tab3 = st.selectbox(
                         "Día de la semana a analizar:",
@@ -1134,12 +1153,17 @@ with tab3:
                         'Jueves': 'Thursday', 'Viernes': 'Friday', 'Sábado': 'Saturday', 'Domingo': 'Sunday'
                     }
                     
+                    # Guardar total antes del filtro de día para referencia
+                    total_antes_filtro_dia = len(df_proceso)
+                    
                     # Filtrar por día
                     if dia_seleccionado_tab3 == "Todos los días (L-V)":
                         df_proceso = df_proceso[df_proceso['DIA_SEMANA_NUM'] < 5]
                         if df_proceso.empty:
                             st.warning("No hay registros para Lunes a Viernes.")
                             st.stop()
+                        else:
+                            st.caption(f"📊 Filtrando días Lunes a Viernes: {len(df_proceso):,} de {total_antes_filtro_dia:,} registros")
                     else:
                         dia_ingles = mapa_dias[dia_seleccionado_tab3]
                         df_proceso = df_proceso[df_proceso['DIA_SEMANA'] == dia_ingles]
@@ -1147,7 +1171,7 @@ with tab3:
                             st.warning(f"No hay registros para {dia_seleccionado_tab3}.")
                             st.stop()
                         dias_unicos = df_proceso['FECHA'].nunique()
-                        st.caption(f"📊 Promediando {dias_unicos} día(s) de {dia_seleccionado_tab3}")
+                        st.caption(f"📊 Promediando {dias_unicos} día(s) de {dia_seleccionado_tab3} - {len(df_proceso):,} registros")
                     
                     # Identificar horas con registros
                     horas_con_registros = sorted(df_proceso['HORA'].unique())
@@ -1211,7 +1235,7 @@ with tab3:
                     
                     # Mostrar tabla de promedios
                     st.subheader("📊 Promedio de Auditorías por Usuario (por hora)")
-                    st.markdown("*Cantidad promedio de auditorías realizadas por hora*")
+                    st.markdown(f"*Cantidad promedio de auditorías realizadas por hora - Base: {len(df_proceso):,} registros*")
                     
                     if not tabla_resultados.empty:
                         styler = tabla_resultados_con_total.style
@@ -1239,7 +1263,7 @@ with tab3:
                     
                     promedio_general = np.mean(valores_validos) if valores_validos else 0
                     
-                    # Total de registros en el período analizado (CON FILTRO DE DÍA)
+                    # Total de registros en el período analizado (CON FILTRO DE DÍA Y USUARIO)
                     total_registros_periodo = len(df_proceso)
                     
                     # Días analizados
@@ -1309,8 +1333,9 @@ with tab3:
                     
                     st.divider()
                     
-                    # --- TOP 10 USUARIOS (usando df_proceso para consistencia) ---
+                    # --- TOP 10 USUARIOS ---
                     st.subheader("🏆 Top 10 Usuarios por Total de Auditorías")
+                    st.markdown(f"*Basado en los {len(df_proceso):,} registros del período analizado*")
                     
                     # Calcular total de registros por usuario con los mismos datos filtrados
                     usuarios_totales = df_proceso[col_nombre].value_counts().head(10)
@@ -1348,8 +1373,6 @@ with tab3:
                         with col_top3:
                             usuario_top = usuarios_totales.index[0]
                             st.metric("Usuario con más registros", usuario_top)
-                        
-                        st.caption(f"📊 Total de registros en el período: {total_periodo:,}")
                     else:
                         st.warning("No hay datos suficientes para mostrar el top de usuarios")
                     
@@ -1386,7 +1409,8 @@ with tab3:
                                     'Días analizados',
                                     'Máximo gestiones/hora',
                                     'Mínimo gestiones/hora',
-                                    'Estándar'
+                                    'Estándar',
+                                    'Registros sin usuario (excluidos)'
                                 ],
                                 'Valor': [
                                     f"{promedio_general:.2f}",
@@ -1394,20 +1418,23 @@ with tab3:
                                     f"{dias_trabajados}",
                                     f"{max_registros_hora:.2f} (Usuario: {usuario_max}, Hora: {hora_max})",
                                     f"{min_registros_hora:.2f} (Usuario: {usuario_min}, Hora: {hora_min})" if min_registros_hora else "N/A",
-                                    f"{ESTANDAR_GESTIONES} gestiones/hora"
+                                    f"{ESTANDAR_GESTIONES} gestiones/hora",
+                                    f"{registros_sin_usuario:,}"
                                 ]
                             })
                             stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
                             
                             # Hoja de configuración
                             config_df = pd.DataFrame({
-                                'Parámetro': ['Rango', 'Día', 'Usuarios', 'Sedes', 'Registros totales'],
+                                'Parámetro': ['Rango', 'Día', 'Usuarios', 'Sedes', 'Registros totales', 'Registros con usuario', 'Registros sin usuario'],
                                 'Valor': [
                                     f"{fecha_inicio_tab3} a {fecha_fin_tab3}",
                                     dia_seleccionado_tab3,
                                     'Todos' if not usuario_sel_tab3 else ', '.join(usuario_sel_tab3),
                                     'Todas' if not sede_sel_tab3 else ', '.join(sede_sel_tab3),
-                                    len(df_base_filtrado)
+                                    len(df_base_filtrado),
+                                    len(df_con_usuario),
+                                    registros_sin_usuario
                                 ]
                             })
                             config_df.to_excel(writer, sheet_name='Configuración', index=False)
