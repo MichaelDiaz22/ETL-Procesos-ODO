@@ -1000,8 +1000,8 @@ with tab2:
                         hide_index=True,
                         column_config={
                             "Usuario": "👤 Usuario Atención",
-                            "Llamados Manuales": st.column_config.NumberColumn("📞 Manuales", format="%d"),
-                            "Llamados Automáticos": st.column_config.NumberColumn("🤖 Automáticos", format="%d"),
+                            "Llamados Manuales": st.column_config.NumberColumn("Manuales", format="%d"),
+                            "Llamados Automáticos": st.column_config.NumberColumn("Automáticos", format="%d"),
                             "TOTAL Registros": st.column_config.NumberColumn("📊 Total", format="%d")
                         }
                     )
