@@ -463,10 +463,6 @@ with tab1:
                             with col_ent3:
                                 entidad_top = tabla_pivote.iloc[0]['ENTIDAD'] if not tabla_pivote.empty else "N/A"
                                 st.metric("Entidad con más registros", entidad_top)
-                            
-                            # Opción para ver todas las entidades
-                            with st.expander("Ver todas las entidades"):
-                                st.dataframe(tabla_pivote, use_container_width=True, hide_index=True)
                         
                         else:
                             st.info("No hay registros para los usuarios seleccionados en el filtro")
@@ -592,7 +588,7 @@ with tab2:
                 rename_dict_temp = {
                     col_hora: 'HORA_LLEGADA',
                     col_servicio: 'SERVICIO',
-                    col_usuario: 'USUARIO_ATENCION'
+                    col_usuario: 'USUARIO_ATENCION'  # Cambiado a USUARIO_ATENCION
                 }
                 if col_tipo:
                     rename_dict_temp[col_tipo] = 'TIPO'
@@ -636,7 +632,12 @@ with tab2:
                 with col_f3:
                     st.markdown("##### 👤 Usuarios (Gestor de acceso)")
                     if usuarios_disponibles:
-                        usuario_sel = st.multiselect("Seleccionar usuarios:", usuarios_disponibles, key="tab2_usuarios")
+                        usuario_sel = st.multiselect(
+                            "Seleccionar usuarios:", 
+                            options=usuarios_disponibles,
+                            help="Selecciona uno o más usuarios del campo 'Usuario Atención'",
+                            key="tab2_usuarios"
+                        )
                     else:
                         usuario_sel = []
                         st.info("No hay usuarios disponibles")
@@ -661,7 +662,7 @@ with tab2:
             rename_dict = {
                 col_hora: 'HORA_LLEGADA',
                 col_servicio: 'SERVICIO',
-                col_usuario: 'USUARIO_ATENCION'
+                col_usuario: 'USUARIO_ATENCION'  # Cambiado a USUARIO_ATENCION
             }
             if col_tipo:
                 rename_dict[col_tipo] = 'TIPO'
@@ -835,7 +836,7 @@ with tab2:
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            "Usuario": "👤 Usuario",
+                            "Usuario": "👤 Usuario Atención",
                             "Llamados Manuales": st.column_config.NumberColumn("📞 Manuales", format="%d"),
                             "Llamados Automáticos": st.column_config.NumberColumn("🤖 Automáticos", format="%d")
                         }
