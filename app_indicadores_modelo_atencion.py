@@ -563,7 +563,7 @@ with tab1:
         
     
 # ============================================================================
-# PESTAÑA 2: ANÁLISIS DE TURNOS ATENDIDOS (VERSIÓN FINAL CORREGIDA)
+# PESTAÑA 2: ANÁLISIS DE TURNOS ATENDIDOS (VERSIÓN CORREGIDA)
 # ============================================================================
 with tab2:
     st.header("📆 Análisis de turnos atendidos")
@@ -683,7 +683,8 @@ with tab2:
                         df_filtro_base = df_filtro_base[df_filtro_base["SERVICIO"].isin(servicio_sel)]
                     
                     # Obtener usuarios únicos que tienen registros en el rango de fechas y servicios seleccionados
-                    usuarios_disponibles_filtrados = sorted(df_filtro_base["USUARIO_ATENCION"].dropna().unique())
+                    # Convertir todos los valores a string para evitar errores de comparación
+                    usuarios_disponibles_filtrados = sorted([str(u) for u in df_filtro_base["USUARIO_ATENCION"].dropna().unique()])
                     
                     # Mostrar información de cuántos usuarios están disponibles
                     st.caption(f"📊 {len(usuarios_disponibles_filtrados)} usuarios disponibles para los filtros seleccionados")
@@ -692,7 +693,7 @@ with tab2:
                         usuario_sel = st.multiselect(
                             "Seleccionar usuarios:", 
                             options=usuarios_disponibles_filtrados,
-                            help=f"Usuarios con registros en el rango de fechas y servicios seleccionados",
+                            help=f"Usuarios con registros en el rango de fechas y servicios seleccionados (dejar vacío para mostrar todos)",
                             key="tab2_usuarios"
                         )
                     else:
@@ -732,41 +733,48 @@ with tab2:
             df_tab2["HORA_LLEGADA"] = pd.to_datetime(df_tab2["HORA_LLEGADA"], errors='coerce')
             df_tab2_limpio = df_tab2.dropna(subset=["HORA_LLEGADA"])
             
-            # DataFrame para gráfico temporal (sin filtro de usuarios)
-            df_grafico = df_tab2_limpio[
+            # DataFrame base para análisis (con filtros de fecha y servicios)
+            df_base = df_tab2_limpio[
                 (df_tab2_limpio["HORA_LLEGADA"].dt.date >= fecha_ini) & 
                 (df_tab2_limpio["HORA_LLEGADA"].dt.date <= fecha_fin)
             ]
             
-            # Aplicar filtro de servicios al gráfico
+            # Aplicar filtro de servicios
             if servicio_sel:
-                df_grafico = df_grafico[df_grafico["SERVICIO"].isin(servicio_sel)]
+                df_base = df_base[df_base["SERVICIO"].isin(servicio_sel)]
             
-            # Aplicar filtros completos para el resto del análisis
-            df_filtrado = df_grafico.copy()
-            
+            # Aplicar filtro de usuarios SOLO si hay selección
             if usuario_sel:
-                df_filtrado = df_filtrado[df_filtrado["USUARIO_ATENCION"].isin(usuario_sel)]
+                df_filtrado = df_base[df_base["USUARIO_ATENCION"].isin(usuario_sel)]
+                st.info(f"✅ Mostrando datos solo para {len(usuario_sel)} usuario(s) seleccionado(s)")
+            else:
+                df_filtrado = df_base.copy()
+                st.info(f"📊 Mostrando datos para TODOS los usuarios ({len(df_base['USUARIO_ATENCION'].unique())} usuarios)")
             
-            if df_grafico.empty:
-                st.warning("No hay datos con los filtros seleccionados")
+            if df_base.empty:
+                st.warning("No hay datos con los filtros de fecha y servicios seleccionados")
                 st.stop()
             
             # --- PROCESAMIENTO ---
             st.divider()
+            
+            # Contar usuarios únicos en los datos filtrados
+            usuarios_en_datos = df_filtrado["USUARIO_ATENCION"].nunique()
+            
             st.info(f"""
             **Configuración de análisis:**
             - **Rango:** {fecha_ini} a {fecha_fin}
             - **Servicios:** {len(servicio_sel)} seleccionados
             - **Usuarios disponibles en filtros:** {len(usuarios_disponibles_filtrados) if 'usuarios_disponibles_filtrados' in locals() else 0}
-            - **Usuarios seleccionados:** {len(usuario_sel) if usuario_sel else 0}
-            - **Registros analizados (con filtro usuarios):** {len(df_filtrado):,}
+            - **Usuarios seleccionados:** {len(usuario_sel) if usuario_sel else 'TODOS'}
+            - **Usuarios en datos mostrados:** {usuarios_en_datos}
+            - **Registros analizados:** {len(df_filtrado):,}
             """)
             
             # ============================================================
             # GRÁFICO DE LÍNEA DE TIEMPO: MANUALES VS AUTOMÁTICOS
             # ============================================================
-            if 'TIPO' in df_grafico.columns:
+            if 'TIPO' in df_base.columns:
                 st.subheader("📈 Evolución Temporal: Llamados Manuales vs Automáticos")
                 
                 # Clasificar llamados
@@ -780,10 +788,10 @@ with tab2:
                         return 'AUTOMÁTICO'
                     return 'OTRO'
                 
-                df_grafico['CLASIFICACION'] = df_grafico['TIPO'].apply(clasificar_llamado)
+                df_base['CLASIFICACION'] = df_base['TIPO'].apply(clasificar_llamado)
                 
                 # Agrupar por fecha y clasificación
-                df_temporal = df_grafico.copy()
+                df_temporal = df_base.copy()
                 df_temporal['FECHA_DT'] = pd.to_datetime(df_temporal['FECHA'] if 'FECHA' in df_temporal.columns else df_temporal['HORA_LLEGADA'].dt.date)
                 
                 # Filtrar solo manuales y automáticos
@@ -851,23 +859,32 @@ with tab2:
                 st.caption(f"📊 Evolución diaria de llamados del {fecha_ini} al {fecha_fin}")
                 
                 # ============================================================
-                # TABLA: Usuarios seleccionados con conteo de llamados
+                # TABLA: Usuarios con conteo de llamados
                 # ============================================================
                 st.divider()
-                st.subheader("👥 Detalle de Llamados por Usuario Seleccionado")
+                st.subheader("👥 Detalle de Llamados por Usuario")
                 
-                # Usar los usuarios seleccionados en el filtro (usuario_sel)
-                if usuario_sel:  # Solo mostrar si hay usuarios seleccionados
-                    # Crear DataFrame con los usuarios seleccionados
-                    usuarios_seleccionados_df = pd.DataFrame({
-                        'Usuario': usuario_sel
+                # Determinar qué usuarios mostrar en la tabla
+                if usuario_sel:
+                    # Si hay usuarios seleccionados, mostrar solo esos
+                    usuarios_para_tabla = usuario_sel
+                    titulo_tabla = "Usuarios Seleccionados"
+                else:
+                    # Si no hay selección, mostrar todos los usuarios
+                    usuarios_para_tabla = sorted([str(u) for u in df_filtrado["USUARIO_ATENCION"].unique()])
+                    titulo_tabla = "Todos los Usuarios"
+                
+                if usuarios_para_tabla:
+                    # Crear DataFrame con los usuarios
+                    usuarios_df = pd.DataFrame({
+                        'Usuario': usuarios_para_tabla
                     })
                     
-                    # Calcular conteos para cada usuario usando df_filtrado (que ya tiene aplicados los filtros de usuarios)
+                    # Calcular conteos para cada usuario
                     conteos_manuales = []
                     conteos_automaticos = []
                     
-                    for usuario in usuario_sel:
+                    for usuario in usuarios_para_tabla:
                         # Filtrar datos para este usuario específico
                         df_usuario = df_filtrado[df_filtrado['USUARIO_ATENCION'] == usuario].copy()
                         
@@ -887,12 +904,12 @@ with tab2:
                             conteos_automaticos.append(0)
                     
                     # Agregar columnas al DataFrame
-                    usuarios_seleccionados_df['Llamados Manuales'] = conteos_manuales
-                    usuarios_seleccionados_df['Llamados Automáticos'] = conteos_automaticos
+                    usuarios_df['Llamados Manuales'] = conteos_manuales
+                    usuarios_df['Llamados Automáticos'] = conteos_automaticos
                     
                     # Mostrar la tabla
                     st.dataframe(
-                        usuarios_seleccionados_df,
+                        usuarios_df,
                         use_container_width=True,
                         hide_index=True,
                         column_config={
@@ -905,17 +922,17 @@ with tab2:
                     # Mostrar totales
                     col_total1, col_total2, col_total3 = st.columns(3)
                     with col_total1:
-                        st.metric("Total Usuarios Seleccionados", len(usuario_sel))
+                        st.metric(f"Total {titulo_tabla}", len(usuarios_para_tabla))
                     with col_total2:
                         st.metric("Total Llamados Manuales", sum(conteos_manuales))
                     with col_total3:
                         st.metric("Total Llamados Automáticos", sum(conteos_automaticos))
                     
-                    # Mostrar información adicional sobre los servicios
+                    # Mostrar información adicional
                     st.caption(f"📊 Basado en {len(servicio_sel)} servicio(s) seleccionado(s): {', '.join(servicio_sel) if servicio_sel else 'Todos'}")
                 
                 else:
-                    st.info("👆 Selecciona usuarios en el filtro para ver el detalle de llamados")
+                    st.info("No hay usuarios para mostrar")
             
             # --- SELECTOR DE DÍA (antes de la tabla de promedios) ---
             st.divider()
@@ -923,7 +940,7 @@ with tab2:
             dias_opciones = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo", "Todos (L-V)"]
             dia_sel = st.selectbox("Día a analizar", dias_opciones, index=7, key="tab2_dia")
             
-            # Preparar datos para promedios (con filtro de usuarios)
+            # Preparar datos para promedios
             if df_filtrado.empty:
                 st.warning("No hay datos con los filtros seleccionados")
                 st.stop()
@@ -955,7 +972,9 @@ with tab2:
             # Obtener horas y usuarios para tablas de promedios
             horas = sorted(df_proceso['HORA'].unique())
             horas_fmt = [f"{h}:00" for h in horas]
-            usuarios_proc = sorted(df_proceso["USUARIO_ATENCION"].unique())
+            
+            # Convertir todos los usuarios a string para evitar errores de ordenamiento
+            usuarios_proc = sorted([str(u) for u in df_proceso["USUARIO_ATENCION"].unique()])
             
             if not usuarios_proc:
                 st.warning("No hay usuarios en los datos filtrados")
@@ -1014,6 +1033,12 @@ with tab2:
             st.subheader("📞 Promedio de Llamados por Agente")
             st.markdown("*Cantidad promedio de llamados por hora*")
             
+            # Información sobre qué usuarios se están mostrando
+            if usuario_sel:
+                st.caption(f"📊 Mostrando promedios para {len(usuario_sel)} usuario(s) seleccionado(s)")
+            else:
+                st.caption(f"📊 Mostrando promedios para TODOS los usuarios ({len(usuarios_proc)} usuarios)")
+            
             styler = tabla_llamados_con_total.style
             mascara_usuarios = tabla_llamados_con_total.index != 'TOTAL'
             styler = styler.format("{:.2f}", subset=pd.IndexSlice[tabla_llamados_con_total.index[mascara_usuarios], horas_fmt + ['TOTAL', 'MÍNIMO', 'MÁXIMO']])
@@ -1051,18 +1076,19 @@ with tab2:
                     if 'df_completo' in locals():
                         df_completo.reset_index().to_excel(w, sheet_name='Evolución Diaria', index=False)
                     
-                    # Agregar la tabla de usuarios seleccionados si existe
-                    if 'usuarios_seleccionados_df' in locals() and not usuarios_seleccionados_df.empty:
-                        usuarios_seleccionados_df.to_excel(w, sheet_name='Usuarios Seleccionados', index=False)
+                    # Agregar la tabla de usuarios
+                    if 'usuarios_df' in locals() and not usuarios_df.empty:
+                        usuarios_df.to_excel(w, sheet_name='Detalle Usuarios', index=False)
                     
                     config = pd.DataFrame({
-                        'Parámetro': ['Rango', 'Día', 'Servicios', 'Usuarios', 'Registros'],
+                        'Parámetro': ['Rango', 'Día', 'Servicios', 'Usuarios seleccionados', 'Usuarios mostrados', 'Registros'],
                         'Valor': [
                             f"{fecha_ini} a {fecha_fin}",
                             dia_sel,
                             ', '.join(servicio_sel) if servicio_sel else 'Todos',
-                            ', '.join(usuario_sel) if usuario_sel else 'Ninguno',
-                            len(df_proceso)
+                            ', '.join(usuario_sel) if usuario_sel else 'TODOS',
+                            str(len(usuarios_proc)),
+                            str(len(df_proceso))
                         ]
                     })
                     config.to_excel(w, sheet_name='Configuración', index=False)
