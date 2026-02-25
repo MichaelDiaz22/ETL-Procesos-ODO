@@ -13,7 +13,7 @@ st.title("📊 Análisis de gestiones del modelo de atención")
 tab1, tab2, tab3 = st.tabs(["📋 Análisis de ingresos abiertos", "📆 Análisis de turnos atendidos", "🔍 Auditoría de Admisiones"])
 
 # ============================================================================
-# PESTAÑA 1: ANÁLISIS DE INGRESOS (CON FILTRO DINÁMICO DE USUARIOS POR CENTRO)
+# PESTAÑA 1: ANÁLISIS DE INGRESOS (VERSIÓN COMPLETA)
 # ============================================================================
 with tab1:
     st.header("📋 Análisis de Ingresos")
@@ -107,7 +107,7 @@ with tab1:
                         usuario_sel = st.multiselect(
                             "Seleccionar usuarios:", 
                             options=usuarios_disponibles_filtrados,
-                            help=f"Usuarios con registros en el rango de fechas y centros seleccionados",
+                            help=f"Usuarios con registros en el rango de fechas y centros seleccionados (dejar vacío para mostrar todos)",
                             key="tab1_usuario"
                         )
                     else:
@@ -126,17 +126,22 @@ with tab1:
             df["FECHA CREACION"] = pd.to_datetime(df["FECHA CREACION"], errors='coerce')
             df = df.dropna(subset=["FECHA CREACION"])
             
-            # Aplicar filtros
-            df_filtrado = df[
+            # DataFrame base con filtros de fecha y centros
+            df_base = df[
                 (df["FECHA CREACION"].dt.date >= fecha_inicio) & 
                 (df["FECHA CREACION"].dt.date <= fecha_fin)
             ]
             
             if centro_sel:
-                df_filtrado = df_filtrado[df_filtrado["CENTRO ATENCION"].isin(centro_sel)]
+                df_base = df_base[df_base["CENTRO ATENCION"].isin(centro_sel)]
             
+            # Aplicar filtro de usuarios SOLO si hay selección
             if usuario_sel:
-                df_filtrado = df_filtrado[df_filtrado["USUARIO CREA INGRESO"].isin(usuario_sel)]
+                df_filtrado = df_base[df_base["USUARIO CREA INGRESO"].isin(usuario_sel)]
+                st.info(f"✅ Mostrando datos solo para {len(usuario_sel)} usuario(s) seleccionado(s)")
+            else:
+                df_filtrado = df_base.copy()
+                st.info(f"📊 Mostrando datos para TODOS los usuarios ({len(df_base['USUARIO CREA INGRESO'].unique())} usuarios)")
 
             if not df_filtrado.empty:
                 st.divider()
@@ -147,7 +152,8 @@ with tab1:
                 - **Rango:** {fecha_inicio} a {fecha_fin}
                 - **Centros seleccionados:** {len(centro_sel)} centros
                 - **Usuarios disponibles en filtros:** {len(usuarios_disponibles_filtrados) if 'usuarios_disponibles_filtrados' in locals() else 0}
-                - **Usuarios seleccionados:** {len(usuario_sel) if usuario_sel else 0}
+                - **Usuarios seleccionados:** {len(usuario_sel) if usuario_sel else 'TODOS'}
+                - **Usuarios en datos mostrados:** {df_filtrado['USUARIO CREA INGRESO'].nunique()}
                 - **Registros analizados:** {len(df_filtrado):,}
                 """)
                 
@@ -430,6 +436,77 @@ with tab1:
                 st.bar_chart(chart_data, height=400)
                 
                 # ============================================================
+                # NUEVA TABLA: Detalle de usuarios con totales y porcentajes
+                # ============================================================
+                st.divider()
+                st.subheader("📊 Detalle de Registros por Usuario")
+
+                # Determinar qué usuarios mostrar
+                if usuario_sel:
+                    usuarios_detalle = usuario_sel
+                    titulo_detalle = "Usuarios Seleccionados"
+                else:
+                    usuarios_detalle = sorted(usuarios_proceso)
+                    titulo_detalle = "Todos los Usuarios"
+
+                if usuarios_detalle:
+                    # Calcular total de registros para cada usuario (sin promediar, total real)
+                    total_registros_por_usuario = []
+                    
+                    for usuario in usuarios_detalle:
+                        df_usuario = df_filtrado[df_filtrado["USUARIO CREA INGRESO"] == usuario]
+                        total_registros = len(df_usuario)
+                        total_registros_por_usuario.append(total_registros)
+                    
+                    # Crear DataFrame de detalle
+                    detalle_usuarios_df = pd.DataFrame({
+                        'Usuario': usuarios_detalle,
+                        'Total Registros': total_registros_por_usuario,
+                        'Promedio Diario': [tabla_resultados.loc[usuario, 'TOTAL'] if usuario in tabla_resultados.index else 0 for usuario in usuarios_detalle]
+                    })
+                    
+                    # Calcular el gran total para porcentajes
+                    gran_total = detalle_usuarios_df['Total Registros'].sum()
+                    
+                    # Calcular porcentaje
+                    detalle_usuarios_df['Porcentaje del Total'] = (detalle_usuarios_df['Total Registros'] / gran_total * 100).round(1).astype(str) + '%'
+                    
+                    # Ordenar por total de registros descendente
+                    detalle_usuarios_df = detalle_usuarios_df.sort_values('Total Registros', ascending=False)
+                    
+                    # Mostrar la tabla
+                    st.dataframe(
+                        detalle_usuarios_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Usuario": "👤 Usuario",
+                            "Total Registros": st.column_config.NumberColumn("📊 Total Registros", format="%d"),
+                            "Promedio Diario": st.column_config.NumberColumn("📈 Promedio Diario", format="%.2f"),
+                            "Porcentaje del Total": "📊 % del Total"
+                        }
+                    )
+                    
+                    # Mostrar estadísticas
+                    col_det1, col_det2, col_det3, col_det4 = st.columns(4)
+                    with col_det1:
+                        st.metric("Total Usuarios", len(usuarios_detalle))
+                    with col_det2:
+                        st.metric("Total Registros", f"{gran_total:,}")
+                    with col_det3:
+                        usuario_top = detalle_usuarios_df.iloc[0]['Usuario'] if not detalle_usuarios_df.empty else "N/A"
+                        st.metric("Usuario con más registros", usuario_top)
+                    with col_det4:
+                        pct_top = detalle_usuarios_df.iloc[0]['Porcentaje del Total'] if not detalle_usuarios_df.empty else "0%"
+                        st.metric("% del Top", pct_top)
+                    
+                    # Mostrar información de centros
+                    st.caption(f"📊 Basado en {len(centro_sel)} centro(s) seleccionado(s): {', '.join(centro_sel) if centro_sel else 'Todos'}")
+
+                else:
+                    st.info("No hay usuarios para mostrar")
+
+                # ============================================================
                 # TABLA: Distribución de ingresos por ENTIDAD y usuario
                 # ============================================================
                 st.divider()
@@ -513,6 +590,9 @@ with tab1:
                         tabla_resultados_con_total.to_excel(writer, sheet_name='Ingresos Promedio')
                         tabla_tiempos.to_excel(writer, sheet_name='Tiempos Promedio')
                         
+                        if 'detalle_usuarios_df' in locals() and not detalle_usuarios_df.empty:
+                            detalle_usuarios_df.to_excel(writer, sheet_name='Detalle Usuarios', index=False)
+                        
                         if 'tabla_pivote' in locals() and not tabla_pivote.empty:
                             tabla_pivote.to_excel(writer, sheet_name='Distribución por Entidad', index=False)
                         
@@ -529,13 +609,14 @@ with tab1:
                         stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
                         
                         config_df = pd.DataFrame({
-                            'Parámetro': ['Rango', 'Día', 'Centros', 'Usuarios disponibles', 'Usuarios seleccionados', 'Registros'],
+                            'Parámetro': ['Rango', 'Día', 'Centros', 'Usuarios disponibles', 'Usuarios seleccionados', 'Usuarios mostrados', 'Registros'],
                             'Valor': [
                                 f"{fecha_inicio} a {fecha_fin}",
                                 dia_seleccionado,
                                 ', '.join(centro_sel) if centro_sel else 'Todos',
                                 str(len(usuarios_disponibles_filtrados)) if 'usuarios_disponibles_filtrados' in locals() else '0',
-                                ', '.join(usuario_sel) if usuario_sel else 'Ninguno',
+                                ', '.join(usuario_sel) if usuario_sel else 'TODOS',
+                                str(len(detalle_usuarios_df)) if 'detalle_usuarios_df' in locals() else '0',
                                 str(len(df_proceso))
                             ]
                         })
@@ -563,7 +644,7 @@ with tab1:
         
     
 # ============================================================================
-# PESTAÑA 2: ANÁLISIS DE TURNOS ATENDIDOS (VERSIÓN CORREGIDA)
+# PESTAÑA 2: ANÁLISIS DE TURNOS ATENDIDOS (VERSIÓN COMPLETA)
 # ============================================================================
 with tab2:
     st.header("📆 Análisis de turnos atendidos")
@@ -859,11 +940,11 @@ with tab2:
                 st.caption(f"📊 Evolución diaria de llamados del {fecha_ini} al {fecha_fin}")
                 
                 # ============================================================
-                # TABLA: Usuarios con conteo de llamados
+                # TABLA: Usuarios con conteo de llamados (con columna TOTAL)
                 # ============================================================
                 st.divider()
                 st.subheader("👥 Detalle de Llamados por Usuario")
-                
+
                 # Determinar qué usuarios mostrar en la tabla
                 if usuario_sel:
                     # Si hay usuarios seleccionados, mostrar solo esos
@@ -873,7 +954,7 @@ with tab2:
                     # Si no hay selección, mostrar todos los usuarios
                     usuarios_para_tabla = sorted([str(u) for u in df_filtrado["USUARIO_ATENCION"].unique()])
                     titulo_tabla = "Todos los Usuarios"
-                
+
                 if usuarios_para_tabla:
                     # Crear DataFrame con los usuarios
                     usuarios_df = pd.DataFrame({
@@ -906,6 +987,11 @@ with tab2:
                     # Agregar columnas al DataFrame
                     usuarios_df['Llamados Manuales'] = conteos_manuales
                     usuarios_df['Llamados Automáticos'] = conteos_automaticos
+                    # NUEVA COLUMNA: Total de registros por usuario
+                    usuarios_df['TOTAL Registros'] = usuarios_df['Llamados Manuales'] + usuarios_df['Llamados Automáticos']
+                    
+                    # Ordenar por total descendente
+                    usuarios_df = usuarios_df.sort_values('TOTAL Registros', ascending=False)
                     
                     # Mostrar la tabla
                     st.dataframe(
@@ -915,22 +1001,25 @@ with tab2:
                         column_config={
                             "Usuario": "👤 Usuario Atención",
                             "Llamados Manuales": st.column_config.NumberColumn("📞 Manuales", format="%d"),
-                            "Llamados Automáticos": st.column_config.NumberColumn("🤖 Automáticos", format="%d")
+                            "Llamados Automáticos": st.column_config.NumberColumn("🤖 Automáticos", format="%d"),
+                            "TOTAL Registros": st.column_config.NumberColumn("📊 Total", format="%d")
                         }
                     )
                     
                     # Mostrar totales
-                    col_total1, col_total2, col_total3 = st.columns(3)
+                    col_total1, col_total2, col_total3, col_total4 = st.columns(4)
                     with col_total1:
                         st.metric(f"Total {titulo_tabla}", len(usuarios_para_tabla))
                     with col_total2:
                         st.metric("Total Llamados Manuales", sum(conteos_manuales))
                     with col_total3:
                         st.metric("Total Llamados Automáticos", sum(conteos_automaticos))
+                    with col_total4:
+                        st.metric("Total General", sum(conteos_manuales) + sum(conteos_automaticos))
                     
                     # Mostrar información adicional
                     st.caption(f"📊 Basado en {len(servicio_sel)} servicio(s) seleccionado(s): {', '.join(servicio_sel) if servicio_sel else 'Todos'}")
-                
+
                 else:
                     st.info("No hay usuarios para mostrar")
             
@@ -1076,7 +1165,7 @@ with tab2:
                     if 'df_completo' in locals():
                         df_completo.reset_index().to_excel(w, sheet_name='Evolución Diaria', index=False)
                     
-                    # Agregar la tabla de usuarios
+                    # Agregar la tabla de usuarios con totales
                     if 'usuarios_df' in locals() and not usuarios_df.empty:
                         usuarios_df.to_excel(w, sheet_name='Detalle Usuarios', index=False)
                     
