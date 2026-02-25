@@ -535,7 +535,7 @@ with tab1:
         st.info("👆 Configura los parámetros y sube un archivo Excel para comenzar el análisis")
 
 # ============================================================================
-# PESTAÑA 2: ANÁLISIS DE TURNOS ATENDIDOS
+# PESTAÑA 2: ANÁLISIS DE TURNOS ATENDIDOS (CORREGIDO)
 # ============================================================================
 with tab2:
     st.header("📆 Análisis de turnos atendidos")
@@ -563,26 +563,40 @@ with tab2:
                 df_temp = pd.read_excel(uploaded_file_tab2, skiprows=1)
                 df_temp.columns = df_temp.columns.astype(str).str.strip()
                 
-                # Función para encontrar columna
+                # Mostrar todas las columnas disponibles para depuración
+                with st.expander("Ver columnas disponibles en el archivo"):
+                    st.write("Columnas encontradas:", df_temp.columns.tolist())
+                
+                # Función mejorada para encontrar columna
                 def encontrar_columna(df, posibles_nombres):
-                    columnas_lower = {col: col.lower() for col in df.columns}
+                    """
+                    Busca una columna en el DataFrame que coincida con alguno de los nombres posibles
+                    """
+                    columnas_lower = {col: col.lower().strip() for col in df.columns}
                     for posible in posibles_nombres:
-                        posible_lower = posible.lower()
+                        posible_lower = posible.lower().strip()
                         for col_original, col_lower in columnas_lower.items():
                             if col_lower == posible_lower or posible_lower in col_lower:
                                 return col_original
                     return None
                 
-                # Buscar columnas
+                # Buscar columnas - ESPECÍFICAMENTE "User Atención"
                 col_hora = encontrar_columna(df_temp, ['hora llegada', 'hora_llegada', 'hora'])
                 col_servicio = encontrar_columna(df_temp, ['servicio'])
-                col_usuario = encontrar_columna(df_temp, ['usuario atención', 'usuario_atencion', 'usuario'])
+                # Buscar específicamente "User Atención" (con espacio) y variantes
+                col_usuario = encontrar_columna(df_temp, ['user atención', 'user_atencion', 'usuario atención', 'usuario_atencion', 'usuario', 'user'])
                 col_tipo = encontrar_columna(df_temp, ['tipo'])
                 
-                if not all([col_hora, col_servicio, col_usuario]):
-                    columnas_encontradas = df_temp.columns.tolist()
-                    st.error(f"No se encontraron las columnas necesarias. Columnas disponibles: {', '.join(columnas_encontradas)}")
+                # Verificar si encontramos las columnas necesarias
+                if not all([col_hora, col_servicio]):
+                    st.error(f"No se encontraron las columnas de hora y servicio. Hora: {col_hora}, Servicio: {col_servicio}")
                     st.stop()
+                
+                if not col_usuario:
+                    st.error("No se encontró la columna de usuario. Buscamos: 'User Atención', 'usuario atención', etc.")
+                    st.stop()
+                
+                st.success(f"✅ Columna de usuario encontrada: '{col_usuario}'")
                 
                 # Renombrar temporalmente para obtener datos
                 rename_dict_temp = {
@@ -607,6 +621,9 @@ with tab2:
                 fecha_max = df_temp["HORA_LLEGADA"].max().date()
                 servicios_disponibles = sorted(df_temp["SERVICIO"].dropna().unique())
                 usuarios_disponibles = sorted(df_temp["USUARIO_ATENCION"].dropna().unique())
+                
+                # Mostrar una muestra de los usuarios encontrados
+                st.info(f"📊 Se encontraron {len(usuarios_disponibles)} usuarios. Muestra: {usuarios_disponibles[:5]}")
                 
                 st.markdown("---")
                 st.markdown("#### 📊 Filtros de selección")
@@ -635,7 +652,7 @@ with tab2:
                         usuario_sel = st.multiselect(
                             "Seleccionar usuarios:", 
                             options=usuarios_disponibles,
-                            help="Selecciona uno o más usuarios del campo 'Usuario Atención'",
+                            help=f"Selecciona uno o más usuarios del campo '{col_usuario}'",
                             key="tab2_usuarios"
                         )
                     else:
@@ -644,6 +661,8 @@ with tab2:
             
             except Exception as e:
                 st.error(f"Error al procesar el archivo: {e}")
+                import traceback
+                st.code(traceback.format_exc())
                 st.stop()
 
     # --- PROCESAMIENTO PRINCIPAL (fuera del expander) ---
@@ -653,10 +672,10 @@ with tab2:
             df_tab2 = pd.read_excel(uploaded_file_tab2, skiprows=1)
             df_tab2.columns = df_tab2.columns.astype(str).str.strip()
             
-            # Renombrar columnas
+            # Renombrar columnas (usando la misma lógica)
             col_hora = encontrar_columna(df_tab2, ['hora llegada', 'hora_llegada', 'hora'])
             col_servicio = encontrar_columna(df_tab2, ['servicio'])
-            col_usuario = encontrar_columna(df_tab2, ['usuario atención', 'usuario_atencion', 'usuario'])
+            col_usuario = encontrar_columna(df_tab2, ['user atención', 'user_atencion', 'usuario atención', 'usuario_atencion', 'usuario', 'user'])
             col_tipo = encontrar_columna(df_tab2, ['tipo'])
             
             rename_dict = {
@@ -1020,7 +1039,6 @@ with tab2:
             st.code(traceback.format_exc())
     else:
         st.info("👆 Configura los parámetros y sube un archivo Excel para comenzar el análisis")
-
 
 # ============================================================================
 # PESTAÑA 3: ANÁLISIS DE AUDITORÍA DE ADMISIONES
