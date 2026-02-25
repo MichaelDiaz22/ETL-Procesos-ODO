@@ -535,7 +535,7 @@ with tab1:
         st.info("👆 Configura los parámetros y sube un archivo Excel para comenzar el análisis")
 
 # ============================================================================
-# PESTAÑA 2: ANÁLISIS DE TURNOS ATENDIDOS (CORREGIDO)
+# PESTAÑA 2: ANÁLISIS DE TURNOS ATENDIDOS (VERSIÓN FINAL CORREGIDA)
 # ============================================================================
 with tab2:
     st.header("📆 Análisis de turnos atendidos")
@@ -562,10 +562,6 @@ with tab2:
                 # Leer archivo saltando la primera fila
                 df_temp = pd.read_excel(uploaded_file_tab2, skiprows=1)
                 df_temp.columns = df_temp.columns.astype(str).str.strip()
-                
-                # Mostrar todas las columnas disponibles para depuración
-                with st.expander("Ver columnas disponibles en el archivo"):
-                    st.write("Columnas encontradas:", df_temp.columns.tolist())
                 
                 # Función mejorada para encontrar columna
                 def encontrar_columna(df, posibles_nombres):
@@ -596,13 +592,11 @@ with tab2:
                     st.error("No se encontró la columna de usuario. Buscamos: 'User Atención', 'usuario atención', etc.")
                     st.stop()
                 
-                st.success(f"✅ Columna de usuario encontrada: '{col_usuario}'")
-                
                 # Renombrar temporalmente para obtener datos
                 rename_dict_temp = {
                     col_hora: 'HORA_LLEGADA',
                     col_servicio: 'SERVICIO',
-                    col_usuario: 'USUARIO_ATENCION'  # Cambiado a USUARIO_ATENCION
+                    col_usuario: 'USUARIO_ATENCION'
                 }
                 if col_tipo:
                     rename_dict_temp[col_tipo] = 'TIPO'
@@ -620,10 +614,6 @@ with tab2:
                 fecha_min = df_temp["HORA_LLEGADA"].min().date()
                 fecha_max = df_temp["HORA_LLEGADA"].max().date()
                 servicios_disponibles = sorted(df_temp["SERVICIO"].dropna().unique())
-                usuarios_disponibles = sorted(df_temp["USUARIO_ATENCION"].dropna().unique())
-                
-                # Mostrar una muestra de los usuarios encontrados
-                st.info(f"📊 Se encontraron {len(usuarios_disponibles)} usuarios. Muestra: {usuarios_disponibles[:5]}")
                 
                 st.markdown("---")
                 st.markdown("#### 📊 Filtros de selección")
@@ -641,23 +631,45 @@ with tab2:
                 with col_f2:
                     st.markdown("##### 🏥 Servicios")
                     if servicios_disponibles:
-                        servicio_sel = st.multiselect("Seleccionar servicios:", servicios_disponibles, key="tab2_servicios")
+                        servicio_sel = st.multiselect(
+                            "Seleccionar servicios:", 
+                            servicios_disponibles, 
+                            key="tab2_servicios",
+                            help="Selecciona uno o más servicios para filtrar los datos"
+                        )
                     else:
                         servicio_sel = []
                         st.info("No hay servicios disponibles")
                 
                 with col_f3:
                     st.markdown("##### 👤 Usuarios (Gestor de acceso)")
-                    if usuarios_disponibles:
+                    
+                    # Aplicar filtros de fecha y servicios para obtener usuarios disponibles
+                    df_filtro_base = df_temp[
+                        (df_temp["HORA_LLEGADA"].dt.date >= fecha_ini) & 
+                        (df_temp["HORA_LLEGADA"].dt.date <= fecha_fin)
+                    ].copy()
+                    
+                    # Aplicar filtro de servicios si hay alguno seleccionado
+                    if servicio_sel:
+                        df_filtro_base = df_filtro_base[df_filtro_base["SERVICIO"].isin(servicio_sel)]
+                    
+                    # Obtener usuarios únicos que tienen registros en el rango de fechas y servicios seleccionados
+                    usuarios_disponibles_filtrados = sorted(df_filtro_base["USUARIO_ATENCION"].dropna().unique())
+                    
+                    # Mostrar información de cuántos usuarios están disponibles
+                    st.caption(f"📊 {len(usuarios_disponibles_filtrados)} usuarios disponibles para los filtros seleccionados")
+                    
+                    if usuarios_disponibles_filtrados:
                         usuario_sel = st.multiselect(
                             "Seleccionar usuarios:", 
-                            options=usuarios_disponibles,
-                            help=f"Selecciona uno o más usuarios del campo '{col_usuario}'",
+                            options=usuarios_disponibles_filtrados,
+                            help=f"Usuarios con registros en el rango de fechas y servicios seleccionados",
                             key="tab2_usuarios"
                         )
                     else:
                         usuario_sel = []
-                        st.info("No hay usuarios disponibles")
+                        st.info("No hay usuarios disponibles para los filtros seleccionados")
             
             except Exception as e:
                 st.error(f"Error al procesar el archivo: {e}")
@@ -681,7 +693,7 @@ with tab2:
             rename_dict = {
                 col_hora: 'HORA_LLEGADA',
                 col_servicio: 'SERVICIO',
-                col_usuario: 'USUARIO_ATENCION'  # Cambiado a USUARIO_ATENCION
+                col_usuario: 'USUARIO_ATENCION'
             }
             if col_tipo:
                 rename_dict[col_tipo] = 'TIPO'
@@ -718,7 +730,8 @@ with tab2:
             **Configuración de análisis:**
             - **Rango:** {fecha_ini} a {fecha_fin}
             - **Servicios:** {len(servicio_sel)} seleccionados
-            - **Usuarios:** {len(usuario_sel)} seleccionados
+            - **Usuarios disponibles en filtros:** {len(usuarios_disponibles_filtrados) if 'usuarios_disponibles_filtrados' in locals() else 0}
+            - **Usuarios seleccionados:** {len(usuario_sel) if usuario_sel else 0}
             - **Registros analizados (con filtro usuarios):** {len(df_filtrado):,}
             """)
             
@@ -810,7 +823,7 @@ with tab2:
                 st.caption(f"📊 Evolución diaria de llamados del {fecha_ini} al {fecha_fin}")
                 
                 # ============================================================
-                # NUEVA TABLA: Usuarios seleccionados con conteo de llamados
+                # TABLA: Usuarios seleccionados con conteo de llamados
                 # ============================================================
                 st.divider()
                 st.subheader("👥 Detalle de Llamados por Usuario Seleccionado")
@@ -856,8 +869,8 @@ with tab2:
                         hide_index=True,
                         column_config={
                             "Usuario": "👤 Usuario Atención",
-                            "Llamados Manuales": st.column_config.NumberColumn("Manuales", format="%d"),
-                            "Llamados Automáticos": st.column_config.NumberColumn("Automáticos", format="%d")
+                            "Llamados Manuales": st.column_config.NumberColumn("📞 Manuales", format="%d"),
+                            "Llamados Automáticos": st.column_config.NumberColumn("🤖 Automáticos", format="%d")
                         }
                     )
                     
@@ -869,6 +882,9 @@ with tab2:
                         st.metric("Total Llamados Manuales", sum(conteos_manuales))
                     with col_total3:
                         st.metric("Total Llamados Automáticos", sum(conteos_automaticos))
+                    
+                    # Mostrar información adicional sobre los servicios
+                    st.caption(f"📊 Basado en {len(servicio_sel)} servicio(s) seleccionado(s): {', '.join(servicio_sel) if servicio_sel else 'Todos'}")
                 
                 else:
                     st.info("👆 Selecciona usuarios en el filtro para ver el detalle de llamados")
@@ -986,7 +1002,7 @@ with tab2:
             top_n = min(10, len(tabla_llamados))
             top_usuarios = tabla_llamados.head(top_n)
             
-            # Crear DataFrame para el gráfico - ya viene ordenado por tabla_llamados.sort_values('TOTAL', ascending=False)
+            # Crear DataFrame para el gráfico
             chart_data = pd.DataFrame({
                 'Usuario': top_usuarios.index,
                 'Promedio Diario': top_usuarios['TOTAL'].values
@@ -1017,7 +1033,7 @@ with tab2:
                             f"{fecha_ini} a {fecha_fin}",
                             dia_sel,
                             ', '.join(servicio_sel) if servicio_sel else 'Todos',
-                            ', '.join(usuario_sel) if usuario_sel else 'Todos',
+                            ', '.join(usuario_sel) if usuario_sel else 'Ninguno',
                             len(df_proceso)
                         ]
                     })
@@ -1039,6 +1055,7 @@ with tab2:
             st.code(traceback.format_exc())
     else:
         st.info("👆 Configura los parámetros y sube un archivo Excel para comenzar el análisis")
+        
 
 # ============================================================================
 # PESTAÑA 3: ANÁLISIS DE AUDITORÍA DE ADMISIONES
