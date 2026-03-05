@@ -26,7 +26,7 @@ with tab1:
             # Carga de archivo
             uploaded_file = st.file_uploader("📁 Sube tu archivo Excel (.xlsx)", 
                                             type=["xlsx"], 
-                                            help="Archivo debe contener columnas: 'FECHA CREACION', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'",
+                                            help="Archivo debe contener columnas: 'FECHA INGRESO', 'CENTRO ATENCION', 'USUARIO CREA INGRESO'",
                                             key="tab1_file")
         
         with col2:
@@ -39,11 +39,11 @@ with tab1:
             try:
                 # Leer el archivo para obtener opciones de filtros
                 df_temp = pd.read_excel(uploaded_file)
-                df_temp["FECHA CREACION"] = pd.to_datetime(df_temp["FECHA CREACION"], errors='coerce')
-                df_temp = df_temp.dropna(subset=["FECHA CREACION"])
+                df_temp["FECHA INGRESO"] = pd.to_datetime(df_temp["FECHA INGRESO"], errors='coerce')
+                df_temp = df_temp.dropna(subset=["FECHA INGRESO"])
                 
-                fecha_minima = df_temp["FECHA CREACION"].min().date()
-                fecha_maxima = df_temp["FECHA CREACION"].max().date()
+                fecha_minima = df_temp["FECHA INGRESO"].min().date()
+                fecha_maxima = df_temp["FECHA INGRESO"].max().date()
                 centros_disponibles = sorted(df_temp["CENTRO ATENCION"].dropna().unique())
                 
                 st.markdown("---")
@@ -89,8 +89,8 @@ with tab1:
                     
                     # Aplicar filtros de fecha y centros para obtener usuarios disponibles
                     df_filtro_base = df_temp[
-                        (df_temp["FECHA CREACION"].dt.date >= fecha_inicio) & 
-                        (df_temp["FECHA CREACION"].dt.date <= fecha_fin)
+                        (df_temp["FECHA INGRESO"].dt.date >= fecha_inicio) & 
+                        (df_temp["FECHA INGRESO"].dt.date <= fecha_fin)
                     ].copy()
                     
                     # Aplicar filtro de centros si hay alguno seleccionado
@@ -123,13 +123,13 @@ with tab1:
         try:
             # Leer el archivo nuevamente para procesamiento
             df = pd.read_excel(uploaded_file)
-            df["FECHA CREACION"] = pd.to_datetime(df["FECHA CREACION"], errors='coerce')
-            df = df.dropna(subset=["FECHA CREACION"])
+            df["FECHA INGRESO"] = pd.to_datetime(df["FECHA INGRESO"], errors='coerce')
+            df = df.dropna(subset=["FECHA INGRESO"])
             
             # DataFrame base con filtros de fecha y centros
             df_base = df[
-                (df["FECHA CREACION"].dt.date >= fecha_inicio) & 
-                (df["FECHA CREACION"].dt.date <= fecha_fin)
+                (df["FECHA INGRESO"].dt.date >= fecha_inicio) & 
+                (df["FECHA INGRESO"].dt.date <= fecha_fin)
             ]
             
             if centro_sel:
@@ -170,10 +170,10 @@ with tab1:
                 
                 # Preparar datos
                 df_proceso = df_filtrado.copy()
-                df_proceso['FECHA'] = df_proceso['FECHA CREACION'].dt.date
-                df_proceso['HORA'] = df_proceso['FECHA CREACION'].dt.hour
-                df_proceso['DIA_SEMANA'] = df_proceso['FECHA CREACION'].dt.day_name()
-                df_proceso['DIA_SEMANA_NUM'] = df_proceso['FECHA CREACION'].dt.dayofweek
+                df_proceso['FECHA'] = df_proceso['FECHA INGRESO'].dt.date
+                df_proceso['HORA'] = df_proceso['FECHA INGRESO'].dt.hour
+                df_proceso['DIA_SEMANA'] = df_proceso['FECHA INGRESO'].dt.day_name()
+                df_proceso['DIA_SEMANA_NUM'] = df_proceso['FECHA INGRESO'].dt.dayofweek
                 
                 # Mapeo de días
                 mapa_dias = {
@@ -523,7 +523,7 @@ with tab1:
                             # Crear tabla pivote: ENTIDAD vs USUARIOS
                             tabla_pivote = pd.pivot_table(
                                 df_entidades,
-                                values='FECHA CREACION',
+                                values='FECHA INGRESO',
                                 index='ENTIDAD',
                                 columns='USUARIO CREA INGRESO',
                                 aggfunc='count',
