@@ -1012,13 +1012,29 @@ with tab2:
                                 hora_llegada_actual = row['HORA_LLEGADA']
                                 hora_finalizacion_actual = row['HORA_FINALIZACION'] if pd.notna(row['HORA_FINALIZACION']) else None
                                 
+                                # Verificar si es sábado (5) o domingo (6)
+                                dia_semana = row['HORA_LLEGADA'].weekday()
+                                if dia_semana >= 5:  # 5 = sábado, 6 = domingo
+                                    fecha_anterior = fecha_actual
+                                    if hora_finalizacion_actual is not None:
+                                        hora_finalizacion_anterior = hora_finalizacion_actual
+                                    continue  # Omitir fines de semana
+                                
+                                # Verificar si es después de las 3 PM (15:00)
+                                hora_dia = row['HORA_LLEGADA'].hour
+                                if hora_dia >= 15:  # 15 = 3 PM
+                                    fecha_anterior = fecha_actual
+                                    if hora_finalizacion_actual is not None:
+                                        hora_finalizacion_anterior = hora_finalizacion_actual
+                                    continue  # Omitir después de 3 PM
+                                
                                 # Si tenemos un registro anterior del mismo día
                                 if hora_finalizacion_anterior is not None and fecha_anterior == fecha_actual:
                                     # Calcular tiempo de espera = hora_llegada_actual - hora_finalizacion_anterior
                                     tiempo_espera = (hora_llegada_actual - hora_finalizacion_anterior).total_seconds() / 60  # en minutos
                                     
-                                    # Solo considerar tiempos positivos y razonables (menos de 24 horas)
-                                    if tiempo_espera > 0 and tiempo_espera < 1440:  # menos de 24 horas
+                                    # Solo considerar tiempos positivos, menores a 50 minutos y mayores que 0
+                                    if 0 < tiempo_espera < 50:  # Excluir tiempos >= 50 minutos
                                         tiempos_espera.append(tiempo_espera)
                                 
                                 # Actualizar para el siguiente registro
@@ -1061,7 +1077,7 @@ with tab2:
                             "⏱️ Tiempo promedio de espera entre atenciones (min)": st.column_config.NumberColumn(
                                 "⏱️ Tiempo prom. espera entre atenciones", 
                                 format="%.1f min",
-                                help="Promedio del tiempo transcurrido entre la finalización de una atención y el inicio de la siguiente (mismo día)"
+                                help="Promedio del tiempo entre atenciones (mismo día, antes de 3 PM, excluye fines de semana y tiempos > 50 min)"
                             )
                         }
                     )
@@ -1101,12 +1117,16 @@ with tab2:
                         1. Para cada usuario, se ordenan sus atenciones por hora de llegada
                         2. Se identifica la hora de finalización de una atención
                         3. Se calcula la diferencia entre la hora de llegada de la siguiente atención y la hora de finalización de la atención anterior
-                        4. Este cálculo solo se realiza cuando ambas atenciones ocurren el **mismo día**
-                        5. Se promedian todos estos tiempos de espera para obtener el valor mostrado
+                        
+                        **Reglas de exclusión:**
+                        - ❌ Se excluyen los registros de **sábados y domingos**
+                        - ❌ Se excluyen las atenciones **después de las 3:00 PM**
+                        - ❌ Se excluyen tiempos de espera **mayores o iguales a 50 minutos**
+                        - ✅ Solo se consideran cuando ambas atenciones ocurren el **mismo día**
                         
                         **Fórmula:** Espera = Hora Llegada (siguiente atención) - Hora Finalización (atención anterior)
                         
-                        Este indicador muestra el tiempo promedio que transcurre entre que un usuario termina una atención y comienza la siguiente.
+                        Este indicador muestra el tiempo promedio que transcurre entre que un usuario termina una atención y comienza la siguiente, considerando solo horario laboral normal (lunes a viernes antes de 3 PM).
                         """)
 
                 else:
