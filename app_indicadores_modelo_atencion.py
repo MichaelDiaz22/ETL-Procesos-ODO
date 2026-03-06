@@ -1074,7 +1074,7 @@ with tab2:
                             if not df_tiempos_validos.empty:
                                 # Calcular tiempo ponderado por la cantidad de llamados
                                 # Multiplicar cada tiempo por su cantidad de llamados, sumar, y dividir entre el total de llamados
-                                total_ponderado = (df_tiempos_validos['TIEMPO_ATENCION'] * df_tiempos_validos['LLAMADOS']).sum()
+                                total_ponderado = (df_tiempos_validos['TIEMPO_ATENCION'] / df_tiempos_validos['LLAMADOS']).sum()
                                 total_llamados = df_tiempos_validos['LLAMADOS'].sum()
                                 
                                 if total_llamados > 0:
