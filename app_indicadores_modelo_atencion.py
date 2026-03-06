@@ -1066,19 +1066,39 @@ with tab2:
                             conteos_manuales.append(0)
                             conteos_automaticos.append(0)
                         
-                        # Calcular tiempo promedio de atención (ponderado por la cantidad de llamados)
+                        # Calcular tiempo promedio de atención (por llamado individual)
                         if 'TIEMPO_ATENCION' in df_usuario.columns:
                             # Filtrar valores válidos (no nulos y mayores que 0)
                             df_tiempos_validos = df_usuario[df_usuario['TIEMPO_ATENCION'].notna() & (df_usuario['TIEMPO_ATENCION'] > 0)]
                             
                             if not df_tiempos_validos.empty:
-                                # Calcular tiempo ponderado por la cantidad de llamados
-                                # Multiplicar cada tiempo por su cantidad de llamados, sumar, y dividir entre el total de llamados
-                                total_ponderado = (df_tiempos_validos['TIEMPO_ATENCION'] / df_tiempos_validos['LLAMADOS']).sum()
-                                total_llamados = df_tiempos_validos['LLAMADOS'].sum()
+                                # Calcular tiempo por llamado individual
+                                tiempos_por_llamado = []
                                 
-                                if total_llamados > 0:
-                                    tiempo_prom_atencion = round(total_ponderado / total_llamados, 1)
+                                for _, row in df_tiempos_validos.iterrows():
+                                    # Verificar si es viernes (4) - excluir
+                                    dia_semana = row['HORA_LLEGADA'].weekday()
+                                    if dia_semana == 4:  # 4 = viernes
+                                        continue  # Excluir viernes
+                                    
+                                    # Verificar si es después de las 3 PM (15:00)
+                                    hora_dia = row['HORA_LLEGADA'].hour
+                                    if hora_dia >= 15:  # 15 = 3 PM
+                                        continue  # Excluir después de 3 PM
+                                    
+                                    tiempo_atencion = row['TIEMPO_ATENCION']
+                                    llamados = row['LLAMADOS'] if pd.notna(row['LLAMADOS']) and row['LLAMADOS'] > 0 else 1
+                                    
+                                    # Tiempo por llamado individual
+                                    tiempo_por_llamado = tiempo_atencion / llamados
+                                    
+                                    # Solo considerar tiempos razonables (menos de 60 minutos por llamado)
+                                    if 0 < tiempo_por_llamado < 60:
+                                        tiempos_por_llamado.append(tiempo_por_llamado)
+                                
+                                if tiempos_por_llamado:
+                                    # Promedio simple de tiempos por llamado
+                                    tiempo_prom_atencion = round(sum(tiempos_por_llamado) / len(tiempos_por_llamado), 1)
                                 else:
                                     tiempo_prom_atencion = 0
                             else:
@@ -1087,13 +1107,12 @@ with tab2:
                             tiempo_prom_atencion = 0
                         tiempos_promedio_atencion.append(tiempo_prom_atencion)
                         
-                        # Calcular tiempo promedio de espera entre atenciones
+                        # Calcular tiempo promedio de espera entre atenciones (por llamado individual)
                         if 'HORA_FINALIZACION' in df_usuario.columns and not df_usuario.empty:
                             # Ordenar por hora de llegada
                             df_usuario = df_usuario.sort_values('HORA_LLEGADA')
                             
-                            tiempos_espera_ponderados = []  # Lista para almacenar los tiempos de espera ponderados
-                            pesos = []  # Lista para almacenar los pesos (cantidad de llamados)
+                            tiempos_espera_por_llamado = []  # Lista para almacenar los tiempos de espera por llamado
                             
                             fecha_anterior = None
                             hora_finalizacion_anterior = None
@@ -1102,15 +1121,22 @@ with tab2:
                                 fecha_actual = row['HORA_LLEGADA'].date()
                                 hora_llegada_actual = row['HORA_LLEGADA']
                                 hora_finalizacion_actual = row['HORA_FINALIZACION'] if pd.notna(row['HORA_FINALIZACION']) else None
-                                llamados_actual = row['LLAMADOS'] if pd.notna(row['LLAMADOS']) else 1
+                                llamados_actual = row['LLAMADOS'] if pd.notna(row['LLAMADOS']) and row['LLAMADOS'] > 0 else 1
                                 
-                                # Verificar si es sábado (5) o domingo (6)
+                                # Verificar si es viernes (4) - excluir
                                 dia_semana = row['HORA_LLEGADA'].weekday()
-                                if dia_semana >= 4:  # 4 = viernes, 5 = sábado, 6 = domingo
+                                if dia_semana == 4:  # 4 = viernes
                                     fecha_anterior = fecha_actual
                                     if hora_finalizacion_actual is not None:
                                         hora_finalizacion_anterior = hora_finalizacion_actual
-                                    continue  # Omitir fines de semana
+                                    continue  # Excluir viernes
+                                
+                                # Verificar si es sábado (5) o domingo (6)
+                                if dia_semana >= 5:  # 5 = sábado, 6 = domingo
+                                    fecha_anterior = fecha_actual
+                                    if hora_finalizacion_actual is not None:
+                                        hora_finalizacion_anterior = hora_finalizacion_actual
+                                    continue  # Excluir fines de semana
                                 
                                 # Verificar si es después de las 3 PM (15:00)
                                 hora_dia = row['HORA_LLEGADA'].hour
@@ -1118,7 +1144,7 @@ with tab2:
                                     fecha_anterior = fecha_actual
                                     if hora_finalizacion_actual is not None:
                                         hora_finalizacion_anterior = hora_finalizacion_actual
-                                    continue  # Omitir después de 3 PM
+                                    continue  # Excluir después de 3 PM
                                 
                                 # Si tenemos un registro anterior del mismo día
                                 if hora_finalizacion_anterior is not None and fecha_anterior == fecha_actual:
@@ -1127,9 +1153,15 @@ with tab2:
                                     
                                     # Solo considerar tiempos positivos, menores a 50 minutos y mayores que 0
                                     if 0 < tiempo_espera < 50:  # Excluir tiempos >= 50 minutos
-                                        # Para el cálculo del promedio, cada tiempo de espera se pondera por la cantidad de llamados del registro actual
-                                        tiempos_espera_ponderados.append(tiempo_espera * llamados_actual)
-                                        pesos.append(llamados_actual)
+                                        # Dividir el tiempo de espera por la cantidad de llamados
+                                        # para obtener el tiempo de espera por llamado individual
+                                        tiempo_espera_por_llamado = tiempo_espera / llamados_actual
+                                        
+                                        # Solo considerar tiempos razonables
+                                        if 0 < tiempo_espera_por_llamado < 60:
+                                            # Agregar el tiempo por llamado (cada llamado tiene el mismo peso)
+                                            for _ in range(llamados_actual):
+                                                tiempos_espera_por_llamado.append(tiempo_espera_por_llamado)
                                 
                                 # Actualizar para el siguiente registro
                                 fecha_anterior = fecha_actual
@@ -1139,9 +1171,9 @@ with tab2:
                                     # Si no hay hora de finalización, usar la hora de llegada como aproximación
                                     hora_finalizacion_anterior = hora_llegada_actual
                             
-                            # Calcular promedio ponderado de tiempos de espera
-                            if tiempos_espera_ponderados and pesos:
-                                tiempo_promedio_espera = round(sum(tiempos_espera_ponderados) / sum(pesos), 1)
+                            # Calcular promedio simple de tiempos de espera por llamado
+                            if tiempos_espera_por_llamado:
+                                tiempo_promedio_espera = round(sum(tiempos_espera_por_llamado) / len(tiempos_espera_por_llamado), 1)
                             else:
                                 tiempo_promedio_espera = 0
                         else:
@@ -1172,12 +1204,12 @@ with tab2:
                             "⏱️ Tiempo promedio atención (min)": st.column_config.NumberColumn(
                                 "⏱️ Tiempo prom. atención", 
                                 format="%.1f min",
-                                help="Promedio ponderado por la cantidad de llamados por registro"
+                                help="Promedio del tiempo por llamado (tiempo_atencion / cantidad_llamados) - Excluye viernes y después de 3 PM"
                             ),
                             "⏱️ Tiempo promedio de espera entre atenciones (min)": st.column_config.NumberColumn(
                                 "⏱️ Tiempo prom. espera entre atenciones", 
                                 format="%.1f min",
-                                help="Promedio ponderado del tiempo entre atenciones (mismo día, antes de 3 PM, excluye fines de semana y tiempos > 50 min)"
+                                help="Promedio del tiempo de espera por llamado (mismo día, excluye viernes, fines de semana, después de 3 PM y tiempos > 50 min)"
                             )
                         }
                     )
@@ -1193,31 +1225,16 @@ with tab2:
                     with col_total4:
                         st.metric("Total General", sum(conteos_manuales) + sum(conteos_automaticos))
                     
-                    # Calcular promedios generales ponderados
-                    # Para tiempo de atención
-                    tiempos_atencion_con_pesos = []
-                    for i, usuario in enumerate(usuarios_para_tabla):
-                        df_usuario = df_filtrado[df_filtrado['USUARIO_ATENCION'] == usuario]
-                        if 'TIEMPO_ATENCION' in df_usuario.columns:
-                            df_tiempos_validos = df_usuario[df_usuario['TIEMPO_ATENCION'].notna() & (df_usuario['TIEMPO_ATENCION'] > 0)]
-                            if not df_tiempos_validos.empty:
-                                for _, row in df_tiempos_validos.iterrows():
-                                    tiempos_atencion_con_pesos.append((row['TIEMPO_ATENCION'], row['LLAMADOS']))
-                    
-                    if tiempos_atencion_con_pesos:
-                        total_ponderado_atencion = sum(tiempo * peso for tiempo, peso in tiempos_atencion_con_pesos)
-                        total_pesos_atencion = sum(peso for _, peso in tiempos_atencion_con_pesos)
-                        prom_atencion_gral = round(total_ponderado_atencion / total_pesos_atencion, 1) if total_pesos_atencion > 0 else 0
-                    else:
-                        prom_atencion_gral = 0
-                    
+                    # Calcular promedio general de atención (solo valores > 0)
+                    tiempos_atencion_todos = [t for t in tiempos_promedio_atencion if t > 0]
                     with col_total5:
-                        if prom_atencion_gral > 0:
+                        if tiempos_atencion_todos:
+                            prom_atencion_gral = round(sum(tiempos_atencion_todos) / len(tiempos_atencion_todos), 1)
                             st.metric("⏱️ Prom. atención general", f"{prom_atencion_gral} min")
                         else:
                             st.metric("⏱️ Prom. atención general", "N/A")
                     
-                    # Para tiempo de espera
+                    # Calcular promedio general de espera (solo valores > 0)
                     tiempos_espera_todos = [t for t in tiempos_promedio_espera_entre_atenciones if t > 0]
                     with col_total6:
                         if tiempos_espera_todos:
@@ -1242,21 +1259,22 @@ with tab2:
                         **Metodología de cálculo:**
                         
                         **⏱️ Tiempo promedio de atención:**
-                        - Se calcula como un **promedio ponderado** por la cantidad de llamados en cada registro
-                        - Fórmula: Suma(Tiempo_Atención × Cantidad_Llamados) / Suma(Cantidad_Llamados)
-                        - Esto asegura que registros con múltiples llamados tengan mayor peso en el promedio
+                        - Se calcula como **tiempo por llamado individual**: Tiempo_Atención / Cantidad_Llamados
+                        - Luego se promedian todos estos valores por llamado
+                        - **Exclusiones:** Se excluyen registros de viernes y después de las 3:00 PM
                         
                         **⏱️ Tiempo promedio de espera entre atenciones:**
                         - Se calcula: Hora Llegada (siguiente) - Hora Finalización (anterior)
-                        - También es un **promedio ponderado** por la cantidad de llamados del registro actual
+                        - Luego se divide entre la cantidad de llamados del registro actual
+                        - Finalmente se promedian todos estos valores por llamado
                         
                         **Reglas de exclusión para tiempo de espera:**
-                        - ❌ Se excluyen los registros de **sábados y domingos**
+                        - ❌ Se excluyen los registros de **viernes, sábados y domingos**
                         - ❌ Se excluyen las atenciones **después de las 3:00 PM**
                         - ❌ Se excluyen tiempos de espera **mayores o iguales a 50 minutos**
                         - ✅ Solo se consideran cuando ambas atenciones ocurren el **mismo día**
                         
-                        Este enfoque ponderado da una visión más precisa del rendimiento real por usuario.
+                        Este enfoque muestra el tiempo promedio **por llamado individual**, dando una visión más precisa del rendimiento real.
                         """)
 
                 else:
@@ -1308,7 +1326,7 @@ with tab2:
                 st.warning("No hay usuarios en los datos filtrados")
                 st.stop()
             
-            # Crear tabla de promedios
+            # Crear tabla de promedios (ponderada por cantidad de llamados)
             data = []
             for usuario in usuarios_proc:
                 df_u = df_proceso[df_proceso["USUARIO_ATENCION"] == usuario]
@@ -1317,8 +1335,10 @@ with tab2:
                     df_h = df_u[df_u['HORA'] == h]
                     if not df_h.empty:
                         # Promedio ponderado por cantidad de llamados
-                        conteo_ponderado = (df_h.groupby('FECHA')['LLAMADOS'].sum()).mean() if not df_h.empty else 0
-                        fila.append(round(conteo_ponderado, 2))
+                        total_llamados_hora = df_h['LLAMADOS'].sum()
+                        dias_con_registros = df_h['FECHA'].nunique()
+                        promedio = total_llamados_hora / dias_con_registros if dias_con_registros > 0 else 0
+                        fila.append(round(promedio, 2))
                     else:
                         fila.append(0)
                 data.append(fila)
