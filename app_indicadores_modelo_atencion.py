@@ -1106,7 +1106,7 @@ with tab2:
                                 
                                 # Verificar si es sábado (5) o domingo (6)
                                 dia_semana = row['HORA_LLEGADA'].weekday()
-                                if dia_semana >= 5:  # 5 = sábado, 6 = domingo
+                                if dia_semana >= 4:  # 4 = viernes, 5 = sábado, 6 = domingo
                                     fecha_anterior = fecha_actual
                                     if hora_finalizacion_actual is not None:
                                         hora_finalizacion_anterior = hora_finalizacion_actual
