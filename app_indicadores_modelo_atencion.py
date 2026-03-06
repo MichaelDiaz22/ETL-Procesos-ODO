@@ -1214,32 +1214,85 @@ with tab2:
                         }
                     )
                     
-                    # Mostrar totales
+                    # Calcular totales generales
+                    total_manuales_gral = sum(conteos_manuales)
+                    total_automaticos_gral = sum(conteos_automaticos)
+                    total_general_llamados = total_manuales_gral + total_automaticos_gral
+                    
+                    # Calcular porcentajes para los totales
+                    pct_manual_gral = (total_manuales_gral / total_general_llamados * 100) if total_general_llamados > 0 else 0
+                    pct_auto_gral = (total_automaticos_gral / total_general_llamados * 100) if total_general_llamados > 0 else 0
+                    
+                    # Calcular promedios generales
+                    tiempos_atencion_todos = [t for t in tiempos_promedio_atencion if t > 0]
+                    prom_atencion_gral = round(sum(tiempos_atencion_todos) / len(tiempos_atencion_todos), 1) if tiempos_atencion_todos else 0
+                    
+                    tiempos_espera_todos = [t for t in tiempos_promedio_espera_entre_atenciones if t > 0]
+                    prom_espera_gral = round(sum(tiempos_espera_todos) / len(tiempos_espera_todos), 1) if tiempos_espera_todos else 0
+                    
+                    # Estándares
+                    ESTANDAR_ATENCION = 2.5  # minutos
+                    ESTANDAR_ESPERA = 5.0    # minutos
+                    
+                    # Calcular diferencias con estándares
+                    diff_atencion = prom_atencion_gral - ESTANDAR_ATENCION if prom_atencion_gral > 0 else 0
+                    diff_atencion_pct = (diff_atencion / ESTANDAR_ATENCION * 100) if ESTANDAR_ATENCION > 0 else 0
+                    
+                    diff_espera = prom_espera_gral - ESTANDAR_ESPERA if prom_espera_gral > 0 else 0
+                    diff_espera_pct = (diff_espera / ESTANDAR_ESPERA * 100) if ESTANDAR_ESPERA > 0 else 0
+                    
+                    # Mostrar totales con porcentajes y comparaciones con estándares
+                    st.markdown("##### 📊 Resumen General")
+                    
                     col_total1, col_total2, col_total3, col_total4, col_total5, col_total6 = st.columns(6)
+                    
                     with col_total1:
                         st.metric(f"Total {titulo_tabla}", len(usuarios_para_tabla))
-                    with col_total2:
-                        st.metric("Total Llamados Manuales", sum(conteos_manuales))
-                    with col_total3:
-                        st.metric("Total Llamados Automáticos", sum(conteos_automaticos))
-                    with col_total4:
-                        st.metric("Total General", sum(conteos_manuales) + sum(conteos_automaticos))
                     
-                    # Calcular promedio general de atención (solo valores > 0)
-                    tiempos_atencion_todos = [t for t in tiempos_promedio_atencion if t > 0]
+                    with col_total2:
+                        delta_manual = f"{pct_manual_gral:+.1f}% del total"
+                        st.metric(
+                            "Total Llamados Manuales", 
+                            f"{total_manuales_gral:,}",
+                            delta=delta_manual,
+                            delta_color="off"
+                        )
+                    
+                    with col_total3:
+                        delta_auto = f"{pct_auto_gral:+.1f}% del total"
+                        st.metric(
+                            "Total Llamados Automáticos", 
+                            f"{total_automaticos_gral:,}",
+                            delta=delta_auto,
+                            delta_color="off"
+                        )
+                    
+                    with col_total4:
+                        st.metric("Total General", f"{total_general_llamados:,}")
+                    
                     with col_total5:
-                        if tiempos_atencion_todos:
-                            prom_atencion_gral = round(sum(tiempos_atencion_todos) / len(tiempos_atencion_todos), 1)
-                            st.metric("⏱️ Prom. atención general", f"{prom_atencion_gral} min")
+                        if prom_atencion_gral > 0:
+                            delta_atencion = f"{diff_atencion:+.1f} min vs estándar ({diff_atencion_pct:+.1f}%)"
+                            st.metric(
+                                "⏱️ Prom. atención general", 
+                                f"{prom_atencion_gral} min",
+                                delta=delta_atencion,
+                                delta_color="inverse" if diff_atencion > 0 else "normal"
+                            )
+                            st.caption(f"Estándar: {ESTANDAR_ATENCION} min")
                         else:
                             st.metric("⏱️ Prom. atención general", "N/A")
                     
-                    # Calcular promedio general de espera (solo valores > 0)
-                    tiempos_espera_todos = [t for t in tiempos_promedio_espera_entre_atenciones if t > 0]
                     with col_total6:
-                        if tiempos_espera_todos:
-                            prom_espera_gral = round(sum(tiempos_espera_todos) / len(tiempos_espera_todos), 1)
-                            st.metric("⏱️ Prom. espera general", f"{prom_espera_gral} min")
+                        if prom_espera_gral > 0:
+                            delta_espera = f"{diff_espera:+.1f} min vs estándar ({diff_espera_pct:+.1f}%)"
+                            st.metric(
+                                "⏱️ Prom. espera general", 
+                                f"{prom_espera_gral} min",
+                                delta=delta_espera,
+                                delta_color="inverse" if diff_espera > 0 else "normal"
+                            )
+                            st.caption(f"Estándar: {ESTANDAR_ESPERA} min")
                         else:
                             st.metric("⏱️ Prom. espera general", "N/A")
                     
@@ -1255,13 +1308,14 @@ with tab2:
                     
                     # Mostrar explicación del cálculo
                     with st.expander("ℹ️ ¿Cómo se calculan los tiempos promedios?"):
-                        st.markdown("""
+                        st.markdown(f"""
                         **Metodología de cálculo:**
                         
                         **⏱️ Tiempo promedio de atención:**
                         - Se calcula como **tiempo por llamado individual**: Tiempo_Atención / Cantidad_Llamados
                         - Luego se promedian todos estos valores por llamado
                         - **Exclusiones:** Se excluyen registros de viernes y después de las 3:00 PM
+                        - **Estándar de comparación:** {ESTANDAR_ATENCION} minutos por llamado
                         
                         **⏱️ Tiempo promedio de espera entre atenciones:**
                         - Se calcula: Hora Llegada (siguiente) - Hora Finalización (anterior)
@@ -1273,6 +1327,7 @@ with tab2:
                         - ❌ Se excluyen las atenciones **después de las 3:00 PM**
                         - ❌ Se excluyen tiempos de espera **mayores o iguales a 50 minutos**
                         - ✅ Solo se consideran cuando ambas atenciones ocurren el **mismo día**
+                        - **Estándar de comparación:** {ESTANDAR_ESPERA} minutos por llamado
                         
                         Este enfoque muestra el tiempo promedio **por llamado individual**, dando una visión más precisa del rendimiento real.
                         """)
