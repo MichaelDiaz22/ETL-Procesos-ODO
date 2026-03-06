@@ -1095,8 +1095,7 @@ with tab2:
                             "Llamados Manuales": st.column_config.NumberColumn("Manuales", format="%d"),
                             "Llamados Automáticos": st.column_config.NumberColumn("Automáticos", format="%d"),
                             "TOTAL Registros": st.column_config.NumberColumn("📊 Total", format="%d"),
-                            "⏱️ Tiempo promedio atención (min)": st.column_config.NumberColumn("⏱️ Tiempo prom. atención", format="%.1f min"),
-                            "⏱️ Tiempo promedio espera (min)": st.column_config.NumberColumn("⏱️ Tiempo prom. espera", format="%.1f min")
+                            "⏱️ Tiempo promedio atención (min)": st.column_config.NumberColumn("⏱️ Tiempo prom. atención", format="%.1f min")
                         }
                     )
                     
