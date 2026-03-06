@@ -685,68 +685,44 @@ with tab2:
                                 return col_original
                     return None
                 
-                # Buscar columnas - ESPECÍFICAMENTE "User Atención"
-                col_hora = encontrar_columna(df_temp, ['hora llegada', 'hora_llegada', 'hora'])
+                # Buscar columnas
+                col_hora_llegada = encontrar_columna(df_temp, ['hora llegada', 'hora_llegada', 'hora'])
+                col_hora_finalizacion = encontrar_columna(df_temp, ['hora finalización', 'hora_finalizacion', 'hora fin', 'hora final', 'fechafin'])
                 col_servicio = encontrar_columna(df_temp, ['servicio'])
-                # Buscar específicamente "User Atención" (con espacio) y variantes
                 col_usuario = encontrar_columna(df_temp, ['user atención', 'user_atencion', 'usuario atención', 'usuario_atencion', 'usuario', 'user'])
                 col_tipo = encontrar_columna(df_temp, ['tipo'])
-                # Buscar columnas de tiempo
-                col_tiempo_atencion = encontrar_columna(df_temp, ['tiempo atención', 'tiempo_atencion', 'tiempo de atención', 'duración atención'])
-                col_tiempo_espera = encontrar_columna(df_temp, ['tiempo espera', 'tiempo_espera', 'tiempo de espera'])
                 
                 # Verificar si encontramos las columnas necesarias
-                if not all([col_hora, col_servicio]):
-                    st.error(f"No se encontraron las columnas de hora y servicio. Hora: {col_hora}, Servicio: {col_servicio}")
+                if not all([col_hora_llegada, col_servicio]):
+                    st.error(f"No se encontraron las columnas de hora y servicio. Hora Llegada: {col_hora_llegada}, Servicio: {col_servicio}")
                     st.stop()
                 
                 if not col_usuario:
                     st.error("No se encontró la columna de usuario. Buscamos: 'User Atención', 'usuario atención', etc.")
                     st.stop()
                 
+                if not col_hora_finalizacion:
+                    st.warning("No se encontró la columna de hora finalización. El tiempo de espera entre atenciones no podrá calcularse correctamente.")
+                
                 # Renombrar temporalmente para obtener datos
                 rename_dict_temp = {
-                    col_hora: 'HORA_LLEGADA',
+                    col_hora_llegada: 'HORA_LLEGADA',
                     col_servicio: 'SERVICIO',
                     col_usuario: 'USUARIO_ATENCION'
                 }
                 if col_tipo:
                     rename_dict_temp[col_tipo] = 'TIPO'
-                if col_tiempo_atencion:
-                    rename_dict_temp[col_tiempo_atencion] = 'TIEMPO_ATENCION'
-                if col_tiempo_espera:
-                    rename_dict_temp[col_tiempo_espera] = 'TIEMPO_ESPERA'
+                if col_hora_finalizacion:
+                    rename_dict_temp[col_hora_finalizacion] = 'HORA_FINALIZACION'
                 
                 df_temp = df_temp.rename(columns=rename_dict_temp)
                 
                 # Procesar fechas
                 df_temp["HORA_LLEGADA"] = pd.to_datetime(df_temp["HORA_LLEGADA"], errors='coerce')
-                df_temp = df_temp.dropna(subset=["HORA_LLEGADA"])
+                if 'HORA_FINALIZACION' in df_temp.columns:
+                    df_temp["HORA_FINALIZACION"] = pd.to_datetime(df_temp["HORA_FINALIZACION"], errors='coerce')
                 
-                # Procesar tiempos (convertir a minutos si es necesario)
-                for col_tiempo in ['TIEMPO_ATENCION', 'TIEMPO_ESPERA']:
-                    if col_tiempo in df_temp.columns:
-                        # Si es string, intentar convertir
-                        if df_temp[col_tiempo].dtype == 'object':
-                            # Función para convertir formato HH:MM:SS a minutos
-                            def tiempo_a_minutos(t):
-                                if pd.isna(t):
-                                    return np.nan
-                                try:
-                                    if isinstance(t, str):
-                                        partes = t.split(':')
-                                        if len(partes) == 3:
-                                            return int(partes[0]) * 60 + int(partes[1]) + int(partes[2]) / 60
-                                        elif len(partes) == 2:
-                                            return int(partes[0]) * 60 + int(partes[1])
-                                    return float(t)
-                                except:
-                                    return np.nan
-                            
-                            df_temp[col_tiempo] = df_temp[col_tiempo].apply(tiempo_a_minutos)
-                        else:
-                            # Si es numérico, asumir que está en minutos
-                            df_temp[col_tiempo] = pd.to_numeric(df_temp[col_tiempo], errors='coerce')
+                df_temp = df_temp.dropna(subset=["HORA_LLEGADA"])
                 
                 if df_temp.empty:
                     st.warning("No hay registros con fechas válidas")
@@ -796,7 +772,6 @@ with tab2:
                         df_filtro_base = df_filtro_base[df_filtro_base["SERVICIO"].isin(servicio_sel)]
                     
                     # Obtener usuarios únicos que tienen registros en el rango de fechas y servicios seleccionados
-                    # Convertir todos los valores a string para evitar errores de comparación
                     usuarios_disponibles_filtrados = sorted([str(u) for u in df_filtro_base["USUARIO_ATENCION"].dropna().unique()])
                     
                     # Mostrar información de cuántos usuarios están disponibles
@@ -827,55 +802,30 @@ with tab2:
             df_tab2.columns = df_tab2.columns.astype(str).str.strip()
             
             # Renombrar columnas (usando la misma lógica)
-            col_hora = encontrar_columna(df_tab2, ['hora llegada', 'hora_llegada', 'hora'])
+            col_hora_llegada = encontrar_columna(df_tab2, ['hora llegada', 'hora_llegada', 'hora'])
+            col_hora_finalizacion = encontrar_columna(df_tab2, ['hora finalización', 'hora_finalizacion', 'hora fin', 'hora final', 'fechafin'])
             col_servicio = encontrar_columna(df_tab2, ['servicio'])
             col_usuario = encontrar_columna(df_tab2, ['user atención', 'user_atencion', 'usuario atención', 'usuario_atencion', 'usuario', 'user'])
             col_tipo = encontrar_columna(df_tab2, ['tipo'])
-            col_tiempo_atencion = encontrar_columna(df_tab2, ['tiempo atención', 'tiempo_atencion', 'tiempo de atención', 'duración atención'])
-            col_tiempo_espera = encontrar_columna(df_tab2, ['tiempo espera', 'tiempo_espera', 'tiempo de espera'])
             
             rename_dict = {
-                col_hora: 'HORA_LLEGADA',
+                col_hora_llegada: 'HORA_LLEGADA',
                 col_servicio: 'SERVICIO',
                 col_usuario: 'USUARIO_ATENCION'
             }
             if col_tipo:
                 rename_dict[col_tipo] = 'TIPO'
-            if col_tiempo_atencion:
-                rename_dict[col_tiempo_atencion] = 'TIEMPO_ATENCION'
-            if col_tiempo_espera:
-                rename_dict[col_tiempo_espera] = 'TIEMPO_ESPERA'
+            if col_hora_finalizacion:
+                rename_dict[col_hora_finalizacion] = 'HORA_FINALIZACION'
             
             df_tab2 = df_tab2.rename(columns=rename_dict)
             
             # Procesar fechas
             df_tab2["HORA_LLEGADA"] = pd.to_datetime(df_tab2["HORA_LLEGADA"], errors='coerce')
-            df_tab2_limpio = df_tab2.dropna(subset=["HORA_LLEGADA"])
+            if 'HORA_FINALIZACION' in df_tab2.columns:
+                df_tab2["HORA_FINALIZACION"] = pd.to_datetime(df_tab2["HORA_FINALIZACION"], errors='coerce')
             
-            # Procesar tiempos (convertir a minutos si es necesario)
-            for col_tiempo in ['TIEMPO_ATENCION', 'TIEMPO_ESPERA']:
-                if col_tiempo in df_tab2_limpio.columns:
-                    # Si es string, intentar convertir
-                    if df_tab2_limpio[col_tiempo].dtype == 'object':
-                        # Función para convertir formato HH:MM:SS a minutos
-                        def tiempo_a_minutos(t):
-                            if pd.isna(t):
-                                return np.nan
-                            try:
-                                if isinstance(t, str):
-                                    partes = t.split(':')
-                                    if len(partes) == 3:
-                                        return int(partes[0]) * 60 + int(partes[1]) + int(partes[2]) / 60
-                                    elif len(partes) == 2:
-                                        return int(partes[0]) * 60 + int(partes[1])
-                                return float(t)
-                            except:
-                                return np.nan
-                        
-                        df_tab2_limpio[col_tiempo] = df_tab2_limpio[col_tiempo].apply(tiempo_a_minutos)
-                    else:
-                        # Si es numérico, asumir que está en minutos
-                        df_tab2_limpio[col_tiempo] = pd.to_numeric(df_tab2_limpio[col_tiempo], errors='coerce')
+            df_tab2_limpio = df_tab2.dropna(subset=["HORA_LLEGADA"])
             
             # DataFrame base para análisis (con filtros de fecha y servicios)
             df_base = df_tab2_limpio[
@@ -1027,8 +977,7 @@ with tab2:
                     # Calcular conteos y promedios para cada usuario
                     conteos_manuales = []
                     conteos_automaticos = []
-                    tiempos_promedio_atencion = []
-                    tiempos_promedio_espera = []
+                    tiempos_promedio_espera_entre_atenciones = []
                     
                     for usuario in usuarios_para_tabla:
                         # Filtrar datos para este usuario específico
@@ -1049,38 +998,52 @@ with tab2:
                             conteos_manuales.append(0)
                             conteos_automaticos.append(0)
                         
-                        # Calcular tiempo promedio de atención (si la columna existe)
-                        if 'TIEMPO_ATENCION' in df_usuario.columns:
-                            # Filtrar valores válidos (no nulos y mayores que 0)
-                            tiempos_atencion_validos = df_usuario['TIEMPO_ATENCION'].dropna()
-                            tiempos_atencion_validos = tiempos_atencion_validos[tiempos_atencion_validos > 0]
-                            if not tiempos_atencion_validos.empty:
-                                tiempo_prom_atencion = round(tiempos_atencion_validos.mean(), 1)
+                        # Calcular tiempo promedio de espera entre atenciones
+                        if 'HORA_FINALIZACION' in df_usuario.columns and not df_usuario.empty:
+                            # Ordenar por hora de llegada
+                            df_usuario = df_usuario.sort_values('HORA_LLEGADA')
+                            
+                            tiempos_espera = []
+                            fecha_anterior = None
+                            hora_finalizacion_anterior = None
+                            
+                            for idx, row in df_usuario.iterrows():
+                                fecha_actual = row['HORA_LLEGADA'].date()
+                                hora_llegada_actual = row['HORA_LLEGADA']
+                                hora_finalizacion_actual = row['HORA_FINALIZACION'] if pd.notna(row['HORA_FINALIZACION']) else None
+                                
+                                # Si tenemos un registro anterior del mismo día
+                                if hora_finalizacion_anterior is not None and fecha_anterior == fecha_actual:
+                                    # Calcular tiempo de espera = hora_llegada_actual - hora_finalizacion_anterior
+                                    tiempo_espera = (hora_llegada_actual - hora_finalizacion_anterior).total_seconds() / 60  # en minutos
+                                    
+                                    # Solo considerar tiempos positivos y razonables (menos de 24 horas)
+                                    if tiempo_espera > 0 and tiempo_espera < 1440:  # menos de 24 horas
+                                        tiempos_espera.append(tiempo_espera)
+                                
+                                # Actualizar para el siguiente registro
+                                fecha_anterior = fecha_actual
+                                if hora_finalizacion_actual is not None:
+                                    hora_finalizacion_anterior = hora_finalizacion_actual
+                                else:
+                                    # Si no hay hora de finalización, usar la hora de llegada como aproximación
+                                    hora_finalizacion_anterior = hora_llegada_actual
+                            
+                            # Calcular promedio de tiempos de espera
+                            if tiempos_espera:
+                                tiempo_promedio_espera = round(sum(tiempos_espera) / len(tiempos_espera), 1)
                             else:
-                                tiempo_prom_atencion = 0
+                                tiempo_promedio_espera = 0
                         else:
-                            tiempo_prom_atencion = 0
-                        tiempos_promedio_atencion.append(tiempo_prom_atencion)
+                            tiempo_promedio_espera = 0
                         
-                        # Calcular tiempo promedio de espera (si la columna existe)
-                        if 'TIEMPO_ESPERA' in df_usuario.columns:
-                            # Filtrar valores válidos (no nulos y mayores que 0)
-                            tiempos_espera_validos = df_usuario['TIEMPO_ESPERA'].dropna()
-                            tiempos_espera_validos = tiempos_espera_validos[tiempos_espera_validos > 0]
-                            if not tiempos_espera_validos.empty:
-                                tiempo_prom_espera = round(tiempos_espera_validos.mean(), 1)
-                            else:
-                                tiempo_prom_espera = 0
-                        else:
-                            tiempo_prom_espera = 0
-                        tiempos_promedio_espera.append(tiempo_prom_espera)
+                        tiempos_promedio_espera_entre_atenciones.append(tiempo_promedio_espera)
                     
                     # Agregar columnas al DataFrame
                     usuarios_df['Llamados Manuales'] = conteos_manuales
                     usuarios_df['Llamados Automáticos'] = conteos_automaticos
                     usuarios_df['TOTAL Registros'] = usuarios_df['Llamados Manuales'] + usuarios_df['Llamados Automáticos']
-                    usuarios_df['⏱️ Tiempo promedio atención (min)'] = tiempos_promedio_atencion
-                    usuarios_df['⏱️ Tiempo promedio espera (min)'] = tiempos_promedio_espera
+                    usuarios_df['⏱️ Tiempo promedio de espera entre atenciones (min)'] = tiempos_promedio_espera_entre_atenciones
                     
                     # Ordenar por total descendente
                     usuarios_df = usuarios_df.sort_values('TOTAL Registros', ascending=False)
@@ -1095,7 +1058,11 @@ with tab2:
                             "Llamados Manuales": st.column_config.NumberColumn("Manuales", format="%d"),
                             "Llamados Automáticos": st.column_config.NumberColumn("Automáticos", format="%d"),
                             "TOTAL Registros": st.column_config.NumberColumn("📊 Total", format="%d"),
-                            "⏱️ Tiempo promedio atención (min)": st.column_config.NumberColumn("⏱️ Tiempo prom. atención", format="%.1f min")
+                            "⏱️ Tiempo promedio de espera entre atenciones (min)": st.column_config.NumberColumn(
+                                "⏱️ Tiempo prom. espera entre atenciones", 
+                                format="%.1f min",
+                                help="Promedio del tiempo transcurrido entre la finalización de una atención y el inicio de la siguiente (mismo día)"
+                            )
                         }
                     )
                     
@@ -1110,25 +1077,37 @@ with tab2:
                     with col_total4:
                         st.metric("Total General", sum(conteos_manuales) + sum(conteos_automaticos))
                     
-                    # Calcular promedios generales de tiempo (solo valores > 0)
-                    tiempos_atencion_todos = [t for t in tiempos_promedio_atencion if t > 0]
-                    tiempos_espera_todos = [t for t in tiempos_promedio_espera if t > 0]
-                    
+                    # Calcular promedio general de tiempo de espera entre atenciones (solo valores > 0)
+                    tiempos_espera_todos = [t for t in tiempos_promedio_espera_entre_atenciones if t > 0]
                     with col_total5:
-                        if tiempos_atencion_todos:
-                            prom_atencion_gral = round(sum(tiempos_atencion_todos) / len(tiempos_atencion_todos), 1)
-                            st.metric("⏱️ Prom. atención general", f"{prom_atencion_gral} min")
+                        if tiempos_espera_todos:
+                            prom_espera_gral = round(sum(tiempos_espera_todos) / len(tiempos_espera_todos), 1)
+                            st.metric("⏱️ Prom. espera general", f"{prom_espera_gral} min")
                         else:
-                            st.metric("⏱️ Prom. atención general", "N/A")
+                            st.metric("⏱️ Prom. espera general", "N/A")
                     
                     # Mostrar información adicional
                     st.caption(f"📊 Basado en {len(servicio_sel)} servicio(s) seleccionado(s): {', '.join(servicio_sel) if servicio_sel else 'Todos'}")
                     
-                    # Mostrar advertencia si no se encontraron columnas de tiempo
-                    if 'TIEMPO_ATENCION' not in df_filtrado.columns:
-                        st.warning("⚠️ No se encontró la columna 'Tiempo Atención' en el archivo. Los valores de tiempo promedio de atención aparecen como 0.")
-                    if 'TIEMPO_ESPERA' not in df_filtrado.columns:
-                        st.warning("⚠️ No se encontró la columna 'Tiempo Espera' en el archivo. Los valores de tiempo promedio de espera aparecen como 0.")
+                    # Mostrar advertencia si no se encontró la columna de hora finalización
+                    if 'HORA_FINALIZACION' not in df_filtrado.columns:
+                        st.warning("⚠️ No se encontró la columna 'Hora Finalización' en el archivo. El tiempo de espera entre atenciones no pudo calcularse correctamente.")
+                    
+                    # Mostrar explicación del cálculo
+                    with st.expander("ℹ️ ¿Cómo se calcula el tiempo de espera entre atenciones?"):
+                        st.markdown("""
+                        **Tiempo promedio de espera entre atenciones** se calcula de la siguiente manera:
+                        
+                        1. Para cada usuario, se ordenan sus atenciones por hora de llegada
+                        2. Se identifica la hora de finalización de una atención
+                        3. Se calcula la diferencia entre la hora de llegada de la siguiente atención y la hora de finalización de la atención anterior
+                        4. Este cálculo solo se realiza cuando ambas atenciones ocurren el **mismo día**
+                        5. Se promedian todos estos tiempos de espera para obtener el valor mostrado
+                        
+                        **Fórmula:** Espera = Hora Llegada (siguiente atención) - Hora Finalización (atención anterior)
+                        
+                        Este indicador muestra el tiempo promedio que transcurre entre que un usuario termina una atención y comienza la siguiente.
+                        """)
 
                 else:
                     st.info("No hay usuarios para mostrar")
@@ -1275,7 +1254,7 @@ with tab2:
                     if 'df_completo' in locals():
                         df_completo.reset_index().to_excel(w, sheet_name='Evolución Diaria', index=False)
                     
-                    # Agregar la tabla de usuarios con totales y tiempos promedio
+                    # Agregar la tabla de usuarios con totales y tiempo de espera entre atenciones
                     if 'usuarios_df' in locals() and not usuarios_df.empty:
                         usuarios_df.to_excel(w, sheet_name='Detalle Usuarios', index=False)
                     
