@@ -951,13 +951,13 @@ with tab2:
                 
                 df_base['CLASIFICACION'] = df_base['TIPO'].apply(clasificar_llamado)
                 
-                # Agrupar por fecha y clasificación
+                # Crear DataFrame para el gráfico con la SUMA de LLAMADOS por día
                 df_temporal = df_base.copy()
-                df_temporal['FECHA_DT'] = pd.to_datetime(df_temporal['FECHA'] if 'FECHA' in df_temporal.columns else df_temporal['HORA_LLEGADA'].dt.date)
+                df_temporal['FECHA_DT'] = pd.to_datetime(df_temporal['HORA_LLEGADA'].dt.date)
                 
-                # Filtrar solo manuales y automáticos
-                df_manual = df_temporal[df_temporal['CLASIFICACION'] == 'MANUAL'].groupby('FECHA_DT').size().reset_index(name='MANUALES')
-                df_auto = df_temporal[df_temporal['CLASIFICACION'] == 'AUTOMÁTICO'].groupby('FECHA_DT').size().reset_index(name='AUTOMÁTICOS')
+                # Agrupar por fecha y clasificación, sumando la columna LLAMADOS
+                df_manual = df_temporal[df_temporal['CLASIFICACION'] == 'MANUAL'].groupby('FECHA_DT')['LLAMADOS'].sum().reset_index(name='MANUALES')
+                df_auto = df_temporal[df_temporal['CLASIFICACION'] == 'AUTOMÁTICO'].groupby('FECHA_DT')['LLAMADOS'].sum().reset_index(name='AUTOMÁTICOS')
                 
                 # Crear rango completo de fechas
                 fecha_inicio_dt = pd.to_datetime(fecha_ini)
@@ -975,7 +975,7 @@ with tab2:
                 df_completo['MANUALES'] = df_completo['MANUALES'].fillna(0).astype(int)
                 df_completo['AUTOMÁTICOS'] = df_completo['AUTOMÁTICOS'].fillna(0).astype(int)
                 
-                # Calcular totales
+                # Calcular totales (SUMA de LLAMADOS)
                 total_manuales = df_completo['MANUALES'].sum()
                 total_automaticos = df_completo['AUTOMÁTICOS'].sum()
                 total_general = total_manuales + total_automaticos
@@ -1055,12 +1055,12 @@ with tab2:
                         if not df_usuario.empty and 'TIPO' in df_usuario.columns:
                             df_usuario['CLASIF'] = df_usuario['TIPO'].apply(clasificar_llamado)
                             
-                            # Contar manuales (TODOS los registros, sin exclusiones)
-                            manuales = len(df_usuario[df_usuario['CLASIF'] == 'MANUAL'])
+                            # Contar manuales (SUMA de LLAMADOS, no cantidad de registros)
+                            manuales = df_usuario[df_usuario['CLASIF'] == 'MANUAL']['LLAMADOS'].sum()
                             conteos_manuales.append(manuales)
                             
-                            # Contar automáticos (TODOS los registros, sin exclusiones)
-                            automaticos = len(df_usuario[df_usuario['CLASIF'] == 'AUTOMÁTICO'])
+                            # Contar automáticos (SUMA de LLAMADOS, no cantidad de registros)
+                            automaticos = df_usuario[df_usuario['CLASIF'] == 'AUTOMÁTICO']['LLAMADOS'].sum()
                             conteos_automaticos.append(automaticos)
                         else:
                             conteos_manuales.append(0)
@@ -1184,12 +1184,12 @@ with tab2:
                     # Agregar columnas al DataFrame
                     usuarios_df['Llamados Manuales'] = conteos_manuales
                     usuarios_df['Llamados Automáticos'] = conteos_automaticos
-                    usuarios_df['TOTAL Registros'] = usuarios_df['Llamados Manuales'] + usuarios_df['Llamados Automáticos']
+                    usuarios_df['TOTAL Llamados'] = usuarios_df['Llamados Manuales'] + usuarios_df['Llamados Automáticos']
                     usuarios_df['⏱️ Tiempo promedio atención (min)'] = tiempos_promedio_atencion
                     usuarios_df['⏱️ Tiempo promedio de espera entre atenciones (min)'] = tiempos_promedio_espera_entre_atenciones
                     
                     # Ordenar por total descendente
-                    usuarios_df = usuarios_df.sort_values('TOTAL Registros', ascending=False)
+                    usuarios_df = usuarios_df.sort_values('TOTAL Llamados', ascending=False)
                     
                     # Mostrar la tabla
                     st.dataframe(
@@ -1200,7 +1200,7 @@ with tab2:
                             "Usuario": "👤 Usuario Atención",
                             "Llamados Manuales": st.column_config.NumberColumn("Manuales", format="%d"),
                             "Llamados Automáticos": st.column_config.NumberColumn("Automáticos", format="%d"),
-                            "TOTAL Registros": st.column_config.NumberColumn("📊 Total", format="%d"),
+                            "TOTAL Llamados": st.column_config.NumberColumn("📊 Total Llamados", format="%d"),
                             "⏱️ Tiempo promedio atención (min)": st.column_config.NumberColumn(
                                 "⏱️ Tiempo prom. atención", 
                                 format="%.1f min",
@@ -1214,19 +1214,10 @@ with tab2:
                         }
                     )
                     
-                    # Calcular totales generales (SIN EXCLUSIONES - usando df_filtrado directamente)
-                    # Clasificar todos los registros para obtener totales precisos
-                    df_clasificado = df_filtrado.copy()
-                    if 'TIPO' in df_clasificado.columns:
-                        df_clasificado['CLASIF_TOTAL'] = df_clasificado['TIPO'].apply(clasificar_llamado)
-                        total_manuales_gral = len(df_clasificado[df_clasificado['CLASIF_TOTAL'] == 'MANUAL'])
-                        total_automaticos_gral = len(df_clasificado[df_clasificado['CLASIF_TOTAL'] == 'AUTOMÁTICO'])
-                    else:
-                        # Si no hay columna TIPO, asumir que todos son manuales o no clasificados
-                        total_manuales_gral = len(df_filtrado)
-                        total_automaticos_gral = 0
-                    
-                    total_general_llamados = len(df_filtrado)
+                    # Calcular totales generales (SUMA de LLAMADOS, igual que en el gráfico)
+                    total_manuales_gral = sum(conteos_manuales)
+                    total_automaticos_gral = sum(conteos_automaticos)
+                    total_general_llamados = total_manuales_gral + total_automaticos_gral
                     
                     # Calcular porcentajes para los totales
                     pct_manual_gral = (total_manuales_gral / total_general_llamados * 100) if total_general_llamados > 0 else 0
@@ -1277,7 +1268,7 @@ with tab2:
                         )
                     
                     with col_total4:
-                        st.metric("Total General", f"{total_general_llamados:,}")
+                        st.metric("Total General Llamados", f"{total_general_llamados:,}")
                     
                     with col_total5:
                         if prom_atencion_gral > 0:
@@ -1321,9 +1312,9 @@ with tab2:
                         **Metodología de cálculo:**
                         
                         **📊 Totales de llamados (Manuales, Automáticos y General):**
-                        - Se calculan sobre **TODOS los registros** filtrados (fecha, servicios y usuarios)
-                        - No aplican exclusiones de días ni horarios
-                        - Coinciden con los totales mostrados en el gráfico "Evolución Temporal"
+                        - Se calculan como la **SUMA de la columna LLAMADOS** sobre TODOS los registros filtrados
+                        - Un registro puede representar múltiples llamados (ej. 5 llamados en un mismo turno)
+                        - Estos totales coinciden exactamente con los mostrados en el gráfico "Evolución Temporal"
                         
                         **⏱️ Tiempo promedio de atención:**
                         - Se calcula como **tiempo por llamado individual**: Tiempo_Atención / Cantidad_Llamados
@@ -1343,7 +1334,7 @@ with tab2:
                         - ✅ Solo se consideran cuando ambas atenciones ocurren el **mismo día**
                         - **Estándar de comparación:** {ESTANDAR_ESPERA} minutos por llamado
                         
-                        Este enfoque asegura que los totales de llamados reflejen toda la actividad, mientras que los tiempos promedio reflejan el rendimiento en condiciones normales de operación.
+                        Este enfoque asegura que los totales de llamados reflejen toda la actividad (sumando la columna LLAMADOS), mientras que los tiempos promedio reflejan el rendimiento en condiciones normales de operación.
                         """)
 
                 else:
