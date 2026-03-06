@@ -1051,22 +1051,22 @@ with tab2:
                         # Filtrar datos para este usuario específico
                         df_usuario = df_filtrado[df_filtrado['USUARIO_ATENCION'] == usuario].copy()
                         
-                        # Clasificar llamados para este usuario
+                        # Clasificar llamados para este usuario (para conteos)
                         if not df_usuario.empty and 'TIPO' in df_usuario.columns:
                             df_usuario['CLASIF'] = df_usuario['TIPO'].apply(clasificar_llamado)
                             
-                            # Contar manuales
+                            # Contar manuales (TODOS los registros, sin exclusiones)
                             manuales = len(df_usuario[df_usuario['CLASIF'] == 'MANUAL'])
                             conteos_manuales.append(manuales)
                             
-                            # Contar automáticos
+                            # Contar automáticos (TODOS los registros, sin exclusiones)
                             automaticos = len(df_usuario[df_usuario['CLASIF'] == 'AUTOMÁTICO'])
                             conteos_automaticos.append(automaticos)
                         else:
                             conteos_manuales.append(0)
                             conteos_automaticos.append(0)
                         
-                        # Calcular tiempo promedio de atención (por llamado individual)
+                        # Calcular tiempo promedio de atención (por llamado individual) - CON EXCLUSIONES
                         if 'TIEMPO_ATENCION' in df_usuario.columns:
                             # Filtrar valores válidos (no nulos y mayores que 0)
                             df_tiempos_validos = df_usuario[df_usuario['TIEMPO_ATENCION'].notna() & (df_usuario['TIEMPO_ATENCION'] > 0)]
@@ -1076,7 +1076,7 @@ with tab2:
                                 tiempos_por_llamado = []
                                 
                                 for _, row in df_tiempos_validos.iterrows():
-                                    # Verificar si es viernes (4) - excluir
+                                    # Verificar si es viernes (4) - excluir para tiempo de atención
                                     dia_semana = row['HORA_LLEGADA'].weekday()
                                     if dia_semana == 4:  # 4 = viernes
                                         continue  # Excluir viernes
@@ -1107,7 +1107,7 @@ with tab2:
                             tiempo_prom_atencion = 0
                         tiempos_promedio_atencion.append(tiempo_prom_atencion)
                         
-                        # Calcular tiempo promedio de espera entre atenciones (por llamado individual)
+                        # Calcular tiempo promedio de espera entre atenciones (por llamado individual) - CON EXCLUSIONES
                         if 'HORA_FINALIZACION' in df_usuario.columns and not df_usuario.empty:
                             # Ordenar por hora de llegada
                             df_usuario = df_usuario.sort_values('HORA_LLEGADA')
@@ -1123,7 +1123,7 @@ with tab2:
                                 hora_finalizacion_actual = row['HORA_FINALIZACION'] if pd.notna(row['HORA_FINALIZACION']) else None
                                 llamados_actual = row['LLAMADOS'] if pd.notna(row['LLAMADOS']) and row['LLAMADOS'] > 0 else 1
                                 
-                                # Verificar si es viernes (4) - excluir
+                                # Verificar si es viernes (4) - excluir para tiempo de espera
                                 dia_semana = row['HORA_LLEGADA'].weekday()
                                 if dia_semana == 4:  # 4 = viernes
                                     fecha_anterior = fecha_actual
@@ -1131,14 +1131,14 @@ with tab2:
                                         hora_finalizacion_anterior = hora_finalizacion_actual
                                     continue  # Excluir viernes
                                 
-                                # Verificar si es sábado (5) o domingo (6)
+                                # Verificar si es sábado (5) o domingo (6) - excluir para tiempo de espera
                                 if dia_semana >= 5:  # 5 = sábado, 6 = domingo
                                     fecha_anterior = fecha_actual
                                     if hora_finalizacion_actual is not None:
                                         hora_finalizacion_anterior = hora_finalizacion_actual
                                     continue  # Excluir fines de semana
                                 
-                                # Verificar si es después de las 3 PM (15:00)
+                                # Verificar si es después de las 3 PM (15:00) - excluir para tiempo de espera
                                 hora_dia = row['HORA_LLEGADA'].hour
                                 if hora_dia >= 15:  # 15 = 3 PM
                                     fecha_anterior = fecha_actual
@@ -1214,16 +1214,25 @@ with tab2:
                         }
                     )
                     
-                    # Calcular totales generales
-                    total_manuales_gral = sum(conteos_manuales)
-                    total_automaticos_gral = sum(conteos_automaticos)
-                    total_general_llamados = total_manuales_gral + total_automaticos_gral
+                    # Calcular totales generales (SIN EXCLUSIONES - usando df_filtrado directamente)
+                    # Clasificar todos los registros para obtener totales precisos
+                    df_clasificado = df_filtrado.copy()
+                    if 'TIPO' in df_clasificado.columns:
+                        df_clasificado['CLASIF_TOTAL'] = df_clasificado['TIPO'].apply(clasificar_llamado)
+                        total_manuales_gral = len(df_clasificado[df_clasificado['CLASIF_TOTAL'] == 'MANUAL'])
+                        total_automaticos_gral = len(df_clasificado[df_clasificado['CLASIF_TOTAL'] == 'AUTOMÁTICO'])
+                    else:
+                        # Si no hay columna TIPO, asumir que todos son manuales o no clasificados
+                        total_manuales_gral = len(df_filtrado)
+                        total_automaticos_gral = 0
+                    
+                    total_general_llamados = len(df_filtrado)
                     
                     # Calcular porcentajes para los totales
                     pct_manual_gral = (total_manuales_gral / total_general_llamados * 100) if total_general_llamados > 0 else 0
                     pct_auto_gral = (total_automaticos_gral / total_general_llamados * 100) if total_general_llamados > 0 else 0
                     
-                    # Calcular promedios generales
+                    # Calcular promedios generales de tiempo (CON EXCLUSIONES - de los cálculos por usuario)
                     tiempos_atencion_todos = [t for t in tiempos_promedio_atencion if t > 0]
                     prom_atencion_gral = round(sum(tiempos_atencion_todos) / len(tiempos_atencion_todos), 1) if tiempos_atencion_todos else 0
                     
@@ -1307,9 +1316,14 @@ with tab2:
                         st.warning("⚠️ No se encontró la columna 'Hora Finalización' en el archivo. El tiempo de espera entre atenciones no pudo calcularse correctamente.")
                     
                     # Mostrar explicación del cálculo
-                    with st.expander("ℹ️ ¿Cómo se calculan los tiempos promedios?"):
+                    with st.expander("ℹ️ ¿Cómo se calculan los indicadores?"):
                         st.markdown(f"""
                         **Metodología de cálculo:**
+                        
+                        **📊 Totales de llamados (Manuales, Automáticos y General):**
+                        - Se calculan sobre **TODOS los registros** filtrados (fecha, servicios y usuarios)
+                        - No aplican exclusiones de días ni horarios
+                        - Coinciden con los totales mostrados en el gráfico "Evolución Temporal"
                         
                         **⏱️ Tiempo promedio de atención:**
                         - Se calcula como **tiempo por llamado individual**: Tiempo_Atención / Cantidad_Llamados
@@ -1329,7 +1343,7 @@ with tab2:
                         - ✅ Solo se consideran cuando ambas atenciones ocurren el **mismo día**
                         - **Estándar de comparación:** {ESTANDAR_ESPERA} minutos por llamado
                         
-                        Este enfoque muestra el tiempo promedio **por llamado individual**, dando una visión más precisa del rendimiento real.
+                        Este enfoque asegura que los totales de llamados reflejen toda la actividad, mientras que los tiempos promedio reflejan el rendimiento en condiciones normales de operación.
                         """)
 
                 else:
