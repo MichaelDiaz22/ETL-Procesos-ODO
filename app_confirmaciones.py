@@ -24,8 +24,12 @@ if uploaded_file is not None:
     # Sort the DataFrame by 'Numero de Identificación' in ascending order
     df = df.sort_values(by='Numero de Identificación', ascending=True).reset_index(drop=True)
 
-    # Create a new column 'Ubicación' based on the 'Consultorio' column
-    df['Ubicación'] = df['Consultorio'].apply(lambda x: 'Procedimiento' if pd.isna(x) or str(x).strip() == '' else 'Consulta')
+    # NUEVA LÓGICA: Crear columna 'Ubicación' basada en 'Actividad Médica'
+    # Si la actividad médica inicia con "Consulta", la ubicación será "Consulta"
+    # De lo contrario será "Procedimiento"
+    df['Ubicación'] = df['Actividad Médica'].apply(
+        lambda x: 'Consulta' if pd.notna(x) and str(x).strip().startswith('Consulta') else 'Procedimiento'
+    )
 
     # Convert 'Fecha Cita' and 'Hora Cita' to datetime objects
     date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%m-%d-%Y']
@@ -484,4 +488,3 @@ if uploaded_file is not None:
             )
 
             buffer.close()
-
