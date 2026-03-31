@@ -36,16 +36,6 @@ if uploaded_file is not None:
     
     # Eliminar columna temporal
     df = df.drop(columns=['Actividad Médica_clean'])
-    
-    # Mostrar diagnóstico para verificar (opcional, puedes comentar después)
-    st.write("### Diagnóstico de Ubicación")
-    st.write("Muestra de valores de Actividad Médica y su Ubicación asignada:")
-    muestra = df[['Actividad Médica', 'Ubicación']].head(10)
-    st.dataframe(muestra)
-    
-    # Contar cuántos de cada tipo
-    st.write("Conteo por ubicación:")
-    st.write(df['Ubicación'].value_counts())
 
     # Convert 'Fecha Cita' and 'Hora Cita' to datetime objects
     date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%m-%d-%Y']
