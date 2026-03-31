@@ -24,12 +24,28 @@ if uploaded_file is not None:
     # Sort the DataFrame by 'Numero de Identificación' in ascending order
     df = df.sort_values(by='Numero de Identificación', ascending=True).reset_index(drop=True)
 
-    # NUEVA LÓGICA: Crear columna 'Ubicación' basada en 'Actividad Médica'
-    # Si la actividad médica inicia con "Consulta", la ubicación será "Consulta"
+    # NUEVA LÓGICA MEJORADA: Crear columna 'Ubicación' basada en 'Actividad Médica'
+    # Convertir a string y a minúsculas para comparación insensible a mayúsculas
+    df['Actividad Médica_clean'] = df['Actividad Médica'].fillna('').astype(str).str.strip().str.lower()
+    
+    # Si la actividad médica inicia con "consulta", la ubicación será "Consulta"
     # De lo contrario será "Procedimiento"
-    df['Ubicación'] = df['Actividad Médica'].apply(
-        lambda x: 'Consulta' if pd.notna(x) and str(x).strip().startswith('Consulta') else 'Procedimiento'
+    df['Ubicación'] = df['Actividad Médica_clean'].apply(
+        lambda x: 'Consulta' if x.startswith('consulta') else 'Procedimiento'
     )
+    
+    # Eliminar columna temporal
+    df = df.drop(columns=['Actividad Médica_clean'])
+    
+    # Mostrar diagnóstico para verificar (opcional, puedes comentar después)
+    st.write("### Diagnóstico de Ubicación")
+    st.write("Muestra de valores de Actividad Médica y su Ubicación asignada:")
+    muestra = df[['Actividad Médica', 'Ubicación']].head(10)
+    st.dataframe(muestra)
+    
+    # Contar cuántos de cada tipo
+    st.write("Conteo por ubicación:")
+    st.write(df['Ubicación'].value_counts())
 
     # Convert 'Fecha Cita' and 'Hora Cita' to datetime objects
     date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%m-%d-%Y']
