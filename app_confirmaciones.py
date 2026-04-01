@@ -56,111 +56,6 @@ if uploaded_file is not None:
 
     df['Fecha Hora Cita'] = df.apply(lambda row: parse_datetime_robust(row['Fecha Cita'], row['Hora Cita']), axis=1)
 
-    # CORRECCIÓN MEJORADA: Función para identificar y filtrar solo la cita más temprana por paciente, día y sede
-    def identificar_primer_servicio(df_filtrado):
-        """
-        Identifica y mantiene solo la cita más temprana por paciente, sede y fecha
-        (independiente de la especialidad)
-        """
-        if len(df_filtrado) == 0:
-            return df_filtrado
-        
-        # Crear una copia para no modificar el original
-        df_temp = df_filtrado.copy()
-        
-        # Asegurarse de que tenemos las columnas necesarias
-        required_cols = ['Numero de Identificación', 'Fecha Hora Cita', 'Sede']
-        for col in required_cols:
-            if col not in df_temp.columns:
-                st.warning(f"⚠️ No se encontró la columna requerida: {col}")
-                return df_temp
-        
-        # Mostrar información de diagnóstico
-        st.write(f"📊 Antes del filtro: {len(df_temp)} filas")
-        st.write(f"📊 Valores únicos de Numero de Identificación: {df_temp['Numero de Identificación'].nunique()}")
-        st.write(f"📊 Valores únicos de Sede: {df_temp['Sede'].nunique()}")
-        
-        # Extraer solo la fecha (sin hora) para agrupar por día
-        df_temp['Fecha_Solo'] = df_temp['Fecha Hora Cita'].dt.date
-        
-        # Ordenar por paciente, sede, fecha y hora de cita (más temprana primero)
-        df_temp = df_temp.sort_values([
-            'Numero de Identificación', 
-            'Sede', 
-            'Fecha_Solo',
-            'Fecha Hora Cita'  # Ordenar por hora para que la más temprana quede primero
-        ])
-        
-        # Crear una clave única para identificar duplicados por paciente, sede y día
-        df_temp['clave_duplicado'] = (
-            df_temp['Numero de Identificación'].astype(str) + '|' + 
-            df_temp['Sede'].astype(str) + '|' + 
-            df_temp['Fecha_Solo'].astype(str)
-        )
-        
-        # Mostrar cuántas claves únicas hay
-        st.write(f"📊 Claves únicas (paciente+sede+fecha): {df_temp['clave_duplicado'].nunique()}")
-        
-        # Mantener solo el primer registro (el más temprano) por cada clave
-        df_final = df_temp.drop_duplicates(subset=['clave_duplicado'], keep='first')
-        
-        # Eliminar las columnas temporales
-        df_final = df_final.drop(columns=['clave_duplicado', 'Fecha_Solo'])
-        
-        st.success(f"✅ Después de filtrar citas duplicadas: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
-        
-        return df_final
-
-    # Load the direcciones_sede DataFrame
-    direcciones_sede = pd.DataFrame({
-        'Sede': [
-            'SAN MARCEL MANIZALES', 'CENTENARIO ARMENIA', 'MEDISALUD',
-            'CLINICA DE ALTA TECNOLOGIA MARAYA PEREIRA', 'CIRCUNVALAR PEREIRA',
-            'CARTAGO UNIDAD ONCOLOGICA CARTAGO', 'CLINICA DE ALTA TECNOLOGIA SEDE ARMENIA ARMENIA',
-            'ONCOLOGOS SEDE LA DORADA LA DORADA', 'UDC CLINICA DE ALTA TECNOLOGIA ARMENIA ARMENIA',
-            'UDC CLINICA MARAYA PEREIRA', 'UDC CLINICA AVIDANTI MANIZALES',
-            'UDC CLINICA LA PRESENTACION MANIZALES', 'UDC SAN MARCEL MANIZALES'
-        ],
-        'Dirección': [
-            'Calle 92 N°  29-75,  SAN MARCEL -  MANIZALES',
-            'Carrera 6 A N°  2-63, AVENIDA CENTENARIO -  ARMENIA',
-            'Carrera 12 N°  0 NORTE-20, EDIFICIO MEDISALUD 6 PISO -  ARMENIA',
-            'Calle 50 N° 13-10, MARAYA - PEREIRA',
-            'Carrera 13 N° 1- 46, LA REBECA - PEREIRA',
-            'Carrera 2 NORTE N° 23 - 12, BARRIO MILAN - CARTAGO',
-            'Calle 1 NORTE  N° 12 - 36, ANTIGUO SALUDCOOP - ARMENIA',
-            'Carrera 4 N° 11-41 CENTRO - LA DORADA',
-            'Carrera 1 NORTE  N° 12 - 36, ANTIGUO SALUDCOOP - ARMENIA',
-            'Calle 50 N° 13-10, MARAYA - PEREIRA',
-            'Calle 10 N° 2C-10B, CLÍNICA AVIDANTI -  MANIZALES',
-            'Carrera 23 N° 46 Esquina, CLÍNICA LA PRESENTACIÓN - MANIZALES',
-            'Calle 92 N°  29-75,  SAN MARCEL -  MANIZALES'
-        ]
-    })
-
-    # CORRECCIÓN CRÍTICA: Merge correcto para obtener la dirección de la tabla de direcciones
-    # Hacer el merge manteniendo todas las filas del df original
-    df = pd.merge(df, direcciones_sede, on='Sede', how='left')
-    
-    # CORRECCIÓN: Crear la columna 'Direccion Final' usando la dirección de la tabla de direcciones
-    # Si la columna 'Dirección' (de direcciones_sede) existe, úsala, de lo contrario usa el valor original
-    if 'Dirección' in df.columns:
-        df['Direccion Final'] = df['Dirección']
-    else:
-        # Si por alguna razón no se creó la columna 'Dirección', usar el campo original como fallback
-        if 'Dirección Centro Atención' in df.columns:
-            df['Direccion Final'] = df['Dirección Centro Atención']
-        else:
-            df['Direccion Final'] = ''
-
-    # Apply the condition: if 'Modalidad' is 'Teleconsulta', set 'Direccion Final' to 'Teleconsulta'
-    df.loc[df['Modalidad'] == 'Teleconsulta', 'Direccion Final'] = 'Teleconsulta'
-
-    # Ensure the necessary columns are treated as strings for concatenation
-    df['Nombres'] = df['Nombres'].astype(str)
-    df['Apellidos'] = df['Apellidos'].astype(str)
-    df['Actividad Médica'] = df['Actividad Médica'].astype(str)
-
     # CORRECCIÓN: Conversión robusta de fechas sin mostrar diagnóstico
     def parse_spanish_date(date_str):
         if pd.isna(date_str) or str(date_str).strip() == '':
@@ -304,6 +199,133 @@ if uploaded_file is not None:
 
     # Convert the column to string and remove '.0' if present
     df['TELEFONO CONFIRMACIÓN'] = df['TELEFONO CONFIRMACIÓN'].astype(str).str.replace(r'\.0$', '', regex=True)
+
+    # Load the direcciones_sede DataFrame
+    direcciones_sede = pd.DataFrame({
+        'Sede': [
+            'SAN MARCEL MANIZALES', 'CENTENARIO ARMENIA', 'MEDISALUD',
+            'CLINICA DE ALTA TECNOLOGIA MARAYA PEREIRA', 'CIRCUNVALAR PEREIRA',
+            'CARTAGO UNIDAD ONCOLOGICA CARTAGO', 'CLINICA DE ALTA TECNOLOGIA SEDE ARMENIA ARMENIA',
+            'ONCOLOGOS SEDE LA DORADA LA DORADA', 'UDC CLINICA DE ALTA TECNOLOGIA ARMENIA ARMENIA',
+            'UDC CLINICA MARAYA PEREIRA', 'UDC CLINICA AVIDANTI MANIZALES',
+            'UDC CLINICA LA PRESENTACION MANIZALES', 'UDC SAN MARCEL MANIZALES'
+        ],
+        'Dirección': [
+            'Calle 92 N°  29-75,  SAN MARCEL -  MANIZALES',
+            'Carrera 6 A N°  2-63, AVENIDA CENTENARIO -  ARMENIA',
+            'Carrera 12 N°  0 NORTE-20, EDIFICIO MEDISALUD 6 PISO -  ARMENIA',
+            'Calle 50 N° 13-10, MARAYA - PEREIRA',
+            'Carrera 13 N° 1- 46, LA REBECA - PEREIRA',
+            'Carrera 2 NORTE N° 23 - 12, BARRIO MILAN - CARTAGO',
+            'Calle 1 NORTE  N° 12 - 36, ANTIGUO SALUDCOOP - ARMENIA',
+            'Carrera 4 N° 11-41 CENTRO - LA DORADA',
+            'Carrera 1 NORTE  N° 12 - 36, ANTIGUO SALUDCOOP - ARMENIA',
+            'Calle 50 N° 13-10, MARAYA - PEREIRA',
+            'Calle 10 N° 2C-10B, CLÍNICA AVIDANTI -  MANIZALES',
+            'Carrera 23 N° 46 Esquina, CLÍNICA LA PRESENTACIÓN - MANIZALES',
+            'Calle 92 N°  29-75,  SAN MARCEL -  MANIZALES'
+        ]
+    })
+
+    # CORRECCIÓN CRÍTICA: Merge correcto para obtener la dirección de la tabla de direcciones
+    # Hacer el merge manteniendo todas las filas del df original
+    df = pd.merge(df, direcciones_sede, on='Sede', how='left')
+    
+    # CORRECCIÓN: Crear la columna 'Direccion Final' usando la dirección de la tabla de direcciones
+    # Si la columna 'Dirección' (de direcciones_sede) existe, úsala, de lo contrario usa el valor original
+    if 'Dirección' in df.columns:
+        df['Direccion Final'] = df['Dirección']
+    else:
+        # Si por alguna razón no se creó la columna 'Dirección', usar el campo original como fallback
+        if 'Dirección Centro Atención' in df.columns:
+            df['Direccion Final'] = df['Dirección Centro Atención']
+        else:
+            df['Direccion Final'] = ''
+
+    # Apply the condition: if 'Modalidad' is 'Teleconsulta', set 'Direccion Final' to 'Teleconsulta'
+    df.loc[df['Modalidad'] == 'Teleconsulta', 'Direccion Final'] = 'Teleconsulta'
+
+    # Ensure the necessary columns are treated as strings for concatenation
+    df['Nombres'] = df['Nombres'].astype(str)
+    df['Apellidos'] = df['Apellidos'].astype(str)
+    df['Actividad Médica'] = df['Actividad Médica'].astype(str)
+
+    # CORRECCIÓN MEJORADA: Función para identificar y filtrar solo la cita más temprana por paciente, día y sede
+    def identificar_primer_servicio(df_filtrado):
+        """
+        Identifica y mantiene solo la cita más temprana por paciente, sede y fecha
+        (independiente de la especialidad)
+        """
+        if len(df_filtrado) == 0:
+            return df_filtrado
+        
+        # Crear una copia para no modificar el original
+        df_temp = df_filtrado.copy()
+        
+        # Asegurarse de que tenemos las columnas necesarias
+        required_cols = ['Numero de Identificación', 'Fecha Programación_dt', 'Sede']
+        for col in required_cols:
+            if col not in df_temp.columns:
+                st.warning(f"⚠️ No se encontró la columna requerida: {col}")
+                return df_temp
+        
+        # Mostrar información de diagnóstico
+        st.write(f"📊 Antes del filtro: {len(df_temp)} filas")
+        st.write(f"📊 Valores únicos de Numero de Identificación: {df_temp['Numero de Identificación'].nunique()}")
+        st.write(f"📊 Valores únicos de Sede: {df_temp['Sede'].nunique()}")
+        
+        # Verificar fechas válidas
+        fechas_validas = df_temp['Fecha Programación_dt'].notna().sum()
+        st.write(f"📊 Fechas válidas en Fecha Programación_dt: {fechas_validas} de {len(df_temp)}")
+        
+        # Extraer solo la fecha (sin hora) para agrupar por día
+        df_temp['Fecha_Solo'] = df_temp['Fecha Programación_dt'].dt.date
+        
+        # Contar cuántas fechas no nulas tenemos
+        st.write(f"📊 Fechas no nulas después de extraer: {df_temp['Fecha_Solo'].notna().sum()}")
+        
+        # Ordenar por paciente, sede, fecha y hora de cita (más temprana primero)
+        # Usar 'Hora Cita' como string o convertir a hora para ordenar
+        df_temp['Hora_para_orden'] = df_temp['Hora Cita'].apply(
+            lambda x: float(x) if pd.notna(x) and x != '' else 999999
+        )
+        
+        df_temp = df_temp.sort_values([
+            'Numero de Identificación', 
+            'Sede', 
+            'Fecha_Solo',
+            'Hora_para_orden'  # Ordenar por hora para que la más temprana quede primero
+        ])
+        
+        # Crear una clave única para identificar duplicados por paciente, sede y día
+        # Solo para filas con fecha válida
+        mascara_fecha_valida = df_temp['Fecha_Solo'].notna()
+        
+        # Inicializar clave como None para todas
+        df_temp['clave_duplicado'] = None
+        
+        # Solo crear clave para filas con fecha válida
+        df_temp.loc[mascara_fecha_valida, 'clave_duplicado'] = (
+            df_temp.loc[mascara_fecha_valida, 'Numero de Identificación'].astype(str) + '|' + 
+            df_temp.loc[mascara_fecha_valida, 'Sede'].astype(str) + '|' + 
+            df_temp.loc[mascara_fecha_valida, 'Fecha_Solo'].astype(str)
+        )
+        
+        # Para filas sin fecha válida, asignar una clave única por fila
+        df_temp.loc[~mascara_fecha_valida, 'clave_duplicado'] = df_temp.loc[~mascara_fecha_valida].index.astype(str) + '_sin_fecha'
+        
+        # Mostrar cuántas claves únicas hay
+        st.write(f"📊 Claves únicas (paciente+sede+fecha): {df_temp['clave_duplicado'].nunique()}")
+        
+        # Mantener solo el primer registro (el más temprano) por cada clave
+        df_final = df_temp.drop_duplicates(subset=['clave_duplicado'], keep='first')
+        
+        # Eliminar las columnas temporales
+        df_final = df_final.drop(columns=['clave_duplicado', 'Fecha_Solo', 'Hora_para_orden'])
+        
+        st.success(f"✅ Después de filtrar citas duplicadas: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
+        
+        return df_final
 
     # After loading and preprocessing, populate the initial options for the multiselect filters
     all_empresas = df['EMPRESA'].unique().tolist()
