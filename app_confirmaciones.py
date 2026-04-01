@@ -75,25 +75,37 @@ if uploaded_file is not None:
                 st.warning(f"⚠️ No se encontró la columna requerida: {col}")
                 return df_temp
         
+        # Mostrar información de diagnóstico
+        st.write(f"📊 Antes del filtro: {len(df_temp)} filas")
+        st.write(f"📊 Valores únicos de Numero de Identificación: {df_temp['Numero de Identificación'].nunique()}")
+        st.write(f"📊 Valores únicos de Sede: {df_temp['Sede'].nunique()}")
+        
+        # Extraer solo la fecha (sin hora) para agrupar por día
+        df_temp['Fecha_Solo'] = df_temp['Fecha Hora Cita'].dt.date
+        
         # Ordenar por paciente, sede, fecha y hora de cita (más temprana primero)
         df_temp = df_temp.sort_values([
             'Numero de Identificación', 
             'Sede', 
-            'Fecha Hora Cita'
+            'Fecha_Solo',
+            'Fecha Hora Cita'  # Ordenar por hora para que la más temprana quede primero
         ])
         
         # Crear una clave única para identificar duplicados por paciente, sede y día
         df_temp['clave_duplicado'] = (
             df_temp['Numero de Identificación'].astype(str) + '|' + 
             df_temp['Sede'].astype(str) + '|' + 
-            df_temp['Fecha Hora Cita'].dt.date.astype(str)
+            df_temp['Fecha_Solo'].astype(str)
         )
+        
+        # Mostrar cuántas claves únicas hay
+        st.write(f"📊 Claves únicas (paciente+sede+fecha): {df_temp['clave_duplicado'].nunique()}")
         
         # Mantener solo el primer registro (el más temprano) por cada clave
         df_final = df_temp.drop_duplicates(subset=['clave_duplicado'], keep='first')
         
-        # Eliminar la columna temporal
-        df_final = df_final.drop(columns=['clave_duplicado'])
+        # Eliminar las columnas temporales
+        df_final = df_final.drop(columns=['clave_duplicado', 'Fecha_Solo'])
         
         st.success(f"✅ Después de filtrar citas duplicadas: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
         
