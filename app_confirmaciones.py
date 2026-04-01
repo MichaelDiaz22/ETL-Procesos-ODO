@@ -315,20 +315,8 @@ if uploaded_file is not None:
                 st.warning(f"⚠️ No se encontró la columna requerida: {col}")
                 return df_temp
         
-        # Mostrar información de diagnóstico
-        st.write(f"📊 Antes del filtro: {len(df_temp)} filas")
-        st.write(f"📊 Valores únicos de Numero de Identificación: {df_temp['Numero de Identificación'].nunique()}")
-        st.write(f"📊 Valores únicos de Sede: {df_temp['Sede'].nunique()}")
-        
-        # Verificar fechas válidas
-        fechas_validas = df_temp['Fecha Programación_dt'].notna().sum()
-        st.write(f"📊 Fechas válidas en Fecha Programación_dt: {fechas_validas} de {len(df_temp)}")
-        
         # Extraer solo la fecha (sin hora) para agrupar por día
         df_temp['Fecha_Solo'] = df_temp['Fecha Programación_dt'].dt.date
-        
-        # Contar cuántas fechas no nulas tenemos
-        st.write(f"📊 Fechas no nulas después de extraer: {df_temp['Fecha_Solo'].notna().sum()}")
         
         # Convertir hora a decimal para ordenar
         df_temp['Hora_para_orden'] = df_temp['Hora Cita'].apply(hora_a_decimal)
@@ -338,11 +326,10 @@ if uploaded_file is not None:
             'Numero de Identificación', 
             'Sede', 
             'Fecha_Solo',
-            'Hora_para_orden'  # Ordenar por hora para que la más temprana quede primero
+            'Hora_para_orden'
         ])
         
         # Crear una clave única para identificar duplicados por paciente, sede y día
-        # Solo para filas con fecha válida
         mascara_fecha_valida = df_temp['Fecha_Solo'].notna()
         
         # Inicializar clave como None para todas
@@ -357,9 +344,6 @@ if uploaded_file is not None:
         
         # Para filas sin fecha válida, asignar una clave única por fila
         df_temp.loc[~mascara_fecha_valida, 'clave_duplicado'] = df_temp.loc[~mascara_fecha_valida].index.astype(str) + '_sin_fecha'
-        
-        # Mostrar cuántas claves únicas hay
-        st.write(f"📊 Claves únicas (paciente+sede+fecha): {df_temp['clave_duplicado'].nunique()}")
         
         # Mantener solo el primer registro (el más temprano) por cada clave
         df_final = df_temp.drop_duplicates(subset=['clave_duplicado'], keep='first')
