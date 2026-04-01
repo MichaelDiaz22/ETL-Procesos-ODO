@@ -166,40 +166,6 @@ if uploaded_file is not None:
         investigacion_mask = df['Unidad Funcional'] == 'INVESTIGACION MARAYA'
         df.loc[investigacion_mask, 'Hora Cita Formatted'] = '-'
 
-    df['Especialista'] = df['Especialista'].astype(str)
-    df['Direccion Final'] = df['Direccion Final'].astype(str)
-    df['Ubicación'] = df['Ubicación'].astype(str)
-    df['Unidad Funcional'] = df['Unidad Funcional'].astype(str)
-
-    # MODIFICACIÓN: Usar la fecha formateada en la variable mensaje
-    df['VARIABLE'] = df.apply(
-        lambda row: f"{row['Nombres']} {row['Apellidos']}|{row['Actividad Médica']}|{row['Fecha Programación Formateada']}|{row['Hora Cita Formatted']}|{row['Especialista']}|{row['Direccion Final']}",
-        axis=1
-    )
-
-    # Ensure phone number columns are treated as strings and handle potential missing values
-    df['Telefono Movil'] = df['Telefono Movil'].astype(str).str.strip()
-    df['Telefono Fijo'] = df['Telefono Fijo'].astype(str).str.strip()
-
-    # Create the new column 'TELEFONO CONFIRMACIÓN'
-    df['TELEFONO CONFIRMACIÓN'] = 'sin número para enviar mensaje'
-
-    # Condition 1: If 'Telefono Movil' is empty, evaluate 'Telefono Fijo'
-    movil_is_empty = (df['Telefono Movil'].isna()) | (df['Telefono Movil'] == '') | (df['Telefono Movil'] == 'nan')
-
-    # Condition 2: If 'Telefono Fijo' is NOT empty and does NOT start with '60', use 'Telefono Fijo'
-    fijo_is_valid_fallback = (~df['Telefono Fijo'].isna()) & (df['Telefono Fijo'] != '') & (df['Telefono Fijo'] != 'nan') & (~df['Telefono Fijo'].str.startswith('60', na=False))
-
-    df.loc[movil_is_empty & fijo_is_valid_fallback, 'TELEFONO CONFIRMACIÓN'] = '+57' + df.loc[movil_is_empty & fijo_is_valid_fallback, 'Telefono Fijo']
-
-    # Condition 3: If 'Telefono Movil' is NOT empty AND does NOT start with '60' AND starts with '3', use 'Telefono Movil'
-    movil_is_valid_and_starts_with_3 = (~movil_is_empty) & (~df['Telefono Movil'].str.startswith('60', na=False)) & (df['Telefono Movil'].str.startswith('3', na=False))
-
-    df.loc[movil_is_valid_and_starts_with_3, 'TELEFONO CONFIRMACIÓN'] = '+57' + df.loc[movil_is_valid_and_starts_with_3, 'Telefono Movil']
-
-    # Convert the column to string and remove '.0' if present
-    df['TELEFONO CONFIRMACIÓN'] = df['TELEFONO CONFIRMACIÓN'].astype(str).str.replace(r'\.0$', '', regex=True)
-
     # Load the direcciones_sede DataFrame
     direcciones_sede = pd.DataFrame({
         'Sede': [
@@ -243,12 +209,48 @@ if uploaded_file is not None:
             df['Direccion Final'] = ''
 
     # Apply the condition: if 'Modalidad' is 'Teleconsulta', set 'Direccion Final' to 'Teleconsulta'
-    df.loc[df['Modalidad'] == 'Teleconsulta', 'Direccion Final'] = 'Teleconsulta'
+    if 'Modalidad' in df.columns:
+        df.loc[df['Modalidad'] == 'Teleconsulta', 'Direccion Final'] = 'Teleconsulta'
 
     # Ensure the necessary columns are treated as strings for concatenation
     df['Nombres'] = df['Nombres'].astype(str)
     df['Apellidos'] = df['Apellidos'].astype(str)
     df['Actividad Médica'] = df['Actividad Médica'].astype(str)
+    df['Especialista'] = df['Especialista'].astype(str)
+    df['Direccion Final'] = df['Direccion Final'].astype(str)
+    df['Ubicación'] = df['Ubicación'].astype(str)
+    
+    if 'Unidad Funcional' in df.columns:
+        df['Unidad Funcional'] = df['Unidad Funcional'].astype(str)
+
+    # MODIFICACIÓN: Usar la fecha formateada en la variable mensaje
+    df['VARIABLE'] = df.apply(
+        lambda row: f"{row['Nombres']} {row['Apellidos']}|{row['Actividad Médica']}|{row['Fecha Programación Formateada']}|{row['Hora Cita Formatted']}|{row['Especialista']}|{row['Direccion Final']}",
+        axis=1
+    )
+
+    # Ensure phone number columns are treated as strings and handle potential missing values
+    df['Telefono Movil'] = df['Telefono Movil'].astype(str).str.strip()
+    df['Telefono Fijo'] = df['Telefono Fijo'].astype(str).str.strip()
+
+    # Create the new column 'TELEFONO CONFIRMACIÓN'
+    df['TELEFONO CONFIRMACIÓN'] = 'sin número para enviar mensaje'
+
+    # Condition 1: If 'Telefono Movil' is empty, evaluate 'Telefono Fijo'
+    movil_is_empty = (df['Telefono Movil'].isna()) | (df['Telefono Movil'] == '') | (df['Telefono Movil'] == 'nan')
+
+    # Condition 2: If 'Telefono Fijo' is NOT empty and does NOT start with '60', use 'Telefono Fijo'
+    fijo_is_valid_fallback = (~df['Telefono Fijo'].isna()) & (df['Telefono Fijo'] != '') & (df['Telefono Fijo'] != 'nan') & (~df['Telefono Fijo'].str.startswith('60', na=False))
+
+    df.loc[movil_is_empty & fijo_is_valid_fallback, 'TELEFONO CONFIRMACIÓN'] = '+57' + df.loc[movil_is_empty & fijo_is_valid_fallback, 'Telefono Fijo']
+
+    # Condition 3: If 'Telefono Movil' is NOT empty AND does NOT start with '60' AND starts with '3', use 'Telefono Movil'
+    movil_is_valid_and_starts_with_3 = (~movil_is_empty) & (~df['Telefono Movil'].str.startswith('60', na=False)) & (df['Telefono Movil'].str.startswith('3', na=False))
+
+    df.loc[movil_is_valid_and_starts_with_3, 'TELEFONO CONFIRMACIÓN'] = '+57' + df.loc[movil_is_valid_and_starts_with_3, 'Telefono Movil']
+
+    # Convert the column to string and remove '.0' if present
+    df['TELEFONO CONFIRMACIÓN'] = df['TELEFONO CONFIRMACIÓN'].astype(str).str.replace(r'\.0$', '', regex=True)
 
     # CORRECCIÓN MEJORADA: Función para identificar y filtrar solo la cita más temprana por paciente, día y sede
     def identificar_primer_servicio(df_filtrado):
@@ -331,7 +333,11 @@ if uploaded_file is not None:
     all_empresas = df['EMPRESA'].unique().tolist()
     all_ubicaciones = df['Ubicación'].unique().tolist()
     all_sedes = df['Sede'].unique().tolist()
-    all_unidades_funcionales = df['Unidad Funcional'].unique().tolist()
+    
+    if 'Unidad Funcional' in df.columns:
+        all_unidades_funcionales = df['Unidad Funcional'].unique().tolist()
+    else:
+        all_unidades_funcionales = []
 
     # Obtener el rango de fechas REAL de los datos convertidos
     min_date = df['Fecha Programación_dt'].min()
@@ -353,7 +359,10 @@ if uploaded_file is not None:
             # Para unidades funcionales, si hay sedes seleccionadas, filtrar por ellas
             if selected_sedes:
                 filtered_df = df[df['Sede'].isin(selected_sedes)]
-                filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
+                if 'Unidad Funcional' in filtered_df.columns:
+                    filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
+                else:
+                    filtered_unidades = []
             else:
                 filtered_unidades = all_unidades_funcionales
         else:
@@ -367,9 +376,15 @@ if uploaded_file is not None:
                 valid_sedes = [sede for sede in selected_sedes if sede in filtered_sedes]
                 if valid_sedes:
                     filtered_df = filtered_df[filtered_df['Sede'].isin(valid_sedes)]
-                filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
+                if 'Unidad Funcional' in filtered_df.columns:
+                    filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
+                else:
+                    filtered_unidades = []
             else:
-                filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
+                if 'Unidad Funcional' in filtered_df.columns:
+                    filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
+                else:
+                    filtered_unidades = []
         
         return filtered_sedes, filtered_unidades
 
@@ -458,7 +473,7 @@ if uploaded_file is not None:
                 sede_mask = filtered_df['Sede'].isin(file_filters['sedes'])
                 mask = mask & sede_mask
             
-            if file_filters['unidades_funcionales']:
+            if file_filters['unidades_funcionales'] and 'Unidad Funcional' in filtered_df.columns:
                 unidad_mask = filtered_df['Unidad Funcional'].isin(file_filters['unidades_funcionales'])
                 mask = mask & unidad_mask
             
