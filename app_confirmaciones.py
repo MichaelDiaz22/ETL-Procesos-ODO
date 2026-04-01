@@ -252,6 +252,50 @@ if uploaded_file is not None:
     # Convert the column to string and remove '.0' if present
     df['TELEFONO CONFIRMACIÓN'] = df['TELEFONO CONFIRMACIÓN'].astype(str).str.replace(r'\.0$', '', regex=True)
 
+    # FUNCIÓN AUXILIAR: Convertir hora a número decimal para ordenar
+    def hora_a_decimal(hora_str):
+        """
+        Convierte una hora en formato string a número decimal para ordenar
+        Ejemplos: "08:30 AM" -> 8.5, "14:30" -> 14.5, "8:30" -> 8.5
+        """
+        if pd.isna(hora_str) or hora_str == '' or hora_str == 'nan':
+            return 999999  # Valor alto para que vayan al final
+        
+        hora_str = str(hora_str).strip()
+        
+        try:
+            # Intentar convertir directamente a float (por si es número decimal)
+            return float(hora_str)
+        except:
+            pass
+        
+        try:
+            # Verificar si tiene AM/PM
+            hora_lower = hora_str.lower()
+            es_pm = 'pm' in hora_lower
+            # Limpiar AM/PM
+            hora_limpia = hora_str.replace('AM', '').replace('PM', '').replace('am', '').replace('pm', '').strip()
+            
+            # Dividir horas y minutos
+            if ':' in hora_limpia:
+                partes = hora_limpia.split(':')
+                horas = int(partes[0])
+                minutos = int(partes[1]) if len(partes) > 1 else 0
+            else:
+                horas = int(hora_limpia)
+                minutos = 0
+            
+            # Convertir a formato 24 horas
+            if es_pm and horas != 12:
+                horas += 12
+            elif not es_pm and horas == 12:
+                horas = 0
+            
+            # Convertir a decimal
+            return horas + minutos / 60.0
+        except:
+            return 999999  # Si no se puede convertir, va al final
+
     # CORRECCIÓN MEJORADA: Función para identificar y filtrar solo la cita más temprana por paciente, día y sede
     def identificar_primer_servicio(df_filtrado):
         """
@@ -265,7 +309,7 @@ if uploaded_file is not None:
         df_temp = df_filtrado.copy()
         
         # Asegurarse de que tenemos las columnas necesarias
-        required_cols = ['Numero de Identificación', 'Fecha Programación_dt', 'Sede']
+        required_cols = ['Numero de Identificación', 'Fecha Programación_dt', 'Sede', 'Hora Cita']
         for col in required_cols:
             if col not in df_temp.columns:
                 st.warning(f"⚠️ No se encontró la columna requerida: {col}")
@@ -286,12 +330,10 @@ if uploaded_file is not None:
         # Contar cuántas fechas no nulas tenemos
         st.write(f"📊 Fechas no nulas después de extraer: {df_temp['Fecha_Solo'].notna().sum()}")
         
-        # Ordenar por paciente, sede, fecha y hora de cita (más temprana primero)
-        # Usar 'Hora Cita' como string o convertir a hora para ordenar
-        df_temp['Hora_para_orden'] = df_temp['Hora Cita'].apply(
-            lambda x: float(x) if pd.notna(x) and x != '' else 999999
-        )
+        # Convertir hora a decimal para ordenar
+        df_temp['Hora_para_orden'] = df_temp['Hora Cita'].apply(hora_a_decimal)
         
+        # Ordenar por paciente, sede, fecha y hora de cita (más temprana primero)
         df_temp = df_temp.sort_values([
             'Numero de Identificación', 
             'Sede', 
