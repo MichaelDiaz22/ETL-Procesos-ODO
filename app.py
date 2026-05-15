@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import io
+from collections import defaultdict
 
 st.title('Excel File Partitioner - Back Office ODO')
 
@@ -38,6 +39,132 @@ if uploaded_file is not None:
 else:
     st.info("Please upload an Excel file to get started.")
 
+# Función para partición equitativa
+def particion_equitativa(df_filtered, num_partitions, unidades_seleccionadas):
+    """Divide los pacientes asegurando que cada partición tenga la misma cantidad de pacientes de cada unidad funcional"""
+    
+    # Diccionario para almacenar pacientes por unidad funcional
+    pacientes_por_unidad = {}
+    
+    for unidad in unidades_seleccionadas:
+        df_unidad = df_filtered[df_filtered['Unidad Funcional'] == unidad]
+        pacientes_unidad = df_unidad['Identificación'].drop_duplicates().values
+        pacientes_por_unidad[unidad] = pacientes_unidad
+    
+    # Inicializar listas para cada partición
+    particiones = [[] for _ in range(num_partitions)]
+    
+    # Distribuir pacientes de cada unidad funcional equitativamente
+    for unidad, pacientes in pacientes_por_unidad.items():
+        num_pacientes = len(pacientes)
+        
+        # Calcular cuántos pacientes por partición
+        pacientes_por_particion = num_pacientes // num_partitions
+        resto = num_pacientes % num_partitions
+        
+        # Distribuir pacientes
+        idx = 0
+        for i in range(num_partitions):
+            num_asignar = pacientes_por_particion + (1 if i < resto else 0)
+            if num_asignar > 0 and idx < num_pacientes:
+                particiones[i].extend(pacientes[idx:idx + num_asignar])
+                idx += num_asignar
+    
+    # Crear DataFrames de partición
+    partitioned_dfs = []
+    for i, pacientes_particion in enumerate(particiones):
+        partition_df = df_filtered[df_filtered['Identificación'].isin(pacientes_particion)]
+        partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
+        partitioned_dfs.append(partition_df)
+    
+    return partitioned_dfs, [len(p) for p in particiones]
+
+# Función para partición personalizada
+def particion_personalizada(df_filtered, num_partitions, unidades_seleccionadas):
+    """Permite asignar unidades funcionales específicas a cada partición"""
+    
+    st.subheader("🔧 Configuración de Partición Personalizada")
+    st.info("Para cada partición, selecciona las unidades funcionales que deseas asignar. Si una unidad aparece en múltiples particiones, sus pacientes se dividirán equitativamente entre esas particiones.")
+    
+    # Diccionario para almacenar las unidades seleccionadas por partición
+    unidades_por_particion = {}
+    
+    for i in range(num_partitions):
+        st.markdown(f"**Partición {i+1}**")
+        unidades_particion = st.multiselect(
+            f"Selecciona unidades funcionales para la Partición {i+1}:",
+            options=unidades_seleccionadas,
+            key=f"particion_{i}",
+            help="Selecciona una o más unidades funcionales para esta partición"
+        )
+        unidades_por_particion[i] = unidades_particion
+    
+    if st.button("Confirmar Asignación y Generar Particiones"):
+        # Verificar que todas las unidades hayan sido asignadas al menos una vez
+        todas_unidades_asignadas = set()
+        for unidades in unidades_por_particion.values():
+            todas_unidades_asignadas.update(unidades)
+        
+        unidades_no_asignadas = set(unidades_seleccionadas) - todas_unidades_asignadas
+        if unidades_no_asignadas:
+            st.warning(f"⚠️ Las siguientes unidades funcionales no fueron asignadas a ninguna partición: {', '.join(unidades_no_asignadas)}")
+            return None, None
+        
+        # Para cada unidad funcional, determinar en qué particiones aparece
+        apariciones_por_unidad = defaultdict(list)
+        for particion_id, unidades in unidades_por_particion.items():
+            for unidad in unidades:
+                apariciones_por_unidad[unidad].append(particion_id)
+        
+        # Obtener pacientes por unidad funcional
+        pacientes_por_unidad = {}
+        for unidad in unidades_seleccionadas:
+            df_unidad = df_filtered[df_filtered['Unidad Funcional'] == unidad]
+            pacientes_unidad = df_unidad['Identificación'].drop_duplicates().values
+            pacientes_por_unidad[unidad] = pacientes_unidad
+        
+        # Inicializar listas para cada partición
+        particiones = [[] for _ in range(num_partitions)]
+        
+        # Distribuir pacientes según las reglas
+        for unidad, particiones_destino in apariciones_por_unidad.items():
+            pacientes = pacientes_por_unidad.get(unidad, [])
+            num_pacientes = len(pacientes)
+            num_particiones_asignadas = len(particiones_destino)
+            
+            if num_particiones_asignadas == 0:
+                continue
+            elif num_particiones_asignadas == 1:
+                # Si aparece en una sola partición, asignar todos los pacientes a esa partición
+                particion_id = particiones_destino[0]
+                particiones[particion_id].extend(pacientes)
+            else:
+                # Si aparece en múltiples particiones, dividir pacientes equitativamente
+                pacientes_por_particion = num_pacientes // num_particiones_asignadas
+                resto = num_pacientes % num_particiones_asignadas
+                
+                idx = 0
+                for j, particion_id in enumerate(particiones_destino):
+                    num_asignar = pacientes_por_particion + (1 if j < resto else 0)
+                    if num_asignar > 0 and idx < num_pacientes:
+                        particiones[particion_id].extend(pacientes[idx:idx + num_asignar])
+                        idx += num_asignar
+        
+        # Crear DataFrames de partición
+        partitioned_dfs = []
+        for i, pacientes_particion in enumerate(particiones):
+            if len(pacientes_particion) > 0:
+                partition_df = df_filtered[df_filtered['Identificación'].isin(pacientes_particion)]
+                partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
+                partitioned_dfs.append(partition_df)
+            else:
+                # Partición vacía
+                partitioned_dfs.append(pd.DataFrame())
+        
+        return partitioned_dfs, [len(p) for p in particiones]
+    
+    return None, None
+
 # Solo mostrar el número de particiones y selector de unidades si el archivo está cargado
 if df_loaded and unidades_disponibles:
     num_partitions = st.number_input("Enter the number of partitions (number of back office employees)", min_value=1, value=3)
@@ -51,8 +178,16 @@ if df_loaded and unidades_disponibles:
     unidades_seleccionadas = st.multiselect(
         "Unidades Funcionales encontradas en el archivo:",
         options=unidades_disponibles_ordenadas,
-        default=unidades_disponibles_ordenadas,  # Selecciona todas por defecto
+        default=unidades_disponibles_ordenadas,
         help="Selecciona las unidades funcionales que deseas incluir en el reporte"
+    )
+    
+    # Nuevo selector de tipo de partición
+    st.subheader("Selecciona el tipo de partición")
+    tipo_particion = st.radio(
+        "Tipo de partición:",
+        options=["Partición de unidades funcionales en cantidades iguales", "Partición personalizada"],
+        help="Selecciona cómo deseas distribuir las unidades funcionales entre las particiones"
     )
     
     # Botón para procesar
@@ -98,100 +233,105 @@ if df_loaded and unidades_disponibles:
                     # ORDENAR POR ENTIDAD ANTES DE PARTICIONAR
                     df_estado_filtered = df_estado_filtered.sort_values(by='Entidad')
                     
-                    # Obtener identificaciones únicas manteniendo el orden
-                    unique_identifications = df_estado_filtered['Identificación'].drop_duplicates().values
-                    num_identifications = len(unique_identifications)
-
-                    if num_identifications == 0:
-                        st.warning("No relevant data found after filtering.")
-                    else:
-                        size_of_each_list = num_identifications // num_partitions
-                        remainder = num_identifications % num_partitions
-
-                        list_of_identification_sublists = []
-                        start = 0
-                        for i in range(num_partitions):
-                            end = start + size_of_each_list + (1 if i < remainder else 0)
-                            list_of_identification_sublists.append(unique_identifications[start:end].tolist())
-                            start = end
-
-                        partitioned_dfs = []
-                        
-                        # Solo mostrar resumen breve de particiones
-                        st.subheader("📊 Resumen de Particiones")
-                        for i, identification_sublist in enumerate(list_of_identification_sublists):
-                            partition_df = df_estado_filtered[df_estado_filtered['Identificación'].isin(identification_sublist)]
-                            # Reordenar la partición para mantener el orden por entidad
-                            partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
-                            partitioned_dfs.append(partition_df)
-                            
-                            # Mostrar solo información básica de cada partición
-                            st.write(f"**Partition {i+1}**: {len(identification_sublist)} pacientes únicos, {len(partition_df)} registros")
-                            
-                            # DEBUG: Verificar que 'Profesional' esté presente
-                            # st.write(f"   - Columnas disponibles: {list(partition_df.columns)}")
-
-                        # Generate Excel file in memory
-                        output_buffer = io.BytesIO()
-                        with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
-                            for i, part_df in enumerate(partitioned_dfs):
-                                # Limitar el nombre de la hoja a 31 caracteres (límite de Excel)
-                                sheet_name = f'Part {i+1}'[:31]
-                                
-                                # Asegurar que todas las columnas estén presentes en el orden correcto
-                                # Primero, mantener solo las columnas que existen en el DataFrame
-                                columnas_a_exportar = [col for col in columnas_existentes if col in part_df.columns]
-                                
-                                # Agregar las columnas adicionales que creamos (Estado y Observación)
-                                columnas_adicionales = ['Estado', 'Observación']
-                                columnas_finales = columnas_a_exportar + [col for col in columnas_adicionales if col in part_df.columns]
-                                
-                                # Reordenar el DataFrame para la exportación
-                                part_df_export = part_df[columnas_finales]
-                                
-                                part_df_export.to_excel(writer, sheet_name=sheet_name, index=False)
-                            
-                            # Agregar una hoja de resumen
-                            resumen_data = {
-                                'Partición': [f'Part {i+1}' for i in range(num_partitions)],
-                                'Pacientes Únicos': [len(list_of_identification_sublists[i]) for i in range(num_partitions)],
-                                'Total Registros': [len(partitioned_dfs[i]) for i in range(num_partitions)]
-                            }
-                            
-                            # Agregar columnas para cada unidad funcional seleccionada
-                            for unidad in unidades_seleccionadas:
-                                resumen_data[unidad] = [
-                                    len(partitioned_dfs[i][partitioned_dfs[i]['Unidad Funcional'] == unidad]) 
-                                    for i in range(num_partitions)
-                                ]
-                            
-                            resumen_df = pd.DataFrame(resumen_data)
-                            resumen_df.to_excel(writer, sheet_name='Resumen', index=False)
-
-                        output_buffer.seek(0)
-
-                        st.success("🎉 Data processed and partitioned successfully!")
-                        
-                        # Mostrar columnas que se exportarán
-                        #if len(partitioned_dfs) > 0:
-                         #   st.info(f"📋 **Columnas incluidas en el exportable:** {list(partitioned_dfs[0].columns)}")
-
-                        # Información del archivo a descargar
-                        #st.info(f"El archivo contiene {num_partitions} particiones y {len(unidades_seleccionadas)} unidades funcionales")
-
-                        st.download_button(
-                            label="📥 Download Excel File",
-                            data=output_buffer,
-                            file_name='ReporteConsultaCitas_Partitions.xlsx',
-                            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                            type='primary'
+                    # Seleccionar método de partición
+                    if tipo_particion == "Partición de unidades funcionales en cantidades iguales":
+                        st.info("📊 Generando particiones equitativas por unidad funcional...")
+                        partitioned_dfs, pacientes_por_particion = particion_equitativa(
+                            df_estado_filtered, num_partitions, unidades_seleccionadas
                         )
+                    else:  # Partición personalizada
+                        partitioned_dfs, pacientes_por_particion = particion_personalizada(
+                            df_estado_filtered, num_partitions, unidades_seleccionadas
+                        )
+                        
+                        # Si no se confirmó la asignación, detener el proceso
+                        if partitioned_dfs is None:
+                            st.stop()
+                    
+                    # Verificar que se generaron particiones
+                    if not partitioned_dfs or all(len(df) == 0 for df in partitioned_dfs):
+                        st.warning("No se pudieron generar particiones. Verifica la asignación de unidades funcionales.")
+                        st.stop()
+                    
+                    # Mostrar resumen de particiones
+                    st.subheader("📊 Resumen de Particiones")
+                    for i, partition_df in enumerate(partitioned_dfs):
+                        num_pacientes = pacientes_por_particion[i] if i < len(pacientes_por_particion) else 0
+                        st.write(f"**Partition {i+1}**: {num_pacientes} pacientes únicos, {len(partition_df)} registros")
+                        
+                        # Mostrar desglose por unidad funcional
+                        if len(partition_df) > 0 and 'Unidad Funcional' in partition_df.columns:
+                            unidades_en_particion = partition_df['Unidad Funcional'].value_counts()
+                            for unidad, count in unidades_en_particion.items():
+                                pacientes_unidad = partition_df[partition_df['Unidad Funcional'] == unidad]['Identificación'].nunique()
+                                st.write(f"   - {unidad}: {pacientes_unidad} pacientes, {count} registros")
+
+                    # Generate Excel file in memory
+                    output_buffer = io.BytesIO()
+                    with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
+                        for i, part_df in enumerate(partitioned_dfs):
+                            # Limitar el nombre de la hoja a 31 caracteres (límite de Excel)
+                            sheet_name = f'Part {i+1}'[:31]
+                            
+                            # Asegurar que todas las columnas estén presentes en el orden correcto
+                            columnas_a_exportar = [col for col in columnas_existentes if col in part_df.columns]
+                            columnas_adicionales = ['Estado', 'Observación']
+                            columnas_finales = columnas_a_exportar + [col for col in columnas_adicionales if col in part_df.columns]
+                            
+                            # Reordenar el DataFrame para la exportación
+                            part_df_export = part_df[columnas_finales] if len(part_df) > 0 else pd.DataFrame(columns=columnas_finales)
+                            part_df_export.to_excel(writer, sheet_name=sheet_name, index=False)
+                        
+                        # Agregar una hoja de resumen
+                        resumen_data = {
+                            'Partición': [f'Part {i+1}' for i in range(num_partitions)],
+                            'Pacientes Únicos': pacientes_por_particion,
+                            'Total Registros': [len(partitioned_dfs[i]) for i in range(num_partitions)]
+                        }
+                        
+                        # Agregar columnas para cada unidad funcional seleccionada
+                        for unidad in unidades_seleccionadas:
+                            resumen_data[unidad] = [
+                                len(partitioned_dfs[i][partitioned_dfs[i]['Unidad Funcional'] == unidad]) if len(partitioned_dfs[i]) > 0 else 0
+                                for i in range(num_partitions)
+                            ]
+                        
+                        resumen_df = pd.DataFrame(resumen_data)
+                        resumen_df.to_excel(writer, sheet_name='Resumen', index=False)
+                        
+                        # Agregar hoja de configuración para partición personalizada
+                        if tipo_particion == "Partición personalizada":
+                            config_data = []
+                            # Obtener la configuración del session state o recrearla
+                            for i in range(num_partitions):
+                                # Recuperar las unidades seleccionadas para cada partición
+                                unidades_key = f"particion_{i}"
+                                if unidades_key in st.session_state:
+                                    for unidad in st.session_state[unidades_key]:
+                                        config_data.append({
+                                            'Partición': f'Part {i+1}',
+                                            'Unidad Funcional': unidad
+                                        })
+                            
+                            if config_data:
+                                config_df = pd.DataFrame(config_data)
+                                config_df.to_excel(writer, sheet_name='Configuración_Particiones', index=False)
+
+                    output_buffer.seek(0)
+
+                    st.success("🎉 Data processed and partitioned successfully!")
+                    
+                    st.download_button(
+                        label="📥 Download Excel File",
+                        data=output_buffer,
+                        file_name='ReporteConsultaCitas_Partitions.xlsx',
+                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        type='primary'
+                    )
 
             except Exception as e:
                 st.error(f"An error occurred during processing: {e}")
+                st.exception(e)
 
 elif df_loaded and not unidades_disponibles:
     st.error("No se pudieron identificar unidades funcionales en el archivo. Verifica que la columna 'Unidad Funcional' exista y contenga datos.")
-
-
-
