@@ -9,3 +9,4 @@ seaborn
 fpdf
 io
 datetime
+calendar
