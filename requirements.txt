@@ -7,7 +7,5 @@ xlsxwriter
 matplotlib
 seaborn
 fpdf
-calendar
-oi
+io
 datetime
-timedelta
