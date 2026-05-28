@@ -1,497 +1,345 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import io
 import re
-import calendar
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Clasificador de Unidades Operativas",
+    page_title="Analizador de Unidades Operativas",
     page_icon="📊",
     layout="wide"
 )
 
 # Título de la aplicación
-st.title("📊 Clasificador de Unidades por Fechas")
+st.title("📊 Analizador de Unidades Operativas")
 st.markdown("---")
 
-# Fechas de corte
-FECHA_CORTE_MANIZALES = datetime(2025, 9, 16)
-FECHA_CORTE_ARMENIA = datetime(2025, 11, 20)
-FECHA_INICIO = datetime(2025, 9, 16)
-
 # Inicializar session state
-if 'dfs_procesados' not in st.session_state:
-    st.session_state.dfs_procesados = None
-if 'archivo_procesado' not in st.session_state:
-    st.session_state.archivo_procesado = None
-if 'hojas_requeridas' not in st.session_state:
-    st.session_state.hojas_requeridas = ['PGP', 'EVENTO', 'PDTE PGP', 'PDTE EVENTO']
-if 'procesamiento_completado' not in st.session_state:
-    st.session_state.procesamiento_completado = False
+if 'archivo_cargado' not in st.session_state:
+    st.session_state.archivo_cargado = None
+if 'datos_hojas' not in st.session_state:
+    st.session_state.datos_hojas = {}
+if 'filtros_aplicados' not in st.session_state:
+    st.session_state.filtros_aplicados = {}
 
-@st.cache_data
-def es_fecha_valida(valor):
-    """
-    Verifica si un valor puede ser una fecha válida
-    """
+def limpiar_valor(valor):
+    """Limpia y convierte valores para comparación"""
     if pd.isna(valor):
-        return False
-    
-    # Convertir a string y limpiar
-    valor_str = str(valor).strip()
-    
-    # Patrones comunes de fecha
-    patrones_fecha = [
-        r'\d{4}-\d{2}-\d{2}',  # YYYY-MM-DD
-        r'\d{2}/\d{2}/\d{4}',  # DD/MM/YYYY
-        r'\d{2}-\d{2}-\d{4}',  # DD-MM-YYYY
-        r'\d{4}/\d{2}/\d{2}',  # YYYY/MM/DD
-    ]
-    
-    # Verificar si coincide con algún patrón de fecha
-    for patron in patrones_fecha:
-        if re.match(patron, valor_str):
-            return True
-    
-    # Intentar convertir con pandas
-    try:
-        pd.to_datetime(valor_str)
-        return True
-    except:
-        return False
+        return ""
+    return str(valor).strip().upper()
 
-@st.cache_data
-def convertir_a_fecha_seguro(valor):
-    """
-    Convierte un valor a fecha de manera segura, manejando errores
-    """
-    if pd.isna(valor) or not es_fecha_valida(valor):
-        return None
+def mostrar_resumen_hoja(df, nombre_hoja):
+    """Muestra un resumen de la hoja con los primeros 10 registros"""
+    st.markdown(f"### 📄 Hoja: {nombre_hoja}")
     
-    try:
-        return pd.to_datetime(valor)
-    except:
-        return None
+    # Métricas básicas
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total de registros", len(df))
+    with col2:
+        columnas_relevantes = [col for col in df.columns if any(palabra in col.lower() for palabra in ['unidad', 'ciudad', 'fecha'])]
+        st.metric("Columnas relevantes", len(columnas_relevantes))
+    with col3:
+        st.metric("Columnas totales", len(df.columns))
+    
+    # Mostrar información de columnas
+    with st.expander("📋 Ver estructura de columnas"):
+        col_info = pd.DataFrame({
+            'Columna': df.columns,
+            'Tipo de dato': df.dtypes.astype(str),
+            'Valores nulos': df.isnull().sum(),
+            '% Nulos': (df.isnull().sum() / len(df) * 100).round(2)
+        })
+        st.dataframe(col_info, use_container_width=True)
+    
+    # Mostrar primeros 10 registros
+    st.markdown("#### 🔍 Primeros 10 registros")
+    st.dataframe(df.head(10), use_container_width=True)
+    
+    # Estadísticas adicionales
+    with st.expander("📊 Estadísticas adicionales"):
+        st.markdown("**Resumen de tipos de datos:**")
+        tipo_datos = df.dtypes.value_counts()
+        st.dataframe(tipo_datos, use_container_width=True)
 
-@st.cache_data
-def clasificar_unidad(ciudad, fecha_ingreso, fecha_factura):
-    """
-    Clasifica una unidad según la ciudad y las fechas de ingreso y factura
-    """
-    # Convertir fechas de manera segura
-    fecha_ingreso_valida = convertir_a_fecha_seguro(fecha_ingreso)
-    fecha_factura_valida = convertir_a_fecha_seguro(fecha_factura)
+def aplicar_filtro_unidad_operativa(df, columna_unidad, valor_filtro):
+    """Aplica filtro por unidad operativa"""
+    if not valor_filtro or valor_filtro == "Todos":
+        return df
     
-    # Si alguna fecha no es válida, no podemos clasificar
-    if fecha_ingreso_valida is None or fecha_factura_valida is None:
-        return "fecha no válida"
+    # Limpiar y comparar valores
+    mascara = df[columna_unidad].apply(lambda x: limpiar_valor(x) == limpiar_valor(valor_filtro))
+    return df[mascara]
+
+def aplicar_filtro_unidad_funcional(df, columna_funcional, valor_filtro):
+    """Aplica filtro por unidad funcional de ingreso"""
+    if not valor_filtro or valor_filtro == "Todos":
+        return df
     
-    # Determinar fecha de corte según ciudad
-    ciudad_str = str(ciudad).upper().strip() if pd.notna(ciudad) else ""
+    # Limpiar y comparar valores
+    mascara = df[columna_funcional].apply(lambda x: limpiar_valor(x) == limpiar_valor(valor_filtro))
+    return df[mascara]
+
+def identificar_columnas_filtro(df, tipo_filtro):
+    """Identifica las columnas disponibles para filtrar"""
+    columnas_posibles = []
     
-    if 'MANIZALES' in ciudad_str:
-        fecha_corte = FECHA_CORTE_MANIZALES
+    if tipo_filtro == "unidad_operativa":
+        # Palabras clave para unidad operativa
+        keywords = ['unidad', 'operativa', 'ciudad', 'ciiu', 'sede']
+    else:  # unidad_funcional
+        # Palabras clave para unidad funcional de ingreso
+        keywords = ['funcional', 'ingreso', 'area', 'departamento', 'seccion']
+    
+    for col in df.columns:
+        col_lower = col.lower()
+        for keyword in keywords:
+            if keyword in col_lower:
+                columnas_posibles.append(col)
+                break
+    
+    return columnas_posibles
+
+def procesar_hoja_con_filtros(df, nombre_hoja):
+    """Procesa una hoja y aplica los filtros correspondientes según el tipo de hoja"""
+    
+    # Determinar qué filtros aplicar según el nombre de la hoja
+    aplicar_filtro_uo = nombre_hoja in ['EVENTO', 'PGP']
+    aplicar_filtro_uf = nombre_hoja in ['PDTE EVENTO', 'PDTE PGP']
+    
+    # Crear pestañas para los diferentes filtros si aplica
+    if aplicar_filtro_uo or aplicar_filtro_uf:
+        tabs = []
+        tab_titles = ["📊 Datos completos"]
         
-        # Aplicar reglas para Manizales
-        if fecha_ingreso_valida < fecha_corte and fecha_factura_valida < fecha_corte:
-            return "no incluido en el modelo"
-        elif fecha_ingreso_valida >= fecha_corte and fecha_factura_valida >= fecha_corte:
-            return "incluido en el modelo"
-        elif fecha_ingreso_valida > fecha_corte and fecha_factura_valida < fecha_corte:
-            return "no incluido en el modelo"
-        elif fecha_ingreso_valida < fecha_corte and fecha_factura_valida > fecha_corte:
-            return "no incluido en el modelo"
-        else:
-            return "clasificación pendiente"
-    
-    elif 'ARMENIA' in ciudad_str:
-        fecha_corte = FECHA_CORTE_ARMENIA
+        if aplicar_filtro_uo:
+            tab_titles.append("🔍 Filtrar por Unidad Operativa")
+        if aplicar_filtro_uf:
+            tab_titles.append("🎯 Filtrar por Unidad Funcional de Ingreso")
         
-        # Aplicar reglas para Armenia
-        if fecha_ingreso_valida < fecha_corte and fecha_factura_valida < fecha_corte:
-            return "no incluido en el modelo"
-        elif fecha_ingreso_valida >= fecha_corte and fecha_factura_valida >= fecha_corte:
-            return "incluido en el modelo"
-        elif fecha_ingreso_valida > fecha_corte and fecha_factura_valida < fecha_corte:
-            return "no incluido en el modelo"
-        elif fecha_ingreso_valida < fecha_corte and fecha_factura_valida > fecha_corte:
-            return "no incluido en el modelo"
-        else:
-            return "clasificación pendiente"
+        tabs = st.tabs(tab_titles)
+        
+        # Pestaña de datos completos
+        with tabs[0]:
+            mostrar_resumen_hoja(df, nombre_hoja)
+        
+        # Pestaña de filtro por unidad operativa
+        if aplicar_filtro_uo:
+            with tabs[1] if len(tabs) > 1 else tabs[0]:
+                st.markdown(f"#### Filtro por Unidad Operativa - {nombre_hoja}")
+                
+                # Identificar columnas de unidad operativa
+                columnas_uo = identificar_columnas_filtro(df, "unidad_operativa")
+                
+                if columnas_uo:
+                    columna_seleccionada = st.selectbox(
+                        "Selecciona la columna de Unidad Operativa:",
+                        columnas_uo,
+                        key=f"uo_col_{nombre_hoja}"
+                    )
+                    
+                    # Obtener valores únicos para el filtro
+                    valores_unicos = ['Todos'] + sorted(df[columna_seleccionada].dropna().unique().tolist())
+                    valor_filtro = st.selectbox(
+                        "Selecciona la Unidad Operativa:",
+                        valores_unicos,
+                        key=f"uo_filtro_{nombre_hoja}"
+                    )
+                    
+                    # Aplicar filtro
+                    df_filtrado = aplicar_filtro_unidad_operativa(df, columna_seleccionada, valor_filtro)
+                    
+                    st.markdown(f"**Registros después del filtro:** {len(df_filtrado)} de {len(df)}")
+                    
+                    if len(df_filtrado) > 0:
+                        st.markdown("**Datos filtrados (primeros 10 registros):**")
+                        st.dataframe(df_filtrado.head(10), use_container_width=True)
+                    else:
+                        st.warning("No se encontraron registros con el filtro seleccionado")
+                else:
+                    st.warning("No se encontraron columnas que puedan corresponder a Unidad Operativa")
+        
+        # Pestaña de filtro por unidad funcional de ingreso
+        if aplicar_filtro_uf:
+            tab_index = 2 if (aplicar_filtro_uo and len(tabs) > 2) else (1 if not aplicar_filtro_uo else 1)
+            with tabs[tab_index]:
+                st.markdown(f"#### Filtro por Unidad Funcional de Ingreso - {nombre_hoja}")
+                
+                # Identificar columnas de unidad funcional
+                columnas_uf = identificar_columnas_filtro(df, "unidad_funcional")
+                
+                if columnas_uf:
+                    columna_seleccionada = st.selectbox(
+                        "Selecciona la columna de Unidad Funcional de Ingreso:",
+                        columnas_uf,
+                        key=f"uf_col_{nombre_hoja}"
+                    )
+                    
+                    # Obtener valores únicos para el filtro
+                    valores_unicos = ['Todos'] + sorted(df[columna_seleccionada].dropna().unique().tolist())
+                    valor_filtro = st.selectbox(
+                        "Selecciona la Unidad Funcional:",
+                        valores_unicos,
+                        key=f"uf_filtro_{nombre_hoja}"
+                    )
+                    
+                    # Aplicar filtro
+                    df_filtrado = aplicar_filtro_unidad_funcional(df, columna_seleccionada, valor_filtro)
+                    
+                    st.markdown(f"**Registros después del filtro:** {len(df_filtrado)} de {len(df)}")
+                    
+                    if len(df_filtrado) > 0:
+                        st.markdown("**Datos filtrados (primeros 10 registros):**")
+                        st.dataframe(df_filtrado.head(10), use_container_width=True)
+                    else:
+                        st.warning("No se encontraron registros con el filtro seleccionado")
+                else:
+                    st.warning("No se encontraron columnas que puedan corresponder a Unidad Funcional de Ingreso")
     
     else:
-        return "ciudad no identificada"
-
-def identificar_columnas(df, nombre_hoja):
-    """
-    Identifica las columnas relevantes en el DataFrame
-    """
-    columnas_info = {
-        'ciudad': None,
-        'fecha_ingreso': None,
-        'fecha_factura': None
-    }
-    
-    # Buscar columna de ciudad
-    for col in df.columns:
-        col_lower = col.lower()
-        if 'ciudad' in col_lower or 'unidad' in col_lower or 'operativa' in col_lower:
-            columnas_info['ciudad'] = col
-            break
-    
-    # Buscar columna de fecha de ingreso
-    for col in df.columns:
-        col_lower = col.lower()
-        if 'ingreso' in col_lower or 'fechaing' in col_lower or 'f_ingreso' in col_lower:
-            columnas_info['fecha_ingreso'] = col
-            break
-    
-    # Buscar columna de fecha de factura
-    for col in df.columns:
-        col_lower = col.lower()
-        if 'factura' in col_lower or 'fechafac' in col_lower or 'f_factura' in col_lower:
-            columnas_info['fecha_factura'] = col
-            break
-    
-    return columnas_info
-
-# IMPORTANTE: Agregamos guion bajo al parámetro df para evitar el hashing
-def procesar_hoja(_df, nombre_hoja):
-    """
-    Procesa cada hoja del Excel agregando la columna de clasificación
-    """
-    df_procesado = _df.copy()
-    
-    # Identificar columnas relevantes
-    columnas = identificar_columnas(_df, nombre_hoja)
-    
-    # Verificar que se encontraron las columnas necesarias
-    columnas_faltantes = []
-    if columnas['ciudad'] is None:
-        columnas_faltantes.append('ciudad')
-    if columnas['fecha_ingreso'] is None:
-        columnas_faltantes.append('fecha ingreso')
-    if columnas['fecha_factura'] is None:
-        columnas_faltantes.append('fecha factura')
-    
-    if columnas_faltantes:
-        df_procesado['Clasificación'] = "columnas no encontradas"
-        df_procesado['Fecha Ingreso'] = None
-        df_procesado['Fecha Factura'] = None
-        return df_procesado
-    
-    # Aplicar clasificación de manera vectorizada
-    clasificaciones = []
-    fechas_ingreso_proc = []
-    fechas_factura_proc = []
-    
-    total_rows = len(df_procesado)
-    for idx, row in df_procesado.iterrows():
-        # Obtener valores
-        ciudad = row[columnas['ciudad']] if pd.notna(row[columnas['ciudad']]) else ""
-        fecha_ingreso = row[columnas['fecha_ingreso']] if columnas['fecha_ingreso'] in df_procesado.columns else None
-        fecha_factura = row[columnas['fecha_factura']] if columnas['fecha_factura'] in df_procesado.columns else None
-        
-        # Convertir fechas de manera segura
-        fecha_ingreso_dt = convertir_a_fecha_seguro(fecha_ingreso)
-        fecha_factura_dt = convertir_a_fecha_seguro(fecha_factura)
-        
-        fechas_ingreso_proc.append(fecha_ingreso_dt)
-        fechas_factura_proc.append(fecha_factura_dt)
-        
-        # Clasificar
-        clasificacion = clasificar_unidad(ciudad, fecha_ingreso, fecha_factura)
-        clasificaciones.append(clasificacion)
-    
-    # Agregar columnas de información
-    df_procesado['Clasificación'] = clasificaciones
-    df_procesado['Fecha Ingreso'] = fechas_ingreso_proc
-    df_procesado['Fecha Factura'] = fechas_factura_proc
-    
-    return df_procesado
-
-def construir_tabla_resumen(dfs_procesados, fecha_fin):
-    """
-    Construye la tabla de resumen con las métricas por fecha
-    """
-    # Crear rango de fechas desde FECHA_INICIO hasta fecha_fin
-    fechas = pd.date_range(start=FECHA_INICIO, end=fecha_fin, freq='D')
-    
-    # Inicializar lista para almacenar los datos
-    datos_resumen = []
-    
-    # Procesar cada fecha
-    for fecha in fechas:
-        fecha_str = fecha.strftime('%Y-%m-%d')
-        semana = fecha.isocalendar()[1]
-        año = fecha.year
-        
-        # Inicializar contadores
-        ingresos = 0
-        facturado_modelo = 0
-        facturado_fuera_modelo = 0
-        
-        # Procesar cada hoja
-        for nombre_hoja, df in dfs_procesados.items():
-            if df is None or 'Fecha Ingreso' not in df.columns or 'Fecha Factura' not in df.columns:
-                continue
-            
-            # Filtrar registros con fechas válidas
-            df_validos = df.dropna(subset=['Fecha Ingreso', 'Fecha Factura', 'Clasificación'])
-            
-            if len(df_validos) == 0:
-                continue
-            
-            # Contar ingresos para esta fecha (basado en Fecha Ingreso)
-            ingresos_fecha = len(df_validos[
-                df_validos['Fecha Ingreso'].dt.date == fecha.date()
-            ])
-            ingresos += ingresos_fecha
-            
-            # Filtrar solo hojas PGP y EVENTO para facturación
-            if nombre_hoja in ['PGP', 'EVENTO']:
-                # Facturado modelo (incluidos)
-                modelo_fecha = len(df_validos[
-                    (df_validos['Fecha Factura'].dt.date == fecha.date()) &
-                    (df_validos['Clasificación'] == 'incluido en el modelo')
-                ])
-                facturado_modelo += modelo_fecha
-                
-                # Facturado fuera modelo (no incluidos)
-                fuera_modelo_fecha = len(df_validos[
-                    (df_validos['Fecha Factura'].dt.date == fecha.date()) &
-                    (df_validos['Clasificación'] == 'no incluido en el modelo')
-                ])
-                facturado_fuera_modelo += fuera_modelo_fecha
-        
-        # Solo agregar fila si hay algún valor
-        if ingresos > 0 or facturado_modelo > 0 or facturado_fuera_modelo > 0:
-            datos_resumen.append({
-                'Fecha': fecha_str,
-                'Semana del Año': semana,
-                'Año': año,
-                'Ingresos': ingresos,
-                'Facturado Modelo': facturado_modelo,
-                'Facturado Fuera Modelo': facturado_fuera_modelo,
-                'Facturado Total': facturado_modelo + facturado_fuera_modelo
-            })
-    
-    return pd.DataFrame(datos_resumen)
+        # Para hojas que no requieren filtros especiales
+        mostrar_resumen_hoja(df, nombre_hoja)
 
 # Sidebar con información
 with st.sidebar:
-    st.header("📋 Información")
+    st.header("📋 Instrucciones")
     st.markdown("""
-    **Fechas de corte:**
-    - 🏙️ **Manizales:** 16/09/2025
-    - 🏙️ **Armenia:** 20/11/2025
+    **Funcionalidades:**
+    1. Carga un archivo Excel con múltiples hojas
+    2. Visualiza un resumen de cada hoja con los primeros 10 registros
+    3. Aplica filtros específicos según el tipo de hoja:
+       - **EVENTO y PGP**: Filtro por Unidad Operativa
+       - **PDTE EVENTO y PDTE PGP**: Filtro por Unidad Funcional de Ingreso
     
-    **Reglas de clasificación:**
-    - Si fecha ingreso < corte Y fecha factura < corte → "no incluido en el modelo"
-    - Si fecha ingreso ≥ corte Y fecha factura ≥ corte → "incluido en el modelo"
-    - Si fecha ingreso > corte Y fecha factura < corte → "no incluido en el modelo"
-    - Si fecha ingreso < corte Y fecha factura > corte → "no incluido en el modelo"
+    **Requisitos del archivo:**
+    - Formato: Excel (.xlsx, .xls)
+    - Puede contener cualquier nombre de hoja
+    - Cada hoja será procesada individualmente
     """)
     
     st.markdown("---")
-    st.markdown("**Hojas esperadas en el archivo:**")
-    for hoja in st.session_state.hojas_requeridas:
-        st.markdown(f"- {hoja}")
+    st.markdown("**💡 Consejos:**")
+    st.markdown("""
+    - Los filtros son dinámicos y se aplican en tiempo real
+    - Puedes identificar las columnas correctas para filtrar
+    - Los valores de filtro se obtienen automáticamente de los datos
+    """)
 
-# Carga del archivo
+# Área principal para cargar archivo
+st.header("📁 Carga de Archivo")
+
 archivo_subido = st.file_uploader(
-    "Cargar archivo Excel", 
+    "Selecciona un archivo Excel",
     type=['xlsx', 'xls'],
-    help="Selecciona el archivo Excel con las 4 hojas requeridas",
-    key="file_uploader"
+    help="Carga un archivo Excel para analizar sus hojas",
+    key="file_uploader_main"
 )
 
 if archivo_subido is not None:
     # Verificar si es un archivo nuevo
-    if st.session_state.archivo_procesado != archivo_subido.name:
-        st.session_state.dfs_procesados = None
-        st.session_state.archivo_procesado = archivo_subido.name
-        st.session_state.procesamiento_completado = False
-    
-    try:
-        # Leer todas las hojas del Excel
-        with st.spinner("Leyendo archivo Excel..."):
-            excel_file = pd.ExcelFile(archivo_subido)
-            hojas_disponibles = excel_file.sheet_names
+    if st.session_state.archivo_cargado != archivo_subido.name:
+        st.session_state.archivo_cargado = archivo_subido.name
+        st.session_state.datos_hojas = {}
         
-        # Verificar que estén todas las hojas requeridas
-        hojas_faltantes = [h for h in st.session_state.hojas_requeridas if h not in hojas_disponibles]
-        
-        if hojas_faltantes:
-            st.error(f"❌ Faltan las siguientes hojas: {', '.join(hojas_faltantes)}")
-        else:
-            st.success("✅ Archivo cargado correctamente con todas las hojas requeridas")
+        try:
+            # Leer el archivo Excel
+            with st.spinner("Cargando archivo Excel..."):
+                excel_file = pd.ExcelFile(archivo_subido)
+                hojas = excel_file.sheet_names
             
-            # Procesar cada hoja solo si no están ya procesadas
-            if not st.session_state.procesamiento_completado:
-                st.session_state.dfs_procesados = {}
-                
-                # Barra de progreso general
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                for i, hoja in enumerate(st.session_state.hojas_requeridas):
-                    status_text.text(f"Procesando hoja: {hoja}")
-                    
-                    # Leer la hoja
+            st.success(f"✅ Archivo cargado correctamente. Se encontraron {len(hojas)} hojas: {', '.join(hojas)}")
+            
+            # Procesar cada hoja
+            with st.spinner("Procesando hojas..."):
+                for hoja in hojas:
                     df = pd.read_excel(archivo_subido, sheet_name=hoja)
-                    
-                    # Procesar la hoja (nota: pasamos el DataFrame con guion bajo implícito)
-                    df_procesado = procesar_hoja(df, hoja)
-                    st.session_state.dfs_procesados[hoja] = df_procesado
-                    
-                    # Actualizar barra de progreso
-                    progress_bar.progress((i + 1) / len(st.session_state.hojas_requeridas))
-                
-                status_text.text("¡Procesamiento completado!")
-                progress_bar.empty()
-                st.session_state.procesamiento_completado = True
-                st.rerun()  # Forzar rerun para mostrar los resultados
+                    st.session_state.datos_hojas[hoja] = df
             
-            # Mostrar resultados por hoja
-            if st.session_state.dfs_procesados:
-                with st.expander("📊 Ver resultados detallados por hoja", expanded=False):
-                    # Tabs para cada hoja
-                    tabs = st.tabs(st.session_state.hojas_requeridas)
-                    
-                    for tab, hoja in zip(tabs, st.session_state.hojas_requeridas):
-                        with tab:
-                            df_actual = st.session_state.dfs_procesados[hoja]
-                            
-                            # Métricas
-                            col1, col2, col3, col4 = st.columns(4)
-                            with col1:
-                                st.metric("Total registros", len(df_actual))
-                            with col2:
-                                incluidos = len(df_actual[df_actual['Clasificación'] == 'incluido en el modelo'])
-                                st.metric("✅ Incluidos", incluidos)
-                            with col3:
-                                no_incluidos = len(df_actual[df_actual['Clasificación'] == 'no incluido en el modelo'])
-                                st.metric("❌ No incluidos", no_incluidos)
-                            with col4:
-                                fechas_invalidas = len(df_actual[df_actual['Clasificación'] == 'fecha no válida'])
-                                st.metric("⚠️ Fechas inválidas", fechas_invalidas)
-                            
-                            # Mostrar DataFrame
-                            st.dataframe(df_actual.head(100), use_container_width=True)
-                            if len(df_actual) > 100:
-                                st.caption(f"Mostrando 100 de {len(df_actual)} registros")
+            st.success("✅ Todas las hojas han sido procesadas correctamente")
+            st.balloons()
+            
+        except Exception as e:
+            st.error(f"❌ Error al cargar el archivo: {str(e)}")
+            st.session_state.archivo_cargado = None
+            st.session_state.datos_hojas = {}
+    
+    # Mostrar resultados si hay datos cargados
+    if st.session_state.datos_hojas:
+        st.markdown("---")
+        st.header("📊 Análisis de Hojas")
+        
+        # Crear pestañas para cada hoja
+        hojas_nombres = list(st.session_state.datos_hojas.keys())
+        tabs = st.tabs(hojas_nombres)
+        
+        # Procesar cada hoja en su pestaña correspondiente
+        for tab, nombre_hoja in zip(tabs, hojas_nombres):
+            with tab:
+                df = st.session_state.datos_hojas[nombre_hoja]
+                procesar_hoja_con_filtros(df, nombre_hoja)
                 
-                # Sección de tabla resumen
+                # Separador visual
                 st.markdown("---")
-                st.header("📈 Tabla Resumen por Fecha")
-                
-                # Selector de fecha
-                fecha_maxima = datetime.now().date()
-                fecha_seleccionada = st.date_input(
-                    "Seleccionar fecha final para el resumen",
-                    value=fecha_maxima,
-                    min_value=FECHA_INICIO.date(),
-                    max_value=fecha_maxima,
-                    key="fecha_selector"
-                )
-                
-                # Convertir a datetime
-                fecha_fin_dt = datetime.combine(fecha_seleccionada, datetime.min.time())
-                
-                # Construir tabla resumen
-                with st.spinner("Construyendo tabla resumen..."):
-                    df_resumen = construir_tabla_resumen(st.session_state.dfs_procesados, fecha_fin_dt)
-                    
-                    if len(df_resumen) > 0:
-                        # Mostrar métricas globales
-                        st.subheader("Métricas Globales")
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("Total Ingresos", f"{df_resumen['Ingresos'].sum():,}")
-                        with col2:
-                            st.metric("Total Facturado Modelo", f"{df_resumen['Facturado Modelo'].sum():,}")
-                        with col3:
-                            st.metric("Total Facturado Fuera Modelo", f"{df_resumen['Facturado Fuera Modelo'].sum():,}")
-                        with col4:
-                            st.metric("Total Facturado", f"{df_resumen['Facturado Total'].sum():,}")
-                        
-                        # Mostrar tabla resumen
-                        st.subheader("Detalle por Fecha")
-                        st.dataframe(
-                            df_resumen,
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config={
-                                "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
-                                "Semana del Año": st.column_config.NumberColumn("Semana", format="%d"),
-                                "Año": st.column_config.NumberColumn("Año", format="%d"),
-                                "Ingresos": st.column_config.NumberColumn("Ingresos", format="%d"),
-                                "Facturado Modelo": st.column_config.NumberColumn("Fact. Modelo", format="%d"),
-                                "Facturado Fuera Modelo": st.column_config.NumberColumn("Fact. Fuera Modelo", format="%d"),
-                                "Facturado Total": st.column_config.NumberColumn("Fact. Total", format="%d")
-                            }
-                        )
-                        
-                        # Gráfico de evolución
-                        st.subheader("Evolución Temporal")
-                        if len(df_resumen) > 1:
-                            chart_data = df_resumen.set_index('Fecha')[['Ingresos', 'Facturado Modelo', 'Facturado Fuera Modelo']]
-                            st.line_chart(chart_data)
-                        else:
-                            st.info("Se necesita más de un día de datos para mostrar el gráfico de evolución")
-                        
-                        # Botones de descarga
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            csv_resumen = df_resumen.to_csv(index=False).encode('utf-8')
-                            st.download_button(
-                                label="📥 Descargar tabla resumen como CSV",
-                                data=csv_resumen,
-                                file_name=f"resumen_fechas_{fecha_seleccionada.strftime('%Y%m%d')}.csv",
-                                mime="text/csv"
-                            )
-                        
-                        with col2:
-                            # Excel con todas las hojas más el resumen
-                            output = io.BytesIO()
-                            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                                for hoja, df in st.session_state.dfs_procesados.items():
-                                    df.to_excel(writer, sheet_name=hoja[:31], index=False)  # Excel limita nombres a 31 caracteres
-                                df_resumen.to_excel(writer, sheet_name='RESUMEN', index=False)
-                            
-                            st.download_button(
-                                label="📥 Descargar Excel completo con resumen",
-                                data=output.getvalue(),
-                                file_name=f"unidades_clasificadas_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                    else:
-                        st.warning("No hay datos en el rango de fechas seleccionado")
+        
+        # Opción para descargar resultados
+        st.markdown("---")
+        st.header("💾 Exportar Resultados")
+        
+        # Botón para exportar todas las hojas originales
+        if st.button("📥 Exportar todas las hojas a Excel"):
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                for nombre_hoja, df in st.session_state.datos_hojas.items():
+                    # Limitar nombre de la hoja a 31 caracteres (límite de Excel)
+                    nombre_sheet = nombre_hoja[:31]
+                    df.to_excel(writer, sheet_name=nombre_sheet, index=False)
             
-    except Exception as e:
-        st.error(f"❌ Error al procesar el archivo: {str(e)}")
-        st.exception(e)
+            st.download_button(
+                label="📥 Descargar archivo Excel",
+                data=output.getvalue(),
+                file_name=f"datos_exportados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
 else:
     # Mensaje cuando no hay archivo cargado
-    st.info("👆 Por favor, carga un archivo Excel para comenzar")
+    st.info("👆 Por favor, carga un archivo Excel para comenzar el análisis")
     
-    # Ejemplo de estructura esperada
+    # Mostrar ejemplo
     with st.expander("📋 Ver ejemplo de estructura esperada"):
-        ejemplo_data = {
-            'Unidad': ['U001', 'U002', 'U003', 'U004'],
-            'Ciudad': ['MANIZALES', 'ARMENIA', 'MANIZALES', 'ARMENIA'],
-            'Fecha Ingreso': ['2025-09-15', '2025-11-21', '2025-09-17', '2025-11-19'],
-            'Fecha Factura': ['2025-09-14', '2025-11-22', '2025-09-18', '2025-11-20']
-        }
-        ejemplo_df = pd.DataFrame(ejemplo_data)
-        st.dataframe(ejemplo_df)
-        st.caption("""
-        El archivo debe contener columnas con nombres similares para:
-        - Ciudad (puede llamarse 'ciudad', 'unidad', 'unidad operativa')
-        - Fecha ingreso (puede llamarse 'fecha ingreso', 'fechaing', 'f_ingreso')
-        - Fecha factura (puede llamarse 'fecha factura', 'fechafac', 'f_factura')
+        st.markdown("""
+        **El archivo Excel puede contener múltiples hojas con cualquier nombre.**
+        
+        **Para aprovechar los filtros, las hojas deberían llamarse:**
+        - `EVENTO` o `PGP` → Filtro por Unidad Operativa
+        - `PDTE EVENTO` o `PDTE PGP` → Filtro por Unidad Funcional de Ingreso
+        
+        **Ejemplo de columnas que se pueden filtrar:**
+        
+        *Para Unidad Operativa:*
+        - Unidad
+        - Ciudad
+        - Unidad Operativa
+        - Sede
+        
+        *Para Unidad Funcional de Ingreso:*
+        - Unidad Funcional
+        - Área de Ingreso
+        - Departamento
+        - Sección
         """)
+        
+        # Datos de ejemplo
+        ejemplo_uo = pd.DataFrame({
+            'Fecha': ['2025-01-01', '2025-01-02', '2025-01-03'],
+            'Unidad Operativa': ['Manizales', 'Armenia', 'Pereira'],
+            'Valor': [100, 200, 150]
+        })
+        
+        st.markdown("**Ejemplo con Unidad Operativa:**")
+        st.dataframe(ejemplo_uo, use_container_width=True)
+
+# Footer
+st.markdown("---")
+st.markdown("💡 **Nota:** Los filtros son específicos para cada tipo de hoja y te permiten explorar los datos según tus necesidades.")
