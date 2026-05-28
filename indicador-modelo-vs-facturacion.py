@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 import calendar
 
@@ -112,8 +112,9 @@ def build_table(city, config, dfs, end_date):
     """Construye tabla resumen"""
     start_date = config['fecha_inicio']
     
-    # Generar rango de fechas
-    date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+    # Generar rango de fechas (máximo 365 días para evitar sobrecarga)
+    max_days = 365
+    date_range = pd.date_range(start=start_date, end=min(end_date, start_date + timedelta(days=max_days)), freq='D')
     
     # Procesar datos
     ingresos = process_ingresos(dfs, start_date, end_date)
@@ -129,6 +130,7 @@ def build_table(city, config, dfs, end_date):
         total = mod + out
         nov = max(0, ing - total)
         
+        # Solo mostrar días con actividad
         if ing > 0 or total > 0:
             rows.append({
                 'semana': date.isocalendar()[1],
@@ -154,6 +156,14 @@ with st.sidebar:
     st.markdown("**Fechas de inicio:**")
     for city, config in CIUDADES_CONFIG.items():
         st.markdown(f"- **{config['nombre']}:** {config['fecha_inicio'].strftime('%d/%m/%Y')}")
+    
+    st.markdown("---")
+    st.markdown("**Reglas:**")
+    st.markdown("""
+    - **Modelo:** Ingreso ≥ inicio AND Factura ≥ inicio
+    - **Fuera modelo:** Ingreso < inicio AND Factura < inicio
+    - **Novedades:** Ingresos - Facturado Total
+    """)
 
 # Carga de archivo
 st.header("📁 Cargar Archivo")
@@ -164,7 +174,7 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file:
-    if st.button("📊 Procesar", type="primary"):
+    if st.button("📊 Procesar Archivo", type="primary"):
         with st.spinner("Procesando archivo..."):
             try:
                 # Leer todas las hojas
@@ -174,7 +184,7 @@ if uploaded_file:
                 # Verificar hojas
                 missing = [h for h in HOJAS_REQUERIDAS if h not in sheets]
                 if missing:
-                    st.error(f"Faltan hojas: {', '.join(missing)}")
+                    st.error(f"Faltan hojas requeridas: {', '.join(missing)}")
                 else:
                     # Cargar datos
                     data = {}
@@ -198,22 +208,15 @@ if uploaded_file:
                     st.success("✅ Archivo procesado exitosamente!")
                     
             except Exception as e:
-                st.error(f"Error: {str(e)}")
+                st.error(f"Error al procesar: {str(e)}")
 
 # Mostrar resultados
 if st.session_state.data is not None and st.session_state.max_date is not None:
     st.markdown("---")
     st.header("📊 Resultados")
     
-    # Selector de fecha
-    end_date = st.date_input(
-        "Fecha final:",
-        value=st.session_state.max_date.date(),
-        min_value=datetime(2025, 9, 16).date(),
-        max_value=st.session_state.max_date.date()
-    )
-    
-    end_date_dt = datetime.combine(end_date, datetime.min.time())
+    # Información de fechas disponibles
+    st.info(f"📅 Datos disponibles hasta: {st.session_state.max_date.strftime('%d/%m/%Y')}")
     
     # Selector de ciudad
     ciudad_seleccionada = st.selectbox(
@@ -222,8 +225,22 @@ if st.session_state.data is not None and st.session_state.max_date is not None:
         format_func=lambda x: CIUDADES_CONFIG[x]['nombre']
     )
     
+    # Opción para ver todas las fechas o solo hasta cierta fecha
+    ver_todas = st.checkbox("Ver todas las fechas disponibles", value=True)
+    
     # Procesar ciudad seleccionada
     config = CIUDADES_CONFIG[ciudad_seleccionada]
+    
+    # Determinar fecha final
+    if ver_todas:
+        end_date_dt = st.session_state.max_date
+    else:
+        # Usar fecha de inicio + 30 días como ejemplo
+        end_date_dt = min(
+            st.session_state.max_date,
+            config['fecha_inicio'] + timedelta(days=90)
+        )
+        st.caption(f"Mostrando hasta {end_date_dt.strftime('%d/%m/%Y')} (primeros 90 días)")
     
     with st.spinner(f"Procesando {config['nombre']}..."):
         df_table = build_table(
@@ -242,6 +259,9 @@ if st.session_state.data is not None and st.session_state.max_date is not None:
         col4.metric("Facturado Total", f"{df_table['facturado total'].sum():,}")
         col5.metric("Novedades", f"{df_table['Novedades'].sum():,}")
         
+        # Mostrar rango de fechas
+        st.caption(f"📅 Período: {df_table['Fecha'].min()} al {df_table['Fecha'].max()}")
+        
         # Tabla
         st.dataframe(df_table, use_container_width=True)
         
@@ -252,30 +272,49 @@ if st.session_state.data is not None and st.session_state.max_date is not None:
             st.line_chart(chart_data)
         
         # Descargas
+        st.markdown("---")
+        st.subheader("💾 Exportar datos")
+        
         col1, col2 = st.columns(2)
         
+        # CSV
         csv_data = df_table.to_csv(index=False).encode('utf-8')
         col1.download_button(
             "📥 Descargar CSV",
             csv_data,
             f"{ciudad_seleccionada.lower()}_resumen.csv",
-            "text/csv"
+            "text/csv",
+            use_container_width=True
         )
         
+        # Excel
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_table.to_excel(writer, sheet_name=config['nombre'], index=False)
+            
+            # Agregar resumen de métricas
+            metrics_df = pd.DataFrame([
+                ['Ciudad', config['nombre']],
+                ['Fecha Inicio', config['fecha_inicio'].strftime('%d/%m/%Y')],
+                ['Fecha Fin', end_date_dt.strftime('%d/%m/%Y')],
+                ['Total Ingresos', df_table['ingresos'].sum()],
+                ['Facturado Modelo', df_table['facturado modelo'].sum()],
+                ['Facturado Fuera Modelo', df_table['facturado fuera modelo'].sum()],
+                ['Facturado Total', df_table['facturado total'].sum()],
+                ['Novedades', df_table['Novedades'].sum()]
+            ], columns=['Métrica', 'Valor'])
+            metrics_df.to_excel(writer, sheet_name='Métricas', index=False)
         
         col2.download_button(
             "📥 Descargar Excel",
             output.getvalue(),
             f"{ciudad_seleccionada.lower()}_resumen.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
         )
         
-        # Estadísticas adicionales
-        with st.expander("📊 Estadísticas adicionales"):
-            st.write("**Resumen por mes:**")
+        # Mostrar resumen por mes
+        with st.expander("📊 Ver resumen por mes"):
             monthly = df_table.groupby('mes').agg({
                 'ingresos': 'sum',
                 'facturado modelo': 'sum',
@@ -283,22 +322,31 @@ if st.session_state.data is not None and st.session_state.max_date is not None:
                 'facturado total': 'sum',
                 'Novedades': 'sum'
             }).reset_index()
+            
+            # Reordenar meses
+            order = ['January', 'February', 'March', 'April', 'May', 'June', 
+                    'July', 'August', 'September', 'October', 'November', 'December']
+            monthly['mes'] = pd.Categorical(monthly['mes'], categories=order, ordered=True)
+            monthly = monthly.sort_values('mes')
+            
             st.dataframe(monthly, use_container_width=True)
     
     else:
-        st.warning("No hay datos para mostrar en el período seleccionado")
+        st.warning("No hay datos para mostrar en el período disponible")
     
-    # Botón para limpiar
-    if st.button("🔄 Cargar otro archivo"):
+    # Botón para reiniciar
+    st.markdown("---")
+    if st.button("🔄 Cargar otro archivo", use_container_width=True):
         st.session_state.data = None
         st.session_state.max_date = None
         st.rerun()
 
 else:
     if uploaded_file is None:
-        st.info("👆 Carga un archivo Excel y presiona 'Procesar'")
+        st.info("👆 1. Carga un archivo Excel\n\n👆 2. Presiona 'Procesar Archivo'")
     else:
-        st.info("Presiona 'Procesar' para analizar el archivo")
+        st.info("⏳ Presiona 'Procesar Archivo' para analizar los datos")
 
+# Footer
 st.markdown("---")
-st.caption("Aplicación para análisis de facturación por ciudad")
+st.caption("Aplicación para análisis de facturación por ciudad | v1.0")
