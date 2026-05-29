@@ -32,8 +32,6 @@ if 'fecha_maxima' not in st.session_state:
     st.session_state.fecha_maxima = None
 if 'fecha_hasta' not in st.session_state:
     st.session_state.fecha_hasta = None
-if 'columnas_identificadas' not in st.session_state:
-    st.session_state.columnas_identificadas = {}
 
 def cargar_archivo(archivo):
     """Carga el archivo Excel y valida las hojas"""
@@ -48,75 +46,56 @@ def cargar_archivo(archivo):
             st.error(f"❌ Faltan las siguientes hojas: {', '.join(hojas_faltantes)}")
             return False, None, None
         
-        # Cargar datos
+        # Cargar datos y preprocesar fechas
         dfs = {}
         for hoja in HOJAS_REQUERIDAS:
-            dfs[hoja] = pd.read_excel(archivo, sheet_name=hoja)
-            st.info(f"📄 Hoja '{hoja}': {len(dfs[hoja]):,} registros")
+            df = pd.read_excel(archivo, sheet_name=hoja)
             
-            # Mostrar primeras columnas para depuración
-            with st.expander(f"Ver columnas de {hoja}"):
-                st.write(list(dfs[hoja].columns))
-        
-        # Identificar columnas en cada hoja
-        columnas_info = {}
-        for hoja, df in dfs.items():
-            columnas = {
-                'fecha_ingreso': None,
-                'unidad_operativa': None,
-                'centro_atencion': None
-            }
-            
+            # Identificar y convertir columna de fecha ingreso
+            col_fecha = None
             for col in df.columns:
                 col_lower = col.lower().strip()
-                
-                # Buscar fecha ingreso
-                if any(palabra in col_lower for palabra in ['fecha ingreso', 'fecha_ingreso', 'fechaing', 'ingreso', 'fecha de ingreso']):
-                    if columnas['fecha_ingreso'] is None:
-                        columnas['fecha_ingreso'] = col
-                
-                # Buscar unidad operativa
-                if any(palabra in col_lower for palabra in ['unidad operativa', 'unidad', 'operativa', 'ciudad', 'ciiu']):
-                    if columnas['unidad_operativa'] is None:
-                        columnas['unidad_operativa'] = col
-                
-                # Buscar centro de atención
-                if any(palabra in col_lower for palabra in ['centro de atencion', 'centro atencion', 'centro', 'atencion']):
-                    if columnas['centro_atencion'] is None:
-                        columnas['centro_atencion'] = col
+                if 'fecha ingreso' in col_lower or 'fecha_ingreso' in col_lower or 'fechaing' in col_lower or 'ingreso' in col_lower:
+                    col_fecha = col
+                    break
             
-            columnas_info[hoja] = columnas
+            if col_fecha:
+                # Convertir a datetime con dayfirst=True para formato DD/MM/YYYY
+                df['_fecha_ingreso'] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True)
+            else:
+                df['_fecha_ingreso'] = pd.NaT
             
-            # Mostrar columnas identificadas
-            with st.expander(f"Columnas identificadas en {hoja}"):
-                st.write(f"**Fecha Ingreso:** {columnas['fecha_ingreso']}")
-                st.write(f"**Unidad Operativa:** {columnas['unidad_operativa']}")
-                st.write(f"**Centro Atención:** {columnas['centro_atencion']}")
-                
-                # Mostrar ejemplos de valores
-                if columnas['fecha_ingreso']:
-                    st.write(f"**Ejemplos fechas:** {df[columnas['fecha_ingreso']].head(3).tolist()}")
-                if columnas['unidad_operativa']:
-                    st.write(f"**Ejemplos unidades:** {df[columnas['unidad_operativa']].head(3).tolist()}")
-                if columnas['centro_atencion']:
-                    st.write(f"**Ejemplos centros:** {df[columnas['centro_atencion']].head(3).tolist()}")
-        
-        st.session_state.columnas_identificadas = columnas_info
+            # Identificar columna de unidad operativa (para EVENTO y PGP)
+            if hoja in ['EVENTO', 'PGP']:
+                col_unidad = None
+                for col in df.columns:
+                    col_lower = col.lower().strip()
+                    if 'unidad operativa' in col_lower or 'unidad' in col_lower or 'operativa' in col_lower or 'ciudad' in col_lower:
+                        col_unidad = col
+                        break
+                df['_unidad_operativa'] = df[col_unidad].astype(str).str.upper() if col_unidad else ''
+            
+            # Identificar columna de centro de atención (para PDTE EVENTO y PDTE PGP)
+            if hoja in ['PDTE EVENTO', 'PDTE PGP']:
+                col_centro = None
+                for col in df.columns:
+                    col_lower = col.lower().strip()
+                    if 'centro de atencion' in col_lower or 'centro' in col_lower or 'atencion' in col_lower:
+                        col_centro = col
+                        break
+                df['_centro_atencion'] = df[col_centro].astype(str).str.upper() if col_centro else ''
+            
+            dfs[hoja] = df
+            st.info(f"📄 Hoja '{hoja}': {len(df):,} registros")
         
         # Encontrar fecha máxima
         fecha_max = datetime.now()
-        for hoja, df in dfs.items():
-            col_fecha = columnas_info[hoja]['fecha_ingreso']
-            if col_fecha:
-                try:
-                    # Intentar diferentes formatos de fecha
-                    fechas = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True)
-                    if not fechas.dropna().empty:
-                        max_fecha = fechas.max()
-                        if fecha_max is None or max_fecha > fecha_max:
-                            fecha_max = max_fecha
-                except:
-                    pass
+        for df in dfs.values():
+            fechas_validas = df['_fecha_ingreso'].dropna()
+            if not fechas_validas.empty:
+                max_fecha = fechas_validas.max()
+                if max_fecha > fecha_max:
+                    fecha_max = max_fecha
         
         return True, dfs, fecha_max
     
@@ -124,100 +103,53 @@ def cargar_archivo(archivo):
         st.error(f"❌ Error al cargar el archivo: {str(e)}")
         return False, None, None
 
-def convertir_fecha_valor(valor):
-    """Convierte un valor a fecha de manera robusta"""
-    if pd.isna(valor):
-        return None
-    try:
-        # Si es string, intentar diferentes formatos
-        if isinstance(valor, str):
-            # Intentar formato DD/MM/YYYY
-            try:
-                return datetime.strptime(valor.strip(), '%d/%m/%Y')
-            except:
-                pass
-            # Intentar formato DD-MM-YYYY
-            try:
-                return datetime.strptime(valor.strip(), '%d-%m-%Y')
-            except:
-                pass
-            # Intentar formato YYYY-MM-DD
-            try:
-                return datetime.strptime(valor.strip(), '%Y-%m-%d')
-            except:
-                pass
-        
-        # Usar pandas como respaldo
-        resultado = pd.to_datetime(valor, errors='coerce', dayfirst=True)
-        if pd.notna(resultado):
-            return resultado
-        return None
-    except:
-        return None
-
-def procesar_ingresos_ciudad(dfs, columnas_info, ciudad, fecha):
-    """Procesa ingresos para una ciudad específica"""
-    total_ingresos = 0
-    fecha_key = fecha.date() if hasattr(fecha, 'date') else fecha
+def procesar_ingresos_ciudad(dfs, ciudad, fecha_inicio, fecha_fin):
+    """Procesa ingresos para una ciudad de manera vectorizada"""
     
-    st.write(f"Debug - Procesando {ciudad} para fecha {fecha_key}")
+    # Generar diccionario de ingresos por fecha
+    ingresos_dict = {}
     
-    # Para hojas EVENTO y PGP: filtrar por "unidad operativa" = ciudad
+    # Procesar hojas EVENTO y PGP (filtro por unidad operativa)
     for hoja in ['EVENTO', 'PGP']:
-        if hoja in dfs and hoja in columnas_info:
+        if hoja in dfs:
             df = dfs[hoja]
-            cols = columnas_info[hoja]
             
-            col_fecha = cols['fecha_ingreso']
-            col_unidad = cols['unidad_operativa']
+            # Filtrar por unidad operativa
+            mask_unidad = df['_unidad_operativa'].str.contains(ciudad.upper(), na=False)
+            df_filtrado = df[mask_unidad]
             
-            if col_fecha and col_unidad:
-                # Convertir fechas
-                conteo = 0
-                for idx, row in df.iterrows():
-                    # Convertir fecha
-                    fecha_valor = convertir_fecha_valor(row[col_fecha])
-                    
-                    if fecha_valor and fecha_valor.date() == fecha_key:
-                        # Verificar unidad operativa
-                        unidad_valor = str(row[col_unidad]).upper().strip() if pd.notna(row[col_unidad]) else ""
-                        if ciudad.upper() in unidad_valor:
-                            conteo += 1
-                
-                if conteo > 0:
-                    st.write(f"  {hoja}: {conteo} registros")
-                total_ingresos += conteo
+            # Filtrar por rango de fechas
+            mask_fecha = (df_filtrado['_fecha_ingreso'] >= fecha_inicio) & (df_filtrado['_fecha_ingreso'] <= fecha_fin)
+            fechas = df_filtrado.loc[mask_fecha, '_fecha_ingreso'].dt.date
+            
+            # Contar
+            for fecha in fechas:
+                ingresos_dict[fecha] = ingresos_dict.get(fecha, 0) + 1
     
-    # Para hojas PDTE EVENTO y PDTE PGP: filtrar por "CENTRO DE ATENCIÓN" = "SAN MARCEL"
+    # Procesar hojas PDTE EVENTO y PDTE PGP (filtro por centro de atención SAN MARCEL)
     for hoja in ['PDTE EVENTO', 'PDTE PGP']:
-        if hoja in dfs and hoja in columnas_info:
+        if hoja in dfs:
             df = dfs[hoja]
-            cols = columnas_info[hoja]
             
-            col_fecha = cols['fecha_ingreso']
-            col_centro = cols['centro_atencion']
+            # Filtrar por centro de atención SAN MARCEL
+            mask_centro = df['_centro_atencion'].str.contains('SAN MARCEL', na=False)
+            df_filtrado = df[mask_centro]
             
-            if col_fecha and col_centro:
-                # Convertir fechas
-                conteo = 0
-                for idx, row in df.iterrows():
-                    # Convertir fecha
-                    fecha_valor = convertir_fecha_valor(row[col_fecha])
-                    
-                    if fecha_valor and fecha_valor.date() == fecha_key:
-                        # Verificar centro de atención
-                        centro_valor = str(row[col_centro]).upper().strip() if pd.notna(row[col_centro]) else ""
-                        if 'SAN MARCEL' in centro_valor:
-                            conteo += 1
-                
-                if conteo > 0:
-                    st.write(f"  {hoja}: {conteo} registros")
-                total_ingresos += conteo
+            # Filtrar por rango de fechas
+            mask_fecha = (df_filtrado['_fecha_ingreso'] >= fecha_inicio) & (df_filtrado['_fecha_ingreso'] <= fecha_fin)
+            fechas = df_filtrado.loc[mask_fecha, '_fecha_ingreso'].dt.date
+            
+            # Contar
+            for fecha in fechas:
+                ingresos_dict[fecha] = ingresos_dict.get(fecha, 0) + 1
     
-    return total_ingresos
+    return ingresos_dict
 
-def construir_tabla_fechas_con_ingresos(ciudad, fecha_inicio, fecha_fin, dfs, columnas_info):
+def construir_tabla(ciudad, fecha_inicio, fecha_fin, dfs):
     """Construye la tabla con las fechas y calcula los ingresos"""
+    
+    # Procesar ingresos de manera vectorizada
+    ingresos_dict = procesar_ingresos_ciudad(dfs, ciudad, fecha_inicio, fecha_fin)
     
     # Generar todas las fechas del período
     fechas = []
@@ -228,19 +160,9 @@ def construir_tabla_fechas_con_ingresos(ciudad, fecha_inicio, fecha_fin, dfs, co
     
     # Construir DataFrame
     datos = []
-    total_con_ingresos = 0
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    for idx, fecha in enumerate(fechas):
-        status_text.text(f"Procesando fechas: {idx+1}/{len(fechas)}")
-        
-        # Calcular ingresos para esta fecha
-        ingresos = procesar_ingresos_ciudad(dfs, columnas_info, ciudad, fecha)
-        
-        if ingresos > 0:
-            total_con_ingresos += 1
+    for fecha in fechas:
+        fecha_key = fecha.date()
+        ingresos = ingresos_dict.get(fecha_key, 0)
         
         datos.append({
             'Fecha': fecha.strftime('%Y-%m-%d'),
@@ -253,18 +175,11 @@ def construir_tabla_fechas_con_ingresos(ciudad, fecha_inicio, fecha_fin, dfs, co
             'facturado total': 0,
             'Novedades': 0
         })
-        
-        progress_bar.progress((idx + 1) / len(fechas))
-    
-    progress_bar.empty()
-    status_text.empty()
     
     df = pd.DataFrame(datos)
     
     # Filtrar solo días con ingresos > 0 para mostrar
     df_filtrado = df[df['ingresos'] > 0]
-    
-    st.write(f"**Resumen {ciudad}:** {total_con_ingresos} días con ingresos de {len(fechas)} días totales")
     
     return df, df_filtrado
 
@@ -278,9 +193,10 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("**Reglas de Ingresos:**")
     st.markdown("""
-    **Manizales, Armenia, Pereira:**
-    - Hojas EVENTO/PGP: Filtrar por 'unidad operativa' = ciudad
-    - Hojas PDTE EVENTO/PDTE PGP: Filtrar por 'CENTRO DE ATENCIÓN' = 'SAN MARCEL'
+    **Ingresos = Conteo de registros donde:**
+    - EVENTO/PGP: unidad operativa = ciudad
+    - PDTE EVENTO/PDTE PGP: centro atención = SAN MARCEL
+    - Fecha ingreso está en el período
     """)
 
 # Carga de archivo
@@ -309,7 +225,6 @@ if archivo:
                 st.session_state.fecha_hasta = fecha_max
                 
                 st.success("✅ Archivo procesado correctamente!")
-                st.info(f"📅 Última fecha disponible en los datos: {fecha_max.strftime('%d/%m/%Y')}")
 
 # Selector de fecha (disponible después de cargar)
 if st.session_state.datos_cargados:
@@ -337,14 +252,6 @@ if st.session_state.datos_cargados:
     st.markdown("---")
     st.header("📊 Tablas Resumen por Ciudad")
     
-    # Debug: Mostrar columnas identificadas
-    with st.expander("🔍 Ver columnas identificadas (Debug)"):
-        for hoja, cols in st.session_state.columnas_identificadas.items():
-            st.write(f"**{hoja}:**")
-            st.write(f"  - Fecha Ingreso: {cols['fecha_ingreso']}")
-            st.write(f"  - Unidad Operativa: {cols['unidad_operativa']}")
-            st.write(f"  - Centro Atención: {cols['centro_atencion']}")
-    
     # Crear pestañas por ciudad
     tabs = st.tabs(list(CIUDADES.keys()))
     
@@ -355,18 +262,16 @@ if st.session_state.datos_cargados:
             
             # Validar que fecha_fin sea mayor que fecha_inicio
             if fecha_fin < fecha_inicio:
-                st.warning(f"⚠️ La fecha seleccionada ({fecha_fin.strftime('%d/%m/%Y')}) es anterior a la fecha de inicio de {ciudad} ({fecha_inicio.strftime('%d/%m/%Y')})")
-                st.info(f"Por favor, selecciona una fecha posterior al {fecha_inicio.strftime('%d/%m/%Y')}")
+                st.warning(f"⚠️ La fecha seleccionada ({fecha_fin.strftime('%d/%m/%Y')}) es anterior a la fecha de inicio de {ciudad}")
                 continue
             
-            with st.spinner(f"Procesando {ciudad} - Calculando ingresos..."):
+            with st.spinner(f"Procesando {ciudad}..."):
                 # Construir tabla con ingresos
-                df_completa, df_filtrado = construir_tabla_fechas_con_ingresos(
+                df_completa, df_filtrado = construir_tabla(
                     ciudad,
                     fecha_inicio,
                     fecha_fin,
-                    st.session_state.dfs,
-                    st.session_state.columnas_identificadas
+                    st.session_state.dfs
                 )
                 
                 if len(df_filtrado) > 0:
@@ -404,7 +309,7 @@ if st.session_state.datos_cargados:
                     )
                     
                     # Información del período
-                    st.caption(f"📅 Mostrando {len(df_filtrado)} días con ingresos del {df_filtrado['Fecha'].min()} al {df_filtrado['Fecha'].max()}")
+                    st.caption(f"📅 Mostrando {len(df_filtrado)} días con ingresos")
                     
                     # Gráfico de ingresos
                     if len(df_filtrado) > 1:
@@ -434,17 +339,6 @@ if st.session_state.datos_cargados:
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         df_completa.to_excel(writer, sheet_name='Todos los días', index=False)
                         df_filtrado.to_excel(writer, sheet_name='Días con ingresos', index=False)
-                        
-                        # Información del procesamiento
-                        info = pd.DataFrame([
-                            ['Ciudad', ciudad],
-                            ['Fecha Inicio', fecha_inicio.strftime('%d/%m/%Y')],
-                            ['Fecha Fin', fecha_fin.strftime('%d/%m/%Y')],
-                            ['Total Días', len(df_completa)],
-                            ['Días con Ingresos', len(df_filtrado)],
-                            ['Total Ingresos', total_ingresos]
-                        ], columns=['Información', 'Valor'])
-                        info.to_excel(writer, sheet_name='Información', index=False)
                     
                     col2.download_button(
                         "📥 Descargar Excel",
@@ -455,13 +349,12 @@ if st.session_state.datos_cargados:
                     )
                     
                 else:
-                    st.warning(f"No hay ingresos para {ciudad} en el período seleccionado")
-                    st.caption(f"Período analizado: {fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')}")
+                    st.info(f"No hay ingresos para {ciudad} en el período seleccionado")
     
     # Botón para reiniciar
     st.markdown("---")
     if st.button("🔄 Reiniciar - Cargar otro archivo", use_container_width=True):
-        for key in ['datos_cargados', 'dfs', 'fecha_maxima', 'fecha_hasta', 'columnas_identificadas']:
+        for key in ['datos_cargados', 'dfs', 'fecha_maxima', 'fecha_hasta']:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
@@ -473,4 +366,4 @@ else:
         st.info("⏳ Presiona 'Procesar Archivo' para cargar los datos")
 
 st.markdown("---")
-st.caption("Aplicación para análisis de facturación por ciudad - Versión con Debug")
+st.caption("Aplicación para análisis de facturación por ciudad")
