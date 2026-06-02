@@ -173,8 +173,8 @@ def procesar_hoja_pdte_ingresos(df, nombre_hoja, unidades_filtro):
         return df_procesado
     return pd.DataFrame()
 
-def procesar_hoja_facturacion_modelo(df, nombre_hoja, unidades_filtro):
-    """Procesa hojas EVENTO y PGP para facturado modelo (FECHA FACTURA)"""
+def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro):
+    """Procesa hojas EVENTO y PGP para facturación (modelo y fuera modelo)"""
     col_fecha_ingreso = None
     col_fecha_factura = None
     col_ciudad = None
@@ -227,7 +227,7 @@ def cargar_archivo(archivo, unidades_filtro):
             return False, None, None
         
         dfs_ingresos = []
-        dfs_facturacion_modelo = []
+        dfs_facturacion = []
         
         # Procesar EVENTO y PGP para ingresos y facturación
         for hoja in ['EVENTO', 'PGP']:
@@ -238,10 +238,10 @@ def cargar_archivo(archivo, unidades_filtro):
             if not df_ing.empty:
                 dfs_ingresos.append(df_ing)
             
-            # Para facturado modelo
-            df_fac = procesar_hoja_facturacion_modelo(df, hoja, unidades_filtro)
+            # Para facturación
+            df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro)
             if not df_fac.empty:
-                dfs_facturacion_modelo.append(df_fac)
+                dfs_facturacion.append(df_fac)
         
         # Procesar PDTE EVENTO y PDTE PGP solo para ingresos
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
@@ -255,14 +255,14 @@ def cargar_archivo(archivo, unidades_filtro):
         else:
             df_ingresos_total = pd.DataFrame()
         
-        if dfs_facturacion_modelo:
-            df_facturacion_total = pd.concat(dfs_facturacion_modelo, ignore_index=True)
+        if dfs_facturacion:
+            df_facturacion_total = pd.concat(dfs_facturacion, ignore_index=True)
         else:
             df_facturacion_total = pd.DataFrame()
         
         return True, {
             'INGRESOS': df_ingresos_total,
-            'FACTURACION_MODELO': df_facturacion_total
+            'FACTURACION': df_facturacion_total
         }, datetime.now()
     
     except Exception as e:
@@ -298,11 +298,34 @@ def contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_
     if df_ciudad.empty:
         return {}
     
-    # Filtrar: fecha_ingreso >= fecha_inicio AND fecha_factura >= fecha_inicio
+    # Facturado modelo: fecha_ingreso >= fecha_inicio AND fecha_factura >= fecha_inicio
     mask_fechas = (df_ciudad['_fecha_ingreso'] >= fecha_inicio.date()) & (df_ciudad['_fecha_factura'] >= fecha_inicio.date())
     df_filtrado = df_ciudad[mask_fechas]
     
-    # Filtrar por rango de fecha_factura <= fecha_fin
+    # Filtrar por fecha_factura <= fecha_fin
+    mask_fecha_fin = df_filtrado['_fecha_factura'] <= fecha_fin.date()
+    df_filtrado = df_filtrado[mask_fecha_fin]
+    
+    conteo = {}
+    for fecha in df_filtrado['_fecha_factura']:
+        conteo[fecha] = conteo.get(fecha, 0) + 1
+    
+    return conteo
+
+def contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin):
+    ciudad_upper = ciudad.upper()
+    
+    mask_ciudad = df_facturacion['_ciudad'] == ciudad_upper
+    df_ciudad = df_facturacion[mask_ciudad]
+    
+    if df_ciudad.empty:
+        return {}
+    
+    # Facturado fuera modelo: fecha_ingreso < fecha_inicio AND fecha_factura >= fecha_inicio
+    mask_fechas = (df_ciudad['_fecha_ingreso'] < fecha_inicio.date()) & (df_ciudad['_fecha_factura'] >= fecha_inicio.date())
+    df_filtrado = df_ciudad[mask_fechas]
+    
+    # Filtrar por fecha_factura <= fecha_fin
     mask_fecha_fin = df_filtrado['_fecha_factura'] <= fecha_fin.date()
     df_filtrado = df_filtrado[mask_fecha_fin]
     
@@ -315,6 +338,7 @@ def contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_
 def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion):
     conteo_ingresos = contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
     conteo_facturado_modelo = contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
+    conteo_facturado_fuera = contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
     
     fechas = []
     fecha_actual = fecha_inicio
@@ -327,6 +351,9 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
         fecha_key = fecha.date()
         ingresos = conteo_ingresos.get(fecha_key, 0)
         facturado_modelo = conteo_facturado_modelo.get(fecha_key, 0)
+        facturado_fuera = conteo_facturado_fuera.get(fecha_key, 0)
+        facturado_total = facturado_modelo + facturado_fuera
+        novedades = max(0, ingresos - facturado_total)
         
         datos.append({
             'Fecha': fecha.strftime('%Y-%m-%d'),
@@ -335,13 +362,13 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
             'mes': calendar.month_name[fecha.month],
             'ingresos': ingresos,
             'facturado modelo': facturado_modelo,
-            'facturado fuera modelo': 0,
-            'facturado total': facturado_modelo,
-            'Novedades': max(0, ingresos - facturado_modelo)
+            'facturado fuera modelo': facturado_fuera,
+            'facturado total': facturado_total,
+            'Novedades': novedades
         })
     
     df = pd.DataFrame(datos)
-    df_filtrado = df[df['ingresos'] > 0]
+    df_filtrado = df[(df['ingresos'] > 0) | (df['facturado modelo'] > 0) | (df['facturado fuera modelo'] > 0)]
     
     return df, df_filtrado
 
@@ -404,7 +431,7 @@ if st.session_state.datos_cargados:
     st.header("📊 Tablas Resumen por Ciudad")
     
     df_ingresos = st.session_state.dfs.get('INGRESOS', pd.DataFrame())
-    df_facturacion = st.session_state.dfs.get('FACTURACION_MODELO', pd.DataFrame())
+    df_facturacion = st.session_state.dfs.get('FACTURACION', pd.DataFrame())
     fecha_fin = st.session_state.fecha_hasta
     
     tabs = st.tabs(list(CIUDADES.keys()))
@@ -426,13 +453,14 @@ if st.session_state.datos_cargados:
                 if len(df_filtrado) > 0:
                     total_ingresos = df_completa['ingresos'].sum()
                     total_facturado_modelo = df_completa['facturado modelo'].sum()
+                    total_facturado_fuera = df_completa['facturado fuera modelo'].sum()
                     total_facturado = df_completa['facturado total'].sum()
                     total_novedades = df_completa['Novedades'].sum()
                     
                     cols = st.columns(5)
                     cols[0].metric("📥 Total Ingresos", f"{total_ingresos:,}")
                     cols[1].metric("✅ Facturado Modelo", f"{total_facturado_modelo:,}")
-                    cols[2].metric("❌ Facturado Fuera", "0")
+                    cols[2].metric("❌ Facturado Fuera", f"{total_facturado_fuera:,}")
                     cols[3].metric("💰 Facturado Total", f"{total_facturado:,}")
                     cols[4].metric("⚠️ Novedades", f"{total_novedades:,}")
                     
@@ -440,9 +468,23 @@ if st.session_state.datos_cargados:
                     st.caption(f"📅 {len(df_filtrado)} días con actividad")
                     
                     if len(df_filtrado) > 1:
-                        chart_data = df_filtrado[['ingresos', 'facturado modelo']].copy()
+                        chart_data = df_filtrado[['ingresos', 'facturado modelo', 'facturado fuera modelo']].copy()
                         chart_data.index = pd.to_datetime(df_filtrado['Fecha'])
                         st.line_chart(chart_data)
+                    
+                    # Exportar datos
+                    from io import BytesIO
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        df_completa.to_excel(writer, sheet_name='Todos los días', index=False)
+                        df_filtrado.to_excel(writer, sheet_name='Días con actividad', index=False)
+                    
+                    st.download_button(
+                        "📥 Descargar Excel",
+                        output.getvalue(),
+                        f"{ciudad.lower()}_resumen.xlsx",
+                        key=f"excel_{ciudad}"
+                    )
                 else:
                     st.info(f"No hay datos para {ciudad} en el período seleccionado")
     
