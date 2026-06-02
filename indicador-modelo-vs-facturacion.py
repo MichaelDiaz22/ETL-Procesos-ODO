@@ -93,21 +93,18 @@ def obtener_unidades_funcionales(archivo):
         return []
 
 def normalizar_texto(texto):
-    """Normaliza texto para comparación (quita acentos, espacios, convierte a mayúsculas)"""
+    """Normaliza texto para comparación"""
     if pd.isna(texto):
         return ""
     texto_str = str(texto).upper().strip()
-    # Reemplazar caracteres comunes
     texto_str = texto_str.replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
     texto_str = texto_str.replace("Ñ", "N")
-    # Eliminar espacios múltiples
     texto_str = " ".join(texto_str.split())
     return texto_str
 
 def procesar_hoja_evento_pgp(df, nombre_hoja, unidades_filtro):
     """Procesa hojas EVENTO y PGP"""
     
-    # Identificar columnas
     col_fecha = None
     for col in df.columns:
         col_lower = col.lower().strip()
@@ -130,7 +127,6 @@ def procesar_hoja_evento_pgp(df, nombre_hoja, unidades_filtro):
             break
     
     if col_fecha and col_ciudad:
-        # Convertir fechas
         fechas_convertidas = []
         for valor in df[col_fecha]:
             fecha = convertir_fecha_excel(valor)
@@ -143,7 +139,6 @@ def procesar_hoja_evento_pgp(df, nombre_hoja, unidades_filtro):
             '_hoja': nombre_hoja
         })
         
-        # Aplicar filtro de unidad funcional
         if col_unidad_funcional and unidades_filtro:
             df_procesado['_unidad_funcional'] = df[col_unidad_funcional].astype(str).str.strip()
             mask_funcional = df_procesado['_unidad_funcional'].isin(unidades_filtro)
@@ -156,7 +151,6 @@ def procesar_hoja_evento_pgp(df, nombre_hoja, unidades_filtro):
 def procesar_hoja_pdte(df, nombre_hoja, unidades_filtro):
     """Procesa hojas PDTE EVENTO y PDTE PGP"""
     
-    # Identificar columnas
     col_fecha = None
     for col in df.columns:
         col_lower = col.lower().strip()
@@ -179,13 +173,11 @@ def procesar_hoja_pdte(df, nombre_hoja, unidades_filtro):
             break
     
     if col_fecha and col_centro:
-        # Convertir fechas
         fechas_convertidas = []
         for valor in df[col_fecha]:
             fecha = convertir_fecha_excel(valor)
             fechas_convertidas.append(fecha.date() if fecha else None)
         
-        # Normalizar los valores del centro de atención
         centros_normalizados = []
         for valor in df[col_centro]:
             centros_normalizados.append(normalizar_texto(valor))
@@ -197,7 +189,6 @@ def procesar_hoja_pdte(df, nombre_hoja, unidades_filtro):
             '_hoja': nombre_hoja
         })
         
-        # Aplicar filtro de unidad funcional
         if col_unidad_funcional and unidades_filtro:
             df_procesado['_unidad_funcional'] = df[col_unidad_funcional].astype(str).str.strip()
             mask_funcional = df_procesado['_unidad_funcional'].isin(unidades_filtro)
@@ -220,45 +211,64 @@ def cargar_archivo(archivo, unidades_filtro):
         
         dfs_ingresos = []
         
-        # Procesar EVENTO y PGP
         for hoja in ['EVENTO', 'PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             df_procesado = procesar_hoja_evento_pgp(df, hoja, unidades_filtro)
             if not df_procesado.empty:
                 dfs_ingresos.append(df_procesado)
-                
-                # Mostrar valores únicos de ciudad en esta hoja
-                ciudades_unicas = df_procesado['_ciudad'].unique()
-                st.write(f"📊 {hoja}: {len(df_procesado):,} registros")
-                st.write(f"   Ciudades encontradas: {ciudades_unicas[:10].tolist()}")
         
-        # Procesar PDTE EVENTO y PDTE PGP
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             df_procesado = procesar_hoja_pdte(df, hoja, unidades_filtro)
             if not df_procesado.empty:
                 dfs_ingresos.append(df_procesado)
-                
-                # Mostrar valores únicos de centro en esta hoja
-                centros_unicos = df_procesado['_centro'].unique()
-                st.write(f"📊 {hoja}: {len(df_procesado):,} registros")
-                st.write(f"   Centros encontrados: {centros_unicos[:10].tolist()}")
         
         if dfs_ingresos:
             df_total = pd.concat(dfs_ingresos, ignore_index=True)
             
+            # Mostrar estadísticas globales
             st.write("---")
-            st.write("**Distribución por hoja:**")
-            st.write(df_total['_hoja'].value_counts())
+            st.write("**📊 ESTADÍSTICAS GLOBALES DEL ARCHIVO**")
             
-            # Mostrar ejemplos de centros para verificar Pereira
-            st.write("**Centros de atención encontrados (muestra):**")
-            centros_pdte = df_total[df_total['_tipo'] == 'centro_atencion']['_centro'].value_counts().head(20)
-            st.write(centros_pdte)
+            for ciudad, config in CIUDADES.items():
+                ciudad_upper = ciudad.upper()
+                centro_upper = normalizar_texto(config['centro_atencion'])
+                
+                # Contar EVENTO/PGP
+                mask_unidad = (df_total['_tipo'] == 'unidad_operativa') & (df_total['_ciudad'] == ciudad_upper)
+                total_unidad = df_total[mask_unidad].shape[0]
+                
+                # Contar PDTE
+                mask_centro = (df_total['_tipo'] == 'centro_atencion') & (df_total['_centro'] == centro_upper)
+                total_centro = df_total[mask_centro].shape[0]
+                
+                st.write(f"**{ciudad}:**")
+                st.write(f"  - EVENTO/PGP: {total_unidad:,} registros")
+                st.write(f"  - PDTE EVENTO/PDTE PGP: {total_centro:,} registros")
+                st.write(f"  - TOTAL: {total_unidad + total_centro:,} registros")
             
-            # Fecha máxima
-            fechas_validas = df_total['_fecha_ingreso'].dropna()
+            # Mostrar rangos de fechas por ciudad
+            st.write("**📅 RANGOS DE FECHAS POR CIUDAD (antes del filtro de fecha_hasta):**")
+            for ciudad, config in CIUDADES.items():
+                ciudad_upper = ciudad.upper()
+                centro_upper = normalizar_texto(config['centro_atencion'])
+                
+                mask_unidad = (df_total['_tipo'] == 'unidad_operativa') & (df_total['_ciudad'] == ciudad_upper)
+                mask_centro = (df_total['_tipo'] == 'centro_atencion') & (df_total['_centro'] == centro_upper)
+                mask_ciudad = mask_unidad | mask_centro
+                df_ciudad = df_total[mask_ciudad]
+                
+                if not df_ciudad.empty:
+                    fechas_validas = df_ciudad['_fecha_ingreso'].dropna()
+                    if not fechas_validas.empty:
+                        st.write(f"  **{ciudad}:** {fechas_validas.min()} a {fechas_validas.max()}")
+                    else:
+                        st.write(f"  **{ciudad}:** Sin fechas válidas")
+                else:
+                    st.write(f"  **{ciudad}:** Sin registros")
+            
             fecha_max = datetime.now()
+            fechas_validas = df_total['_fecha_ingreso'].dropna()
             if not fechas_validas.empty:
                 fecha_max = datetime.combine(fechas_validas.max(), datetime.min.time())
             
@@ -268,12 +278,10 @@ def cargar_archivo(archivo, unidades_filtro):
     
     except Exception as e:
         st.error(f"❌ Error al cargar el archivo: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
         return False, None, None
 
 def contar_ingresos_ciudad(df_ingresos, ciudad, config, fecha_inicio, fecha_fin):
-    """Cuenta los ingresos para una ciudad específica"""
+    """Cuenta los ingresos para una ciudad específica con debug detallado"""
     
     if df_ingresos.empty:
         return {}
@@ -281,46 +289,59 @@ def contar_ingresos_ciudad(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
     ciudad_upper = ciudad.upper()
     centro_upper = normalizar_texto(config['centro_atencion'])
     
-    st.write(f"**Debug {ciudad}:**")
-    st.write(f"- Centro esperado normalizado: {centro_upper}")
+    st.write(f"**🔍 DEBUG DETALLADO PARA {ciudad}**")
+    st.write(f"Fecha inicio ciudad: {fecha_inicio.date()}")
+    st.write(f"Fecha fin seleccionada: {fecha_fin.date()}")
+    st.write(f"Centro esperado: {centro_upper}")
     
-    # Para EVENTO y PGP: filtrar por ciudad
+    # Filtrar por ciudad/centro
     mask_unidad = (df_ingresos['_tipo'] == 'unidad_operativa') & (df_ingresos['_ciudad'] == ciudad_upper)
-    registros_unidad = df_ingresos[mask_unidad]
-    st.write(f"- Registros en EVENTO/PGP para {ciudad_upper}: {len(registros_unidad)}")
-    
-    # Para PDTE: filtrar por centro de atención normalizado
-    # Usar contains para coincidencia parcial si es necesario
-    mask_centro_exacta = (df_ingresos['_tipo'] == 'centro_atencion') & (df_ingresos['_centro'] == centro_upper)
-    registros_centro_exacta = df_ingresos[mask_centro_exacta]
-    
-    # También buscar coincidencia parcial por si hay variaciones en el texto
-    mask_centro_parcial = (df_ingresos['_tipo'] == 'centro_atencion') & (df_ingresos['_centro'].str.contains(centro_upper[:20], na=False))
-    registros_centro_parcial = df_ingresos[mask_centro_parcial]
-    
-    st.write(f"- Registros en PDTE para coincidencia exacta '{centro_upper}': {len(registros_centro_exacta)}")
-    if len(registros_centro_parcial) > len(registros_centro_exacta):
-        st.write(f"- Registros en PDTE para coincidencia parcial: {len(registros_centro_parcial)}")
-        mask_centro = mask_centro_parcial
-    else:
-        mask_centro = mask_centro_exacta
-    
-    # Combinar
+    mask_centro = (df_ingresos['_tipo'] == 'centro_atencion') & (df_ingresos['_centro'] == centro_upper)
     mask_ciudad = mask_unidad | mask_centro
-    df_ciudad = df_ingresos[mask_ciudad]
-    st.write(f"- Total registros para {ciudad} antes de fechas: {len(df_ciudad)}")
+    df_ciudad = df_ingresos[mask_ciudad].copy()
+    
+    st.write(f"\n**1. FILTRO POR CIUDAD/CENTRO:**")
+    st.write(f"   - Registros EVENTO/PGP: {df_ingresos[mask_unidad].shape[0]:,}")
+    st.write(f"   - Registros PDTE: {df_ingresos[mask_centro].shape[0]:,}")
+    st.write(f"   - Total después de filtro: {df_ciudad.shape[0]:,}")
     
     if df_ciudad.empty:
         return {}
     
-    # Mostrar distribución por hoja de los registros encontrados
-    st.write(f"- Distribución por hoja:")
-    st.write(df_ciudad['_hoja'].value_counts())
+    # Análisis de fechas antes del filtro
+    st.write(f"\n**2. ANÁLISIS DE FECHAS (antes de aplicar filtro de fecha_fin):**")
+    fechas_ciudad = df_ciudad['_fecha_ingreso'].dropna()
+    if not fechas_ciudad.empty:
+        st.write(f"   - Fecha mínima: {fechas_ciudad.min()}")
+        st.write(f"   - Fecha máxima: {fechas_ciudad.max()}")
+        st.write(f"   - Registros con fecha válida: {len(fechas_ciudad):,}")
+        
+        # Contar registros por año para identificar dónde están
+        df_ciudad['_año'] = pd.to_datetime(fechas_ciudad).dt.year
+        st.write(f"   - Distribución por año:")
+        for año in sorted(df_ciudad['_año'].dropna().unique()):
+            count = (df_ciudad['_año'] == año).sum()
+            st.write(f"     * {año}: {count:,} registros")
     
-    # Filtrar por rango de fechas
+    # Aplicar filtro de fechas
+    st.write(f"\n**3. APLICANDO FILTRO DE FECHAS:**")
+    st.write(f"   - Fechas permitidas: desde {fecha_inicio.date()} hasta {fecha_fin.date()}")
+    
     mask_fecha = (df_ciudad['_fecha_ingreso'] >= fecha_inicio.date()) & (df_ciudad['_fecha_ingreso'] <= fecha_fin.date())
     df_filtrado = df_ciudad[mask_fecha]
-    st.write(f"- Registros después de filtrar fechas: {len(df_filtrado)}")
+    
+    st.write(f"   - Registros después de filtro de fechas: {df_filtrado.shape[0]:,}")
+    
+    # Mostrar qué porcentaje se perdió
+    if df_ciudad.shape[0] > 0:
+        perdidos = df_ciudad.shape[0] - df_filtrado.shape[0]
+        porcentaje = (perdidos / df_ciudad.shape[0]) * 100
+        st.write(f"   - Registros fuera del rango: {perdidos:,} ({porcentaje:.1f}%)")
+    
+    # Mostrar distribución por hoja después del filtro
+    if not df_filtrado.empty:
+        st.write(f"\n**4. DISTRIBUCIÓN DESPUÉS DEL FILTRO:**")
+        st.write(df_filtrado['_hoja'].value_counts())
     
     # Contar por fecha
     conteo = {}
@@ -329,7 +350,11 @@ def contar_ingresos_ciudad(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
     
     if conteo:
         total_ingresos = sum(conteo.values())
-        st.write(f"- ✅ Total ingresos para {ciudad}: {total_ingresos}")
+        st.write(f"\n**5. RESULTADO FINAL:**")
+        st.write(f"   - Total ingresos a mostrar en tabla: {total_ingresos:,}")
+        st.write(f"   - Días con ingresos: {len(conteo)}")
+    
+    st.write("---")
     
     return conteo
 
@@ -366,26 +391,18 @@ def construir_tabla_con_ingresos(ciudad, config, fecha_inicio, fecha_fin, df_ing
     df = pd.DataFrame(datos)
     df_filtrado = df[df['ingresos'] > 0]
     
-    # Mostrar resumen de la tabla
-    if len(df_filtrado) > 0:
-        st.write(f"**Resumen tabla {ciudad}:**")
-        st.write(f"- Total ingresos en tabla: {df_filtrado['ingresos'].sum()}")
-        st.write(f"- Días con ingresos: {len(df_filtrado)}")
-    
     return df, df_filtrado
 
 # Sidebar
 with st.sidebar:
     st.header("📋 Información")
-    st.markdown("**Fechas de inicio y centros de atención:**")
+    st.markdown("**Fechas de inicio:**")
     for ciudad, config in CIUDADES.items():
         st.markdown(f"- **{ciudad}:** {config['fecha_inicio'].strftime('%d/%m/%Y')}")
-        st.markdown(f"  Centro: {config['centro_atencion']}")
 
 # Carga de archivo
 st.header("📁 Cargar Archivo")
 
-# Selector de fecha
 st.markdown("### ⚙️ Configuración del Reporte")
 fecha_actual = datetime.now()
 
@@ -400,39 +417,31 @@ st.markdown("---")
 
 archivo = st.file_uploader(
     "Selecciona el archivo Excel",
-    type=['xlsx', 'xls'],
-    help="El archivo debe contener las hojas: EVENTO, PGP, PDTE EVENTO, PDTE PGP"
+    type=['xlsx', 'xls']
 )
 
 if archivo:
     st.markdown("### 🔍 Filtro por Unidad Funcional")
     
     if st.button("📋 Cargar unidades funcionales", use_container_width=True):
-        with st.spinner("Cargando unidades funcionales..."):
+        with st.spinner("Cargando..."):
             unidades = obtener_unidades_funcionales(archivo)
             st.session_state.unidades_funcionales = unidades
             if unidades:
-                st.success(f"✅ Se encontraron {len(unidades)} unidades funcionales")
-            else:
-                st.warning("No se encontraron unidades funcionales")
+                st.success(f"✅ {len(unidades)} unidades encontradas")
     
     if st.session_state.unidades_funcionales:
         unidades_seleccionadas = st.multiselect(
-            "Selecciona las unidades funcionales:",
+            "Selecciona unidades funcionales:",
             options=st.session_state.unidades_funcionales,
             default=st.session_state.unidades_seleccionadas
         )
         st.session_state.unidades_seleccionadas = unidades_seleccionadas
-        
-        if unidades_seleccionadas:
-            st.info(f"📌 Filtro activo: {len(unidades_seleccionadas)} unidades")
-        else:
-            st.info("📌 Sin filtro: todas las unidades")
     
     st.markdown("---")
     
     if st.button("📊 Procesar Archivo", type="primary", use_container_width=True):
-        with st.spinner("Procesando archivo..."):
+        with st.spinner("Procesando..."):
             exito, dfs, fecha_max = cargar_archivo(archivo, st.session_state.unidades_seleccionadas)
             
             if exito:
@@ -440,7 +449,7 @@ if archivo:
                 st.session_state.dfs = dfs
                 st.session_state.fecha_maxima = fecha_max
                 st.session_state.fecha_hasta = datetime.combine(fecha_hasta, datetime.min.time())
-                st.success("✅ Archivo procesado correctamente!")
+                st.success("✅ Procesado correctamente!")
 
 # Mostrar resultados
 if st.session_state.datos_cargados:
@@ -450,7 +459,7 @@ if st.session_state.datos_cargados:
     df_ingresos = st.session_state.dfs.get('INGRESOS_TOTAL', pd.DataFrame())
     
     if df_ingresos.empty:
-        st.warning("No hay datos de ingresos")
+        st.warning("No hay datos")
     else:
         tabs = st.tabs(list(CIUDADES.keys()))
         
@@ -464,12 +473,6 @@ if st.session_state.datos_cargados:
                     st.warning(f"Fecha anterior a inicio de {ciudad}")
                     continue
                 
-                with st.expander(f"🔍 Ver depuración de {ciudad}", expanded=False):
-                    df_completa, df_filtrado = construir_tabla_con_ingresos(
-                        ciudad, config, fecha_inicio, fecha_fin, df_ingresos
-                    )
-                
-                # Ejecutar de nuevo sin el expander para mostrar resultados
                 df_completa, df_filtrado = construir_tabla_con_ingresos(
                     ciudad, config, fecha_inicio, fecha_fin, df_ingresos
                 )
@@ -485,26 +488,12 @@ if st.session_state.datos_cargados:
                     cols[4].metric("⚠️ Novedades", "Pendiente")
                     
                     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
-                    st.caption(f"📅 {len(df_filtrado)} días con ingresos - Total: {total_ingresos:,} ingresos")
+                    st.caption(f"📅 {len(df_filtrado)} días con ingresos")
                     
                     if len(df_filtrado) > 1:
                         chart_data = df_filtrado[['ingresos']].copy()
                         chart_data.index = pd.to_datetime(df_filtrado['Fecha'])
                         st.line_chart(chart_data)
-                    
-                    # Exportar
-                    from io import BytesIO
-                    output = BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_completa.to_excel(writer, sheet_name='Todos los días', index=False)
-                        df_filtrado.to_excel(writer, sheet_name='Días con ingresos', index=False)
-                    
-                    st.download_button(
-                        "📥 Descargar Excel",
-                        output.getvalue(),
-                        f"{ciudad.lower()}_ingresos.xlsx",
-                        key=f"excel_{ciudad}"
-                    )
                 else:
                     st.info(f"No hay ingresos para {ciudad}")
     
@@ -515,7 +504,7 @@ if st.session_state.datos_cargados:
 
 else:
     if archivo is None:
-        st.info("👆 Sigue los pasos para generar el reporte")
+        st.info("👆 Sigue los pasos")
 
 st.markdown("---")
-st.caption("Aplicación para análisis de facturación por ciudad - Versión corregida para Pereira")
+st.caption("Aplicación de análisis")
