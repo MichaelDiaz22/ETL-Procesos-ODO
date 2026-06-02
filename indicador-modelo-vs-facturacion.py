@@ -15,29 +15,29 @@ st.markdown("---")
 
 # Definición de sedes
 SEDES = {
-    "San Marcel": {
+    "SAN MARCEL": {
         "fecha_inicio": datetime(2025, 9, 16),
         "centro_atencion": "SAN MARCEL",
         "palabra_clave": "SAN MARCEL"
     },
     "CAT MARAYA": {
-        "fecha_inicio": None,  # Pendiente de definir
+        "fecha_inicio": None,
         "centro_atencion": "CLINICA DE ALTA TECNOLOGIA MARAYA",
         "palabra_clave": "MARAYA"
     },
     "CIRCUNVALAR": {
-        "fecha_inicio": None,  # Pendiente de definir
-        "centro_atencion": None,  # Pendiente de definir
+        "fecha_inicio": None,
+        "centro_atencion": None,
         "palabra_clave": "CIRCUNVALAR"
     },
     "CENTENARIO": {
-        "fecha_inicio": None,  # Pendiente de definir
+        "fecha_inicio": None,
         "centro_atencion": "CENTENARIO",
         "palabra_clave": "CENTENARIO"
     },
     "CAT ARMENIA": {
-        "fecha_inicio": None,  # Pendiente de definir
-        "centro_atencion": None,  # Pendiente de definir
+        "fecha_inicio": None,
+        "centro_atencion": None,
         "palabra_clave": "CAT ARMENIA"
     }
 }
@@ -109,8 +109,8 @@ def normalizar_texto(texto):
     texto_str = " ".join(texto_str.split())
     return texto_str
 
-def procesar_hoja_ingresos(df, nombre_hoja, unidades_filtro, palabra_clave=None):
-    """Procesa hojas para conteo de ingresos (FECHA INGRESO)"""
+def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_clave):
+    """Procesa hojas EVENTO y PGP para ingresos usando UNIDAD FUNCIONAL INGRESO"""
     col_fecha = None
     for col in df.columns:
         if 'fecha ingreso' in col.lower():
@@ -131,32 +131,30 @@ def procesar_hoja_ingresos(df, nombre_hoja, unidades_filtro, palabra_clave=None)
         
         valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        # Aplicar filtro de palabra clave si existe
+        # Aplicar filtro de palabra clave
         if palabra_clave:
             mask_palabra = valores_funcionales.str.contains(palabra_clave, na=False)
-            df_filtrado = pd.DataFrame({
-                '_fecha': fechas_convertidas,
-                '_valor_funcional': valores_funcionales
-            })[mask_palabra]
         else:
-            df_filtrado = pd.DataFrame({
-                '_fecha': fechas_convertidas,
-                '_valor_funcional': valores_funcionales
-            })
+            mask_palabra = pd.Series([True] * len(df))
+        
+        df_temp = pd.DataFrame({
+            '_fecha': fechas_convertidas,
+            '_valor_funcional': valores_funcionales
+        })[mask_palabra]
         
         # Aplicar filtro de unidades funcionales seleccionadas
         if unidades_filtro:
-            mask_funcional = df_filtrado['_valor_funcional'].isin(unidades_filtro)
-            df_filtrado = df_filtrado[mask_funcional]
+            mask_funcional = df_temp['_valor_funcional'].isin(unidades_filtro)
+            df_temp = df_temp[mask_funcional]
         
-        df_filtrado['_tipo'] = 'unidad_funcional'
-        df_filtrado['_hoja'] = nombre_hoja
+        df_temp['_tipo'] = 'unidad_funcional'
+        df_temp['_hoja'] = nombre_hoja
         
-        return df_filtrado
+        return df_temp
     return pd.DataFrame()
 
-def procesar_hoja_pdte_ingresos(df, nombre_hoja, centro_atencion):
-    """Procesa hojas PDTE para conteo de ingresos (FECHA INGRESO con CENTRO DE ATENCION)"""
+def procesar_hoja_ingresos_pdte(df, nombre_hoja, centro_atencion):
+    """Procesa hojas PDTE para ingresos usando CENTRO DE ATENCION"""
     col_fecha = None
     for col in df.columns:
         if 'fecha ingreso' in col.lower():
@@ -191,8 +189,8 @@ def procesar_hoja_pdte_ingresos(df, nombre_hoja, centro_atencion):
         return df_procesado
     return pd.DataFrame()
 
-def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave=None):
-    """Procesa hojas EVENTO y PGP para facturación (modelo y fuera modelo)"""
+def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave):
+    """Procesa hojas EVENTO y PGP para facturación"""
     col_fecha_ingreso = None
     col_fecha_factura = None
     col_unidad_funcional = None
@@ -207,7 +205,6 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave=No
             col_unidad_funcional = col
     
     if col_fecha_ingreso and col_fecha_factura and col_unidad_funcional:
-        # Convertir fechas
         fechas_ingreso = []
         for v in df[col_fecha_ingreso]:
             fecha = convertir_fecha_excel(v)
@@ -220,36 +217,33 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave=No
         
         valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        # Aplicar filtro de palabra clave si existe
+        # Aplicar filtro de palabra clave
         if palabra_clave:
             mask_palabra = valores_funcionales.str.contains(palabra_clave, na=False)
-            df_filtrado = pd.DataFrame({
-                '_fecha_ingreso': fechas_ingreso,
-                '_fecha_factura': fechas_factura,
-                '_valor_funcional': valores_funcionales
-            })[mask_palabra]
         else:
-            df_filtrado = pd.DataFrame({
-                '_fecha_ingreso': fechas_ingreso,
-                '_fecha_factura': fechas_factura,
-                '_valor_funcional': valores_funcionales
-            })
+            mask_palabra = pd.Series([True] * len(df))
+        
+        df_temp = pd.DataFrame({
+            '_fecha_ingreso': fechas_ingreso,
+            '_fecha_factura': fechas_factura,
+            '_valor_funcional': valores_funcionales
+        })[mask_palabra]
         
         # Aplicar filtro de unidades funcionales seleccionadas
         if unidades_filtro:
-            mask_funcional = df_filtrado['_valor_funcional'].isin(unidades_filtro)
-            df_filtrado = df_filtrado[mask_funcional]
+            mask_funcional = df_temp['_valor_funcional'].isin(unidades_filtro)
+            df_temp = df_temp[mask_funcional]
         
-        df_filtrado['_hoja'] = nombre_hoja
+        df_temp['_hoja'] = nombre_hoja
         
-        return df_filtrado
+        return df_temp
     return pd.DataFrame()
 
 def procesar_hoja_novedades(df, centro_atencion, fecha_inicio, fecha_fin):
-    """Procesa la hoja NOVEDADES para contar registros por fecha"""
+    """Procesa la hoja NOVEDADES"""
     col_fecha = None
     for col in df.columns:
-        if 'fechadevolucion' in col.lower() or 'fecha devolucion' in col.lower() or 'fecha_devolucion' in col.lower():
+        if 'fechadevolucion' in col.lower() or 'fecha devolucion' in col.lower():
             col_fecha = col
             break
     
@@ -261,12 +255,11 @@ def procesar_hoja_novedades(df, centro_atencion, fecha_inicio, fecha_fin):
     
     col_bloqueante = None
     for col in df.columns:
-        if 'bloqueante' in col.lower() or '¿bloqueante?' in col.lower():
+        if 'bloqueante' in col.lower():
             col_bloqueante = col
             break
     
     if col_fecha and col_centro and centro_atencion:
-        # Convertir fechas
         fechas_convertidas = []
         for v in df[col_fecha]:
             fecha = convertir_fecha_excel(v)
@@ -280,29 +273,25 @@ def procesar_hoja_novedades(df, centro_atencion, fecha_inicio, fecha_fin):
             '_centro': centros_normalizados
         })
         
-        # Agregar columna de bloqueante si existe
         if col_bloqueante:
             df_procesado['_bloqueante'] = df[col_bloqueante].astype(str).str.upper().str.strip()
         
-        # Filtrar por centro de atención
         mask_centro = df_procesado['_centro'] == centro_upper
         df_filtrado = df_procesado[mask_centro]
         
-        # Filtrar por rango de fechas
         mask_fecha = (df_filtrado['_fecha'] >= fecha_inicio.date()) & (df_filtrado['_fecha'] <= fecha_fin.date())
         df_filtrado = df_filtrado[mask_fecha]
         
-        # Contar total de novedades por fecha
         conteo_total = {}
+        conteo_bloqueantes = {}
+        
         for fecha in df_filtrado['_fecha']:
             conteo_total[fecha] = conteo_total.get(fecha, 0) + 1
         
-        # Contar novedades bloqueantes por fecha
-        conteo_bloqueantes = {}
         if col_bloqueante:
-            df_bloqueantes = df_filtrado[df_filtrado['_bloqueante'] == 'SI']
-            for fecha in df_bloqueantes['_fecha']:
-                conteo_bloqueantes[fecha] = conteo_bloqueantes.get(fecha, 0) + 1
+            for idx, row in df_filtrado.iterrows():
+                if row['_bloqueante'] == 'SI':
+                    conteo_bloqueantes[row['_fecha']] = conteo_bloqueantes.get(row['_fecha'], 0) + 1
         
         return conteo_total, conteo_bloqueantes
     
@@ -313,53 +302,57 @@ def cargar_archivo(archivo, unidades_filtro):
         excel_file = pd.ExcelFile(archivo)
         hojas_disponibles = excel_file.sheet_names
         
-        # Verificar hojas requeridas
         hojas_faltantes = [h for h in HOJAS_REQUERIDAS if h not in hojas_disponibles]
         if hojas_faltantes:
             st.error(f"Faltan hojas: {', '.join(hojas_faltantes)}")
             return False, None, None
         
         if HOJA_NOVEDADES not in hojas_disponibles:
-            st.warning(f"No se encontró la hoja '{HOJA_NOVEDADES}'. Las novedades quedarán en 0.")
+            st.warning(f"No se encontró la hoja '{HOJA_NOVEDADES}'")
         
+        # Inicializar diccionarios para cada sede
         dfs_ingresos = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion = {sede: [] for sede in SEDES.keys()}
         
+        # Procesar hojas EVENTO y PGP
         for hoja in ['EVENTO', 'PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
             for sede, config in SEDES.items():
-                # Procesar ingresos con palabra clave si existe
-                df_ing = procesar_hoja_ingresos(df, hoja, unidades_filtro, config.get('palabra_clave'))
+                # Ingresos
+                df_ing = procesar_hoja_ingresos_evento_pgp(df, hoja, unidades_filtro, config['palabra_clave'])
                 if not df_ing.empty:
                     dfs_ingresos[sede].append(df_ing)
                 
-                # Procesar facturación
-                df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro, config.get('palabra_clave'))
+                # Facturación
+                df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro, config['palabra_clave'])
                 if not df_fac.empty:
                     dfs_facturacion[sede].append(df_fac)
         
-        # Procesar hojas PDTE para ingresos (solo sedes con centro_atencion definido)
+        # Procesar hojas PDTE
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
             for sede, config in SEDES.items():
-                if config.get('centro_atencion'):
-                    df_ing = procesar_hoja_pdte_ingresos(df, hoja, config['centro_atencion'])
+                if config['centro_atencion']:
+                    df_ing = procesar_hoja_ingresos_pdte(df, hoja, config['centro_atencion'])
                     if not df_ing.empty:
                         dfs_ingresos[sede].append(df_ing)
         
-        # Cargar hoja de novedades si existe
+        # Cargar novedades
         df_novedades = None
         if HOJA_NOVEDADES in hojas_disponibles:
             df_novedades = pd.read_excel(archivo, sheet_name=HOJA_NOVEDADES)
             st.info(f"📄 Hoja '{HOJA_NOVEDADES}': {len(df_novedades):,} registros")
         
-        # Combinar DataFrames por sede
+        # Combinar resultados
         dfs_resultado = {}
         for sede in SEDES.keys():
             dfs_resultado[f'INGRESOS_{sede}'] = pd.concat(dfs_ingresos[sede], ignore_index=True) if dfs_ingresos[sede] else pd.DataFrame()
             dfs_resultado[f'FACTURACION_{sede}'] = pd.concat(dfs_facturacion[sede], ignore_index=True) if dfs_facturacion[sede] else pd.DataFrame()
+            
+            # Mostrar estadísticas por sede
+            st.write(f"**{sede}:** {len(dfs_resultado[f'INGRESOS_{sede}']):,} registros de ingreso, {len(dfs_resultado[f'FACTURACION_{sede}']):,} registros de facturación")
         
         dfs_resultado['NOVEDADES'] = df_novedades
         
@@ -367,6 +360,8 @@ def cargar_archivo(archivo, unidades_filtro):
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
         return False, None, None
 
 def contar_ingresos_sede(df_ingresos, fecha_inicio, fecha_fin):
@@ -627,7 +622,6 @@ if st.session_state.datos_cargados:
     df_novedades = st.session_state.dfs.get('NOVEDADES', None)
     fecha_fin = st.session_state.fecha_hasta
     
-    # Crear pestañas: Resumen Ejecutivo primero, luego las sedes
     sedes_lista = list(SEDES.keys())
     tabs = st.tabs(["📊 Resumen Ejecutivo"] + sedes_lista)
     
@@ -668,6 +662,10 @@ if st.session_state.datos_cargados:
             df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
             df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
             
+            # Mostrar estadísticas de la sede
+            st.write(f"**Registros de ingreso para {sede}:** {len(df_ingresos):,}")
+            st.write(f"**Registros de facturación para {sede}:** {len(df_facturacion):,}")
+            
             # Selector de período
             periodo = st.selectbox(
                 "📊 Agrupar por:",
@@ -702,7 +700,6 @@ if st.session_state.datos_cargados:
                     cols[4].metric("⚠️ Novedades", f"{total_novedades:,}", f"{pct_novedades:.1f}%")
                     cols[5].metric("🔒 Novedades Bloqueantes", f"{total_novedades_bloqueantes:,}", f"{pct_bloqueantes:.1f}%")
                     
-                    # Mostrar tabla
                     columnas_mostrar = ['Fecha', 'ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades', 'Novedades Bloqueantes']
                     if periodo == 'Semanal':
                         columnas_mostrar.insert(1, 'semana')
@@ -715,13 +712,11 @@ if st.session_state.datos_cargados:
                     
                     st.dataframe(df_display, use_container_width=True, hide_index=True)
                     
-                    # Gráfico
                     if len(df_tabla) > 1:
                         chart_data = df_tabla[['ingresos', 'facturado total', 'Novedades', 'Novedades Bloqueantes']].copy()
                         chart_data.index = df_tabla['Fecha']
                         st.line_chart(chart_data)
                     
-                    # Exportar
                     from io import BytesIO
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
