@@ -49,42 +49,41 @@ def cargar_archivo(archivo):
         # Cargar datos
         dfs = {}
         
-        # Mostrar información de columnas
-        with st.expander("🔍 Ver información de depuración"):
-            for hoja in HOJAS_REQUERIDAS:
-                df_sample = pd.read_excel(archivo, sheet_name=hoja, nrows=10)
-                st.write(f"**Hoja {hoja} - Columnas:**")
-                st.write(list(df_sample.columns))
-                st.write(f"**Primeras filas de {hoja}:**")
-                st.dataframe(df_sample)
-                st.write("---")
-        
         for hoja in HOJAS_REQUERIDAS:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
             # Para la hoja EVENTO, preprocesar datos
             if hoja == 'EVENTO':
-                # Identificar columna de FECHA INGRESO
+                # Identificar columna de FECHA INGRESO - buscar exactamente "FECHA INGRESO"
                 col_fecha = None
                 for col in df.columns:
                     col_lower = col.lower().strip()
-                    if 'fecha ingreso' in col_lower or 'fecha_ingreso' in col_lower or 'fechaing' in col_lower or 'ingreso' in col_lower:
+                    # Buscar exactamente "fecha ingreso" o "fecha_ingreso"
+                    if col_lower == 'fecha ingreso' or col_lower == 'fecha_ingreso' or col_lower == 'fechaingreso':
                         col_fecha = col
                         break
+                
+                # Si no encuentra, buscar otras variantes
+                if col_fecha is None:
+                    for col in df.columns:
+                        col_lower = col.lower().strip()
+                        if 'fecha' in col_lower and 'ingreso' in col_lower:
+                            col_fecha = col
+                            break
                 
                 # Identificar columna de CIUDAD UNIDAD OPERATIVA
                 col_ciudad = None
                 for col in df.columns:
                     col_lower = col.lower().strip()
-                    if 'ciudad unidad operativa' in col_lower or 'ciudad_unidad_operativa' in col_lower or 'ciudad operativa' in col_lower or 'unidad operativa' in col_lower:
+                    if col_lower == 'ciudad unidad operativa' or col_lower == 'ciudad_unidad_operativa':
                         col_ciudad = col
                         break
                 
-                # Si no encuentra, buscar cualquier columna que tenga "ciudad"
+                # Si no encuentra, buscar "UNIDAD OPERATIVA"
                 if col_ciudad is None:
                     for col in df.columns:
                         col_lower = col.lower().strip()
-                        if 'ciudad' in col_lower:
+                        if col_lower == 'unidad operativa' or col_lower == 'unidad_operativa':
                             col_ciudad = col
                             break
                 
@@ -97,46 +96,26 @@ def cargar_archivo(archivo):
                     ejemplos_fechas = df[col_fecha].head(10).tolist()
                     st.write(ejemplos_fechas)
                     
-                    # Intentar diferentes métodos de conversión
-                    # Método 1: Usar pandas con dayfirst=True
-                    df['_fecha_ingreso_1'] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True)
-                    
-                    # Método 2: Intentar con formato específico DD/MM/YYYY
-                    try:
-                        df['_fecha_ingreso_2'] = pd.to_datetime(df[col_fecha], errors='coerce', format='%d/%m/%Y')
-                    except:
-                        df['_fecha_ingreso_2'] = pd.NaT
-                    
-                    # Usar la que tenga más valores no nulos
-                    if df['_fecha_ingreso_1'].notna().sum() >= df['_fecha_ingreso_2'].notna().sum():
-                        df['_fecha_ingreso'] = df['_fecha_ingreso_1']
-                        st.write("**Usando método:** pd.to_datetime con dayfirst=True")
-                    else:
-                        df['_fecha_ingreso'] = df['_fecha_ingreso_2']
-                        st.write("**Usando método:** formato específico '%d/%m/%Y'")
-                    
-                    # Extraer solo la fecha (sin hora)
-                    df['_fecha_solo'] = df['_fecha_ingreso'].dt.date
+                    # Convertir fechas usando dayfirst=True para formato DD/MM/YYYY
+                    df['_fecha_ingreso'] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True).dt.date
                     
                     # Mostrar ejemplos de fechas convertidas
                     st.write(f"**Ejemplos de fechas convertidas:**")
-                    st.write(df['_fecha_solo'].head(10).tolist())
+                    st.write(df['_fecha_ingreso'].head(10).tolist())
                     
                     # Normalizar ciudad operativa
                     df['_ciudad_operativa'] = df[col_ciudad].astype(str).str.upper().str.strip()
                     
-                    # Mostrar ejemplos de ciudades
-                    st.write(f"**Ejemplos de valores en {col_ciudad}:**")
-                    st.write(df[col_ciudad].head(10).tolist())
-                    st.write(f"**Valores únicos de ciudades (primeros 20):**")
-                    st.write(df['_ciudad_operativa'].unique()[:20].tolist())
+                    # Mostrar estadísticas
+                    st.write(f"**Total de fechas válidas:** {df['_fecha_ingreso'].notna().sum()}")
+                    st.write(f"**Rango de fechas en datos:** {df['_fecha_ingreso'].min()} a {df['_fecha_ingreso'].max()}")
                     
                     # Guardar solo las columnas necesarias
-                    dfs[hoja] = df[['_fecha_solo', '_ciudad_operativa']].copy()
-                    dfs[hoja].rename(columns={'_fecha_solo': '_fecha_ingreso'}, inplace=True)
+                    dfs[hoja] = df[['_fecha_ingreso', '_ciudad_operativa']].copy()
                     
                 else:
                     st.warning(f"⚠️ Hoja {hoja}: No se encontraron las columnas necesarias")
+                    st.write(f"Columnas disponibles en {hoja}: {list(df.columns)}")
                     dfs[hoja] = pd.DataFrame(columns=['_fecha_ingreso', '_ciudad_operativa'])
             else:
                 # Para las otras hojas, solo guardamos estructura básica por ahora
@@ -150,6 +129,7 @@ def cargar_archivo(archivo):
             fechas_validas = dfs['EVENTO']['_fecha_ingreso'].dropna()
             if not fechas_validas.empty:
                 fecha_max = datetime.combine(fechas_validas.max(), datetime.min.time())
+                st.info(f"📅 Fecha máxima en los datos: {fecha_max.strftime('%d/%m/%Y')}")
         
         return True, dfs, fecha_max
     
@@ -169,7 +149,7 @@ def contar_ingresos_evento(df_evento, ciudad, fecha_inicio, fecha_fin):
     ciudad_upper = ciudad.upper()
     
     # Filtrar por ciudad
-    mask_ciudad = df_evento['_ciudad_operativa'].str.contains(ciudad_upper, na=False)
+    mask_ciudad = df_evento['_ciudad_operativa'] == ciudad_upper
     df_ciudad = df_evento[mask_ciudad]
     
     if df_ciudad.empty:
@@ -236,7 +216,7 @@ with st.sidebar:
     st.markdown("""
     **Ingresos = Conteo de registros de la hoja EVENTO donde:**
     - FECHA INGRESO coincide con la fecha de la fila
-    - CIUDAD UNIDAD OPERATIVA contiene el nombre de la ciudad
+    - UNIDAD OPERATIVA coincide exactamente con el nombre de la ciudad
     """)
 
 # Carga de archivo
@@ -275,7 +255,6 @@ if archivo:
                 st.session_state.fecha_hasta = datetime.combine(fecha_hasta, datetime.min.time())
                 
                 st.success("✅ Archivo procesado correctamente!")
-                st.info(f"📅 Los datos se mostrarán hasta: {fecha_hasta.strftime('%d/%m/%Y')}")
 
 # Mostrar resultados después de procesar
 if st.session_state.datos_cargados:
@@ -382,7 +361,7 @@ if st.session_state.datos_cargados:
                             ['Total Días', len(df_completa)],
                             ['Días con Ingresos', len(df_filtrado)],
                             ['Total Ingresos', total_ingresos],
-                            ['Fuente de datos', 'Hoja EVENTO - Campo FECHA INGRESO y CIUDAD UNIDAD OPERATIVA']
+                            ['Fuente de datos', 'Hoja EVENTO - Campo FECHA INGRESO y UNIDAD OPERATIVA']
                         ], columns=['Información', 'Valor'])
                         info.to_excel(writer, sheet_name='Información', index=False)
                     
@@ -396,7 +375,6 @@ if st.session_state.datos_cargados:
                     
                 else:
                     st.info(f"No hay ingresos para {ciudad} en el período seleccionado (desde {fecha_inicio.strftime('%d/%m/%Y')} hasta {fecha_fin.strftime('%d/%m/%Y')})")
-                    st.caption("Los ingresos se calculan exclusivamente de la hoja EVENTO")
     
     # Botón para reiniciar
     st.markdown("---")
