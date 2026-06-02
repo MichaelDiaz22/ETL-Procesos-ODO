@@ -48,6 +48,15 @@ def cargar_archivo(archivo):
         
         # Cargar datos
         dfs = {}
+        
+        # Mostrar información de columnas para depuración
+        with st.expander("🔍 Ver información de columnas (Debug)"):
+            for hoja in HOJAS_REQUERIDAS:
+                df = pd.read_excel(archivo, sheet_name=hoja, nrows=5)
+                st.write(f"**Hoja {hoja} - Columnas disponibles:**")
+                st.write(list(df.columns))
+                st.write("---")
+        
         for hoja in HOJAS_REQUERIDAS:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
@@ -61,15 +70,31 @@ def cargar_archivo(archivo):
                         col_fecha = col
                         break
                 
-                # Identificar columna de CIUDAD OPERATIVA
+                # Identificar columna de CIUDAD UNIDAD OPERATIVA
                 col_ciudad = None
                 for col in df.columns:
                     col_lower = col.lower().strip()
-                    if 'ciudad operativa' in col_lower or 'ciudad' in col_lower or 'unidad operativa' in col_lower or 'operativa' in col_lower:
+                    # Buscar específicamente "CIUDAD UNIDAD OPERATIVA" o variantes
+                    if 'ciudad unidad operativa' in col_lower or 'ciudad_unidad_operativa' in col_lower or 'ciudad operativa' in col_lower or 'unidad operativa' in col_lower:
                         col_ciudad = col
                         break
                 
+                # Si no encuentra, buscar cualquier columna que tenga "ciudad" o "unidad"
+                if col_ciudad is None:
+                    for col in df.columns:
+                        col_lower = col.lower().strip()
+                        if 'ciudad' in col_lower or 'unidad' in col_lower:
+                            col_ciudad = col
+                            break
+                
+                st.info(f"📌 Hoja EVENTO - Columna FECHA INGRESO encontrada: {col_fecha}")
+                st.info(f"📌 Hoja EVENTO - Columna CIUDAD UNIDAD OPERATIVA encontrada: {col_ciudad}")
+                
                 if col_fecha and col_ciudad:
+                    # Mostrar ejemplos de valores para depuración
+                    st.write(f"**Ejemplos de valores en {col_ciudad}:**")
+                    st.write(df[col_ciudad].head(10).tolist())
+                    
                     # Convertir fecha a datetime y extraer solo la fecha (sin hora)
                     df['_fecha_ingreso'] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True).dt.date
                     # Normalizar ciudad operativa
@@ -77,8 +102,15 @@ def cargar_archivo(archivo):
                     
                     # Guardar solo las columnas necesarias
                     dfs[hoja] = df[['_fecha_ingreso', '_ciudad_operativa']].copy()
+                    
+                    # Mostrar valores únicos de ciudades para depuración
+                    ciudades_unicas = df['_ciudad_operativa'].unique()
+                    st.write(f"**Valores únicos en CIUDAD UNIDAD OPERATIVA:**")
+                    st.write(ciudades_unicas[:20].tolist())
                 else:
                     st.warning(f"⚠️ Hoja {hoja}: No se encontraron las columnas necesarias")
+                    st.write(f"Columna fecha encontrada: {col_fecha}")
+                    st.write(f"Columna ciudad encontrada: {col_ciudad}")
                     dfs[hoja] = pd.DataFrame(columns=['_fecha_ingreso', '_ciudad_operativa'])
             else:
                 # Para las otras hojas, solo guardamos estructura básica por ahora
@@ -103,21 +135,32 @@ def contar_ingresos_evento(df_evento, ciudad, fecha_inicio, fecha_fin):
     """Cuenta los ingresos de la hoja EVENTO para una ciudad específica"""
     
     if df_evento.empty:
+        st.warning("DataFrame de EVENTO está vacío")
         return {}
     
     # Normalizar nombre de ciudad
     ciudad_upper = ciudad.upper()
     
+    st.write(f"**Debug - Buscando ciudad:** {ciudad_upper}")
+    
     # Filtrar por ciudad
     mask_ciudad = df_evento['_ciudad_operativa'].str.contains(ciudad_upper, na=False)
     df_ciudad = df_evento[mask_ciudad]
     
+    st.write(f"**Debug - Registros encontrados para {ciudad}:** {len(df_ciudad)}")
+    
     if df_ciudad.empty:
+        # Mostrar algunas ciudades disponibles
+        ciudades_disponibles = df_evento['_ciudad_operativa'].unique()
+        st.write(f"**Ciudades disponibles en los datos:** {ciudades_disponibles[:10].tolist()}")
         return {}
     
     # Filtrar por rango de fechas
     mask_fecha = (df_ciudad['_fecha_ingreso'] >= fecha_inicio.date()) & (df_ciudad['_fecha_ingreso'] <= fecha_fin.date())
     df_filtrado = df_ciudad[mask_fecha]
+    
+    st.write(f"**Debug - Registros después de filtrar por fechas:** {len(df_filtrado)}")
+    st.write(f"**Rango de fechas:** {fecha_inicio.date()} a {fecha_fin.date()}")
     
     # Contar por fecha
     conteo = {}
@@ -176,7 +219,7 @@ with st.sidebar:
     st.markdown("""
     **Ingresos = Conteo de registros de la hoja EVENTO donde:**
     - FECHA INGRESO coincide con la fecha de la fila
-    - CIUDAD OPERATIVA contiene el nombre de la ciudad
+    - CIUDAD UNIDAD OPERATIVA contiene el nombre de la ciudad
     """)
     
     st.markdown("---")
@@ -327,7 +370,7 @@ if st.session_state.datos_cargados:
                             ['Total Días', len(df_completa)],
                             ['Días con Ingresos', len(df_filtrado)],
                             ['Total Ingresos', total_ingresos],
-                            ['Fuente de datos', 'Hoja EVENTO - Campo FECHA INGRESO y CIUDAD OPERATIVA']
+                            ['Fuente de datos', 'Hoja EVENTO - Campo FECHA INGRESO y CIUDAD UNIDAD OPERATIVA']
                         ], columns=['Información', 'Valor'])
                         info.to_excel(writer, sheet_name='Información', index=False)
                     
