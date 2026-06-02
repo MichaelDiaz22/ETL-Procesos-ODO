@@ -42,6 +42,8 @@ if 'unidades_funcionales' not in st.session_state:
     st.session_state.unidades_funcionales = []
 if 'unidades_seleccionadas' not in st.session_state:
     st.session_state.unidades_seleccionadas = []
+if 'resumen_ejecutivo' not in st.session_state:
+    st.session_state.resumen_ejecutivo = None
 
 def convertir_fecha_excel(numero):
     try:
@@ -316,6 +318,42 @@ def contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, 
     
     return conteo
 
+def calcular_resumen_ejecutivo(df_ingresos, df_facturacion, fecha_fin):
+    """Calcula el resumen ejecutivo con los datos de todas las ciudades"""
+    resultados = []
+    
+    for ciudad, config in CIUDADES.items():
+        fecha_inicio = config['fecha_inicio']
+        
+        if fecha_fin < fecha_inicio:
+            continue
+        
+        conteo_ingresos = contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
+        conteo_facturado_modelo = contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
+        conteo_facturado_fuera = contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
+        
+        total_ingresos = sum(conteo_ingresos.values())
+        total_facturado = sum(conteo_facturado_modelo.values()) + sum(conteo_facturado_fuera.values())
+        
+        pct_facturado = (total_facturado / total_ingresos * 100) if total_ingresos > 0 else 0
+        pct_novedades = 100 - pct_facturado  # Novedades = Ingresos - Facturado Total
+        
+        # Por ahora las novedades bloqueantes (subsanables) las dejamos en 0
+        pct_bloqueantes = 0
+        
+        resultados.append({
+            'Ciudad': ciudad,
+            'Ingresos': f"{total_ingresos:,}",
+            'Facturado total': f"{total_facturado:,}",
+            '% facturado total / ingresos': f"{pct_facturado:.1f}%",
+            '% novedades / ingresos': f"{pct_novedades:.1f}%",
+            '% novedades bloqueantes (subsanables) / ingresos': f"{pct_bloqueantes:.1f}%",
+            'fecha_inicio': fecha_inicio,
+            'fecha_fin': fecha_fin
+        })
+    
+    return pd.DataFrame(resultados)
+
 def agrupar_por_periodo(df, periodo):
     """Agrupa los datos por periodo (diario, semanal, mensual)"""
     if df.empty:
@@ -338,10 +376,9 @@ def agrupar_por_periodo(df, periodo):
         df_agrupado['Periodo'] = df_agrupado['Fecha'].dt.strftime('%Y-%m-%d')
         df_agrupado['mes'] = df_agrupado['Fecha'].dt.strftime('%Y-%m')
     
-    # Agrupar
     columnas_agrupar = ['ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total']
     df_resultado = df_agrupado.groupby(['Periodo', 'Fecha', 'semana', 'mes', 'año'])[columnas_agrupar].sum().reset_index()
-    df_resultado['Novedades'] = 0  # Novedades en 0 por ahora
+    df_resultado['Novedades'] = 0
     
     return df_resultado
 
@@ -432,6 +469,15 @@ if archivo:
                 st.session_state.datos_cargados = True
                 st.session_state.dfs = dfs
                 st.session_state.fecha_hasta = datetime.combine(fecha_hasta, datetime.min.time())
+                
+                # Calcular resumen ejecutivo
+                df_resumen = calcular_resumen_ejecutivo(
+                    dfs['INGRESOS'], 
+                    dfs['FACTURACION'], 
+                    st.session_state.fecha_hasta
+                )
+                st.session_state.resumen_ejecutivo = df_resumen
+                
                 st.success("✅ Archivo procesado correctamente!")
 
 # Mostrar resultados
@@ -442,11 +488,52 @@ if st.session_state.datos_cargados:
     df_ingresos = st.session_state.dfs.get('INGRESOS', pd.DataFrame())
     df_facturacion = st.session_state.dfs.get('FACTURACION', pd.DataFrame())
     fecha_fin = st.session_state.fecha_hasta
+    df_resumen = st.session_state.resumen_ejecutivo
     
-    tabs = st.tabs(list(CIUDADES.keys()))
+    # Crear pestañas: Resumen Ejecutivo primero, luego las ciudades
+    tabs = st.tabs(["📊 Resumen Ejecutivo"] + list(CIUDADES.keys()))
     
-    for tab, ciudad in zip(tabs, CIUDADES.keys()):
-        with tab:
+    # Pestaña de Resumen Ejecutivo
+    with tabs[0]:
+        st.subheader("📊 Comparativo entre Ciudades")
+        
+        if df_resumen is not None and not df_resumen.empty:
+            # Mostrar tabla de resumen
+            columnas_mostrar = ['Ciudad', 'Ingresos', 'Facturado total', 
+                               '% facturado total / ingresos', '% novedades / ingresos',
+                               '% novedades bloqueantes (subsanables) / ingresos']
+            
+            st.dataframe(df_resumen[columnas_mostrar], use_container_width=True, hide_index=True)
+            
+            # Mostrar nota del corte
+            st.markdown("---")
+            st.markdown("**📌 Nota del corte:**")
+            for _, row in df_resumen.iterrows():
+                fecha_inicio_str = row['fecha_inicio'].strftime('%d/%m/%Y')
+                fecha_fin_str = row['fecha_fin'].strftime('%d/%m/%Y')
+                st.markdown(f"- **{row['Ciudad']}:** {fecha_inicio_str} al {fecha_fin_str}")
+            
+            # Gráfico comparativo de barras
+            st.subheader("📊 Comparativo de Ingresos vs Facturado Total")
+            
+            # Preparar datos para gráfico
+            df_chart = df_resumen.copy()
+            df_chart['Ingresos_num'] = df_chart['Ingresos'].str.replace(',', '').astype(int)
+            df_chart['Facturado_num'] = df_chart['Facturado total'].str.replace(',', '').astype(int)
+            
+            chart_data = pd.DataFrame({
+                'Ciudad': df_chart['Ciudad'].tolist(),
+                'Ingresos': df_chart['Ingresos_num'].tolist(),
+                'Facturado Total': df_chart['Facturado_num'].tolist()
+            }).set_index('Ciudad')
+            
+            st.bar_chart(chart_data)
+        else:
+            st.info("No hay datos para mostrar en el resumen ejecutivo")
+    
+    # Pestañas de ciudades
+    for i, ciudad in enumerate(CIUDADES.keys()):
+        with tabs[i + 1]:
             config = CIUDADES[ciudad]
             fecha_inicio = config['fecha_inicio']
             
@@ -472,7 +559,6 @@ if st.session_state.datos_cargados:
                     total_facturado_fuera = df_tabla['facturado fuera modelo'].sum()
                     total_facturado = df_tabla['facturado total'].sum()
                     
-                    # Calcular porcentajes
                     pct_modelo = (total_facturado_modelo / total_ingresos * 100) if total_ingresos > 0 else 0
                     pct_fuera = (total_facturado_fuera / total_ingresos * 100) if total_ingresos > 0 else 0
                     pct_total = (total_facturado / total_ingresos * 100) if total_ingresos > 0 else 0
