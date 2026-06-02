@@ -30,10 +30,8 @@ if 'dfs' not in st.session_state:
     st.session_state.dfs = {}
 if 'fecha_maxima' not in st.session_state:
     st.session_state.fecha_maxima = None
-if 'fecha_hasta' not in st.session_state:
-    st.session_state.fecha_hasta = None
 
-def cargar_archivo(archivo):
+def cargar_archivo(archivo, fecha_hasta):
     """Carga el archivo Excel y prepara los datos para conteo rápido"""
     try:
         excel_file = pd.ExcelFile(archivo)
@@ -44,11 +42,10 @@ def cargar_archivo(archivo):
         
         if hojas_faltantes:
             st.error(f"❌ Faltan las siguientes hojas: {', '.join(hojas_faltantes)}")
-            return False, None, None
+            return False, None
         
         # Cargar datos y preprocesar
         dfs = {}
-        fecha_max = None
         
         for hoja in HOJAS_REQUERIDAS:
             df = pd.read_excel(archivo, sheet_name=hoja)
@@ -77,28 +74,22 @@ def cargar_archivo(archivo):
                     # Normalizar unidad operativa
                     df['_unidad'] = df[col_unidad].astype(str).str.upper().str.strip()
                 
+                # Filtrar por fecha_hasta desde el inicio
+                df = df[df['_fecha'] <= fecha_hasta.date()]
+                
                 # Guardar solo las columnas necesarias para optimizar memoria
                 dfs[hoja] = df[['_fecha', '_unidad']].copy()
-                
-                # Actualizar fecha máxima
-                if not df['_fecha'].dropna().empty:
-                    max_fecha = df['_fecha'].max()
-                    if fecha_max is None or max_fecha > fecha_max:
-                        fecha_max = max_fecha
             else:
                 st.warning(f"⚠️ Hoja {hoja}: No se encontró columna de FECHA INGRESO")
                 dfs[hoja] = pd.DataFrame(columns=['_fecha', '_unidad'])
             
-            st.info(f"📄 Hoja '{hoja}': {len(df):,} registros")
+            st.info(f"📄 Hoja '{hoja}': {len(df):,} registros (filtrados hasta {fecha_hasta.strftime('%d/%m/%Y')})")
         
-        if fecha_max is None:
-            fecha_max = datetime.now()
-        
-        return True, dfs, datetime.combine(fecha_max, datetime.min.time())
+        return True, dfs
     
     except Exception as e:
         st.error(f"❌ Error al cargar el archivo: {str(e)}")
-        return False, None, None
+        return False, None
 
 def contar_ingresos_por_fecha(dfs, ciudad, fecha_inicio, fecha_fin):
     """Cuenta los ingresos por fecha para una ciudad específica"""
@@ -190,6 +181,24 @@ with st.sidebar:
 # Carga de archivo
 st.header("📁 Cargar Archivo")
 
+# Selector de fecha final (aparece ANTES del botón procesar)
+st.markdown("### ⚙️ Configuración del Reporte")
+
+fecha_actual = datetime.now()
+fecha_max_posible = fecha_actual
+
+fecha_hasta = st.date_input(
+    "📅 Seleccionar fecha final del reporte:",
+    value=fecha_actual.date(),
+    min_value=datetime(2025, 9, 16).date(),
+    max_value=fecha_actual.date(),
+    help="Las tablas mostrarán datos desde la fecha de inicio de cada ciudad hasta esta fecha"
+)
+
+fecha_hasta_dt = datetime.combine(fecha_hasta, datetime.min.time())
+
+st.markdown("---")
+
 archivo = st.file_uploader(
     "Selecciona el archivo Excel",
     type=['xlsx', 'xls'],
@@ -199,45 +208,18 @@ archivo = st.file_uploader(
 if archivo:
     if st.button("📊 Procesar Archivo", type="primary", use_container_width=True):
         with st.spinner("Cargando archivo..."):
-            exito, dfs, fecha_max = cargar_archivo(archivo)
+            exito, dfs = cargar_archivo(archivo, fecha_hasta_dt)
             
             if exito:
                 st.session_state.datos_cargados = True
                 st.session_state.dfs = dfs
-                st.session_state.fecha_maxima = fecha_max
-                
-                # Establecer fecha inicial por defecto
-                fecha_actual = datetime.now()
-                if fecha_max > fecha_actual:
-                    fecha_max = fecha_actual
-                st.session_state.fecha_hasta = fecha_max
+                st.session_state.fecha_hasta = fecha_hasta_dt
                 
                 st.success("✅ Archivo procesado correctamente!")
-                st.info(f"📅 Última fecha disponible en los datos: {fecha_max.strftime('%d/%m/%Y')}")
+                st.info(f"📅 Los datos se mostrarán hasta: {fecha_hasta_dt.strftime('%d/%m/%Y')}")
 
-# Selector de fecha (disponible después de cargar)
+# Mostrar resultados después de procesar
 if st.session_state.datos_cargados:
-    st.markdown("---")
-    st.header("⚙️ Configuración del Reporte")
-    
-    fecha_actual = datetime.now()
-    fecha_max_disponible = st.session_state.fecha_maxima
-    
-    if fecha_max_disponible > fecha_actual:
-        fecha_max_disponible = fecha_actual
-    
-    # Selector de fecha
-    fecha_hasta = st.date_input(
-        "📅 Seleccionar fecha final del reporte:",
-        value=st.session_state.fecha_hasta.date() if st.session_state.fecha_hasta else fecha_max_disponible.date(),
-        min_value=datetime(2025, 9, 16).date(),
-        max_value=fecha_actual.date(),
-        help="La tabla mostrará datos desde la fecha de inicio de cada ciudad hasta esta fecha"
-    )
-    
-    # Actualizar fecha en session state
-    st.session_state.fecha_hasta = datetime.combine(fecha_hasta, datetime.min.time())
-    
     st.markdown("---")
     st.header("📊 Tablas Resumen por Ciudad")
     
@@ -356,14 +338,14 @@ if st.session_state.datos_cargados:
     # Botón para reiniciar
     st.markdown("---")
     if st.button("🔄 Reiniciar - Cargar otro archivo", use_container_width=True):
-        for key in ['datos_cargados', 'dfs', 'fecha_maxima', 'fecha_hasta']:
+        for key in ['datos_cargados', 'dfs', 'fecha_hasta']:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
 
 else:
     if archivo is None:
-        st.info("👆 1. Carga un archivo Excel\n\n👆 2. Presiona 'Procesar Archivo'")
+        st.info("👆 1. Selecciona la fecha final del reporte\n\n👆 2. Carga un archivo Excel\n\n👆 3. Presiona 'Procesar Archivo'")
     else:
         st.info("⏳ Presiona 'Procesar Archivo' para cargar los datos")
 
