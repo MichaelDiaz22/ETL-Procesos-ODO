@@ -13,19 +13,32 @@ st.set_page_config(
 st.title("📊 Tabla Resumen por Ciudad")
 st.markdown("---")
 
-# Definición de ciudades
-CIUDADES = {
-    "Manizales": {
+# Definición de sedes
+SEDES = {
+    "San Marcel": {
         "fecha_inicio": datetime(2025, 9, 16),
-        "centro_atencion": "SAN MARCEL"
+        "centro_atencion": "SAN MARCEL",
+        "palabra_clave": "SAN MARCEL"
     },
-    "Armenia": {
-        "fecha_inicio": datetime(2025, 11, 20),
-        "centro_atencion": "CENTENARIO"
+    "CAT MARAYA": {
+        "fecha_inicio": None,  # Pendiente de definir
+        "centro_atencion": "CLINICA DE ALTA TECNOLOGIA MARAYA",
+        "palabra_clave": "MARAYA"
     },
-    "Pereira": {
-        "fecha_inicio": datetime(2026, 4, 15),
-        "centro_atencion": "CLINICA DE ALTA TECNOLOGIA MARAYA"
+    "CIRCUNVALAR": {
+        "fecha_inicio": None,  # Pendiente de definir
+        "centro_atencion": None,  # Pendiente de definir
+        "palabra_clave": "CIRCUNVALAR"
+    },
+    "CENTENARIO": {
+        "fecha_inicio": None,  # Pendiente de definir
+        "centro_atencion": "CENTENARIO",
+        "palabra_clave": "CENTENARIO"
+    },
+    "CAT ARMENIA": {
+        "fecha_inicio": None,  # Pendiente de definir
+        "centro_atencion": None,  # Pendiente de definir
+        "palabra_clave": "CAT ARMENIA"
     }
 }
 
@@ -45,6 +58,8 @@ if 'unidades_seleccionadas' not in st.session_state:
     st.session_state.unidades_seleccionadas = []
 if 'resumen_ejecutivo' not in st.session_state:
     st.session_state.resumen_ejecutivo = None
+if 'fechas_inicio_sedes' not in st.session_state:
+    st.session_state.fechas_inicio_sedes = {}
 
 def convertir_fecha_excel(numero):
     try:
@@ -94,17 +109,12 @@ def normalizar_texto(texto):
     texto_str = " ".join(texto_str.split())
     return texto_str
 
-def procesar_hoja_ingresos(df, nombre_hoja, unidades_filtro):
+def procesar_hoja_ingresos(df, nombre_hoja, unidades_filtro, palabra_clave=None):
+    """Procesa hojas para conteo de ingresos (FECHA INGRESO)"""
     col_fecha = None
     for col in df.columns:
         if 'fecha ingreso' in col.lower():
             col_fecha = col
-            break
-    
-    col_ciudad = None
-    for col in df.columns:
-        if 'ciudad unidad operativa' in col.lower() or 'unidad operativa' in col.lower():
-            col_ciudad = col
             break
     
     col_unidad_funcional = None
@@ -113,27 +123,40 @@ def procesar_hoja_ingresos(df, nombre_hoja, unidades_filtro):
             col_unidad_funcional = col
             break
     
-    if col_fecha and col_ciudad:
+    if col_fecha and col_unidad_funcional:
         fechas_convertidas = []
         for v in df[col_fecha]:
             fecha = convertir_fecha_excel(v)
             fechas_convertidas.append(fecha.date() if fecha else None)
         
-        df_procesado = pd.DataFrame({
-            '_fecha': fechas_convertidas,
-            '_ciudad': df[col_ciudad].astype(str).str.upper().str.strip(),
-            '_tipo': 'unidad_operativa',
-            '_hoja': nombre_hoja
-        })
+        valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        if col_unidad_funcional and unidades_filtro:
-            df_procesado['_unidad_funcional'] = df[col_unidad_funcional].astype(str).str.strip()
-            df_procesado = df_procesado[df_procesado['_unidad_funcional'].isin(unidades_filtro)]
+        # Aplicar filtro de palabra clave si existe
+        if palabra_clave:
+            mask_palabra = valores_funcionales.str.contains(palabra_clave, na=False)
+            df_filtrado = pd.DataFrame({
+                '_fecha': fechas_convertidas,
+                '_valor_funcional': valores_funcionales
+            })[mask_palabra]
+        else:
+            df_filtrado = pd.DataFrame({
+                '_fecha': fechas_convertidas,
+                '_valor_funcional': valores_funcionales
+            })
         
-        return df_procesado
+        # Aplicar filtro de unidades funcionales seleccionadas
+        if unidades_filtro:
+            mask_funcional = df_filtrado['_valor_funcional'].isin(unidades_filtro)
+            df_filtrado = df_filtrado[mask_funcional]
+        
+        df_filtrado['_tipo'] = 'unidad_funcional'
+        df_filtrado['_hoja'] = nombre_hoja
+        
+        return df_filtrado
     return pd.DataFrame()
 
-def procesar_hoja_pdte_ingresos(df, nombre_hoja, unidades_filtro):
+def procesar_hoja_pdte_ingresos(df, nombre_hoja, centro_atencion):
+    """Procesa hojas PDTE para conteo de ingresos (FECHA INGRESO con CENTRO DE ATENCION)"""
     col_fecha = None
     for col in df.columns:
         if 'fecha ingreso' in col.lower():
@@ -146,19 +169,14 @@ def procesar_hoja_pdte_ingresos(df, nombre_hoja, unidades_filtro):
             col_centro = col
             break
     
-    col_unidad_funcional = None
-    for col in df.columns:
-        if 'unidad funcional ingreso' in col.lower():
-            col_unidad_funcional = col
-            break
-    
-    if col_fecha and col_centro:
+    if col_fecha and col_centro and centro_atencion:
         fechas_convertidas = []
         for v in df[col_fecha]:
             fecha = convertir_fecha_excel(v)
             fechas_convertidas.append(fecha.date() if fecha else None)
         
         centros_normalizados = [normalizar_texto(v) for v in df[col_centro]]
+        centro_upper = normalizar_texto(centro_atencion)
         
         df_procesado = pd.DataFrame({
             '_fecha': fechas_convertidas,
@@ -167,17 +185,16 @@ def procesar_hoja_pdte_ingresos(df, nombre_hoja, unidades_filtro):
             '_hoja': nombre_hoja
         })
         
-        if col_unidad_funcional and unidades_filtro:
-            df_procesado['_unidad_funcional'] = df[col_unidad_funcional].astype(str).str.strip()
-            df_procesado = df_procesado[df_procesado['_unidad_funcional'].isin(unidades_filtro)]
+        mask_centro = df_procesado['_centro'] == centro_upper
+        df_procesado = df_procesado[mask_centro]
         
         return df_procesado
     return pd.DataFrame()
 
-def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro):
+def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave=None):
+    """Procesa hojas EVENTO y PGP para facturación (modelo y fuera modelo)"""
     col_fecha_ingreso = None
     col_fecha_factura = None
-    col_ciudad = None
     col_unidad_funcional = None
     
     for col in df.columns:
@@ -186,12 +203,11 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro):
             col_fecha_ingreso = col
         elif 'fecha factura' in col_lower or 'fecha_factura' in col_lower:
             col_fecha_factura = col
-        elif 'ciudad unidad operativa' in col_lower or 'unidad operativa' in col_lower:
-            col_ciudad = col
         elif 'unidad funcional ingreso' in col_lower:
             col_unidad_funcional = col
     
-    if col_fecha_ingreso and col_fecha_factura and col_ciudad:
+    if col_fecha_ingreso and col_fecha_factura and col_unidad_funcional:
+        # Convertir fechas
         fechas_ingreso = []
         for v in df[col_fecha_ingreso]:
             fecha = convertir_fecha_excel(v)
@@ -202,21 +218,34 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro):
             fecha = convertir_fecha_excel(v)
             fechas_factura.append(fecha.date() if fecha else None)
         
-        df_procesado = pd.DataFrame({
-            '_fecha_ingreso': fechas_ingreso,
-            '_fecha_factura': fechas_factura,
-            '_ciudad': df[col_ciudad].astype(str).str.upper().str.strip(),
-            '_hoja': nombre_hoja
-        })
+        valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        if col_unidad_funcional and unidades_filtro:
-            df_procesado['_unidad_funcional'] = df[col_unidad_funcional].astype(str).str.strip()
-            df_procesado = df_procesado[df_procesado['_unidad_funcional'].isin(unidades_filtro)]
+        # Aplicar filtro de palabra clave si existe
+        if palabra_clave:
+            mask_palabra = valores_funcionales.str.contains(palabra_clave, na=False)
+            df_filtrado = pd.DataFrame({
+                '_fecha_ingreso': fechas_ingreso,
+                '_fecha_factura': fechas_factura,
+                '_valor_funcional': valores_funcionales
+            })[mask_palabra]
+        else:
+            df_filtrado = pd.DataFrame({
+                '_fecha_ingreso': fechas_ingreso,
+                '_fecha_factura': fechas_factura,
+                '_valor_funcional': valores_funcionales
+            })
         
-        return df_procesado
+        # Aplicar filtro de unidades funcionales seleccionadas
+        if unidades_filtro:
+            mask_funcional = df_filtrado['_valor_funcional'].isin(unidades_filtro)
+            df_filtrado = df_filtrado[mask_funcional]
+        
+        df_filtrado['_hoja'] = nombre_hoja
+        
+        return df_filtrado
     return pd.DataFrame()
 
-def procesar_hoja_novedades(df, ciudad, config, fecha_inicio, fecha_fin):
+def procesar_hoja_novedades(df, centro_atencion, fecha_inicio, fecha_fin):
     """Procesa la hoja NOVEDADES para contar registros por fecha"""
     col_fecha = None
     for col in df.columns:
@@ -236,7 +265,7 @@ def procesar_hoja_novedades(df, ciudad, config, fecha_inicio, fecha_fin):
             col_bloqueante = col
             break
     
-    if col_fecha and col_centro:
+    if col_fecha and col_centro and centro_atencion:
         # Convertir fechas
         fechas_convertidas = []
         for v in df[col_fecha]:
@@ -244,6 +273,7 @@ def procesar_hoja_novedades(df, ciudad, config, fecha_inicio, fecha_fin):
             fechas_convertidas.append(fecha.date() if fecha else None)
         
         centros_normalizados = [normalizar_texto(v) for v in df[col_centro]]
+        centro_upper = normalizar_texto(centro_atencion)
         
         df_procesado = pd.DataFrame({
             '_fecha': fechas_convertidas,
@@ -254,8 +284,7 @@ def procesar_hoja_novedades(df, ciudad, config, fecha_inicio, fecha_fin):
         if col_bloqueante:
             df_procesado['_bloqueante'] = df[col_bloqueante].astype(str).str.upper().str.strip()
         
-        # Filtrar por centro de atención de la ciudad
-        centro_upper = normalizar_texto(config['centro_atencion'])
+        # Filtrar por centro de atención
         mask_centro = df_procesado['_centro'] == centro_upper
         df_filtrado = df_procesado[mask_centro]
         
@@ -290,29 +319,35 @@ def cargar_archivo(archivo, unidades_filtro):
             st.error(f"Faltan hojas: {', '.join(hojas_faltantes)}")
             return False, None, None
         
-        # Verificar hoja de novedades (no es obligatoria)
         if HOJA_NOVEDADES not in hojas_disponibles:
-            st.warning(f"No se encontró la hoja '{HOJA_NOVEDADES}'. La columna Novedades quedará en 0.")
+            st.warning(f"No se encontró la hoja '{HOJA_NOVEDADES}'. Las novedades quedarán en 0.")
         
-        dfs_ingresos = []
-        dfs_facturacion = []
+        dfs_ingresos = {sede: [] for sede in SEDES.keys()}
+        dfs_facturacion = {sede: [] for sede in SEDES.keys()}
         
         for hoja in ['EVENTO', 'PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
-            df_ing = procesar_hoja_ingresos(df, hoja, unidades_filtro)
-            if not df_ing.empty:
-                dfs_ingresos.append(df_ing)
-            
-            df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro)
-            if not df_fac.empty:
-                dfs_facturacion.append(df_fac)
+            for sede, config in SEDES.items():
+                # Procesar ingresos con palabra clave si existe
+                df_ing = procesar_hoja_ingresos(df, hoja, unidades_filtro, config.get('palabra_clave'))
+                if not df_ing.empty:
+                    dfs_ingresos[sede].append(df_ing)
+                
+                # Procesar facturación
+                df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro, config.get('palabra_clave'))
+                if not df_fac.empty:
+                    dfs_facturacion[sede].append(df_fac)
         
+        # Procesar hojas PDTE para ingresos (solo sedes con centro_atencion definido)
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
-            df_ing = procesar_hoja_pdte_ingresos(df, hoja, unidades_filtro)
-            if not df_ing.empty:
-                dfs_ingresos.append(df_ing)
+            
+            for sede, config in SEDES.items():
+                if config.get('centro_atencion'):
+                    df_ing = procesar_hoja_pdte_ingresos(df, hoja, config['centro_atencion'])
+                    if not df_ing.empty:
+                        dfs_ingresos[sede].append(df_ing)
         
         # Cargar hoja de novedades si existe
         df_novedades = None
@@ -320,32 +355,26 @@ def cargar_archivo(archivo, unidades_filtro):
             df_novedades = pd.read_excel(archivo, sheet_name=HOJA_NOVEDADES)
             st.info(f"📄 Hoja '{HOJA_NOVEDADES}': {len(df_novedades):,} registros")
         
-        df_ingresos_total = pd.concat(dfs_ingresos, ignore_index=True) if dfs_ingresos else pd.DataFrame()
-        df_facturacion_total = pd.concat(dfs_facturacion, ignore_index=True) if dfs_facturacion else pd.DataFrame()
+        # Combinar DataFrames por sede
+        dfs_resultado = {}
+        for sede in SEDES.keys():
+            dfs_resultado[f'INGRESOS_{sede}'] = pd.concat(dfs_ingresos[sede], ignore_index=True) if dfs_ingresos[sede] else pd.DataFrame()
+            dfs_resultado[f'FACTURACION_{sede}'] = pd.concat(dfs_facturacion[sede], ignore_index=True) if dfs_facturacion[sede] else pd.DataFrame()
         
-        return True, {
-            'INGRESOS': df_ingresos_total,
-            'FACTURACION': df_facturacion_total,
-            'NOVEDADES': df_novedades
-        }, datetime.now()
+        dfs_resultado['NOVEDADES'] = df_novedades
+        
+        return True, dfs_resultado, datetime.now()
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
         return False, None, None
 
-def contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin):
-    ciudad_upper = ciudad.upper()
-    centro_upper = normalizar_texto(config['centro_atencion'])
-    
-    mask_unidad = (df_ingresos['_tipo'] == 'unidad_operativa') & (df_ingresos['_ciudad'] == ciudad_upper)
-    mask_centro = (df_ingresos['_tipo'] == 'centro_atencion') & (df_ingresos['_centro'] == centro_upper)
-    df_ciudad = df_ingresos[mask_unidad | mask_centro]
-    
-    if df_ciudad.empty:
+def contar_ingresos_sede(df_ingresos, fecha_inicio, fecha_fin):
+    if df_ingresos.empty:
         return {}
     
-    mask_fecha = (df_ciudad['_fecha'] >= fecha_inicio.date()) & (df_ciudad['_fecha'] <= fecha_fin.date())
-    df_filtrado = df_ciudad[mask_fecha]
+    mask_fecha = (df_ingresos['_fecha'] >= fecha_inicio.date()) & (df_ingresos['_fecha'] <= fecha_fin.date())
+    df_filtrado = df_ingresos[mask_fecha]
     
     conteo = {}
     for fecha in df_filtrado['_fecha']:
@@ -353,17 +382,12 @@ def contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin):
     
     return conteo
 
-def contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin):
-    ciudad_upper = ciudad.upper()
-    
-    mask_ciudad = df_facturacion['_ciudad'] == ciudad_upper
-    df_ciudad = df_facturacion[mask_ciudad]
-    
-    if df_ciudad.empty:
+def contar_facturado_modelo_sede(df_facturacion, fecha_inicio, fecha_fin):
+    if df_facturacion.empty:
         return {}
     
-    mask_fechas = (df_ciudad['_fecha_ingreso'] >= fecha_inicio.date()) & (df_ciudad['_fecha_factura'] >= fecha_inicio.date())
-    df_filtrado = df_ciudad[mask_fechas]
+    mask_fechas = (df_facturacion['_fecha_ingreso'] >= fecha_inicio.date()) & (df_facturacion['_fecha_factura'] >= fecha_inicio.date())
+    df_filtrado = df_facturacion[mask_fechas]
     
     mask_fecha_fin = df_filtrado['_fecha_factura'] <= fecha_fin.date()
     df_filtrado = df_filtrado[mask_fecha_fin]
@@ -374,17 +398,12 @@ def contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_
     
     return conteo
 
-def contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin):
-    ciudad_upper = ciudad.upper()
-    
-    mask_ciudad = df_facturacion['_ciudad'] == ciudad_upper
-    df_ciudad = df_facturacion[mask_ciudad]
-    
-    if df_ciudad.empty:
+def contar_facturado_fuera_modelo_sede(df_facturacion, fecha_inicio, fecha_fin):
+    if df_facturacion.empty:
         return {}
     
-    mask_fechas = (df_ciudad['_fecha_ingreso'] < fecha_inicio.date()) & (df_ciudad['_fecha_factura'] >= fecha_inicio.date())
-    df_filtrado = df_ciudad[mask_fechas]
+    mask_fechas = (df_facturacion['_fecha_ingreso'] < fecha_inicio.date()) & (df_facturacion['_fecha_factura'] >= fecha_inicio.date())
+    df_filtrado = df_facturacion[mask_fechas]
     
     mask_fecha_fin = df_filtrado['_fecha_factura'] <= fecha_fin.date()
     df_filtrado = df_filtrado[mask_fecha_fin]
@@ -395,27 +414,29 @@ def contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, 
     
     return conteo
 
-def contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin):
-    """Cuenta las novedades totales y bloqueantes desde la hoja NOVEDADES"""
-    if df_novedades is None or df_novedades.empty:
+def contar_novedades_sede(df_novedades, centro_atencion, fecha_inicio, fecha_fin):
+    if df_novedades is None or df_novedades.empty or not centro_atencion:
         return {}, {}
     
-    return procesar_hoja_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
+    return procesar_hoja_novedades(df_novedades, centro_atencion, fecha_inicio, fecha_fin)
 
-def calcular_resumen_ejecutivo(df_ingresos, df_facturacion, df_novedades, fecha_fin):
-    """Calcula el resumen ejecutivo con los datos de todas las ciudades"""
+def calcular_resumen_ejecutivo(dfs, fecha_fin, fechas_inicio):
     resultados = []
     
-    for ciudad, config in CIUDADES.items():
-        fecha_inicio = config['fecha_inicio']
+    for sede, config in SEDES.items():
+        fecha_inicio = fechas_inicio.get(sede, config['fecha_inicio'])
         
-        if fecha_fin < fecha_inicio:
+        if fecha_inicio is None or fecha_fin < fecha_inicio:
             continue
         
-        conteo_ingresos = contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
-        conteo_facturado_modelo = contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
-        conteo_facturado_fuera = contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
-        conteo_novedades, conteo_bloqueantes = contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
+        df_ingresos = dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
+        df_facturacion = dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
+        df_novedades = dfs.get('NOVEDADES', None)
+        
+        conteo_ingresos = contar_ingresos_sede(df_ingresos, fecha_inicio, fecha_fin)
+        conteo_facturado_modelo = contar_facturado_modelo_sede(df_facturacion, fecha_inicio, fecha_fin)
+        conteo_facturado_fuera = contar_facturado_fuera_modelo_sede(df_facturacion, fecha_inicio, fecha_fin)
+        conteo_novedades, conteo_bloqueantes = contar_novedades_sede(df_novedades, config.get('centro_atencion'), fecha_inicio, fecha_fin)
         
         total_ingresos = sum(conteo_ingresos.values())
         total_facturado = sum(conteo_facturado_modelo.values()) + sum(conteo_facturado_fuera.values())
@@ -427,12 +448,12 @@ def calcular_resumen_ejecutivo(df_ingresos, df_facturacion, df_novedades, fecha_
         pct_bloqueantes = (total_bloqueantes / total_ingresos * 100) if total_ingresos > 0 else 0
         
         resultados.append({
-            'Ciudad': ciudad,
+            'Sede': sede,
             'Ingresos': f"{total_ingresos:,}",
             'Facturado total': f"{total_facturado:,}",
             '% facturado total / ingresos': f"{pct_facturado:.1f}%",
             '% novedades / ingresos': f"{pct_novedades:.1f}%",
-            '% novedades bloqueantes (subsanables) / ingresos': f"{pct_bloqueantes:.1f}%",
+            '% novedades bloqueantes / ingresos': f"{pct_bloqueantes:.1f}%",
             'fecha_inicio': fecha_inicio,
             'fecha_fin': fecha_fin
         })
@@ -440,14 +461,12 @@ def calcular_resumen_ejecutivo(df_ingresos, df_facturacion, df_novedades, fecha_
     return pd.DataFrame(resultados)
 
 def formatear_rango_semana(fecha_inicio_semana, fecha_fin_semana, fecha_fin_global):
-    """Formatea el rango de una semana para mostrar en la tabla"""
     fecha_fin_real = min(fecha_fin_semana, fecha_fin_global)
     inicio_str = fecha_inicio_semana.strftime('%d-%m')
     fin_str = fecha_fin_real.strftime('%d-%m')
     return f"{inicio_str} / {fin_str}"
 
 def agrupar_por_periodo(df, periodo, fecha_fin_global):
-    """Agrupa los datos por periodo (diario, semanal, mensual)"""
     if df.empty:
         return df
     
@@ -469,22 +488,21 @@ def agrupar_por_periodo(df, periodo, fecha_fin_global):
             axis=1
         )
         df_agrupado['mes'] = 'Semanal'
-    else:  # Diario
+    else:
         df_agrupado['Periodo'] = df_agrupado['Fecha'].dt.strftime('%Y-%m-%d')
-        # Usar el primer valor de la columna semana para el nombre
         df_agrupado['semana'] = df_agrupado['Fecha'].dt.isocalendar().week
         df_agrupado['mes'] = df_agrupado['Fecha'].dt.strftime('%Y-%m')
     
-    columnas_agrupar = ['ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades']
+    columnas_agrupar = ['ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades', 'Novedades Bloqueantes']
     df_resultado = df_agrupado.groupby(['Periodo', 'Fecha', 'semana', 'mes', 'año'])[columnas_agrupar].sum().reset_index()
     
     return df_resultado
 
-def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo):
-    conteo_ingresos = contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
-    conteo_facturado_modelo = contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
-    conteo_facturado_fuera = contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
-    conteo_novedades, _ = contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
+def construir_tabla_sede(sede, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo):
+    conteo_ingresos = contar_ingresos_sede(df_ingresos, fecha_inicio, fecha_fin)
+    conteo_facturado_modelo = contar_facturado_modelo_sede(df_facturacion, fecha_inicio, fecha_fin)
+    conteo_facturado_fuera = contar_facturado_fuera_modelo_sede(df_facturacion, fecha_inicio, fecha_fin)
+    conteo_novedades, conteo_bloqueantes = contar_novedades_sede(df_novedades, config.get('centro_atencion'), fecha_inicio, fecha_fin)
     
     fechas = []
     fecha_actual = fecha_inicio
@@ -500,6 +518,7 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
         facturado_fuera = conteo_facturado_fuera.get(fecha_key, 0)
         facturado_total = facturado_modelo + facturado_fuera
         novedades = conteo_novedades.get(fecha_key, 0)
+        novedades_bloqueantes = conteo_bloqueantes.get(fecha_key, 0)
         
         datos.append({
             'Fecha': fecha,
@@ -510,7 +529,8 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
             'facturado modelo': facturado_modelo,
             'facturado fuera modelo': facturado_fuera,
             'facturado total': facturado_total,
-            'Novedades': novedades
+            'Novedades': novedades,
+            'Novedades Bloqueantes': novedades_bloqueantes
         })
     
     df = pd.DataFrame(datos)
@@ -520,9 +540,11 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
 
 # Sidebar
 with st.sidebar:
-    st.header("📋 Información")
-    for ciudad, config in CIUDADES.items():
-        st.markdown(f"**{ciudad}:** {config['fecha_inicio'].strftime('%d/%m/%Y')}")
+    st.header("📋 Información de Sedes")
+    for sede, config in SEDES.items():
+        fecha_ini = config['fecha_inicio']
+        fecha_str = fecha_ini.strftime('%d/%m/%Y') if fecha_ini else "Pendiente"
+        st.markdown(f"**{sede}:** Inicio {fecha_str}")
 
 # Interfaz principal
 st.header("📁 Cargar Archivo")
@@ -531,10 +553,27 @@ st.markdown("### ⚙️ Configuración del Reporte")
 
 fecha_actual = datetime.now()
 
+# Configurar fechas de inicio para sedes pendientes
+st.markdown("#### 📅 Configuración de fechas de inicio por sede")
+for sede, config in SEDES.items():
+    if config['fecha_inicio'] is None:
+        fecha_default = st.date_input(
+            f"Fecha de inicio para {sede}:",
+            value=fecha_actual.date(),
+            min_value=datetime(2025, 1, 1).date(),
+            max_value=fecha_actual.date(),
+            key=f"fecha_inicio_{sede}"
+        )
+        st.session_state.fechas_inicio_sedes[sede] = datetime.combine(fecha_default, datetime.min.time())
+    else:
+        st.session_state.fechas_inicio_sedes[sede] = config['fecha_inicio']
+
+st.markdown("---")
+
 fecha_hasta = st.date_input(
     "📅 Seleccionar fecha final del reporte:",
     value=fecha_actual.date(),
-    min_value=datetime(2025, 9, 16).date(),
+    min_value=datetime(2025, 1, 1).date(),
     max_value=fecha_actual.date()
 )
 
@@ -572,10 +611,9 @@ if archivo:
                 
                 # Calcular resumen ejecutivo
                 df_resumen = calcular_resumen_ejecutivo(
-                    dfs['INGRESOS'], 
-                    dfs['FACTURACION'],
-                    dfs.get('NOVEDADES'),
-                    st.session_state.fecha_hasta
+                    dfs,
+                    st.session_state.fecha_hasta,
+                    st.session_state.fechas_inicio_sedes
                 )
                 st.session_state.resumen_ejecutivo = df_resumen
                 
@@ -584,59 +622,62 @@ if archivo:
 # Mostrar resultados
 if st.session_state.datos_cargados:
     st.markdown("---")
-    st.header("📊 Tablas Resumen por Ciudad")
+    st.header("📊 Tablas Resumen por Sede")
     
-    df_ingresos = st.session_state.dfs.get('INGRESOS', pd.DataFrame())
-    df_facturacion = st.session_state.dfs.get('FACTURACION', pd.DataFrame())
     df_novedades = st.session_state.dfs.get('NOVEDADES', None)
     fecha_fin = st.session_state.fecha_hasta
-    df_resumen = st.session_state.resumen_ejecutivo
     
-    # Crear pestañas: Resumen Ejecutivo primero, luego las ciudades
-    tabs = st.tabs(["📊 Resumen Ejecutivo"] + list(CIUDADES.keys()))
+    # Crear pestañas: Resumen Ejecutivo primero, luego las sedes
+    sedes_lista = list(SEDES.keys())
+    tabs = st.tabs(["📊 Resumen Ejecutivo"] + sedes_lista)
     
     # Pestaña de Resumen Ejecutivo
     with tabs[0]:
-        st.subheader("📊 Comparativo entre Ciudades")
+        st.subheader("📊 Comparativo entre Sedes")
         
-        if df_resumen is not None and not df_resumen.empty:
-            # Mostrar tabla de resumen
-            columnas_mostrar = ['Ciudad', 'Ingresos', 'Facturado total', 
+        if st.session_state.resumen_ejecutivo is not None and not st.session_state.resumen_ejecutivo.empty:
+            columnas_mostrar = ['Sede', 'Ingresos', 'Facturado total', 
                                '% facturado total / ingresos', '% novedades / ingresos',
-                               '% novedades bloqueantes (subsanables) / ingresos']
+                               '% novedades bloqueantes / ingresos']
             
-            st.dataframe(df_resumen[columnas_mostrar], use_container_width=True, hide_index=True)
+            st.dataframe(st.session_state.resumen_ejecutivo[columnas_mostrar], use_container_width=True, hide_index=True)
             
-            # Mostrar nota del corte
             st.markdown("---")
             st.markdown("**📌 Nota del corte:**")
-            for _, row in df_resumen.iterrows():
-                fecha_inicio_str = row['fecha_inicio'].strftime('%d/%m/%Y')
+            for _, row in st.session_state.resumen_ejecutivo.iterrows():
+                fecha_inicio_str = row['fecha_inicio'].strftime('%d/%m/%Y') if hasattr(row['fecha_inicio'], 'strftime') else str(row['fecha_inicio'])
                 fecha_fin_str = row['fecha_fin'].strftime('%d/%m/%Y')
-                st.markdown(f"- **{row['Ciudad']}:** {fecha_inicio_str} al {fecha_fin_str}")
+                st.markdown(f"- **{row['Sede']}:** {fecha_inicio_str} al {fecha_fin_str}")
         else:
             st.info("No hay datos para mostrar en el resumen ejecutivo")
     
-    # Pestañas de ciudades
-    for i, ciudad in enumerate(CIUDADES.keys()):
+    # Pestañas de sedes
+    for i, sede in enumerate(sedes_lista):
         with tabs[i + 1]:
-            config = CIUDADES[ciudad]
-            fecha_inicio = config['fecha_inicio']
+            config = SEDES[sede]
+            fecha_inicio = st.session_state.fechas_inicio_sedes.get(sede, config['fecha_inicio'])
+            
+            if fecha_inicio is None:
+                st.warning(f"La fecha de inicio para {sede} no ha sido configurada")
+                continue
             
             if fecha_fin < fecha_inicio:
-                st.warning(f"La fecha {fecha_fin.date()} es anterior a la fecha de inicio de {ciudad}")
+                st.warning(f"La fecha {fecha_fin.date()} es anterior a la fecha de inicio de {sede}")
                 continue
+            
+            df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
+            df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
             
             # Selector de período
             periodo = st.selectbox(
                 "📊 Agrupar por:",
                 options=['Diario', 'Semanal', 'Mensual'],
-                key=f"periodo_{ciudad}"
+                key=f"periodo_{sede}"
             )
             
-            with st.spinner(f"Calculando {ciudad}..."):
-                df_tabla = construir_tabla(
-                    ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo
+            with st.spinner(f"Calculando {sede}..."):
+                df_tabla = construir_tabla_sede(
+                    sede, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo
                 )
                 
                 if len(df_tabla) > 0:
@@ -645,21 +686,24 @@ if st.session_state.datos_cargados:
                     total_facturado_fuera = df_tabla['facturado fuera modelo'].sum()
                     total_facturado = df_tabla['facturado total'].sum()
                     total_novedades = df_tabla['Novedades'].sum()
+                    total_novedades_bloqueantes = df_tabla['Novedades Bloqueantes'].sum()
                     
                     pct_modelo = (total_facturado_modelo / total_ingresos * 100) if total_ingresos > 0 else 0
                     pct_fuera = (total_facturado_fuera / total_ingresos * 100) if total_ingresos > 0 else 0
                     pct_total = (total_facturado / total_ingresos * 100) if total_ingresos > 0 else 0
                     pct_novedades = (total_novedades / total_ingresos * 100) if total_ingresos > 0 else 0
+                    pct_bloqueantes = (total_novedades_bloqueantes / total_ingresos * 100) if total_ingresos > 0 else 0
                     
-                    cols = st.columns(5)
+                    cols = st.columns(6)
                     cols[0].metric("📥 Total Ingresos", f"{total_ingresos:,}")
                     cols[1].metric("✅ Facturado Modelo", f"{total_facturado_modelo:,}", f"{pct_modelo:.1f}%")
                     cols[2].metric("❌ Facturado Fuera", f"{total_facturado_fuera:,}", f"{pct_fuera:.1f}%")
                     cols[3].metric("💰 Facturado Total", f"{total_facturado:,}", f"{pct_total:.1f}%")
                     cols[4].metric("⚠️ Novedades", f"{total_novedades:,}", f"{pct_novedades:.1f}%")
+                    cols[5].metric("🔒 Novedades Bloqueantes", f"{total_novedades_bloqueantes:,}", f"{pct_bloqueantes:.1f}%")
                     
                     # Mostrar tabla
-                    columnas_mostrar = ['Fecha', 'ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades']
+                    columnas_mostrar = ['Fecha', 'ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades', 'Novedades Bloqueantes']
                     if periodo == 'Semanal':
                         columnas_mostrar.insert(1, 'semana')
                     elif periodo == 'Mensual':
@@ -673,7 +717,7 @@ if st.session_state.datos_cargados:
                     
                     # Gráfico
                     if len(df_tabla) > 1:
-                        chart_data = df_tabla[['ingresos', 'facturado total', 'Novedades']].copy()
+                        chart_data = df_tabla[['ingresos', 'facturado total', 'Novedades', 'Novedades Bloqueantes']].copy()
                         chart_data.index = df_tabla['Fecha']
                         st.line_chart(chart_data)
                     
@@ -686,11 +730,11 @@ if st.session_state.datos_cargados:
                     st.download_button(
                         "📥 Descargar Excel",
                         output.getvalue(),
-                        f"{ciudad.lower()}_{periodo.lower()}.xlsx",
-                        key=f"excel_{ciudad}_{periodo}"
+                        f"{sede.lower().replace(' ', '_')}_{periodo.lower()}.xlsx",
+                        key=f"excel_{sede}_{periodo}"
                     )
                 else:
-                    st.info(f"No hay datos para {ciudad} en el período seleccionado")
+                    st.info(f"No hay datos para {sede} en el período seleccionado")
     
     if st.button("🔄 Reiniciar"):
         for key in list(st.session_state.keys()):
@@ -701,4 +745,4 @@ else:
     st.info("👆 Carga un archivo Excel para comenzar")
 
 st.markdown("---")
-st.caption("Aplicación para análisis de facturación por ciudad")
+st.caption("Aplicación para análisis de facturación por sede")
