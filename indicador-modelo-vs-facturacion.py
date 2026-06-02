@@ -21,22 +21,22 @@ SEDES = {
         "palabra_clave": "SAN MARCEL"
     },
     "CAT MARAYA": {
-        "fecha_inicio": datetime(2026, 4, 15),  # Fecha de Pereira
+        "fecha_inicio": datetime(2026, 4, 15),
         "centro_atencion": "CLINICA DE ALTA TECNOLOGIA MARAYA",
         "palabra_clave": "MARAYA"
     },
     "CIRCUNVALAR": {
-        "fecha_inicio": None,  # Pendiente de definir
+        "fecha_inicio": None,
         "centro_atencion": None,
         "palabra_clave": "CIRCUNVALAR"
     },
     "CENTENARIO": {
-        "fecha_inicio": datetime(2025, 11, 20),  # Fecha de Armenia
+        "fecha_inicio": datetime(2025, 11, 20),
         "centro_atencion": "CENTENARIO",
         "palabra_clave": "CENTENARIO"
     },
     "CAT ARMENIA": {
-        "fecha_inicio": None,  # Pendiente de definir
+        "fecha_inicio": None,
         "centro_atencion": None,
         "palabra_clave": "CAT ARMENIA"
     }
@@ -142,13 +142,10 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_
             '_valor_funcional': valores_funcionales
         })[mask_palabra]
         
-        # Aplicar filtro de unidades funcionales seleccionadas (esto es clave para SAN MARCEL)
-        if unidades_filtro:
+        # Aplicar filtro de unidades funcionales seleccionadas (esto es clave)
+        if unidades_filtro and len(unidades_filtro) > 0:
             mask_funcional = df_temp['_valor_funcional'].isin(unidades_filtro)
             df_temp = df_temp[mask_funcional]
-        
-        df_temp['_tipo'] = 'unidad_funcional'
-        df_temp['_hoja'] = nombre_hoja
         
         return df_temp
     return pd.DataFrame()
@@ -178,9 +175,7 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, centro_atencion):
         
         df_procesado = pd.DataFrame({
             '_fecha': fechas_convertidas,
-            '_centro': centros_normalizados,
-            '_tipo': 'centro_atencion',
-            '_hoja': nombre_hoja
+            '_centro': centros_normalizados
         })
         
         mask_centro = df_procesado['_centro'] == centro_upper
@@ -230,11 +225,9 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave):
         })[mask_palabra]
         
         # Aplicar filtro de unidades funcionales seleccionadas
-        if unidades_filtro:
+        if unidades_filtro and len(unidades_filtro) > 0:
             mask_funcional = df_temp['_valor_funcional'].isin(unidades_filtro)
             df_temp = df_temp[mask_funcional]
-        
-        df_temp['_hoja'] = nombre_hoja
         
         return df_temp
     return pd.DataFrame()
@@ -307,9 +300,6 @@ def cargar_archivo(archivo, unidades_filtro):
             st.error(f"Faltan hojas: {', '.join(hojas_faltantes)}")
             return False, None, None
         
-        if HOJA_NOVEDADES not in hojas_disponibles:
-            st.warning(f"No se encontró la hoja '{HOJA_NOVEDADES}'")
-        
         # Inicializar diccionarios para cada sede
         dfs_ingresos = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion = {sede: [] for sede in SEDES.keys()}
@@ -319,17 +309,17 @@ def cargar_archivo(archivo, unidades_filtro):
             df = pd.read_excel(archivo, sheet_name=hoja)
             
             for sede, config in SEDES.items():
-                # Ingresos - pasar unidades_filtro
+                # Ingresos
                 df_ing = procesar_hoja_ingresos_evento_pgp(df, hoja, unidades_filtro, config['palabra_clave'])
                 if not df_ing.empty:
                     dfs_ingresos[sede].append(df_ing)
                 
-                # Facturación - pasar unidades_filtro
+                # Facturación
                 df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro, config['palabra_clave'])
                 if not df_fac.empty:
                     dfs_facturacion[sede].append(df_fac)
         
-        # Procesar hojas PDTE (estas no se filtran por unidades funcionales)
+        # Procesar hojas PDTE
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
@@ -343,16 +333,12 @@ def cargar_archivo(archivo, unidades_filtro):
         df_novedades = None
         if HOJA_NOVEDADES in hojas_disponibles:
             df_novedades = pd.read_excel(archivo, sheet_name=HOJA_NOVEDADES)
-            st.info(f"📄 Hoja '{HOJA_NOVEDADES}': {len(df_novedades):,} registros")
         
         # Combinar resultados
         dfs_resultado = {}
         for sede in SEDES.keys():
             dfs_resultado[f'INGRESOS_{sede}'] = pd.concat(dfs_ingresos[sede], ignore_index=True) if dfs_ingresos[sede] else pd.DataFrame()
             dfs_resultado[f'FACTURACION_{sede}'] = pd.concat(dfs_facturacion[sede], ignore_index=True) if dfs_facturacion[sede] else pd.DataFrame()
-            
-            # Mostrar estadísticas por sede
-            st.write(f"**{sede}:** {len(dfs_resultado[f'INGRESOS_{sede}']):,} registros de ingreso, {len(dfs_resultado[f'FACTURACION_{sede}']):,} registros de facturación")
         
         dfs_resultado['NOVEDADES'] = df_novedades
         
@@ -360,8 +346,6 @@ def cargar_archivo(archivo, unidades_filtro):
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
         return False, None, None
 
 def contar_ingresos_sede(df_ingresos, fecha_inicio, fecha_fin):
@@ -548,8 +532,7 @@ st.markdown("### ⚙️ Configuración del Reporte")
 
 fecha_actual = datetime.now()
 
-# Configurar fechas de inicio para sedes pendientes
-st.markdown("#### 📅 Configuración de fechas de inicio por sede")
+# Configurar fechas de inicio para sedes pendientes (sin mostrar información adicional)
 for sede, config in SEDES.items():
     if config['fecha_inicio'] is None:
         fecha_default = st.date_input(
@@ -562,8 +545,6 @@ for sede, config in SEDES.items():
         st.session_state.fechas_inicio_sedes[sede] = datetime.combine(fecha_default, datetime.min.time())
     else:
         st.session_state.fechas_inicio_sedes[sede] = config['fecha_inicio']
-        # Mostrar la fecha predefinida como texto informativo
-        st.write(f"**{sede}:** Fecha de inicio predefinida: {config['fecha_inicio'].strftime('%d/%m/%Y')}")
 
 st.markdown("---")
 
@@ -594,11 +575,6 @@ if archivo:
             options=st.session_state.unidades_funcionales,
             default=st.session_state.unidades_seleccionadas
         )
-        
-        if st.session_state.unidades_seleccionadas:
-            st.info(f"📌 Filtro activo: {len(st.session_state.unidades_seleccionadas)} unidades seleccionadas")
-        else:
-            st.info("📌 Sin filtro: se incluirán todas las unidades")
     
     st.markdown("---")
     
@@ -668,13 +644,6 @@ if st.session_state.datos_cargados:
             
             df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
             df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
-            
-            # Mostrar estadísticas de la sede
-            with st.expander(f"📊 Estadísticas de {sede}", expanded=False):
-                st.write(f"**Registros de ingreso para {sede}:** {len(df_ingresos):,}")
-                st.write(f"**Registros de facturación para {sede}:** {len(df_facturacion):,}")
-                if not df_ingresos.empty:
-                    st.write(f"**Rango de fechas de ingreso:** {df_ingresos['_fecha'].min()} a {df_ingresos['_fecha'].max()}")
             
             # Selector de período
             periodo = st.selectbox(
