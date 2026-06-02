@@ -26,8 +26,8 @@ SEDES = {
         "palabra_clave": "MARAYA"
     },
     "CIRCUNVALAR": {
-        "fecha_inicio": None,
-        "centro_atencion": None,
+        "fecha_inicio": datetime(2026, 4, 15),
+        "centro_atencion": "CIRCUNVALAR",
         "palabra_clave": "CIRCUNVALAR"
     },
     "CENTENARIO": {
@@ -36,8 +36,8 @@ SEDES = {
         "palabra_clave": "CENTENARIO"
     },
     "CAT ARMENIA": {
-        "fecha_inicio": None,
-        "centro_atencion": None,
+        "fecha_inicio": datetime(2025, 11, 20),
+        "centro_atencion": "CLINICA DE ALTA TECNOLOGIA SEDE ARMENIA",
         "palabra_clave": "CAT ARMENIA"
     }
 }
