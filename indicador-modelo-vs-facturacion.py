@@ -116,6 +116,21 @@ with st.sidebar:
 # Carga de archivo
 st.header("📁 Cargar Archivo")
 
+# Selector de fecha (aparece ANTES del botón procesar)
+st.markdown("### ⚙️ Configuración del Reporte")
+
+fecha_actual = datetime.now()
+
+fecha_hasta = st.date_input(
+    "📅 Seleccionar fecha final del reporte:",
+    value=fecha_actual.date(),
+    min_value=datetime(2025, 9, 16).date(),
+    max_value=fecha_actual.date(),
+    help="La tabla mostrará datos desde la fecha de inicio de cada ciudad hasta esta fecha"
+)
+
+st.markdown("---")
+
 archivo = st.file_uploader(
     "Selecciona el archivo Excel",
     type=['xlsx', 'xls'],
@@ -131,39 +146,13 @@ if archivo:
                 st.session_state.datos_cargados = True
                 st.session_state.dfs = dfs
                 st.session_state.fecha_maxima = fecha_max
-                
-                # Establecer fecha inicial por defecto
-                fecha_actual = datetime.now()
-                if fecha_max > fecha_actual:
-                    fecha_max = fecha_actual
-                st.session_state.fecha_hasta = fecha_max
+                st.session_state.fecha_hasta = datetime.combine(fecha_hasta, datetime.min.time())
                 
                 st.success("✅ Archivo procesado correctamente!")
-                st.info(f"📅 Última fecha disponible en los datos: {fecha_max.strftime('%d/%m/%Y')}")
+                st.info(f"📅 Los datos se mostrarán hasta: {fecha_hasta.strftime('%d/%m/%Y')}")
 
-# Selector de fecha (disponible después de cargar)
+# Mostrar resultados después de procesar
 if st.session_state.datos_cargados:
-    st.markdown("---")
-    st.header("⚙️ Configuración del Reporte")
-    
-    fecha_actual = datetime.now()
-    fecha_max_disponible = st.session_state.fecha_maxima
-    
-    if fecha_max_disponible > fecha_actual:
-        fecha_max_disponible = fecha_actual
-    
-    # Selector de fecha
-    fecha_hasta = st.date_input(
-        "📅 Seleccionar fecha final del reporte:",
-        value=st.session_state.fecha_hasta.date() if st.session_state.fecha_hasta else fecha_max_disponible.date(),
-        min_value=datetime(2025, 9, 16).date(),
-        max_value=fecha_actual.date(),
-        help="La tabla mostrará datos desde la fecha de inicio de cada ciudad hasta esta fecha"
-    )
-    
-    # Actualizar fecha en session state
-    st.session_state.fecha_hasta = datetime.combine(fecha_hasta, datetime.min.time())
-    
     st.markdown("---")
     st.header("📊 Tablas Resumen por Ciudad")
     
@@ -272,7 +261,7 @@ if st.session_state.datos_cargados:
 
 else:
     if archivo is None:
-        st.info("👆 1. Carga un archivo Excel\n\n👆 2. Presiona 'Procesar Archivo'")
+        st.info("👆 1. Selecciona la fecha final del reporte\n\n👆 2. Carga un archivo Excel\n\n👆 3. Presiona 'Procesar Archivo'")
     else:
         st.info("⏳ Presiona 'Procesar Archivo' para cargar los datos")
 
