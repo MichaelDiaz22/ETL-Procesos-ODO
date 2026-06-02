@@ -33,6 +33,40 @@ if 'fecha_maxima' not in st.session_state:
 if 'fecha_hasta' not in st.session_state:
     st.session_state.fecha_hasta = None
 
+def convertir_fecha_manual(valor):
+    """Convierte fecha manualmente para asegurar formato DD/MM/YYYY"""
+    if pd.isna(valor):
+        return None
+    try:
+        # Si es string, intentar convertir desde DD/MM/YYYY
+        if isinstance(valor, str):
+            # Intentar formato DD/MM/YYYY
+            try:
+                return datetime.strptime(valor.strip(), '%d/%m/%Y')
+            except:
+                pass
+            # Intentar formato DD-MM-YYYY
+            try:
+                return datetime.strptime(valor.strip(), '%d-%m-%Y')
+            except:
+                pass
+            # Intentar formato YYYY-MM-DD
+            try:
+                return datetime.strptime(valor.strip(), '%Y-%m-%d')
+            except:
+                pass
+        # Si es datetime, retornar directamente
+        elif isinstance(valor, (datetime, pd.Timestamp)):
+            return valor
+        # Otros casos, usar pandas con dayfirst=True
+        else:
+            resultado = pd.to_datetime(valor, errors='coerce', dayfirst=True)
+            if pd.notna(resultado):
+                return resultado
+        return None
+    except:
+        return None
+
 def cargar_archivo(archivo):
     """Carga el archivo Excel y valida las hojas"""
     try:
@@ -48,14 +82,6 @@ def cargar_archivo(archivo):
         
         # Cargar datos
         dfs = {}
-        
-        # Mostrar información de columnas para depuración
-        with st.expander("🔍 Ver información de columnas (Debug)"):
-            for hoja in HOJAS_REQUERIDAS:
-                df = pd.read_excel(archivo, sheet_name=hoja, nrows=5)
-                st.write(f"**Hoja {hoja} - Columnas disponibles:**")
-                st.write(list(df.columns))
-                st.write("---")
         
         for hoja in HOJAS_REQUERIDAS:
             df = pd.read_excel(archivo, sheet_name=hoja)
@@ -74,7 +100,6 @@ def cargar_archivo(archivo):
                 col_ciudad = None
                 for col in df.columns:
                     col_lower = col.lower().strip()
-                    # Buscar específicamente "CIUDAD UNIDAD OPERATIVA" o variantes
                     if 'ciudad unidad operativa' in col_lower or 'ciudad_unidad_operativa' in col_lower or 'ciudad operativa' in col_lower or 'unidad operativa' in col_lower:
                         col_ciudad = col
                         break
@@ -87,30 +112,25 @@ def cargar_archivo(archivo):
                             col_ciudad = col
                             break
                 
-                st.info(f"📌 Hoja EVENTO - Columna FECHA INGRESO encontrada: {col_fecha}")
-                st.info(f"📌 Hoja EVENTO - Columna CIUDAD UNIDAD OPERATIVA encontrada: {col_ciudad}")
-                
                 if col_fecha and col_ciudad:
-                    # Mostrar ejemplos de valores para depuración
-                    st.write(f"**Ejemplos de valores en {col_ciudad}:**")
-                    st.write(df[col_ciudad].head(10).tolist())
+                    # Convertir fecha usando la función manual con dayfirst=True
+                    fechas_convertidas = []
+                    for fecha_valor in df[col_fecha]:
+                        fecha_conv = convertir_fecha_manual(fecha_valor)
+                        fechas_convertidas.append(fecha_conv.date() if fecha_conv else None)
                     
-                    # Convertir fecha a datetime y extraer solo la fecha (sin hora)
-                    df['_fecha_ingreso'] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True).dt.date
+                    df['_fecha_ingreso'] = fechas_convertidas
                     # Normalizar ciudad operativa
                     df['_ciudad_operativa'] = df[col_ciudad].astype(str).str.upper().str.strip()
                     
                     # Guardar solo las columnas necesarias
                     dfs[hoja] = df[['_fecha_ingreso', '_ciudad_operativa']].copy()
                     
-                    # Mostrar valores únicos de ciudades para depuración
-                    ciudades_unicas = df['_ciudad_operativa'].unique()
-                    st.write(f"**Valores únicos en CIUDAD UNIDAD OPERATIVA:**")
-                    st.write(ciudades_unicas[:20].tolist())
+                    # Mostrar información de depuración
+                    st.info(f"📌 Hoja EVENTO - Ejemplos de fechas convertidas: {df['_fecha_ingreso'].dropna().head(5).tolist()}")
+                    
                 else:
                     st.warning(f"⚠️ Hoja {hoja}: No se encontraron las columnas necesarias")
-                    st.write(f"Columna fecha encontrada: {col_fecha}")
-                    st.write(f"Columna ciudad encontrada: {col_ciudad}")
                     dfs[hoja] = pd.DataFrame(columns=['_fecha_ingreso', '_ciudad_operativa'])
             else:
                 # Para las otras hojas, solo guardamos estructura básica por ahora
@@ -135,32 +155,21 @@ def contar_ingresos_evento(df_evento, ciudad, fecha_inicio, fecha_fin):
     """Cuenta los ingresos de la hoja EVENTO para una ciudad específica"""
     
     if df_evento.empty:
-        st.warning("DataFrame de EVENTO está vacío")
         return {}
     
     # Normalizar nombre de ciudad
     ciudad_upper = ciudad.upper()
     
-    st.write(f"**Debug - Buscando ciudad:** {ciudad_upper}")
-    
     # Filtrar por ciudad
     mask_ciudad = df_evento['_ciudad_operativa'].str.contains(ciudad_upper, na=False)
     df_ciudad = df_evento[mask_ciudad]
     
-    st.write(f"**Debug - Registros encontrados para {ciudad}:** {len(df_ciudad)}")
-    
     if df_ciudad.empty:
-        # Mostrar algunas ciudades disponibles
-        ciudades_disponibles = df_evento['_ciudad_operativa'].unique()
-        st.write(f"**Ciudades disponibles en los datos:** {ciudades_disponibles[:10].tolist()}")
         return {}
     
     # Filtrar por rango de fechas
     mask_fecha = (df_ciudad['_fecha_ingreso'] >= fecha_inicio.date()) & (df_ciudad['_fecha_ingreso'] <= fecha_fin.date())
     df_filtrado = df_ciudad[mask_fecha]
-    
-    st.write(f"**Debug - Registros después de filtrar por fechas:** {len(df_filtrado)}")
-    st.write(f"**Rango de fechas:** {fecha_inicio.date()} a {fecha_fin.date()}")
     
     # Contar por fecha
     conteo = {}
@@ -223,9 +232,11 @@ with st.sidebar:
     """)
     
     st.markdown("---")
-    st.markdown("**Hojas requeridas:**")
-    for hoja in HOJAS_REQUERIDAS:
-        st.markdown(f"- {hoja}")
+    st.markdown("**Formato de fechas:**")
+    st.markdown("""
+    - Las fechas en el archivo deben estar en formato **DD/MM/YYYY**
+    - La aplicación convierte automáticamente a este formato
+    """)
 
 # Carga de archivo
 st.header("📁 Cargar Archivo")
