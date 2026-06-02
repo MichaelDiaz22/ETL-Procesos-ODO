@@ -230,6 +230,12 @@ def procesar_hoja_novedades(df, ciudad, config, fecha_inicio, fecha_fin):
             col_centro = col
             break
     
+    col_bloqueante = None
+    for col in df.columns:
+        if 'bloqueante' in col.lower() or '¿bloqueante?' in col.lower():
+            col_bloqueante = col
+            break
+    
     if col_fecha and col_centro:
         # Convertir fechas
         fechas_convertidas = []
@@ -244,6 +250,10 @@ def procesar_hoja_novedades(df, ciudad, config, fecha_inicio, fecha_fin):
             '_centro': centros_normalizados
         })
         
+        # Agregar columna de bloqueante si existe
+        if col_bloqueante:
+            df_procesado['_bloqueante'] = df[col_bloqueante].astype(str).str.upper().str.strip()
+        
         # Filtrar por centro de atención de la ciudad
         centro_upper = normalizar_texto(config['centro_atencion'])
         mask_centro = df_procesado['_centro'] == centro_upper
@@ -253,14 +263,21 @@ def procesar_hoja_novedades(df, ciudad, config, fecha_inicio, fecha_fin):
         mask_fecha = (df_filtrado['_fecha'] >= fecha_inicio.date()) & (df_filtrado['_fecha'] <= fecha_fin.date())
         df_filtrado = df_filtrado[mask_fecha]
         
-        # Contar por fecha
-        conteo = {}
+        # Contar total de novedades por fecha
+        conteo_total = {}
         for fecha in df_filtrado['_fecha']:
-            conteo[fecha] = conteo.get(fecha, 0) + 1
+            conteo_total[fecha] = conteo_total.get(fecha, 0) + 1
         
-        return conteo
+        # Contar novedades bloqueantes por fecha
+        conteo_bloqueantes = {}
+        if col_bloqueante:
+            df_bloqueantes = df_filtrado[df_filtrado['_bloqueante'] == 'SI']
+            for fecha in df_bloqueantes['_fecha']:
+                conteo_bloqueantes[fecha] = conteo_bloqueantes.get(fecha, 0) + 1
+        
+        return conteo_total, conteo_bloqueantes
     
-    return {}
+    return {}, {}
 
 def cargar_archivo(archivo, unidades_filtro):
     try:
@@ -379,9 +396,9 @@ def contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, 
     return conteo
 
 def contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin):
-    """Cuenta las novedades desde la hoja NOVEDADES"""
+    """Cuenta las novedades totales y bloqueantes desde la hoja NOVEDADES"""
     if df_novedades is None or df_novedades.empty:
-        return {}
+        return {}, {}
     
     return procesar_hoja_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
 
@@ -398,15 +415,16 @@ def calcular_resumen_ejecutivo(df_ingresos, df_facturacion, df_novedades, fecha_
         conteo_ingresos = contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
         conteo_facturado_modelo = contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
         conteo_facturado_fuera = contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
-        conteo_novedades = contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
+        conteo_novedades, conteo_bloqueantes = contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
         
         total_ingresos = sum(conteo_ingresos.values())
         total_facturado = sum(conteo_facturado_modelo.values()) + sum(conteo_facturado_fuera.values())
         total_novedades = sum(conteo_novedades.values())
+        total_bloqueantes = sum(conteo_bloqueantes.values())
         
         pct_facturado = (total_facturado / total_ingresos * 100) if total_ingresos > 0 else 0
         pct_novedades = (total_novedades / total_ingresos * 100) if total_ingresos > 0 else 0
-        pct_bloqueantes = 0  # Por ahora en 0, pendiente definición
+        pct_bloqueantes = (total_bloqueantes / total_ingresos * 100) if total_ingresos > 0 else 0
         
         resultados.append({
             'Ciudad': ciudad,
@@ -453,7 +471,8 @@ def agrupar_por_periodo(df, periodo, fecha_fin_global):
         df_agrupado['mes'] = 'Semanal'
     else:  # Diario
         df_agrupado['Periodo'] = df_agrupado['Fecha'].dt.strftime('%Y-%m-%d')
-        df_agrupado['semana'] = df_agrupado['Fecha'].dt.isocalendar()[1]
+        # Usar el primer valor de la columna semana para el nombre
+        df_agrupado['semana'] = df_agrupado['Fecha'].dt.isocalendar().week
         df_agrupado['mes'] = df_agrupado['Fecha'].dt.strftime('%Y-%m')
     
     columnas_agrupar = ['ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades']
@@ -465,7 +484,7 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
     conteo_ingresos = contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
     conteo_facturado_modelo = contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
     conteo_facturado_fuera = contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
-    conteo_novedades = contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
+    conteo_novedades, _ = contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
     
     fechas = []
     fecha_actual = fecha_inicio
