@@ -30,6 +30,7 @@ CIUDADES = {
 }
 
 HOJAS_REQUERIDAS = ['EVENTO', 'PGP', 'PDTE EVENTO', 'PDTE PGP']
+HOJA_NOVEDADES = 'NOVEDADES'
 
 # Session state
 if 'datos_cargados' not in st.session_state:
@@ -215,14 +216,66 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro):
         return df_procesado
     return pd.DataFrame()
 
+def procesar_hoja_novedades(df, ciudad, config, fecha_inicio, fecha_fin):
+    """Procesa la hoja NOVEDADES para contar registros por fecha"""
+    col_fecha = None
+    for col in df.columns:
+        if 'fechadevolucion' in col.lower() or 'fecha devolucion' in col.lower() or 'fecha_devolucion' in col.lower():
+            col_fecha = col
+            break
+    
+    col_centro = None
+    for col in df.columns:
+        if 'centro de atencion' in col.lower():
+            col_centro = col
+            break
+    
+    if col_fecha and col_centro:
+        # Convertir fechas
+        fechas_convertidas = []
+        for v in df[col_fecha]:
+            fecha = convertir_fecha_excel(v)
+            fechas_convertidas.append(fecha.date() if fecha else None)
+        
+        centros_normalizados = [normalizar_texto(v) for v in df[col_centro]]
+        
+        df_procesado = pd.DataFrame({
+            '_fecha': fechas_convertidas,
+            '_centro': centros_normalizados
+        })
+        
+        # Filtrar por centro de atención de la ciudad
+        centro_upper = normalizar_texto(config['centro_atencion'])
+        mask_centro = df_procesado['_centro'] == centro_upper
+        df_filtrado = df_procesado[mask_centro]
+        
+        # Filtrar por rango de fechas
+        mask_fecha = (df_filtrado['_fecha'] >= fecha_inicio.date()) & (df_filtrado['_fecha'] <= fecha_fin.date())
+        df_filtrado = df_filtrado[mask_fecha]
+        
+        # Contar por fecha
+        conteo = {}
+        for fecha in df_filtrado['_fecha']:
+            conteo[fecha] = conteo.get(fecha, 0) + 1
+        
+        return conteo
+    
+    return {}
+
 def cargar_archivo(archivo, unidades_filtro):
     try:
         excel_file = pd.ExcelFile(archivo)
         hojas_disponibles = excel_file.sheet_names
+        
+        # Verificar hojas requeridas
         hojas_faltantes = [h for h in HOJAS_REQUERIDAS if h not in hojas_disponibles]
         if hojas_faltantes:
             st.error(f"Faltan hojas: {', '.join(hojas_faltantes)}")
             return False, None, None
+        
+        # Verificar hoja de novedades (no es obligatoria)
+        if HOJA_NOVEDADES not in hojas_disponibles:
+            st.warning(f"No se encontró la hoja '{HOJA_NOVEDADES}'. La columna Novedades quedará en 0.")
         
         dfs_ingresos = []
         dfs_facturacion = []
@@ -244,12 +297,19 @@ def cargar_archivo(archivo, unidades_filtro):
             if not df_ing.empty:
                 dfs_ingresos.append(df_ing)
         
+        # Cargar hoja de novedades si existe
+        df_novedades = None
+        if HOJA_NOVEDADES in hojas_disponibles:
+            df_novedades = pd.read_excel(archivo, sheet_name=HOJA_NOVEDADES)
+            st.info(f"📄 Hoja '{HOJA_NOVEDADES}': {len(df_novedades):,} registros")
+        
         df_ingresos_total = pd.concat(dfs_ingresos, ignore_index=True) if dfs_ingresos else pd.DataFrame()
         df_facturacion_total = pd.concat(dfs_facturacion, ignore_index=True) if dfs_facturacion else pd.DataFrame()
         
         return True, {
             'INGRESOS': df_ingresos_total,
-            'FACTURACION': df_facturacion_total
+            'FACTURACION': df_facturacion_total,
+            'NOVEDADES': df_novedades
         }, datetime.now()
     
     except Exception as e:
@@ -318,7 +378,14 @@ def contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, 
     
     return conteo
 
-def calcular_resumen_ejecutivo(df_ingresos, df_facturacion, fecha_fin):
+def contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin):
+    """Cuenta las novedades desde la hoja NOVEDADES"""
+    if df_novedades is None or df_novedades.empty:
+        return {}
+    
+    return procesar_hoja_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
+
+def calcular_resumen_ejecutivo(df_ingresos, df_facturacion, df_novedades, fecha_fin):
     """Calcula el resumen ejecutivo con los datos de todas las ciudades"""
     resultados = []
     
@@ -331,15 +398,15 @@ def calcular_resumen_ejecutivo(df_ingresos, df_facturacion, fecha_fin):
         conteo_ingresos = contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
         conteo_facturado_modelo = contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
         conteo_facturado_fuera = contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
+        conteo_novedades = contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
         
         total_ingresos = sum(conteo_ingresos.values())
         total_facturado = sum(conteo_facturado_modelo.values()) + sum(conteo_facturado_fuera.values())
+        total_novedades = sum(conteo_novedades.values())
         
         pct_facturado = (total_facturado / total_ingresos * 100) if total_ingresos > 0 else 0
-        pct_novedades = 0  # Novedades en 0 temporalmente
-        
-        # Por ahora las novedades bloqueantes (subsanables) las dejamos en 0
-        pct_bloqueantes = 0
+        pct_novedades = (total_novedades / total_ingresos * 100) if total_ingresos > 0 else 0
+        pct_bloqueantes = 0  # Por ahora en 0, pendiente definición
         
         resultados.append({
             'Ciudad': ciudad,
@@ -375,7 +442,6 @@ def agrupar_por_periodo(df, periodo, fecha_fin_global):
         df_agrupado['semana'] = 'Mensual'
         df_agrupado['mes'] = df_agrupado['Periodo']
     elif periodo == 'Semanal':
-        # Calcular inicio de semana (lunes)
         df_agrupado['InicioSemana'] = df_agrupado['Fecha'] - pd.to_timedelta(df_agrupado['Fecha'].dt.dayofweek, unit='d')
         df_agrupado['FinSemana'] = df_agrupado['InicioSemana'] + timedelta(days=6)
         df_agrupado['Periodo'] = df_agrupado['InicioSemana'].dt.strftime('%Y-W%W')
@@ -390,16 +456,16 @@ def agrupar_por_periodo(df, periodo, fecha_fin_global):
         df_agrupado['semana'] = df_agrupado['Fecha'].dt.isocalendar()[1]
         df_agrupado['mes'] = df_agrupado['Fecha'].dt.strftime('%Y-%m')
     
-    columnas_agrupar = ['ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total']
+    columnas_agrupar = ['ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades']
     df_resultado = df_agrupado.groupby(['Periodo', 'Fecha', 'semana', 'mes', 'año'])[columnas_agrupar].sum().reset_index()
-    df_resultado['Novedades'] = 0
     
     return df_resultado
 
-def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, periodo):
+def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo):
     conteo_ingresos = contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
     conteo_facturado_modelo = contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
     conteo_facturado_fuera = contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
+    conteo_novedades = contar_novedades(df_novedades, ciudad, config, fecha_inicio, fecha_fin)
     
     fechas = []
     fecha_actual = fecha_inicio
@@ -414,6 +480,7 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
         facturado_modelo = conteo_facturado_modelo.get(fecha_key, 0)
         facturado_fuera = conteo_facturado_fuera.get(fecha_key, 0)
         facturado_total = facturado_modelo + facturado_fuera
+        novedades = conteo_novedades.get(fecha_key, 0)
         
         datos.append({
             'Fecha': fecha,
@@ -424,7 +491,7 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
             'facturado modelo': facturado_modelo,
             'facturado fuera modelo': facturado_fuera,
             'facturado total': facturado_total,
-            'Novedades': 0
+            'Novedades': novedades
         })
     
     df = pd.DataFrame(datos)
@@ -487,7 +554,8 @@ if archivo:
                 # Calcular resumen ejecutivo
                 df_resumen = calcular_resumen_ejecutivo(
                     dfs['INGRESOS'], 
-                    dfs['FACTURACION'], 
+                    dfs['FACTURACION'],
+                    dfs.get('NOVEDADES'),
                     st.session_state.fecha_hasta
                 )
                 st.session_state.resumen_ejecutivo = df_resumen
@@ -501,6 +569,7 @@ if st.session_state.datos_cargados:
     
     df_ingresos = st.session_state.dfs.get('INGRESOS', pd.DataFrame())
     df_facturacion = st.session_state.dfs.get('FACTURACION', pd.DataFrame())
+    df_novedades = st.session_state.dfs.get('NOVEDADES', None)
     fecha_fin = st.session_state.fecha_hasta
     df_resumen = st.session_state.resumen_ejecutivo
     
@@ -526,22 +595,6 @@ if st.session_state.datos_cargados:
                 fecha_inicio_str = row['fecha_inicio'].strftime('%d/%m/%Y')
                 fecha_fin_str = row['fecha_fin'].strftime('%d/%m/%Y')
                 st.markdown(f"- **{row['Ciudad']}:** {fecha_inicio_str} al {fecha_fin_str}")
-            
-            # Gráfico comparativo de barras
-            st.subheader("📊 Comparativo de Ingresos vs Facturado Total")
-            
-            # Preparar datos para gráfico
-            df_chart = df_resumen.copy()
-            df_chart['Ingresos_num'] = df_chart['Ingresos'].str.replace(',', '').astype(int)
-            df_chart['Facturado_num'] = df_chart['Facturado total'].str.replace(',', '').astype(int)
-            
-            chart_data = pd.DataFrame({
-                'Ciudad': df_chart['Ciudad'].tolist(),
-                'Ingresos': df_chart['Ingresos_num'].tolist(),
-                'Facturado Total': df_chart['Facturado_num'].tolist()
-            }).set_index('Ciudad')
-            
-            st.bar_chart(chart_data)
         else:
             st.info("No hay datos para mostrar en el resumen ejecutivo")
     
@@ -564,7 +617,7 @@ if st.session_state.datos_cargados:
             
             with st.spinner(f"Calculando {ciudad}..."):
                 df_tabla = construir_tabla(
-                    ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, periodo
+                    ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo
                 )
                 
                 if len(df_tabla) > 0:
@@ -572,17 +625,19 @@ if st.session_state.datos_cargados:
                     total_facturado_modelo = df_tabla['facturado modelo'].sum()
                     total_facturado_fuera = df_tabla['facturado fuera modelo'].sum()
                     total_facturado = df_tabla['facturado total'].sum()
+                    total_novedades = df_tabla['Novedades'].sum()
                     
                     pct_modelo = (total_facturado_modelo / total_ingresos * 100) if total_ingresos > 0 else 0
                     pct_fuera = (total_facturado_fuera / total_ingresos * 100) if total_ingresos > 0 else 0
                     pct_total = (total_facturado / total_ingresos * 100) if total_ingresos > 0 else 0
+                    pct_novedades = (total_novedades / total_ingresos * 100) if total_ingresos > 0 else 0
                     
                     cols = st.columns(5)
                     cols[0].metric("📥 Total Ingresos", f"{total_ingresos:,}")
                     cols[1].metric("✅ Facturado Modelo", f"{total_facturado_modelo:,}", f"{pct_modelo:.1f}%")
                     cols[2].metric("❌ Facturado Fuera", f"{total_facturado_fuera:,}", f"{pct_fuera:.1f}%")
                     cols[3].metric("💰 Facturado Total", f"{total_facturado:,}", f"{pct_total:.1f}%")
-                    cols[4].metric("⚠️ Novedades", "0")
+                    cols[4].metric("⚠️ Novedades", f"{total_novedades:,}", f"{pct_novedades:.1f}%")
                     
                     # Mostrar tabla
                     columnas_mostrar = ['Fecha', 'ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades']
