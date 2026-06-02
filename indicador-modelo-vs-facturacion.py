@@ -26,8 +26,8 @@ SEDES = {
         "palabra_clave": "MARAYA"
     },
     "CIRCUNVALAR": {
-        "fecha_inicio": datetime(2026, 4, 15),
-        "centro_atencion": "CIRCUNVALAR",
+        "fecha_inicio": datetime(2026, 4, 15),  # Misma fecha que CAT MARAYA
+        "centro_atencion": None,
         "palabra_clave": "CIRCUNVALAR"
     },
     "CENTENARIO": {
@@ -36,8 +36,8 @@ SEDES = {
         "palabra_clave": "CENTENARIO"
     },
     "CAT ARMENIA": {
-        "fecha_inicio": datetime(2025, 11, 20),
-        "centro_atencion": "CLINICA DE ALTA TECNOLOGIA SEDE ARMENIA",
+        "fecha_inicio": datetime(2025, 11, 20),  # Misma fecha que CENTENARIO
+        "centro_atencion": None,
         "palabra_clave": "CAT ARMENIA"
     }
 }
@@ -58,8 +58,6 @@ if 'unidades_seleccionadas' not in st.session_state:
     st.session_state.unidades_seleccionadas = []
 if 'resumen_ejecutivo' not in st.session_state:
     st.session_state.resumen_ejecutivo = None
-if 'fechas_inicio_sedes' not in st.session_state:
-    st.session_state.fechas_inicio_sedes = {}
 
 def convertir_fecha_excel(numero):
     try:
@@ -124,6 +122,7 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_
             break
     
     if col_fecha and col_unidad_funcional:
+        # Convertir fechas
         fechas_convertidas = []
         for v in df[col_fecha]:
             fecha = convertir_fecha_excel(v)
@@ -131,9 +130,9 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_
         
         valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        # Aplicar filtro de palabra clave
+        # Aplicar filtro de palabra clave (sede)
         if palabra_clave:
-            mask_palabra = valores_funcionales.str.contains(palabra_clave, na=False)
+            mask_palabra = valores_funcionales.str.contains(palabra_clave, na=False, regex=False)
         else:
             mask_palabra = pd.Series([True] * len(df))
         
@@ -142,7 +141,7 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_
             '_valor_funcional': valores_funcionales
         })[mask_palabra]
         
-        # Aplicar filtro de unidades funcionales seleccionadas (esto es clave)
+        # Aplicar filtro de unidades funcionales seleccionadas por el usuario
         if unidades_filtro and len(unidades_filtro) > 0:
             mask_funcional = df_temp['_valor_funcional'].isin(unidades_filtro)
             df_temp = df_temp[mask_funcional]
@@ -212,9 +211,9 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave):
         
         valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        # Aplicar filtro de palabra clave
+        # Aplicar filtro de palabra clave (sede)
         if palabra_clave:
-            mask_palabra = valores_funcionales.str.contains(palabra_clave, na=False)
+            mask_palabra = valores_funcionales.str.contains(palabra_clave, na=False, regex=False)
         else:
             mask_palabra = pd.Series([True] * len(df))
         
@@ -224,7 +223,7 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave):
             '_valor_funcional': valores_funcionales
         })[mask_palabra]
         
-        # Aplicar filtro de unidades funcionales seleccionadas
+        # Aplicar filtro de unidades funcionales seleccionadas por el usuario
         if unidades_filtro and len(unidades_filtro) > 0:
             mask_funcional = df_temp['_valor_funcional'].isin(unidades_filtro)
             df_temp = df_temp[mask_funcional]
@@ -319,7 +318,7 @@ def cargar_archivo(archivo, unidades_filtro):
                 if not df_fac.empty:
                     dfs_facturacion[sede].append(df_fac)
         
-        # Procesar hojas PDTE
+        # Procesar hojas PDTE (solo para sedes con centro_atencion definido)
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
@@ -337,8 +336,15 @@ def cargar_archivo(archivo, unidades_filtro):
         # Combinar resultados
         dfs_resultado = {}
         for sede in SEDES.keys():
-            dfs_resultado[f'INGRESOS_{sede}'] = pd.concat(dfs_ingresos[sede], ignore_index=True) if dfs_ingresos[sede] else pd.DataFrame()
-            dfs_resultado[f'FACTURACION_{sede}'] = pd.concat(dfs_facturacion[sede], ignore_index=True) if dfs_facturacion[sede] else pd.DataFrame()
+            if dfs_ingresos[sede]:
+                dfs_resultado[f'INGRESOS_{sede}'] = pd.concat(dfs_ingresos[sede], ignore_index=True)
+            else:
+                dfs_resultado[f'INGRESOS_{sede}'] = pd.DataFrame()
+            
+            if dfs_facturacion[sede]:
+                dfs_resultado[f'FACTURACION_{sede}'] = pd.concat(dfs_facturacion[sede], ignore_index=True)
+            else:
+                dfs_resultado[f'FACTURACION_{sede}'] = pd.DataFrame()
         
         dfs_resultado['NOVEDADES'] = df_novedades
         
@@ -399,13 +405,13 @@ def contar_novedades_sede(df_novedades, centro_atencion, fecha_inicio, fecha_fin
     
     return procesar_hoja_novedades(df_novedades, centro_atencion, fecha_inicio, fecha_fin)
 
-def calcular_resumen_ejecutivo(dfs, fecha_fin, fechas_inicio):
+def calcular_resumen_ejecutivo(dfs, fecha_fin):
     resultados = []
     
     for sede, config in SEDES.items():
-        fecha_inicio = fechas_inicio.get(sede, config['fecha_inicio'])
+        fecha_inicio = config['fecha_inicio']
         
-        if fecha_inicio is None or fecha_fin < fecha_inicio:
+        if fecha_fin < fecha_inicio:
             continue
         
         df_ingresos = dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
@@ -521,8 +527,7 @@ def construir_tabla_sede(sede, config, fecha_inicio, fecha_fin, df_ingresos, df_
 with st.sidebar:
     st.header("📋 Información de Sedes")
     for sede, config in SEDES.items():
-        fecha_ini = config['fecha_inicio']
-        fecha_str = fecha_ini.strftime('%d/%m/%Y') if fecha_ini else "Pendiente"
+        fecha_str = config['fecha_inicio'].strftime('%d/%m/%Y')
         st.markdown(f"**{sede}:** Inicio {fecha_str}")
 
 # Interfaz principal
@@ -531,22 +536,6 @@ st.header("📁 Cargar Archivo")
 st.markdown("### ⚙️ Configuración del Reporte")
 
 fecha_actual = datetime.now()
-
-# Configurar fechas de inicio para sedes pendientes (sin mostrar información adicional)
-for sede, config in SEDES.items():
-    if config['fecha_inicio'] is None:
-        fecha_default = st.date_input(
-            f"Fecha de inicio para {sede}:",
-            value=fecha_actual.date(),
-            min_value=datetime(2025, 1, 1).date(),
-            max_value=fecha_actual.date(),
-            key=f"fecha_inicio_{sede}"
-        )
-        st.session_state.fechas_inicio_sedes[sede] = datetime.combine(fecha_default, datetime.min.time())
-    else:
-        st.session_state.fechas_inicio_sedes[sede] = config['fecha_inicio']
-
-st.markdown("---")
 
 fecha_hasta = st.date_input(
     "📅 Seleccionar fecha final del reporte:",
@@ -588,11 +577,7 @@ if archivo:
                 st.session_state.fecha_hasta = datetime.combine(fecha_hasta, datetime.min.time())
                 
                 # Calcular resumen ejecutivo
-                df_resumen = calcular_resumen_ejecutivo(
-                    dfs,
-                    st.session_state.fecha_hasta,
-                    st.session_state.fechas_inicio_sedes
-                )
+                df_resumen = calcular_resumen_ejecutivo(dfs, st.session_state.fecha_hasta)
                 st.session_state.resumen_ejecutivo = df_resumen
                 
                 st.success("✅ Archivo procesado correctamente!")
@@ -622,7 +607,7 @@ if st.session_state.datos_cargados:
             st.markdown("---")
             st.markdown("**📌 Nota del corte:**")
             for _, row in st.session_state.resumen_ejecutivo.iterrows():
-                fecha_inicio_str = row['fecha_inicio'].strftime('%d/%m/%Y') if hasattr(row['fecha_inicio'], 'strftime') else str(row['fecha_inicio'])
+                fecha_inicio_str = row['fecha_inicio'].strftime('%d/%m/%Y')
                 fecha_fin_str = row['fecha_fin'].strftime('%d/%m/%Y')
                 st.markdown(f"- **{row['Sede']}:** {fecha_inicio_str} al {fecha_fin_str}")
         else:
@@ -632,11 +617,7 @@ if st.session_state.datos_cargados:
     for i, sede in enumerate(sedes_lista):
         with tabs[i + 1]:
             config = SEDES[sede]
-            fecha_inicio = st.session_state.fechas_inicio_sedes.get(sede, config['fecha_inicio'])
-            
-            if fecha_inicio is None:
-                st.warning(f"La fecha de inicio para {sede} no ha sido configurada")
-                continue
+            fecha_inicio = config['fecha_inicio']
             
             if fecha_fin < fecha_inicio:
                 st.warning(f"La fecha {fecha_fin.date()} es anterior a la fecha de inicio de {sede}")
