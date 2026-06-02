@@ -36,14 +36,75 @@ if 'fecha_hasta' not in st.session_state:
 def convertir_fecha_excel(numero):
     """Convierte número serial de Excel a fecha"""
     try:
-        # Excel cuenta días desde 1 de enero de 1900
-        # Ajuste para el error de Excel (considera 1900 como año bisiesto)
-        if numero >= 61:
-            numero -= 1
-        fecha_base = datetime(1899, 12, 30)
-        return fecha_base + timedelta(days=numero)
+        if pd.isna(numero):
+            return None
+        if isinstance(numero, (int, float)):
+            # Excel cuenta días desde 1 de enero de 1900
+            if numero >= 61:
+                numero -= 1
+            fecha_base = datetime(1899, 12, 30)
+            return fecha_base + timedelta(days=numero)
+        elif isinstance(numero, datetime):
+            return numero
+        else:
+            # Intentar convertir como string
+            fecha = pd.to_datetime(numero, errors='coerce', dayfirst=True)
+            if pd.notna(fecha):
+                return fecha
+        return None
     except:
         return None
+
+def procesar_hoja_ingresos(df, nombre_hoja):
+    """Procesa una hoja para extraer fechas de ingreso y ciudades"""
+    
+    # Identificar columna de FECHA INGRESO
+    col_fecha = None
+    for col in df.columns:
+        col_lower = col.lower().strip()
+        if col_lower == 'fecha ingreso' or col_lower == 'fecha_ingreso' or col_lower == 'fechaingreso':
+            col_fecha = col
+            break
+    
+    # Si no encuentra, buscar otras variantes
+    if col_fecha is None:
+        for col in df.columns:
+            col_lower = col.lower().strip()
+            if 'fecha' in col_lower and 'ingreso' in col_lower:
+                col_fecha = col
+                break
+    
+    # Identificar columna de CIUDAD UNIDAD OPERATIVA
+    col_ciudad = None
+    for col in df.columns:
+        col_lower = col.lower().strip()
+        if col_lower == 'ciudad unidad operativa' or col_lower == 'ciudad_unidad_operativa':
+            col_ciudad = col
+            break
+    
+    # Si no encuentra, buscar "UNIDAD OPERATIVA"
+    if col_ciudad is None:
+        for col in df.columns:
+            col_lower = col.lower().strip()
+            if col_lower == 'unidad operativa' or col_lower == 'unidad_operativa':
+                col_ciudad = col
+                break
+    
+    if col_fecha and col_ciudad:
+        # Convertir fechas
+        fechas_convertidas = []
+        for valor in df[col_fecha]:
+            fecha = convertir_fecha_excel(valor)
+            fechas_convertidas.append(fecha.date() if fecha else None)
+        
+        df_procesado = pd.DataFrame({
+            '_fecha_ingreso': fechas_convertidas,
+            '_ciudad_operativa': df[col_ciudad].astype(str).str.upper().str.strip()
+        })
+        
+        return df_procesado
+    
+    return pd.DataFrame(columns=['_fecha_ingreso', '_ciudad_operativa'])
 
 def cargar_archivo(archivo):
     """Carga el archivo Excel y valida las hojas"""
@@ -64,92 +125,40 @@ def cargar_archivo(archivo):
         for hoja in HOJAS_REQUERIDAS:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
-            # Para la hoja EVENTO, preprocesar datos
-            if hoja == 'EVENTO':
-                # Identificar columna de FECHA INGRESO
-                col_fecha = None
-                for col in df.columns:
-                    col_lower = col.lower().strip()
-                    if col_lower == 'fecha ingreso' or col_lower == 'fecha_ingreso' or col_lower == 'fechaingreso':
-                        col_fecha = col
-                        break
+            if hoja in ['EVENTO', 'PGP']:
+                # Procesar hojas que contribuyen a ingresos
+                df_procesado = procesar_hoja_ingresos(df, hoja)
+                dfs[hoja] = df_procesado
                 
-                # Identificar columna de CIUDAD UNIDAD OPERATIVA
-                col_ciudad = None
-                for col in df.columns:
-                    col_lower = col.lower().strip()
-                    if col_lower == 'ciudad unidad operativa' or col_lower == 'ciudad_unidad_operativa':
-                        col_ciudad = col
-                        break
+                st.write(f"**Hoja {hoja}:**")
+                st.write(f"- Registros totales: {len(df):,}")
+                st.write(f"- Registros con fecha válida: {df_procesado['_fecha_ingreso'].notna().sum():,}")
                 
-                # Si no encuentra, buscar "UNIDAD OPERATIVA"
-                if col_ciudad is None:
-                    for col in df.columns:
-                        col_lower = col.lower().strip()
-                        if col_lower == 'unidad operativa' or col_lower == 'unidad_operativa':
-                            col_ciudad = col
-                            break
-                
-                st.write(f"**Columna FECHA INGRESO encontrada:** {col_fecha}")
-                st.write(f"**Columna CIUDAD encontrada:** {col_ciudad}")
-                
-                if col_fecha and col_ciudad:
-                    # Mostrar ejemplos originales de valores
-                    st.write(f"**Ejemplos de valores originales en {col_fecha}:**")
-                    ejemplos = df[col_fecha].head(10).tolist()
-                    st.write(ejemplos)
-                    
-                    # Convertir fechas desde número serial de Excel
-                    fechas_convertidas = []
-                    for valor in df[col_fecha]:
-                        if pd.isna(valor):
-                            fechas_convertidas.append(None)
-                        elif isinstance(valor, (int, float)):
-                            # Es un número serial de Excel
-                            fecha = convertir_fecha_excel(valor)
-                            fechas_convertidas.append(fecha.date() if fecha else None)
-                        elif isinstance(valor, datetime):
-                            fechas_convertidas.append(valor.date())
-                        else:
-                            # Intentar convertir como string
-                            try:
-                                fecha = pd.to_datetime(valor, errors='coerce', dayfirst=True)
-                                fechas_convertidas.append(fecha.date() if pd.notna(fecha) else None)
-                            except:
-                                fechas_convertidas.append(None)
-                    
-                    df['_fecha_ingreso'] = fechas_convertidas
-                    
-                    # Mostrar ejemplos de fechas convertidas
-                    st.write(f"**Ejemplos de fechas convertidas:**")
-                    st.write(df['_fecha_ingreso'].head(10).tolist())
-                    
-                    # Normalizar ciudad operativa
-                    df['_ciudad_operativa'] = df[col_ciudad].astype(str).str.upper().str.strip()
-                    
-                    # Mostrar estadísticas
-                    fechas_validas = df['_fecha_ingreso'].dropna()
-                    st.write(f"**Total de fechas válidas:** {len(fechas_validas)}")
-                    if len(fechas_validas) > 0:
-                        st.write(f"**Rango de fechas en datos:** {fechas_validas.min()} a {fechas_validas.max()}")
-                    
-                    # Guardar solo las columnas necesarias
-                    dfs[hoja] = df[['_fecha_ingreso', '_ciudad_operativa']].copy()
-                    
-                else:
-                    st.warning(f"⚠️ Hoja {hoja}: No se encontraron las columnas necesarias")
-                    st.write(f"Columnas disponibles en {hoja}: {list(df.columns)}")
-                    dfs[hoja] = pd.DataFrame(columns=['_fecha_ingreso', '_ciudad_operativa'])
+                if not df_procesado.empty:
+                    fechas_validas = df_procesado['_fecha_ingreso'].dropna()
+                    if not fechas_validas.empty:
+                        st.write(f"- Rango de fechas: {fechas_validas.min()} a {fechas_validas.max()}")
             else:
                 # Para las otras hojas, solo guardamos estructura básica por ahora
                 dfs[hoja] = pd.DataFrame()
             
             st.info(f"📄 Hoja '{hoja}': {len(df):,} registros")
         
-        # Encontrar fecha máxima en la hoja EVENTO
+        # Combinar EVENTO y PGP en un solo DataFrame para ingresos
+        if 'EVENTO' in dfs and 'PGP' in dfs:
+            df_ingresos = pd.concat([dfs['EVENTO'], dfs['PGP']], ignore_index=True)
+            dfs['INGRESOS_TOTAL'] = df_ingresos
+            st.success(f"✅ Total combinado EVENTO + PGP: {len(df_ingresos):,} registros")
+            
+            # Mostrar estadísticas combinadas
+            fechas_validas = df_ingresos['_fecha_ingreso'].dropna()
+            if not fechas_validas.empty:
+                st.info(f"📅 Rango de fechas combinado: {fechas_validas.min()} a {fechas_validas.max()}")
+        
+        # Encontrar fecha máxima en los datos combinados
         fecha_max = datetime.now()
-        if 'EVENTO' in dfs and not dfs['EVENTO'].empty:
-            fechas_validas = dfs['EVENTO']['_fecha_ingreso'].dropna()
+        if 'INGRESOS_TOTAL' in dfs and not dfs['INGRESOS_TOTAL'].empty:
+            fechas_validas = dfs['INGRESOS_TOTAL']['_fecha_ingreso'].dropna()
             if not fechas_validas.empty:
                 fecha_max = datetime.combine(fechas_validas.max(), datetime.min.time())
                 st.info(f"📅 Fecha máxima en los datos: {fecha_max.strftime('%d/%m/%Y')}")
@@ -162,18 +171,18 @@ def cargar_archivo(archivo):
         st.code(traceback.format_exc())
         return False, None, None
 
-def contar_ingresos_evento(df_evento, ciudad, fecha_inicio, fecha_fin):
-    """Cuenta los ingresos de la hoja EVENTO para una ciudad específica"""
+def contar_ingresos_ciudad(df_ingresos, ciudad, fecha_inicio, fecha_fin):
+    """Cuenta los ingresos para una ciudad específica desde el DataFrame combinado"""
     
-    if df_evento.empty:
+    if df_ingresos.empty:
         return {}
     
     # Normalizar nombre de ciudad
     ciudad_upper = ciudad.upper()
     
     # Filtrar por ciudad
-    mask_ciudad = df_evento['_ciudad_operativa'] == ciudad_upper
-    df_ciudad = df_evento[mask_ciudad]
+    mask_ciudad = df_ingresos['_ciudad_operativa'] == ciudad_upper
+    df_ciudad = df_ingresos[mask_ciudad]
     
     if df_ciudad.empty:
         return {}
@@ -189,11 +198,11 @@ def contar_ingresos_evento(df_evento, ciudad, fecha_inicio, fecha_fin):
     
     return conteo
 
-def construir_tabla_con_ingresos(ciudad, fecha_inicio, fecha_fin, df_evento):
-    """Construye la tabla con las fechas y los ingresos de la hoja EVENTO"""
+def construir_tabla_con_ingresos(ciudad, fecha_inicio, fecha_fin, df_ingresos):
+    """Construye la tabla con las fechas y los ingresos combinados"""
     
-    # Contar ingresos para la ciudad desde la hoja EVENTO
-    conteo_ingresos = contar_ingresos_evento(df_evento, ciudad, fecha_inicio, fecha_fin)
+    # Contar ingresos para la ciudad desde el DataFrame combinado
+    conteo_ingresos = contar_ingresos_ciudad(df_ingresos, ciudad, fecha_inicio, fecha_fin)
     
     # Generar todas las fechas del período
     fechas = []
@@ -237,7 +246,11 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("**Reglas de Ingresos:**")
     st.markdown("""
-    **Ingresos = Conteo de registros de la hoja EVENTO donde:**
+    **Ingresos = Suma de registros de:**
+    - Hoja EVENTO
+    - Hoja PGP
+    
+    **Condiciones:**
     - FECHA INGRESO coincide con la fecha de la fila
     - UNIDAD OPERATIVA coincide exactamente con el nombre de la ciudad
     """)
@@ -284,120 +297,123 @@ if st.session_state.datos_cargados:
     st.markdown("---")
     st.header("📊 Tablas Resumen por Ciudad")
     
-    # Obtener el DataFrame de EVENTO
-    df_evento = st.session_state.dfs.get('EVENTO', pd.DataFrame())
+    # Obtener el DataFrame combinado de ingresos
+    df_ingresos = st.session_state.dfs.get('INGRESOS_TOTAL', pd.DataFrame())
     
-    # Crear pestañas por ciudad
-    tabs = st.tabs(list(CIUDADES.keys()))
-    
-    for tab, ciudad in zip(tabs, CIUDADES.keys()):
-        with tab:
-            fecha_inicio = CIUDADES[ciudad]['fecha_inicio']
-            fecha_fin = st.session_state.fecha_hasta
-            
-            # Validar que fecha_fin sea mayor que fecha_inicio
-            if fecha_fin < fecha_inicio:
-                st.warning(f"⚠️ La fecha seleccionada ({fecha_fin.strftime('%d/%m/%Y')}) es anterior a la fecha de inicio de {ciudad} ({fecha_inicio.strftime('%d/%m/%Y')})")
-                st.info(f"Por favor, selecciona una fecha posterior al {fecha_inicio.strftime('%d/%m/%Y')}")
-                continue
-            
-            with st.spinner(f"Calculando ingresos para {ciudad}..."):
-                # Construir tabla con ingresos de EVENTO
-                df_completa, df_filtrado = construir_tabla_con_ingresos(
-                    ciudad,
-                    fecha_inicio,
-                    fecha_fin,
-                    df_evento
-                )
+    if df_ingresos.empty:
+        st.warning("No se encontraron datos de ingresos en las hojas EVENTO y PGP")
+    else:
+        # Crear pestañas por ciudad
+        tabs = st.tabs(list(CIUDADES.keys()))
+        
+        for tab, ciudad in zip(tabs, CIUDADES.keys()):
+            with tab:
+                fecha_inicio = CIUDADES[ciudad]['fecha_inicio']
+                fecha_fin = st.session_state.fecha_hasta
                 
-                if len(df_filtrado) > 0:
-                    # Métricas
-                    total_ingresos = df_completa['ingresos'].sum()
-                    
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    with col1:
-                        st.metric("📥 Total Ingresos", f"{total_ingresos:,}")
-                    with col2:
-                        st.metric("✅ Facturado Modelo", "Pendiente")
-                    with col3:
-                        st.metric("❌ Facturado Fuera", "Pendiente")
-                    with col4:
-                        st.metric("💰 Facturado Total", "Pendiente")
-                    with col5:
-                        st.metric("⚠️ Novedades", "Pendiente")
-                    
-                    # Mostrar tabla
-                    st.dataframe(
-                        df_filtrado,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
-                            "semana": "Semana",
-                            "año": "Año",
-                            "mes": "Mes",
-                            "ingresos": st.column_config.NumberColumn("Ingresos", format="%d"),
-                            "facturado modelo": st.column_config.NumberColumn("Fact. Modelo", format="%d"),
-                            "facturado fuera modelo": st.column_config.NumberColumn("Fact. Fuera", format="%d"),
-                            "facturado total": st.column_config.NumberColumn("Fact. Total", format="%d"),
-                            "Novedades": st.column_config.NumberColumn("Novedades", format="%d")
-                        }
+                # Validar que fecha_fin sea mayor que fecha_inicio
+                if fecha_fin < fecha_inicio:
+                    st.warning(f"⚠️ La fecha seleccionada ({fecha_fin.strftime('%d/%m/%Y')}) es anterior a la fecha de inicio de {ciudad} ({fecha_inicio.strftime('%d/%m/%Y')})")
+                    st.info(f"Por favor, selecciona una fecha posterior al {fecha_inicio.strftime('%d/%m/%Y')}")
+                    continue
+                
+                with st.spinner(f"Calculando ingresos para {ciudad}..."):
+                    # Construir tabla con ingresos combinados
+                    df_completa, df_filtrado = construir_tabla_con_ingresos(
+                        ciudad,
+                        fecha_inicio,
+                        fecha_fin,
+                        df_ingresos
                     )
                     
-                    # Información del período
-                    st.caption(f"📅 Mostrando {len(df_filtrado)} días con ingresos del {df_filtrado['Fecha'].min()} al {df_filtrado['Fecha'].max()}")
-                    
-                    # Gráfico de ingresos
-                    if len(df_filtrado) > 1:
-                        st.subheader("📈 Evolución de Ingresos (Hoja EVENTO)")
-                        chart_data = df_filtrado[['ingresos']].copy()
-                        chart_data.index = pd.to_datetime(df_filtrado['Fecha'])
-                        st.line_chart(chart_data)
-                    
-                    # Exportar datos
-                    st.subheader("💾 Exportar Datos")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    # CSV
-                    csv = df_completa.to_csv(index=False).encode('utf-8')
-                    col1.download_button(
-                        "📥 Descargar CSV",
-                        csv,
-                        f"{ciudad.lower()}_ingresos_evento.csv",
-                        "text/csv",
-                        key=f"csv_{ciudad}"
-                    )
-                    
-                    # Excel
-                    from io import BytesIO
-                    output = BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_completa.to_excel(writer, sheet_name='Todos los días', index=False)
-                        df_filtrado.to_excel(writer, sheet_name='Días con ingresos', index=False)
+                    if len(df_filtrado) > 0:
+                        # Métricas
+                        total_ingresos = df_completa['ingresos'].sum()
                         
-                        # Información del procesamiento
-                        info = pd.DataFrame([
-                            ['Ciudad', ciudad],
-                            ['Fecha Inicio', fecha_inicio.strftime('%d/%m/%Y')],
-                            ['Fecha Fin', fecha_fin.strftime('%d/%m/%Y')],
-                            ['Total Días', len(df_completa)],
-                            ['Días con Ingresos', len(df_filtrado)],
-                            ['Total Ingresos', total_ingresos],
-                            ['Fuente de datos', 'Hoja EVENTO - Campo FECHA INGRESO y UNIDAD OPERATIVA']
-                        ], columns=['Información', 'Valor'])
-                        info.to_excel(writer, sheet_name='Información', index=False)
-                    
-                    col2.download_button(
-                        "📥 Descargar Excel",
-                        output.getvalue(),
-                        f"{ciudad.lower()}_ingresos_evento.xlsx",
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"excel_{ciudad}"
-                    )
-                    
-                else:
-                    st.info(f"No hay ingresos para {ciudad} en el período seleccionado (desde {fecha_inicio.strftime('%d/%m/%Y')} hasta {fecha_fin.strftime('%d/%m/%Y')})")
+                        col1, col2, col3, col4, col5 = st.columns(5)
+                        with col1:
+                            st.metric("📥 Total Ingresos", f"{total_ingresos:,}")
+                        with col2:
+                            st.metric("✅ Facturado Modelo", "Pendiente")
+                        with col3:
+                            st.metric("❌ Facturado Fuera", "Pendiente")
+                        with col4:
+                            st.metric("💰 Facturado Total", "Pendiente")
+                        with col5:
+                            st.metric("⚠️ Novedades", "Pendiente")
+                        
+                        # Mostrar tabla
+                        st.dataframe(
+                            df_filtrado,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                                "semana": "Semana",
+                                "año": "Año",
+                                "mes": "Mes",
+                                "ingresos": st.column_config.NumberColumn("Ingresos", format="%d"),
+                                "facturado modelo": st.column_config.NumberColumn("Fact. Modelo", format="%d"),
+                                "facturado fuera modelo": st.column_config.NumberColumn("Fact. Fuera", format="%d"),
+                                "facturado total": st.column_config.NumberColumn("Fact. Total", format="%d"),
+                                "Novedades": st.column_config.NumberColumn("Novedades", format="%d")
+                            }
+                        )
+                        
+                        # Información del período
+                        st.caption(f"📅 Mostrando {len(df_filtrado)} días con ingresos del {df_filtrado['Fecha'].min()} al {df_filtrado['Fecha'].max()}")
+                        
+                        # Gráfico de ingresos
+                        if len(df_filtrado) > 1:
+                            st.subheader("📈 Evolución de Ingresos (EVENTO + PGP)")
+                            chart_data = df_filtrado[['ingresos']].copy()
+                            chart_data.index = pd.to_datetime(df_filtrado['Fecha'])
+                            st.line_chart(chart_data)
+                        
+                        # Exportar datos
+                        st.subheader("💾 Exportar Datos")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        # CSV
+                        csv = df_completa.to_csv(index=False).encode('utf-8')
+                        col1.download_button(
+                            "📥 Descargar CSV",
+                            csv,
+                            f"{ciudad.lower()}_ingresos_combinados.csv",
+                            "text/csv",
+                            key=f"csv_{ciudad}"
+                        )
+                        
+                        # Excel
+                        from io import BytesIO
+                        output = BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            df_completa.to_excel(writer, sheet_name='Todos los días', index=False)
+                            df_filtrado.to_excel(writer, sheet_name='Días con ingresos', index=False)
+                            
+                            # Información del procesamiento
+                            info = pd.DataFrame([
+                                ['Ciudad', ciudad],
+                                ['Fecha Inicio', fecha_inicio.strftime('%d/%m/%Y')],
+                                ['Fecha Fin', fecha_fin.strftime('%d/%m/%Y')],
+                                ['Total Días', len(df_completa)],
+                                ['Días con Ingresos', len(df_filtrado)],
+                                ['Total Ingresos', total_ingresos],
+                                ['Fuente de datos', 'Hojas EVENTO + PGP']
+                            ], columns=['Información', 'Valor'])
+                            info.to_excel(writer, sheet_name='Información', index=False)
+                        
+                        col2.download_button(
+                            "📥 Descargar Excel",
+                            output.getvalue(),
+                            f"{ciudad.lower()}_ingresos_combinados.xlsx",
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"excel_{ciudad}"
+                        )
+                        
+                    else:
+                        st.info(f"No hay ingresos para {ciudad} en el período seleccionado (desde {fecha_inicio.strftime('%d/%m/%Y')} hasta {fecha_fin.strftime('%d/%m/%Y')})")
     
     # Botón para reiniciar
     st.markdown("---")
@@ -414,4 +430,4 @@ else:
         st.info("⏳ Presiona 'Procesar Archivo' para cargar los datos")
 
 st.markdown("---")
-st.caption("Aplicación para análisis de facturación por ciudad - Ingresos desde hoja EVENTO")
+st.caption("Aplicación para análisis de facturación por ciudad - Ingresos desde hojas EVENTO y PGP")
