@@ -27,7 +27,7 @@ SEDES = {
     },
     "CIRCUNVALAR": {
         "fecha_inicio": datetime(2026, 4, 15),  # Misma fecha que CAT MARAYA
-        "centro_atencion": None,
+        "centro_atencion": "CIRCUNVALAR",
         "palabra_clave": "CIRCUNVALAR"
     },
     "CENTENARIO": {
@@ -37,7 +37,7 @@ SEDES = {
     },
     "CAT ARMENIA": {
         "fecha_inicio": datetime(2025, 11, 20),  # Misma fecha que CENTENARIO
-        "centro_atencion": None,
+        "centro_atencion": "CLINICA DE ALTA TECNOLOGIA SEDE ARMENIA",
         "palabra_clave": "CAT ARMENIA"
     }
 }
