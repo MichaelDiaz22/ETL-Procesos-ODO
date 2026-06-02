@@ -33,6 +33,18 @@ if 'fecha_maxima' not in st.session_state:
 if 'fecha_hasta' not in st.session_state:
     st.session_state.fecha_hasta = None
 
+def convertir_fecha_excel(numero):
+    """Convierte número serial de Excel a fecha"""
+    try:
+        # Excel cuenta días desde 1 de enero de 1900
+        # Ajuste para el error de Excel (considera 1900 como año bisiesto)
+        if numero >= 61:
+            numero -= 1
+        fecha_base = datetime(1899, 12, 30)
+        return fecha_base + timedelta(days=numero)
+    except:
+        return None
+
 def cargar_archivo(archivo):
     """Carga el archivo Excel y valida las hojas"""
     try:
@@ -54,22 +66,13 @@ def cargar_archivo(archivo):
             
             # Para la hoja EVENTO, preprocesar datos
             if hoja == 'EVENTO':
-                # Identificar columna de FECHA INGRESO - buscar exactamente "FECHA INGRESO"
+                # Identificar columna de FECHA INGRESO
                 col_fecha = None
                 for col in df.columns:
                     col_lower = col.lower().strip()
-                    # Buscar exactamente "fecha ingreso" o "fecha_ingreso"
                     if col_lower == 'fecha ingreso' or col_lower == 'fecha_ingreso' or col_lower == 'fechaingreso':
                         col_fecha = col
                         break
-                
-                # Si no encuentra, buscar otras variantes
-                if col_fecha is None:
-                    for col in df.columns:
-                        col_lower = col.lower().strip()
-                        if 'fecha' in col_lower and 'ingreso' in col_lower:
-                            col_fecha = col
-                            break
                 
                 # Identificar columna de CIUDAD UNIDAD OPERATIVA
                 col_ciudad = None
@@ -91,13 +94,31 @@ def cargar_archivo(archivo):
                 st.write(f"**Columna CIUDAD encontrada:** {col_ciudad}")
                 
                 if col_fecha and col_ciudad:
-                    # Mostrar ejemplos originales de fechas
+                    # Mostrar ejemplos originales de valores
                     st.write(f"**Ejemplos de valores originales en {col_fecha}:**")
-                    ejemplos_fechas = df[col_fecha].head(10).tolist()
-                    st.write(ejemplos_fechas)
+                    ejemplos = df[col_fecha].head(10).tolist()
+                    st.write(ejemplos)
                     
-                    # Convertir fechas usando dayfirst=True para formato DD/MM/YYYY
-                    df['_fecha_ingreso'] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True).dt.date
+                    # Convertir fechas desde número serial de Excel
+                    fechas_convertidas = []
+                    for valor in df[col_fecha]:
+                        if pd.isna(valor):
+                            fechas_convertidas.append(None)
+                        elif isinstance(valor, (int, float)):
+                            # Es un número serial de Excel
+                            fecha = convertir_fecha_excel(valor)
+                            fechas_convertidas.append(fecha.date() if fecha else None)
+                        elif isinstance(valor, datetime):
+                            fechas_convertidas.append(valor.date())
+                        else:
+                            # Intentar convertir como string
+                            try:
+                                fecha = pd.to_datetime(valor, errors='coerce', dayfirst=True)
+                                fechas_convertidas.append(fecha.date() if pd.notna(fecha) else None)
+                            except:
+                                fechas_convertidas.append(None)
+                    
+                    df['_fecha_ingreso'] = fechas_convertidas
                     
                     # Mostrar ejemplos de fechas convertidas
                     st.write(f"**Ejemplos de fechas convertidas:**")
@@ -107,8 +128,10 @@ def cargar_archivo(archivo):
                     df['_ciudad_operativa'] = df[col_ciudad].astype(str).str.upper().str.strip()
                     
                     # Mostrar estadísticas
-                    st.write(f"**Total de fechas válidas:** {df['_fecha_ingreso'].notna().sum()}")
-                    st.write(f"**Rango de fechas en datos:** {df['_fecha_ingreso'].min()} a {df['_fecha_ingreso'].max()}")
+                    fechas_validas = df['_fecha_ingreso'].dropna()
+                    st.write(f"**Total de fechas válidas:** {len(fechas_validas)}")
+                    if len(fechas_validas) > 0:
+                        st.write(f"**Rango de fechas en datos:** {fechas_validas.min()} a {fechas_validas.max()}")
                     
                     # Guardar solo las columnas necesarias
                     dfs[hoja] = df[['_fecha_ingreso', '_ciudad_operativa']].copy()
