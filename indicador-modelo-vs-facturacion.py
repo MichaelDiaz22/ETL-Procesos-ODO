@@ -92,7 +92,6 @@ def normalizar_texto(texto):
     return texto_str
 
 def procesar_hoja_ingresos(df, nombre_hoja, unidades_filtro):
-    """Procesa hojas para conteo de ingresos (FECHA INGRESO)"""
     col_fecha = None
     for col in df.columns:
         if 'fecha ingreso' in col.lower():
@@ -132,7 +131,6 @@ def procesar_hoja_ingresos(df, nombre_hoja, unidades_filtro):
     return pd.DataFrame()
 
 def procesar_hoja_pdte_ingresos(df, nombre_hoja, unidades_filtro):
-    """Procesa hojas PDTE para conteo de ingresos (FECHA INGRESO con CENTRO DE ATENCION)"""
     col_fecha = None
     for col in df.columns:
         if 'fecha ingreso' in col.lower():
@@ -174,7 +172,6 @@ def procesar_hoja_pdte_ingresos(df, nombre_hoja, unidades_filtro):
     return pd.DataFrame()
 
 def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro):
-    """Procesa hojas EVENTO y PGP para facturación (modelo y fuera modelo)"""
     col_fecha_ingreso = None
     col_fecha_factura = None
     col_ciudad = None
@@ -192,7 +189,6 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro):
             col_unidad_funcional = col
     
     if col_fecha_ingreso and col_fecha_factura and col_ciudad:
-        # Convertir fechas
         fechas_ingreso = []
         for v in df[col_fecha_ingreso]:
             fecha = convertir_fecha_excel(v)
@@ -229,36 +225,25 @@ def cargar_archivo(archivo, unidades_filtro):
         dfs_ingresos = []
         dfs_facturacion = []
         
-        # Procesar EVENTO y PGP para ingresos y facturación
         for hoja in ['EVENTO', 'PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
-            # Para ingresos
             df_ing = procesar_hoja_ingresos(df, hoja, unidades_filtro)
             if not df_ing.empty:
                 dfs_ingresos.append(df_ing)
             
-            # Para facturación
             df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro)
             if not df_fac.empty:
                 dfs_facturacion.append(df_fac)
         
-        # Procesar PDTE EVENTO y PDTE PGP solo para ingresos
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             df_ing = procesar_hoja_pdte_ingresos(df, hoja, unidades_filtro)
             if not df_ing.empty:
                 dfs_ingresos.append(df_ing)
         
-        if dfs_ingresos:
-            df_ingresos_total = pd.concat(dfs_ingresos, ignore_index=True)
-        else:
-            df_ingresos_total = pd.DataFrame()
-        
-        if dfs_facturacion:
-            df_facturacion_total = pd.concat(dfs_facturacion, ignore_index=True)
-        else:
-            df_facturacion_total = pd.DataFrame()
+        df_ingresos_total = pd.concat(dfs_ingresos, ignore_index=True) if dfs_ingresos else pd.DataFrame()
+        df_facturacion_total = pd.concat(dfs_facturacion, ignore_index=True) if dfs_facturacion else pd.DataFrame()
         
         return True, {
             'INGRESOS': df_ingresos_total,
@@ -298,11 +283,9 @@ def contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_
     if df_ciudad.empty:
         return {}
     
-    # Facturado modelo: fecha_ingreso >= fecha_inicio AND fecha_factura >= fecha_inicio
     mask_fechas = (df_ciudad['_fecha_ingreso'] >= fecha_inicio.date()) & (df_ciudad['_fecha_factura'] >= fecha_inicio.date())
     df_filtrado = df_ciudad[mask_fechas]
     
-    # Filtrar por fecha_factura <= fecha_fin
     mask_fecha_fin = df_filtrado['_fecha_factura'] <= fecha_fin.date()
     df_filtrado = df_filtrado[mask_fecha_fin]
     
@@ -321,11 +304,9 @@ def contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, 
     if df_ciudad.empty:
         return {}
     
-    # Facturado fuera modelo: fecha_ingreso < fecha_inicio AND fecha_factura >= fecha_inicio
     mask_fechas = (df_ciudad['_fecha_ingreso'] < fecha_inicio.date()) & (df_ciudad['_fecha_factura'] >= fecha_inicio.date())
     df_filtrado = df_ciudad[mask_fechas]
     
-    # Filtrar por fecha_factura <= fecha_fin
     mask_fecha_fin = df_filtrado['_fecha_factura'] <= fecha_fin.date()
     df_filtrado = df_filtrado[mask_fecha_fin]
     
@@ -335,7 +316,36 @@ def contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, 
     
     return conteo
 
-def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion):
+def agrupar_por_periodo(df, periodo):
+    """Agrupa los datos por periodo (diario, semanal, mensual)"""
+    if df.empty:
+        return df
+    
+    df_agrupado = df.copy()
+    df_agrupado['Fecha'] = pd.to_datetime(df_agrupado['Fecha'])
+    
+    if periodo == 'Mensual':
+        df_agrupado['Periodo'] = df_agrupado['Fecha'].dt.strftime('%Y-%m')
+        df_agrupado['Fecha'] = df_agrupado['Fecha'].dt.to_period('M').dt.start_time
+        df_agrupado['semana'] = 'Mensual'
+        df_agrupado['mes'] = df_agrupado['Periodo']
+    elif periodo == 'Semanal':
+        df_agrupado['Periodo'] = df_agrupado['Fecha'].dt.strftime('%Y-W%W')
+        df_agrupado['Fecha'] = df_agrupado['Fecha'] - pd.to_timedelta(df_agrupado['Fecha'].dt.dayofweek, unit='d')
+        df_agrupado['semana'] = df_agrupado['Periodo']
+        df_agrupado['mes'] = 'Semanal'
+    else:  # Diario
+        df_agrupado['Periodo'] = df_agrupado['Fecha'].dt.strftime('%Y-%m-%d')
+        df_agrupado['mes'] = df_agrupado['Fecha'].dt.strftime('%Y-%m')
+    
+    # Agrupar
+    columnas_agrupar = ['ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total']
+    df_resultado = df_agrupado.groupby(['Periodo', 'Fecha', 'semana', 'mes', 'año'])[columnas_agrupar].sum().reset_index()
+    df_resultado['Novedades'] = 0  # Novedades en 0 por ahora
+    
+    return df_resultado
+
+def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, periodo):
     conteo_ingresos = contar_ingresos(df_ingresos, ciudad, config, fecha_inicio, fecha_fin)
     conteo_facturado_modelo = contar_facturado_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
     conteo_facturado_fuera = contar_facturado_fuera_modelo(df_facturacion, ciudad, config, fecha_inicio, fecha_fin)
@@ -353,10 +363,9 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
         facturado_modelo = conteo_facturado_modelo.get(fecha_key, 0)
         facturado_fuera = conteo_facturado_fuera.get(fecha_key, 0)
         facturado_total = facturado_modelo + facturado_fuera
-        novedades = max(0, ingresos - facturado_total)
         
         datos.append({
-            'Fecha': fecha.strftime('%Y-%m-%d'),
+            'Fecha': fecha,
             'semana': fecha.isocalendar()[1],
             'año': fecha.year,
             'mes': calendar.month_name[fecha.month],
@@ -364,13 +373,13 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
             'facturado modelo': facturado_modelo,
             'facturado fuera modelo': facturado_fuera,
             'facturado total': facturado_total,
-            'Novedades': novedades
+            'Novedades': 0
         })
     
     df = pd.DataFrame(datos)
-    df_filtrado = df[(df['ingresos'] > 0) | (df['facturado modelo'] > 0) | (df['facturado fuera modelo'] > 0)]
+    df_agrupado = agrupar_por_periodo(df, periodo)
     
-    return df, df_filtrado
+    return df_agrupado
 
 # Sidebar
 with st.sidebar:
@@ -445,45 +454,66 @@ if st.session_state.datos_cargados:
                 st.warning(f"La fecha {fecha_fin.date()} es anterior a la fecha de inicio de {ciudad}")
                 continue
             
+            # Selector de período
+            periodo = st.selectbox(
+                "📊 Agrupar por:",
+                options=['Diario', 'Semanal', 'Mensual'],
+                key=f"periodo_{ciudad}"
+            )
+            
             with st.spinner(f"Calculando {ciudad}..."):
-                df_completa, df_filtrado = construir_tabla(
-                    ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion
+                df_tabla = construir_tabla(
+                    ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, periodo
                 )
                 
-                if len(df_filtrado) > 0:
-                    total_ingresos = df_completa['ingresos'].sum()
-                    total_facturado_modelo = df_completa['facturado modelo'].sum()
-                    total_facturado_fuera = df_completa['facturado fuera modelo'].sum()
-                    total_facturado = df_completa['facturado total'].sum()
-                    total_novedades = df_completa['Novedades'].sum()
+                if len(df_tabla) > 0:
+                    total_ingresos = df_tabla['ingresos'].sum()
+                    total_facturado_modelo = df_tabla['facturado modelo'].sum()
+                    total_facturado_fuera = df_tabla['facturado fuera modelo'].sum()
+                    total_facturado = df_tabla['facturado total'].sum()
+                    
+                    # Calcular porcentajes
+                    pct_modelo = (total_facturado_modelo / total_ingresos * 100) if total_ingresos > 0 else 0
+                    pct_fuera = (total_facturado_fuera / total_ingresos * 100) if total_ingresos > 0 else 0
+                    pct_total = (total_facturado / total_ingresos * 100) if total_ingresos > 0 else 0
                     
                     cols = st.columns(5)
                     cols[0].metric("📥 Total Ingresos", f"{total_ingresos:,}")
-                    cols[1].metric("✅ Facturado Modelo", f"{total_facturado_modelo:,}")
-                    cols[2].metric("❌ Facturado Fuera", f"{total_facturado_fuera:,}")
-                    cols[3].metric("💰 Facturado Total", f"{total_facturado:,}")
-                    cols[4].metric("⚠️ Novedades", f"{total_novedades:,}")
+                    cols[1].metric("✅ Facturado Modelo", f"{total_facturado_modelo:,}", f"{pct_modelo:.1f}%")
+                    cols[2].metric("❌ Facturado Fuera", f"{total_facturado_fuera:,}", f"{pct_fuera:.1f}%")
+                    cols[3].metric("💰 Facturado Total", f"{total_facturado:,}", f"{pct_total:.1f}%")
+                    cols[4].metric("⚠️ Novedades", "0")
                     
-                    st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
-                    st.caption(f"📅 {len(df_filtrado)} días con actividad")
+                    # Mostrar tabla
+                    columnas_mostrar = ['Fecha', 'ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades']
+                    if periodo == 'Semanal':
+                        columnas_mostrar.insert(1, 'semana')
+                    elif periodo == 'Mensual':
+                        columnas_mostrar.insert(1, 'mes')
                     
-                    if len(df_filtrado) > 1:
-                        chart_data = df_filtrado[['ingresos', 'facturado modelo', 'facturado fuera modelo']].copy()
-                        chart_data.index = pd.to_datetime(df_filtrado['Fecha'])
+                    df_display = df_tabla[columnas_mostrar].copy()
+                    if 'Fecha' in df_display.columns:
+                        df_display['Fecha'] = df_display['Fecha'].dt.strftime('%Y-%m-%d')
+                    
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+                    
+                    # Gráfico
+                    if len(df_tabla) > 1:
+                        chart_data = df_tabla[['ingresos', 'facturado total', 'Novedades']].copy()
+                        chart_data.index = df_tabla['Fecha']
                         st.line_chart(chart_data)
                     
-                    # Exportar datos
+                    # Exportar
                     from io import BytesIO
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_completa.to_excel(writer, sheet_name='Todos los días', index=False)
-                        df_filtrado.to_excel(writer, sheet_name='Días con actividad', index=False)
+                        df_tabla.to_excel(writer, sheet_name=f'Resumen_{periodo}', index=False)
                     
                     st.download_button(
                         "📥 Descargar Excel",
                         output.getvalue(),
-                        f"{ciudad.lower()}_resumen.xlsx",
-                        key=f"excel_{ciudad}"
+                        f"{ciudad.lower()}_{periodo.lower()}.xlsx",
+                        key=f"excel_{ciudad}_{periodo}"
                     )
                 else:
                     st.info(f"No hay datos para {ciudad} en el período seleccionado")
