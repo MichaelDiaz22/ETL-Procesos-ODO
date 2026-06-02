@@ -336,7 +336,7 @@ def calcular_resumen_ejecutivo(df_ingresos, df_facturacion, fecha_fin):
         total_facturado = sum(conteo_facturado_modelo.values()) + sum(conteo_facturado_fuera.values())
         
         pct_facturado = (total_facturado / total_ingresos * 100) if total_ingresos > 0 else 0
-        pct_novedades = 100 - pct_facturado  # Novedades = Ingresos - Facturado Total
+        pct_novedades = 0  # Novedades en 0 temporalmente
         
         # Por ahora las novedades bloqueantes (subsanables) las dejamos en 0
         pct_bloqueantes = 0
@@ -354,7 +354,14 @@ def calcular_resumen_ejecutivo(df_ingresos, df_facturacion, fecha_fin):
     
     return pd.DataFrame(resultados)
 
-def agrupar_por_periodo(df, periodo):
+def formatear_rango_semana(fecha_inicio_semana, fecha_fin_semana, fecha_fin_global):
+    """Formatea el rango de una semana para mostrar en la tabla"""
+    fecha_fin_real = min(fecha_fin_semana, fecha_fin_global)
+    inicio_str = fecha_inicio_semana.strftime('%d-%m')
+    fin_str = fecha_fin_real.strftime('%d-%m')
+    return f"{inicio_str} / {fin_str}"
+
+def agrupar_por_periodo(df, periodo, fecha_fin_global):
     """Agrupa los datos por periodo (diario, semanal, mensual)"""
     if df.empty:
         return df
@@ -368,12 +375,19 @@ def agrupar_por_periodo(df, periodo):
         df_agrupado['semana'] = 'Mensual'
         df_agrupado['mes'] = df_agrupado['Periodo']
     elif periodo == 'Semanal':
-        df_agrupado['Periodo'] = df_agrupado['Fecha'].dt.strftime('%Y-W%W')
-        df_agrupado['Fecha'] = df_agrupado['Fecha'] - pd.to_timedelta(df_agrupado['Fecha'].dt.dayofweek, unit='d')
-        df_agrupado['semana'] = df_agrupado['Periodo']
+        # Calcular inicio de semana (lunes)
+        df_agrupado['InicioSemana'] = df_agrupado['Fecha'] - pd.to_timedelta(df_agrupado['Fecha'].dt.dayofweek, unit='d')
+        df_agrupado['FinSemana'] = df_agrupado['InicioSemana'] + timedelta(days=6)
+        df_agrupado['Periodo'] = df_agrupado['InicioSemana'].dt.strftime('%Y-W%W')
+        df_agrupado['Fecha'] = df_agrupado['InicioSemana']
+        df_agrupado['semana'] = df_agrupado.apply(
+            lambda row: formatear_rango_semana(row['InicioSemana'], row['FinSemana'], fecha_fin_global), 
+            axis=1
+        )
         df_agrupado['mes'] = 'Semanal'
     else:  # Diario
         df_agrupado['Periodo'] = df_agrupado['Fecha'].dt.strftime('%Y-%m-%d')
+        df_agrupado['semana'] = df_agrupado['Fecha'].dt.isocalendar()[1]
         df_agrupado['mes'] = df_agrupado['Fecha'].dt.strftime('%Y-%m')
     
     columnas_agrupar = ['ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total']
@@ -414,7 +428,7 @@ def construir_tabla(ciudad, config, fecha_inicio, fecha_fin, df_ingresos, df_fac
         })
     
     df = pd.DataFrame(datos)
-    df_agrupado = agrupar_por_periodo(df, periodo)
+    df_agrupado = agrupar_por_periodo(df, periodo, fecha_fin)
     
     return df_agrupado
 
