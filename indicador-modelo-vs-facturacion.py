@@ -13,7 +13,7 @@ st.set_page_config(
 st.title("📊 Tabla Resumen por Ciudad")
 st.markdown("---")
 
-# Definición de sedes
+# Definición de sedes con sus fechas de inicio correctas
 SEDES = {
     "SAN MARCEL": {
         "fecha_inicio": datetime(2025, 9, 16),
@@ -21,22 +21,22 @@ SEDES = {
         "palabra_clave": "SAN MARCEL"
     },
     "CAT MARAYA": {
-        "fecha_inicio": None,
+        "fecha_inicio": datetime(2026, 4, 15),  # Fecha de Pereira
         "centro_atencion": "CLINICA DE ALTA TECNOLOGIA MARAYA",
         "palabra_clave": "MARAYA"
     },
     "CIRCUNVALAR": {
-        "fecha_inicio": None,
+        "fecha_inicio": None,  # Pendiente de definir
         "centro_atencion": None,
         "palabra_clave": "CIRCUNVALAR"
     },
     "CENTENARIO": {
-        "fecha_inicio": None,
+        "fecha_inicio": datetime(2025, 11, 20),  # Fecha de Armenia
         "centro_atencion": "CENTENARIO",
         "palabra_clave": "CENTENARIO"
     },
     "CAT ARMENIA": {
-        "fecha_inicio": None,
+        "fecha_inicio": None,  # Pendiente de definir
         "centro_atencion": None,
         "palabra_clave": "CAT ARMENIA"
     }
@@ -142,7 +142,7 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_
             '_valor_funcional': valores_funcionales
         })[mask_palabra]
         
-        # Aplicar filtro de unidades funcionales seleccionadas
+        # Aplicar filtro de unidades funcionales seleccionadas (esto es clave para SAN MARCEL)
         if unidades_filtro:
             mask_funcional = df_temp['_valor_funcional'].isin(unidades_filtro)
             df_temp = df_temp[mask_funcional]
@@ -319,17 +319,17 @@ def cargar_archivo(archivo, unidades_filtro):
             df = pd.read_excel(archivo, sheet_name=hoja)
             
             for sede, config in SEDES.items():
-                # Ingresos
+                # Ingresos - pasar unidades_filtro
                 df_ing = procesar_hoja_ingresos_evento_pgp(df, hoja, unidades_filtro, config['palabra_clave'])
                 if not df_ing.empty:
                     dfs_ingresos[sede].append(df_ing)
                 
-                # Facturación
+                # Facturación - pasar unidades_filtro
                 df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro, config['palabra_clave'])
                 if not df_fac.empty:
                     dfs_facturacion[sede].append(df_fac)
         
-        # Procesar hojas PDTE
+        # Procesar hojas PDTE (estas no se filtran por unidades funcionales)
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
@@ -562,6 +562,8 @@ for sede, config in SEDES.items():
         st.session_state.fechas_inicio_sedes[sede] = datetime.combine(fecha_default, datetime.min.time())
     else:
         st.session_state.fechas_inicio_sedes[sede] = config['fecha_inicio']
+        # Mostrar la fecha predefinida como texto informativo
+        st.write(f"**{sede}:** Fecha de inicio predefinida: {config['fecha_inicio'].strftime('%d/%m/%Y')}")
 
 st.markdown("---")
 
@@ -592,6 +594,11 @@ if archivo:
             options=st.session_state.unidades_funcionales,
             default=st.session_state.unidades_seleccionadas
         )
+        
+        if st.session_state.unidades_seleccionadas:
+            st.info(f"📌 Filtro activo: {len(st.session_state.unidades_seleccionadas)} unidades seleccionadas")
+        else:
+            st.info("📌 Sin filtro: se incluirán todas las unidades")
     
     st.markdown("---")
     
@@ -663,8 +670,11 @@ if st.session_state.datos_cargados:
             df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
             
             # Mostrar estadísticas de la sede
-            st.write(f"**Registros de ingreso para {sede}:** {len(df_ingresos):,}")
-            st.write(f"**Registros de facturación para {sede}:** {len(df_facturacion):,}")
+            with st.expander(f"📊 Estadísticas de {sede}", expanded=False):
+                st.write(f"**Registros de ingreso para {sede}:** {len(df_ingresos):,}")
+                st.write(f"**Registros de facturación para {sede}:** {len(df_facturacion):,}")
+                if not df_ingresos.empty:
+                    st.write(f"**Rango de fechas de ingreso:** {df_ingresos['_fecha'].min()} a {df_ingresos['_fecha'].max()}")
             
             # Selector de período
             periodo = st.selectbox(
