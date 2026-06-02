@@ -33,40 +33,6 @@ if 'fecha_maxima' not in st.session_state:
 if 'fecha_hasta' not in st.session_state:
     st.session_state.fecha_hasta = None
 
-def convertir_fecha_manual(valor):
-    """Convierte fecha manualmente para asegurar formato DD/MM/YYYY"""
-    if pd.isna(valor):
-        return None
-    try:
-        # Si es string, intentar convertir desde DD/MM/YYYY
-        if isinstance(valor, str):
-            # Intentar formato DD/MM/YYYY
-            try:
-                return datetime.strptime(valor.strip(), '%d/%m/%Y')
-            except:
-                pass
-            # Intentar formato DD-MM-YYYY
-            try:
-                return datetime.strptime(valor.strip(), '%d-%m-%Y')
-            except:
-                pass
-            # Intentar formato YYYY-MM-DD
-            try:
-                return datetime.strptime(valor.strip(), '%Y-%m-%d')
-            except:
-                pass
-        # Si es datetime, retornar directamente
-        elif isinstance(valor, (datetime, pd.Timestamp)):
-            return valor
-        # Otros casos, usar pandas con dayfirst=True
-        else:
-            resultado = pd.to_datetime(valor, errors='coerce', dayfirst=True)
-            if pd.notna(resultado):
-                return resultado
-        return None
-    except:
-        return None
-
 def cargar_archivo(archivo):
     """Carga el archivo Excel y valida las hojas"""
     try:
@@ -82,6 +48,16 @@ def cargar_archivo(archivo):
         
         # Cargar datos
         dfs = {}
+        
+        # Mostrar información de columnas
+        with st.expander("🔍 Ver información de depuración"):
+            for hoja in HOJAS_REQUERIDAS:
+                df_sample = pd.read_excel(archivo, sheet_name=hoja, nrows=10)
+                st.write(f"**Hoja {hoja} - Columnas:**")
+                st.write(list(df_sample.columns))
+                st.write(f"**Primeras filas de {hoja}:**")
+                st.dataframe(df_sample)
+                st.write("---")
         
         for hoja in HOJAS_REQUERIDAS:
             df = pd.read_excel(archivo, sheet_name=hoja)
@@ -104,30 +80,60 @@ def cargar_archivo(archivo):
                         col_ciudad = col
                         break
                 
-                # Si no encuentra, buscar cualquier columna que tenga "ciudad" o "unidad"
+                # Si no encuentra, buscar cualquier columna que tenga "ciudad"
                 if col_ciudad is None:
                     for col in df.columns:
                         col_lower = col.lower().strip()
-                        if 'ciudad' in col_lower or 'unidad' in col_lower:
+                        if 'ciudad' in col_lower:
                             col_ciudad = col
                             break
                 
+                st.write(f"**Columna FECHA INGRESO encontrada:** {col_fecha}")
+                st.write(f"**Columna CIUDAD encontrada:** {col_ciudad}")
+                
                 if col_fecha and col_ciudad:
-                    # Convertir fecha usando la función manual con dayfirst=True
-                    fechas_convertidas = []
-                    for fecha_valor in df[col_fecha]:
-                        fecha_conv = convertir_fecha_manual(fecha_valor)
-                        fechas_convertidas.append(fecha_conv.date() if fecha_conv else None)
+                    # Mostrar ejemplos originales de fechas
+                    st.write(f"**Ejemplos de valores originales en {col_fecha}:**")
+                    ejemplos_fechas = df[col_fecha].head(10).tolist()
+                    st.write(ejemplos_fechas)
                     
-                    df['_fecha_ingreso'] = fechas_convertidas
+                    # Intentar diferentes métodos de conversión
+                    # Método 1: Usar pandas con dayfirst=True
+                    df['_fecha_ingreso_1'] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True)
+                    
+                    # Método 2: Intentar con formato específico DD/MM/YYYY
+                    try:
+                        df['_fecha_ingreso_2'] = pd.to_datetime(df[col_fecha], errors='coerce', format='%d/%m/%Y')
+                    except:
+                        df['_fecha_ingreso_2'] = pd.NaT
+                    
+                    # Usar la que tenga más valores no nulos
+                    if df['_fecha_ingreso_1'].notna().sum() >= df['_fecha_ingreso_2'].notna().sum():
+                        df['_fecha_ingreso'] = df['_fecha_ingreso_1']
+                        st.write("**Usando método:** pd.to_datetime con dayfirst=True")
+                    else:
+                        df['_fecha_ingreso'] = df['_fecha_ingreso_2']
+                        st.write("**Usando método:** formato específico '%d/%m/%Y'")
+                    
+                    # Extraer solo la fecha (sin hora)
+                    df['_fecha_solo'] = df['_fecha_ingreso'].dt.date
+                    
+                    # Mostrar ejemplos de fechas convertidas
+                    st.write(f"**Ejemplos de fechas convertidas:**")
+                    st.write(df['_fecha_solo'].head(10).tolist())
+                    
                     # Normalizar ciudad operativa
                     df['_ciudad_operativa'] = df[col_ciudad].astype(str).str.upper().str.strip()
                     
-                    # Guardar solo las columnas necesarias
-                    dfs[hoja] = df[['_fecha_ingreso', '_ciudad_operativa']].copy()
+                    # Mostrar ejemplos de ciudades
+                    st.write(f"**Ejemplos de valores en {col_ciudad}:**")
+                    st.write(df[col_ciudad].head(10).tolist())
+                    st.write(f"**Valores únicos de ciudades (primeros 20):**")
+                    st.write(df['_ciudad_operativa'].unique()[:20].tolist())
                     
-                    # Mostrar información de depuración
-                    st.info(f"📌 Hoja EVENTO - Ejemplos de fechas convertidas: {df['_fecha_ingreso'].dropna().head(5).tolist()}")
+                    # Guardar solo las columnas necesarias
+                    dfs[hoja] = df[['_fecha_solo', '_ciudad_operativa']].copy()
+                    dfs[hoja].rename(columns={'_fecha_solo': '_fecha_ingreso'}, inplace=True)
                     
                 else:
                     st.warning(f"⚠️ Hoja {hoja}: No se encontraron las columnas necesarias")
@@ -149,6 +155,8 @@ def cargar_archivo(archivo):
     
     except Exception as e:
         st.error(f"❌ Error al cargar el archivo: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
         return False, None, None
 
 def contar_ingresos_evento(df_evento, ciudad, fecha_inicio, fecha_fin):
@@ -229,13 +237,6 @@ with st.sidebar:
     **Ingresos = Conteo de registros de la hoja EVENTO donde:**
     - FECHA INGRESO coincide con la fecha de la fila
     - CIUDAD UNIDAD OPERATIVA contiene el nombre de la ciudad
-    """)
-    
-    st.markdown("---")
-    st.markdown("**Formato de fechas:**")
-    st.markdown("""
-    - Las fechas en el archivo deben estar en formato **DD/MM/YYYY**
-    - La aplicación convierte automáticamente a este formato
     """)
 
 # Carga de archivo
