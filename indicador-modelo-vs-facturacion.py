@@ -46,56 +46,26 @@ def cargar_archivo(archivo):
             st.error(f"❌ Faltan las siguientes hojas: {', '.join(hojas_faltantes)}")
             return False, None, None
         
-        # Cargar datos y preprocesar fechas
+        # Cargar datos
         dfs = {}
         for hoja in HOJAS_REQUERIDAS:
-            df = pd.read_excel(archivo, sheet_name=hoja)
-            
-            # Identificar y convertir columna de fecha ingreso
-            col_fecha = None
-            for col in df.columns:
-                col_lower = col.lower().strip()
-                if 'fecha ingreso' in col_lower or 'fecha_ingreso' in col_lower or 'fechaing' in col_lower or 'ingreso' in col_lower:
-                    col_fecha = col
-                    break
-            
-            if col_fecha:
-                # Convertir a datetime con dayfirst=True para formato DD/MM/YYYY
-                df['_fecha_ingreso'] = pd.to_datetime(df[col_fecha], errors='coerce', dayfirst=True)
-            else:
-                df['_fecha_ingreso'] = pd.NaT
-            
-            # Identificar columna de unidad operativa (para EVENTO y PGP)
-            if hoja in ['EVENTO', 'PGP']:
-                col_unidad = None
-                for col in df.columns:
-                    col_lower = col.lower().strip()
-                    if 'unidad operativa' in col_lower or 'unidad' in col_lower or 'operativa' in col_lower or 'ciudad' in col_lower:
-                        col_unidad = col
-                        break
-                df['_unidad_operativa'] = df[col_unidad].astype(str).str.upper() if col_unidad else ''
-            
-            # Identificar columna de centro de atención (para PDTE EVENTO y PDTE PGP)
-            if hoja in ['PDTE EVENTO', 'PDTE PGP']:
-                col_centro = None
-                for col in df.columns:
-                    col_lower = col.lower().strip()
-                    if 'centro de atencion' in col_lower or 'centro' in col_lower or 'atencion' in col_lower:
-                        col_centro = col
-                        break
-                df['_centro_atencion'] = df[col_centro].astype(str).str.upper() if col_centro else ''
-            
-            dfs[hoja] = df
-            st.info(f"📄 Hoja '{hoja}': {len(df):,} registros")
+            dfs[hoja] = pd.read_excel(archivo, sheet_name=hoja)
+            st.info(f"📄 Hoja '{hoja}': {len(dfs[hoja]):,} registros")
         
-        # Encontrar fecha máxima
+        # Encontrar fecha máxima en todas las hojas
         fecha_max = datetime.now()
-        for df in dfs.values():
-            fechas_validas = df['_fecha_ingreso'].dropna()
-            if not fechas_validas.empty:
-                max_fecha = fechas_validas.max()
-                if max_fecha > fecha_max:
-                    fecha_max = max_fecha
+        
+        for hoja, df in dfs.items():
+            for col in df.columns:
+                if 'fecha' in col.lower() or 'ingreso' in col.lower() or 'factura' in col.lower():
+                    try:
+                        fechas = pd.to_datetime(df[col], errors='coerce')
+                        if not fechas.dropna().empty:
+                            max_fecha = fechas.max()
+                            if fecha_max is None or max_fecha > fecha_max:
+                                fecha_max = max_fecha
+                    except:
+                        continue
         
         return True, dfs, fecha_max
     
@@ -103,53 +73,8 @@ def cargar_archivo(archivo):
         st.error(f"❌ Error al cargar el archivo: {str(e)}")
         return False, None, None
 
-def procesar_ingresos_ciudad(dfs, ciudad, fecha_inicio, fecha_fin):
-    """Procesa ingresos para una ciudad de manera vectorizada"""
-    
-    # Generar diccionario de ingresos por fecha
-    ingresos_dict = {}
-    
-    # Procesar hojas EVENTO y PGP (filtro por unidad operativa)
-    for hoja in ['EVENTO', 'PGP']:
-        if hoja in dfs:
-            df = dfs[hoja]
-            
-            # Filtrar por unidad operativa
-            mask_unidad = df['_unidad_operativa'].str.contains(ciudad.upper(), na=False)
-            df_filtrado = df[mask_unidad]
-            
-            # Filtrar por rango de fechas
-            mask_fecha = (df_filtrado['_fecha_ingreso'] >= fecha_inicio) & (df_filtrado['_fecha_ingreso'] <= fecha_fin)
-            fechas = df_filtrado.loc[mask_fecha, '_fecha_ingreso'].dt.date
-            
-            # Contar
-            for fecha in fechas:
-                ingresos_dict[fecha] = ingresos_dict.get(fecha, 0) + 1
-    
-    # Procesar hojas PDTE EVENTO y PDTE PGP (filtro por centro de atención SAN MARCEL)
-    for hoja in ['PDTE EVENTO', 'PDTE PGP']:
-        if hoja in dfs:
-            df = dfs[hoja]
-            
-            # Filtrar por centro de atención SAN MARCEL
-            mask_centro = df['_centro_atencion'].str.contains('SAN MARCEL', na=False)
-            df_filtrado = df[mask_centro]
-            
-            # Filtrar por rango de fechas
-            mask_fecha = (df_filtrado['_fecha_ingreso'] >= fecha_inicio) & (df_filtrado['_fecha_ingreso'] <= fecha_fin)
-            fechas = df_filtrado.loc[mask_fecha, '_fecha_ingreso'].dt.date
-            
-            # Contar
-            for fecha in fechas:
-                ingresos_dict[fecha] = ingresos_dict.get(fecha, 0) + 1
-    
-    return ingresos_dict
-
-def construir_tabla(ciudad, fecha_inicio, fecha_fin, dfs):
-    """Construye la tabla con las fechas y calcula los ingresos"""
-    
-    # Procesar ingresos de manera vectorizada
-    ingresos_dict = procesar_ingresos_ciudad(dfs, ciudad, fecha_inicio, fecha_fin)
+def construir_tabla_fechas(ciudad, fecha_inicio, fecha_fin):
+    """CONSTRUYE SOLAMENTE LA TABLA CON LAS FECHAS - SIN CRUZAR DATOS"""
     
     # Generar todas las fechas del período
     fechas = []
@@ -158,18 +83,15 @@ def construir_tabla(ciudad, fecha_inicio, fecha_fin, dfs):
         fechas.append(fecha_actual)
         fecha_actual += timedelta(days=1)
     
-    # Construir DataFrame
+    # Construir DataFrame SOLO con las fechas
     datos = []
     for fecha in fechas:
-        fecha_key = fecha.date()
-        ingresos = ingresos_dict.get(fecha_key, 0)
-        
         datos.append({
             'Fecha': fecha.strftime('%Y-%m-%d'),
             'semana': fecha.isocalendar()[1],
             'año': fecha.year,
             'mes': calendar.month_name[fecha.month],
-            'ingresos': ingresos,
+            'ingresos': 0,
             'facturado modelo': 0,
             'facturado fuera modelo': 0,
             'facturado total': 0,
@@ -177,11 +99,7 @@ def construir_tabla(ciudad, fecha_inicio, fecha_fin, dfs):
         })
     
     df = pd.DataFrame(datos)
-    
-    # Filtrar solo días con ingresos > 0 para mostrar
-    df_filtrado = df[df['ingresos'] > 0]
-    
-    return df, df_filtrado
+    return df
 
 # Sidebar
 with st.sidebar:
@@ -191,13 +109,9 @@ with st.sidebar:
         st.markdown(f"- **{ciudad}:** {config['fecha_inicio'].strftime('%d/%m/%Y')}")
     
     st.markdown("---")
-    st.markdown("**Reglas de Ingresos:**")
-    st.markdown("""
-    **Ingresos = Conteo de registros donde:**
-    - EVENTO/PGP: unidad operativa = ciudad
-    - PDTE EVENTO/PDTE PGP: centro atención = SAN MARCEL
-    - Fecha ingreso está en el período
-    """)
+    st.markdown("**Hojas requeridas:**")
+    for hoja in HOJAS_REQUERIDAS:
+        st.markdown(f"- {hoja}")
 
 # Carga de archivo
 st.header("📁 Cargar Archivo")
@@ -225,6 +139,7 @@ if archivo:
                 st.session_state.fecha_hasta = fecha_max
                 
                 st.success("✅ Archivo procesado correctamente!")
+                st.info(f"📅 Última fecha disponible en los datos: {fecha_max.strftime('%d/%m/%Y')}")
 
 # Selector de fecha (disponible después de cargar)
 if st.session_state.datos_cargados:
@@ -262,94 +177,90 @@ if st.session_state.datos_cargados:
             
             # Validar que fecha_fin sea mayor que fecha_inicio
             if fecha_fin < fecha_inicio:
-                st.warning(f"⚠️ La fecha seleccionada ({fecha_fin.strftime('%d/%m/%Y')}) es anterior a la fecha de inicio de {ciudad}")
+                st.warning(f"⚠️ La fecha seleccionada ({fecha_fin.strftime('%d/%m/%Y')}) es anterior a la fecha de inicio de {ciudad} ({fecha_inicio.strftime('%d/%m/%Y')})")
+                st.info(f"Por favor, selecciona una fecha posterior al {fecha_inicio.strftime('%d/%m/%Y')}")
                 continue
             
-            with st.spinner(f"Procesando {ciudad}..."):
-                # Construir tabla con ingresos
-                df_completa, df_filtrado = construir_tabla(
-                    ciudad,
-                    fecha_inicio,
-                    fecha_fin,
-                    st.session_state.dfs
+            # Construir tabla SOLO con fechas (sin cruce de datos)
+            df_tabla = construir_tabla_fechas(ciudad, fecha_inicio, fecha_fin)
+            
+            if len(df_tabla) > 0:
+                # Métricas (todas en 0 por ahora)
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    st.metric("📥 Total Ingresos", "0")
+                with col2:
+                    st.metric("✅ Facturado Modelo", "0")
+                with col3:
+                    st.metric("❌ Facturado Fuera", "0")
+                with col4:
+                    st.metric("💰 Facturado Total", "0")
+                with col5:
+                    st.metric("⚠️ Novedades", "0")
+                
+                # Mostrar tabla
+                st.dataframe(
+                    df_tabla,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                        "semana": "Semana",
+                        "año": "Año",
+                        "mes": "Mes",
+                        "ingresos": st.column_config.NumberColumn("Ingresos", format="%d"),
+                        "facturado modelo": st.column_config.NumberColumn("Fact. Modelo", format="%d"),
+                        "facturado fuera modelo": st.column_config.NumberColumn("Fact. Fuera", format="%d"),
+                        "facturado total": st.column_config.NumberColumn("Fact. Total", format="%d"),
+                        "Novedades": st.column_config.NumberColumn("Novedades", format="%d")
+                    }
                 )
                 
-                if len(df_filtrado) > 0:
-                    # Métricas
-                    total_ingresos = df_completa['ingresos'].sum()
-                    
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    with col1:
-                        st.metric("📥 Total Ingresos", f"{total_ingresos:,}")
-                    with col2:
-                        st.metric("✅ Facturado Modelo", "Pendiente")
-                    with col3:
-                        st.metric("❌ Facturado Fuera", "Pendiente")
-                    with col4:
-                        st.metric("💰 Facturado Total", "Pendiente")
-                    with col5:
-                        st.metric("⚠️ Novedades", "Pendiente")
-                    
-                    # Mostrar tabla
-                    st.dataframe(
-                        df_filtrado,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
-                            "semana": "Semana",
-                            "año": "Año",
-                            "mes": "Mes",
-                            "ingresos": st.column_config.NumberColumn("Ingresos", format="%d"),
-                            "facturado modelo": st.column_config.NumberColumn("Fact. Modelo", format="%d"),
-                            "facturado fuera modelo": st.column_config.NumberColumn("Fact. Fuera", format="%d"),
-                            "facturado total": st.column_config.NumberColumn("Fact. Total", format="%d"),
-                            "Novedades": st.column_config.NumberColumn("Novedades", format="%d")
-                        }
-                    )
+                # Información del período
+                st.caption(f"📅 Mostrando {len(df_tabla)} días desde {fecha_inicio.strftime('%d/%m/%Y')} hasta {fecha_fin.strftime('%d/%m/%Y')}")
+                st.info("ℹ️ Los valores numéricos están en 0 temporalmente. Próximamente se agregará el cruce con los datos del archivo.")
+                
+                # Exportar datos
+                st.subheader("💾 Exportar Datos")
+                
+                col1, col2 = st.columns(2)
+                
+                # CSV
+                csv = df_tabla.to_csv(index=False).encode('utf-8')
+                col1.download_button(
+                    "📥 Descargar CSV",
+                    csv,
+                    f"{ciudad.lower()}_estructura_fechas.csv",
+                    "text/csv",
+                    key=f"csv_{ciudad}"
+                )
+                
+                # Excel
+                from io import BytesIO
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_tabla.to_excel(writer, sheet_name='Estructura Fechas', index=False)
                     
                     # Información del período
-                    st.caption(f"📅 Mostrando {len(df_filtrado)} días con ingresos")
-                    
-                    # Gráfico de ingresos
-                    if len(df_filtrado) > 1:
-                        st.subheader("📈 Evolución de Ingresos")
-                        chart_data = df_filtrado[['ingresos']].copy()
-                        chart_data.index = pd.to_datetime(df_filtrado['Fecha'])
-                        st.line_chart(chart_data)
-                    
-                    # Exportar datos
-                    st.subheader("💾 Exportar Datos")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    # CSV
-                    csv = df_completa.to_csv(index=False).encode('utf-8')
-                    col1.download_button(
-                        "📥 Descargar CSV",
-                        csv,
-                        f"{ciudad.lower()}_ingresos.csv",
-                        "text/csv",
-                        key=f"csv_{ciudad}"
-                    )
-                    
-                    # Excel
-                    from io import BytesIO
-                    output = BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_completa.to_excel(writer, sheet_name='Todos los días', index=False)
-                        df_filtrado.to_excel(writer, sheet_name='Días con ingresos', index=False)
-                    
-                    col2.download_button(
-                        "📥 Descargar Excel",
-                        output.getvalue(),
-                        f"{ciudad.lower()}_ingresos.xlsx",
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"excel_{ciudad}"
-                    )
-                    
-                else:
-                    st.info(f"No hay ingresos para {ciudad} en el período seleccionado")
+                    info = pd.DataFrame([
+                        ['Ciudad', ciudad],
+                        ['Fecha Inicio', fecha_inicio.strftime('%d/%m/%Y')],
+                        ['Fecha Fin', fecha_fin.strftime('%d/%m/%Y')],
+                        ['Total Días', len(df_tabla)],
+                        ['Nota', 'Estructura sin cruce de datos aún']
+                    ], columns=['Información', 'Valor'])
+                    info.to_excel(writer, sheet_name='Información', index=False)
+                
+                col2.download_button(
+                    "📥 Descargar Excel",
+                    output.getvalue(),
+                    f"{ciudad.lower()}_estructura_fechas.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"excel_{ciudad}"
+                )
+                
+            else:
+                st.info(f"No hay fechas para mostrar para {ciudad}")
     
     # Botón para reiniciar
     st.markdown("---")
@@ -366,4 +277,4 @@ else:
         st.info("⏳ Presiona 'Procesar Archivo' para cargar los datos")
 
 st.markdown("---")
-st.caption("Aplicación para análisis de facturación por ciudad")
+st.caption("Aplicación para análisis de facturación por ciudad - Versión con estructura de fechas")
