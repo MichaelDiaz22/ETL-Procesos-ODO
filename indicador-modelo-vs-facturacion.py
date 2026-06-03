@@ -123,8 +123,8 @@ def normalizar_texto(texto):
     texto_str = " ".join(texto_str.split())
     return texto_str
 
-def procesar_hoja_ingresos_general(df, nombre_hoja, unidades_filtro, config, usar_unidad_operativa=True):
-    """Procesa cualquier hoja para ingresos (EVENTO, PGP, PDTE)"""
+def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, config):
+    """Procesa hojas EVENTO y PGP para ingresos"""
     col_fecha = None
     for col in df.columns:
         if 'fecha ingreso' in col.lower():
@@ -138,19 +138,11 @@ def procesar_hoja_ingresos_general(df, nombre_hoja, unidades_filtro, config, usa
             break
     
     col_unidad_operativa = None
-    if usar_unidad_operativa:
-        for col in df.columns:
-            col_lower = col.lower().strip()
-            if 'unidad operativa' in col_lower or 'ciudad unidad operativa' in col_lower:
-                col_unidad_operativa = col
-                break
-    
-    col_centro = None
-    if not usar_unidad_operativa and config['centro_atencion']:
-        for col in df.columns:
-            if 'centro de atencion' in col.lower():
-                col_centro = col
-                break
+    for col in df.columns:
+        col_lower = col.lower().strip()
+        if 'unidad operativa' in col_lower or 'ciudad unidad operativa' in col_lower:
+            col_unidad_operativa = col
+            break
     
     if not col_fecha or not col_unidad_funcional:
         return pd.DataFrame()
@@ -163,7 +155,7 @@ def procesar_hoja_ingresos_general(df, nombre_hoja, unidades_filtro, config, usa
     
     valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
     
-    # Filtrar por unidades funcionales seleccionadas que contengan la palabra clave
+    # Filtrar por unidades funcionales seleccionadas
     if unidades_filtro and len(unidades_filtro) > 0:
         unidades_filtro_sede = [u for u in unidades_filtro if any(clave in u for clave in config['unidades_clave'])]
         if unidades_filtro_sede:
@@ -178,17 +170,70 @@ def procesar_hoja_ingresos_general(df, nombre_hoja, unidades_filtro, config, usa
         '_valor_funcional': valores_funcionales
     })[mask_unidades]
     
-    # Filtrar por unidad operativa (para EVENTO/PGP) o por centro de atención (para PDTE)
-    if usar_unidad_operativa and col_unidad_operativa and not df_temp.empty:
+    # Filtrar por unidad operativa
+    if col_unidad_operativa and not df_temp.empty:
         valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
         mask_operativa = valores_unidad_operativa == config['unidad_operativa']
-        df_temp = df_temp[mask_operativa]
-    elif not usar_unidad_operativa and col_centro and config['centro_atencion'] and not df_temp.empty:
-        centros_normalizados = [normalizar_texto(v) for v in df[col_centro]]
+        # Aplicar máscara solo a las filas que ya tenemos en df_temp
+        df_temp = df_temp[mask_operativa[mask_unidades]]
+    
+    return df_temp
+
+def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
+    """Procesa hojas PDTE EVENTO y PDTE PGP para ingresos"""
+    col_fecha = None
+    for col in df.columns:
+        if 'fecha ingreso' in col.lower():
+            col_fecha = col
+            break
+    
+    col_unidad_funcional = None
+    for col in df.columns:
+        if 'unidad funcional ingreso' in col.lower():
+            col_unidad_funcional = col
+            break
+    
+    col_centro = None
+    for col in df.columns:
+        if 'centro de atencion' in col.lower():
+            col_centro = col
+            break
+    
+    if not col_fecha or not col_unidad_funcional or not config['centro_atencion']:
+        return pd.DataFrame()
+    
+    # Convertir fechas
+    fechas_convertidas = []
+    for v in df[col_fecha]:
+        fecha = convertir_fecha_excel(v)
+        fechas_convertidas.append(fecha.date() if fecha else None)
+    
+    valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
+    
+    # Filtrar por unidades funcionales seleccionadas
+    if unidades_filtro and len(unidades_filtro) > 0:
+        unidades_filtro_sede = [u for u in unidades_filtro if any(clave in u for clave in config['unidades_clave'])]
+        if unidades_filtro_sede:
+            mask_unidades = valores_funcionales.isin(unidades_filtro_sede)
+        else:
+            return pd.DataFrame()
+    else:
+        mask_unidades = valores_funcionales.str.contains('|'.join(config['unidades_clave']), na=False, regex=False)
+    
+    # Crear DataFrame temporal
+    df_temp = pd.DataFrame({
+        '_fecha': fechas_convertidas,
+        '_valor_funcional': valores_funcionales
+    })[mask_unidades]
+    
+    # Filtrar por centro de atención
+    if col_centro and not df_temp.empty:
+        centros_normalizados = df[col_centro].astype(str).str.upper().str.strip()
+        centros_normalizados = [normalizar_texto(c) for c in centros_normalizados]
         centro_upper = normalizar_texto(config['centro_atencion'])
         mask_centro = [c == centro_upper for c in centros_normalizados]
-        # Aplicar máscara a las mismas filas que ya tenemos en df_temp
-        df_temp = df_temp.iloc[mask_centro]
+        # Aplicar máscara solo a las filas que ya tenemos en df_temp
+        df_temp = df_temp[mask_centro[mask_unidades]]
     
     return df_temp
 
@@ -225,7 +270,7 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
     
     valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
     
-    # Filtrar por unidades funcionales seleccionadas que contengan la palabra clave
+    # Filtrar por unidades funcionales seleccionadas
     if unidades_filtro and len(unidades_filtro) > 0:
         unidades_filtro_sede = [u for u in unidades_filtro if any(clave in u for clave in config['unidades_clave'])]
         if unidades_filtro_sede:
@@ -245,7 +290,7 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
     if col_unidad_operativa and not df_temp.empty:
         valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
         mask_operativa = valores_unidad_operativa == config['unidad_operativa']
-        df_temp = df_temp[mask_operativa]
+        df_temp = df_temp[mask_operativa[mask_unidades]]
     
     return df_temp
 
@@ -320,22 +365,28 @@ def cargar_archivo(archivo, unidades_filtro):
         dfs_ingresos = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion = {sede: [] for sede in SEDES.keys()}
         
-        # Procesar todas las hojas para ingresos (EVENTO, PGP, PDTE EVENTO, PDTE PGP)
-        for hoja in HOJAS_REQUERIDAS:
+        # Procesar hojas EVENTO y PGP
+        for hoja in ['EVENTO', 'PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
-            usar_unidad_operativa = (hoja in ['EVENTO', 'PGP'])
             
             for sede, config in SEDES.items():
-                # Ingresos
-                df_ing = procesar_hoja_ingresos_general(df, hoja, unidades_filtro, config, usar_unidad_operativa)
+                df_ing = procesar_hoja_ingresos_evento_pgp(df, hoja, unidades_filtro, config)
                 if not df_ing.empty:
                     dfs_ingresos[sede].append(df_ing)
                 
-                # Facturación (solo para EVENTO y PGP)
-                if hoja in ['EVENTO', 'PGP']:
-                    df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro, config)
-                    if not df_fac.empty:
-                        dfs_facturacion[sede].append(df_fac)
+                df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro, config)
+                if not df_fac.empty:
+                    dfs_facturacion[sede].append(df_fac)
+        
+        # Procesar hojas PDTE EVENTO y PDTE PGP
+        for hoja in ['PDTE EVENTO', 'PDTE PGP']:
+            df = pd.read_excel(archivo, sheet_name=hoja)
+            
+            for sede, config in SEDES.items():
+                if config['centro_atencion']:
+                    df_ing = procesar_hoja_ingresos_pdte(df, hoja, unidades_filtro, config)
+                    if not df_ing.empty:
+                        dfs_ingresos[sede].append(df_ing)
         
         # Cargar novedades
         df_novedades = None
@@ -359,7 +410,7 @@ def cargar_archivo(archivo, unidades_filtro):
         
         # Mostrar resumen
         st.write("---")
-        st.write("### 📊 RESUMEN DE INGRESOS (TODAS LAS HOJAS CON FILTRO DE UNIDAD FUNCIONAL)")
+        st.write("### 📊 RESUMEN DE INGRESOS")
         for sede in SEDES.keys():
             total = len(dfs_resultado[f'INGRESOS_{sede}'])
             st.write(f"**{sede}:** {total:,} registros")
@@ -368,6 +419,8 @@ def cargar_archivo(archivo, unidades_filtro):
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
         return False, None, None
 
 def contar_ingresos_sede(df_ingresos, fecha_inicio, fecha_fin):
@@ -545,7 +598,6 @@ with st.sidebar:
     for sede, config in SEDES.items():
         fecha_str = config['fecha_inicio'].strftime('%d/%m/%Y')
         st.markdown(f"**{sede}:** Inicio {fecha_str}")
-        st.markdown(f"  - Unidad Operativa/Centro: {config.get('unidad_operativa', config.get('centro_atencion', 'N/A'))}")
 
 # Interfaz principal
 st.header("📁 Cargar Archivo")
