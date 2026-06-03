@@ -122,6 +122,7 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_
             break
     
     if col_fecha and col_unidad_funcional:
+        # Convertir fechas
         fechas_convertidas = []
         for v in df[col_fecha]:
             fecha = convertir_fecha_excel(v)
@@ -129,21 +130,25 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_
         
         valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        # Primero filtrar por las unidades funcionales seleccionadas por el usuario
+        # IMPORTANTE: Si hay unidades seleccionadas, solo esas cuentan
         if unidades_filtro and len(unidades_filtro) > 0:
-            mask_funcional = valores_funcionales.isin(unidades_filtro)
+            # Primero, obtener las unidades seleccionadas que contienen la palabra clave
+            unidades_filtro_sede = [u for u in unidades_filtro if palabra_clave in u]
+            
+            if unidades_filtro_sede:
+                # Solo contar las unidades seleccionadas que coinciden con la palabra clave
+                mask_unidades = valores_funcionales.isin(unidades_filtro_sede)
+            else:
+                # Si ninguna unidad seleccionada contiene la palabra clave, no hay registros
+                return pd.DataFrame()
         else:
-            mask_funcional = pd.Series([True] * len(df))
+            # Sin filtro de unidades, contar todas las que contienen la palabra clave
+            mask_unidades = valores_funcionales.str.contains(palabra_clave, na=False, regex=False)
         
         df_temp = pd.DataFrame({
             '_fecha': fechas_convertidas,
             '_valor_funcional': valores_funcionales
-        })[mask_funcional]
-        
-        # Luego aplicar filtro de palabra clave (sede) solo sobre las unidades seleccionadas
-        if palabra_clave and not df_temp.empty:
-            mask_palabra = df_temp['_valor_funcional'].str.contains(palabra_clave, na=False, regex=False)
-            df_temp = df_temp[mask_palabra]
+        })[mask_unidades]
         
         return df_temp
     return pd.DataFrame()
@@ -210,22 +215,26 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave):
         
         valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        # Primero filtrar por las unidades funcionales seleccionadas por el usuario
+        # IMPORTANTE: Si hay unidades seleccionadas, solo esas cuentan
         if unidades_filtro and len(unidades_filtro) > 0:
-            mask_funcional = valores_funcionales.isin(unidades_filtro)
+            # Primero, obtener las unidades seleccionadas que contienen la palabra clave
+            unidades_filtro_sede = [u for u in unidades_filtro if palabra_clave in u]
+            
+            if unidades_filtro_sede:
+                # Solo contar las unidades seleccionadas que coinciden con la palabra clave
+                mask_unidades = valores_funcionales.isin(unidades_filtro_sede)
+            else:
+                # Si ninguna unidad seleccionada contiene la palabra clave, no hay registros
+                return pd.DataFrame()
         else:
-            mask_funcional = pd.Series([True] * len(df))
+            # Sin filtro de unidades, contar todas las que contienen la palabra clave
+            mask_unidades = valores_funcionales.str.contains(palabra_clave, na=False, regex=False)
         
         df_temp = pd.DataFrame({
             '_fecha_ingreso': fechas_ingreso,
             '_fecha_factura': fechas_factura,
             '_valor_funcional': valores_funcionales
-        })[mask_funcional]
-        
-        # Luego aplicar filtro de palabra clave (sede) solo sobre las unidades seleccionadas
-        if palabra_clave and not df_temp.empty:
-            mask_palabra = df_temp['_valor_funcional'].str.contains(palabra_clave, na=False, regex=False)
-            df_temp = df_temp[mask_palabra]
+        })[mask_unidades]
         
         return df_temp
     return pd.DataFrame()
@@ -317,7 +326,7 @@ def cargar_archivo(archivo, unidades_filtro):
                 if not df_fac.empty:
                     dfs_facturacion[sede].append(df_fac)
         
-        # Procesar hojas PDTE (solo para sedes con centro_atencion definido)
+        # Procesar hojas PDTE
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
             
@@ -563,6 +572,14 @@ if archivo:
             options=st.session_state.unidades_funcionales,
             default=st.session_state.unidades_seleccionadas
         )
+        
+        # Mostrar cuántas unidades seleccionadas contienen cada palabra clave
+        if st.session_state.unidades_seleccionadas:
+            st.markdown("---")
+            st.markdown("**📊 Vista previa del filtro:**")
+            for sede, config in SEDES.items():
+                unidades_sede = [u for u in st.session_state.unidades_seleccionadas if config['palabra_clave'] in u]
+                st.write(f"**{sede}:** {len(unidades_sede)} unidades seleccionadas que contienen '{config['palabra_clave']}'")
     
     st.markdown("---")
     
@@ -624,6 +641,12 @@ if st.session_state.datos_cargados:
             
             df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
             df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
+            
+            # Mostrar estadísticas de la sede
+            with st.expander(f"📊 Estadísticas de {sede}", expanded=False):
+                st.write(f"**Registros de ingreso para {sede}:** {len(df_ingresos):,}")
+                if not df_ingresos.empty:
+                    st.write(f"**Rango de fechas de ingreso:** {df_ingresos['_fecha'].min()} a {df_ingresos['_fecha'].max()}")
             
             # Selector de período
             periodo = st.selectbox(
@@ -688,7 +711,7 @@ if st.session_state.datos_cargados:
                         key=f"excel_{sede}_{periodo}"
                     )
                 else:
-                    st.info(f"No hay datos para {sede} en el período selecionado")
+                    st.info(f"No hay datos para {sede} en el período seleccionado")
     
     if st.button("🔄 Reiniciar"):
         for key in list(st.session_state.keys()):
