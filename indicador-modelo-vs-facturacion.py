@@ -122,7 +122,6 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_
             break
     
     if col_fecha and col_unidad_funcional:
-        # Convertir fechas
         fechas_convertidas = []
         for v in df[col_fecha]:
             fecha = convertir_fecha_excel(v)
@@ -130,41 +129,23 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_
         
         valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        # DEBUG: Mostrar valores únicos de unidades funcionales
-        with st.expander(f"🔍 DEBUG - {nombre_hoja} - Valores únicos en UNIDAD FUNCIONAL INGRESO (primeros 20)"):
-            valores_unicos = valores_funcionales.unique()[:20]
-            st.write(valores_unicos)
-        
-        # Aplicar filtro de palabra clave (sede)
-        if palabra_clave:
-            mask_palabra = valores_funcionales.str.contains(palabra_clave, na=False, regex=False)
-            st.write(f"DEBUG - {nombre_hoja} - Palabra clave '{palabra_clave}': {mask_palabra.sum()} registros coinciden")
+        # Primero filtrar por las unidades funcionales seleccionadas por el usuario
+        if unidades_filtro and len(unidades_filtro) > 0:
+            mask_funcional = valores_funcionales.isin(unidades_filtro)
         else:
-            mask_palabra = pd.Series([True] * len(df))
+            mask_funcional = pd.Series([True] * len(df))
         
         df_temp = pd.DataFrame({
             '_fecha': fechas_convertidas,
             '_valor_funcional': valores_funcionales
-        })[mask_palabra]
+        })[mask_funcional]
         
-        st.write(f"DEBUG - {nombre_hoja} - Después de filtro por palabra clave: {len(df_temp)} registros")
-        
-        # Aplicar filtro de unidades funcionales seleccionadas por el usuario
-        if unidades_filtro and len(unidades_filtro) > 0:
-            st.write(f"DEBUG - {nombre_hoja} - Unidades funcionales seleccionadas: {unidades_filtro}")
-            mask_funcional = df_temp['_valor_funcional'].isin(unidades_filtro)
-            df_temp = df_temp[mask_funcional]
-            st.write(f"DEBUG - {nombre_hoja} - Después de filtro por unidades seleccionadas: {len(df_temp)} registros")
-        
-        # Mostrar rango de fechas
-        if not df_temp.empty:
-            fechas_validas = df_temp['_fecha'].dropna()
-            if not fechas_validas.empty:
-                st.write(f"DEBUG - {nombre_hoja} - Rango de fechas: {fechas_validas.min()} a {fechas_validas.max()}")
+        # Luego aplicar filtro de palabra clave (sede) solo sobre las unidades seleccionadas
+        if palabra_clave and not df_temp.empty:
+            mask_palabra = df_temp['_valor_funcional'].str.contains(palabra_clave, na=False, regex=False)
+            df_temp = df_temp[mask_palabra]
         
         return df_temp
-    else:
-        st.warning(f"DEBUG - {nombre_hoja} - No se encontraron columnas necesarias. Fecha: {col_fecha}, Unidad Funcional: {col_unidad_funcional}")
     return pd.DataFrame()
 
 def procesar_hoja_ingresos_pdte(df, nombre_hoja, centro_atencion):
@@ -190,11 +171,6 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, centro_atencion):
         centros_normalizados = [normalizar_texto(v) for v in df[col_centro]]
         centro_upper = normalizar_texto(centro_atencion)
         
-        # DEBUG: Mostrar valores únicos de centros
-        with st.expander(f"🔍 DEBUG - {nombre_hoja} - Valores únicos en CENTRO DE ATENCION (primeros 20)"):
-            valores_unicos = df[col_centro].dropna().unique()[:20]
-            st.write(valores_unicos)
-        
         df_procesado = pd.DataFrame({
             '_fecha': fechas_convertidas,
             '_centro': centros_normalizados
@@ -202,8 +178,6 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, centro_atencion):
         
         mask_centro = df_procesado['_centro'] == centro_upper
         df_procesado = df_procesado[mask_centro]
-        
-        st.write(f"DEBUG - {nombre_hoja} - Centro buscado '{centro_upper}': {len(df_procesado)} registros coinciden")
         
         return df_procesado
     return pd.DataFrame()
@@ -236,22 +210,22 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave):
         
         valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        # Aplicar filtro de palabra clave (sede)
-        if palabra_clave:
-            mask_palabra = valores_funcionales.str.contains(palabra_clave, na=False, regex=False)
+        # Primero filtrar por las unidades funcionales seleccionadas por el usuario
+        if unidades_filtro and len(unidades_filtro) > 0:
+            mask_funcional = valores_funcionales.isin(unidades_filtro)
         else:
-            mask_palabra = pd.Series([True] * len(df))
+            mask_funcional = pd.Series([True] * len(df))
         
         df_temp = pd.DataFrame({
             '_fecha_ingreso': fechas_ingreso,
             '_fecha_factura': fechas_factura,
             '_valor_funcional': valores_funcionales
-        })[mask_palabra]
+        })[mask_funcional]
         
-        # Aplicar filtro de unidades funcionales seleccionadas por el usuario
-        if unidades_filtro and len(unidades_filtro) > 0:
-            mask_funcional = df_temp['_valor_funcional'].isin(unidades_filtro)
-            df_temp = df_temp[mask_funcional]
+        # Luego aplicar filtro de palabra clave (sede) solo sobre las unidades seleccionadas
+        if palabra_clave and not df_temp.empty:
+            mask_palabra = df_temp['_valor_funcional'].str.contains(palabra_clave, na=False, regex=False)
+            df_temp = df_temp[mask_palabra]
         
         return df_temp
     return pd.DataFrame()
@@ -324,74 +298,50 @@ def cargar_archivo(archivo, unidades_filtro):
             st.error(f"Faltan hojas: {', '.join(hojas_faltantes)}")
             return False, None, None
         
-        st.write("---")
-        st.write("### 🔍 DEBUG - PROCESAMIENTO DE INGRESOS")
-        
         # Inicializar diccionarios para cada sede
         dfs_ingresos = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion = {sede: [] for sede in SEDES.keys()}
         
         # Procesar hojas EVENTO y PGP
         for hoja in ['EVENTO', 'PGP']:
-            st.write(f"\n**📄 Procesando hoja: {hoja}**")
             df = pd.read_excel(archivo, sheet_name=hoja)
-            st.write(f"Total registros en {hoja}: {len(df):,}")
             
             for sede, config in SEDES.items():
-                st.write(f"\n  **Sede: {sede}** - Palabra clave: '{config['palabra_clave']}'")
-                
                 # Ingresos
-                df_ing = procesar_hoja_ingresos_evento_pgp(df, f"{hoja}_{sede}", unidades_filtro, config['palabra_clave'])
+                df_ing = procesar_hoja_ingresos_evento_pgp(df, hoja, unidades_filtro, config['palabra_clave'])
                 if not df_ing.empty:
                     dfs_ingresos[sede].append(df_ing)
-                    st.write(f"    ✅ Registros después de filtros: {len(df_ing):,}")
-                else:
-                    st.write(f"    ❌ No se encontraron registros")
+                
+                # Facturación
+                df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro, config['palabra_clave'])
+                if not df_fac.empty:
+                    dfs_facturacion[sede].append(df_fac)
         
-        # Procesar hojas PDTE
+        # Procesar hojas PDTE (solo para sedes con centro_atencion definido)
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
-            st.write(f"\n**📄 Procesando hoja: {hoja}**")
             df = pd.read_excel(archivo, sheet_name=hoja)
-            st.write(f"Total registros en {hoja}: {len(df):,}")
             
             for sede, config in SEDES.items():
                 if config['centro_atencion']:
-                    st.write(f"\n  **Sede: {sede}** - Centro: '{config['centro_atencion']}'")
-                    df_ing = procesar_hoja_ingresos_pdte(df, f"{hoja}_{sede}", config['centro_atencion'])
+                    df_ing = procesar_hoja_ingresos_pdte(df, hoja, config['centro_atencion'])
                     if not df_ing.empty:
                         dfs_ingresos[sede].append(df_ing)
-                        st.write(f"    ✅ Registros después de filtros: {len(df_ing):,}")
-                    else:
-                        st.write(f"    ❌ No se encontraron registros")
-                else:
-                    st.write(f"\n  **Sede: {sede}** - Sin centro de atención definido, no se procesa PDTE")
         
         # Cargar novedades
         df_novedades = None
         if HOJA_NOVEDADES in hojas_disponibles:
             df_novedades = pd.read_excel(archivo, sheet_name=HOJA_NOVEDADES)
         
-        # Combinar resultados y mostrar resumen final
-        st.write("\n---")
-        st.write("### 📊 RESUMEN FINAL POR SEDE")
-        
+        # Combinar resultados
         dfs_resultado = {}
         for sede in SEDES.keys():
             if dfs_ingresos[sede]:
-                df_combinado = pd.concat(dfs_ingresos[sede], ignore_index=True)
-                dfs_resultado[f'INGRESOS_{sede}'] = df_combinado
-                st.write(f"\n**{sede}:**")
-                st.write(f"  - Total registros de ingreso combinados: {len(df_combinado):,}")
-                if not df_combinado.empty:
-                    fechas_validas = df_combinado['_fecha'].dropna()
-                    st.write(f"  - Rango de fechas: {fechas_validas.min()} a {fechas_validas.max()}")
+                dfs_resultado[f'INGRESOS_{sede}'] = pd.concat(dfs_ingresos[sede], ignore_index=True)
             else:
                 dfs_resultado[f'INGRESOS_{sede}'] = pd.DataFrame()
-                st.write(f"\n**{sede}:** Sin registros")
             
             if dfs_facturacion[sede]:
-                df_resultado_fac = pd.concat(dfs_facturacion[sede], ignore_index=True)
-                dfs_resultado[f'FACTURACION_{sede}'] = df_resultado_fac
+                dfs_resultado[f'FACTURACION_{sede}'] = pd.concat(dfs_facturacion[sede], ignore_index=True)
             else:
                 dfs_resultado[f'FACTURACION_{sede}'] = pd.DataFrame()
         
@@ -401,20 +351,14 @@ def cargar_archivo(archivo, unidades_filtro):
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
         return False, None, None
 
 def contar_ingresos_sede(df_ingresos, fecha_inicio, fecha_fin):
     if df_ingresos.empty:
         return {}
     
-    st.write(f"  - Contando ingresos entre {fecha_inicio.date()} y {fecha_fin.date()}")
-    
     mask_fecha = (df_ingresos['_fecha'] >= fecha_inicio.date()) & (df_ingresos['_fecha'] <= fecha_fin.date())
     df_filtrado = df_ingresos[mask_fecha]
-    
-    st.write(f"  - Registros en el rango: {len(df_filtrado):,}")
     
     conteo = {}
     for fecha in df_filtrado['_fecha']:
@@ -681,15 +625,6 @@ if st.session_state.datos_cargados:
             df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
             df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
             
-            # Mostrar debug de la sede actual
-            with st.expander(f"🔍 Debug - {sede}", expanded=True):
-                st.write(f"**Registros de ingreso totales:** {len(df_ingresos):,}")
-                if not df_ingresos.empty:
-                    st.write(f"**Rango de fechas en ingreso:** {df_ingresos['_fecha'].min()} a {df_ingresos['_fecha'].max()}")
-                st.write(f"**Registros de facturación totales:** {len(df_facturacion):,}")
-                if not df_facturacion.empty:
-                    st.write(f"**Rango de fechas en facturación:** {df_facturacion['_fecha_factura'].min()} a {df_facturacion['_fecha_factura'].max()}")
-            
             # Selector de período
             periodo = st.selectbox(
                 "📊 Agrupar por:",
@@ -753,7 +688,7 @@ if st.session_state.datos_cargados:
                         key=f"excel_{sede}_{periodo}"
                     )
                 else:
-                    st.info(f"No hay datos para {sede} en el período seleccionado")
+                    st.info(f"No hay datos para {sede} en el período selecionado")
     
     if st.button("🔄 Reiniciar"):
         for key in list(st.session_state.keys()):
@@ -764,4 +699,4 @@ else:
     st.info("👆 Carga un archivo Excel para comenzar")
 
 st.markdown("---")
-st.caption("Aplicación para análisis de facturación por sede - Modo DEBUG")
+st.caption("Aplicación para análisis de facturación por sede")
