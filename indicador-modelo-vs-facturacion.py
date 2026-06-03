@@ -13,32 +13,43 @@ st.set_page_config(
 st.title("📊 Tabla Resumen por Ciudad")
 st.markdown("---")
 
-# Definición de sedes con sus fechas de inicio correctas
+# Unidades funcionales por defecto
+UNIDADES_POR_DEFECTO = [
+    "CONSULTA ESPECIALIZADA SAN MARCEL",
+    "CONSULTA ESPECIALIZADA CENTENARIO",
+    "CONSULTA ESPECIALIZADA MARAYA",
+    "LABORATORIO CLINICO MARAYA",
+    "PROCEDIMIENTOS MENORES CONSULTA CENTENARIO",
+    "PROCEDIMIENTOS MENORES CONSULTA SAN MARCEL",
+    "RADIOTERAPIA CENTENARIO"
+]
+
+# Definición de sedes con sus fechas de inicio y palabras clave
 SEDES = {
     "SAN MARCEL": {
         "fecha_inicio": datetime(2025, 9, 16),
         "centro_atencion": "SAN MARCEL",
-        "palabra_clave": "SAN MARCEL"
+        "unidades_clave": ["SAN MARCEL"]
     },
     "CAT MARAYA": {
         "fecha_inicio": datetime(2026, 4, 15),
         "centro_atencion": "CLINICA DE ALTA TECNOLOGIA MARAYA",
-        "palabra_clave": "MARAYA"
+        "unidades_clave": ["MARAYA"]
     },
     "CIRCUNVALAR": {
         "fecha_inicio": datetime(2026, 4, 15),
         "centro_atencion": None,
-        "palabra_clave": "CIRCUNVALAR"
+        "unidades_clave": ["CIRCUNVALAR"]
     },
     "CENTENARIO": {
         "fecha_inicio": datetime(2025, 11, 20),
         "centro_atencion": "CENTENARIO",
-        "palabra_clave": "CENTENARIO"
+        "unidades_clave": ["CENTENARIO"]
     },
     "CAT ARMENIA": {
         "fecha_inicio": datetime(2025, 11, 20),
         "centro_atencion": None,
-        "palabra_clave": "CAT ARMENIA"
+        "unidades_clave": ["CAT ARMENIA"]
     }
 }
 
@@ -55,7 +66,7 @@ if 'fecha_hasta' not in st.session_state:
 if 'unidades_funcionales' not in st.session_state:
     st.session_state.unidades_funcionales = []
 if 'unidades_seleccionadas' not in st.session_state:
-    st.session_state.unidades_seleccionadas = []
+    st.session_state.unidades_seleccionadas = UNIDADES_POR_DEFECTO.copy()
 if 'resumen_ejecutivo' not in st.session_state:
     st.session_state.resumen_ejecutivo = None
 
@@ -107,7 +118,7 @@ def normalizar_texto(texto):
     texto_str = " ".join(texto_str.split())
     return texto_str
 
-def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_clave):
+def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, unidades_clave):
     """Procesa hojas EVENTO y PGP para ingresos usando UNIDAD FUNCIONAL INGRESO"""
     col_fecha = None
     for col in df.columns:
@@ -130,20 +141,12 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, palabra_
         
         valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        # IMPORTANTE: Si hay unidades seleccionadas, solo esas cuentan
+        # Filtrar por unidades seleccionadas
         if unidades_filtro and len(unidades_filtro) > 0:
-            # Primero, obtener las unidades seleccionadas que contienen la palabra clave
-            unidades_filtro_sede = [u for u in unidades_filtro if palabra_clave in u]
-            
-            if unidades_filtro_sede:
-                # Solo contar las unidades seleccionadas que coinciden con la palabra clave
-                mask_unidades = valores_funcionales.isin(unidades_filtro_sede)
-            else:
-                # Si ninguna unidad seleccionada contiene la palabra clave, no hay registros
-                return pd.DataFrame()
+            # Solo las unidades que están en la lista de seleccionadas
+            mask_unidades = valores_funcionales.isin(unidades_filtro)
         else:
-            # Sin filtro de unidades, contar todas las que contienen la palabra clave
-            mask_unidades = valores_funcionales.str.contains(palabra_clave, na=False, regex=False)
+            mask_unidades = pd.Series([True] * len(df))
         
         df_temp = pd.DataFrame({
             '_fecha': fechas_convertidas,
@@ -187,7 +190,7 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, centro_atencion):
         return df_procesado
     return pd.DataFrame()
 
-def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave):
+def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro):
     """Procesa hojas EVENTO y PGP para facturación"""
     col_fecha_ingreso = None
     col_fecha_factura = None
@@ -215,20 +218,11 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, palabra_clave):
         
         valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
         
-        # IMPORTANTE: Si hay unidades seleccionadas, solo esas cuentan
+        # Filtrar por unidades seleccionadas
         if unidades_filtro and len(unidades_filtro) > 0:
-            # Primero, obtener las unidades seleccionadas que contienen la palabra clave
-            unidades_filtro_sede = [u for u in unidades_filtro if palabra_clave in u]
-            
-            if unidades_filtro_sede:
-                # Solo contar las unidades seleccionadas que coinciden con la palabra clave
-                mask_unidades = valores_funcionales.isin(unidades_filtro_sede)
-            else:
-                # Si ninguna unidad seleccionada contiene la palabra clave, no hay registros
-                return pd.DataFrame()
+            mask_unidades = valores_funcionales.isin(unidades_filtro)
         else:
-            # Sin filtro de unidades, contar todas las que contienen la palabra clave
-            mask_unidades = valores_funcionales.str.contains(palabra_clave, na=False, regex=False)
+            mask_unidades = pd.Series([True] * len(df))
         
         df_temp = pd.DataFrame({
             '_fecha_ingreso': fechas_ingreso,
@@ -316,13 +310,13 @@ def cargar_archivo(archivo, unidades_filtro):
             df = pd.read_excel(archivo, sheet_name=hoja)
             
             for sede, config in SEDES.items():
-                # Ingresos
-                df_ing = procesar_hoja_ingresos_evento_pgp(df, hoja, unidades_filtro, config['palabra_clave'])
+                # Ingresos - pasar unidades_filtro (no la palabra clave)
+                df_ing = procesar_hoja_ingresos_evento_pgp(df, hoja, unidades_filtro, config['unidades_clave'])
                 if not df_ing.empty:
                     dfs_ingresos[sede].append(df_ing)
                 
                 # Facturación
-                df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro, config['palabra_clave'])
+                df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro)
                 if not df_fac.empty:
                     dfs_facturacion[sede].append(df_fac)
         
@@ -559,27 +553,26 @@ archivo = st.file_uploader("Selecciona el archivo Excel", type=['xlsx', 'xls'])
 if archivo:
     st.markdown("### 🔍 Filtro por Unidad Funcional")
     
-    if st.button("📋 Cargar unidades funcionales"):
+    # Cargar unidades funcionales disponibles
+    if st.button("📋 Cargar unidades funcionales disponibles"):
         with st.spinner("Cargando..."):
             unidades = obtener_unidades_funcionales(archivo)
             st.session_state.unidades_funcionales = unidades
-            if unidades:
-                st.success(f"✅ {len(unidades)} unidades encontradas")
+            st.success(f"✅ {len(unidades)} unidades funcionales encontradas")
     
     if st.session_state.unidades_funcionales:
-        st.session_state.unidades_seleccionadas = st.multiselect(
-            "Selecciona unidades funcionales:",
+        # Mostrar selector con las unidades por defecto preseleccionadas
+        unidades_seleccionadas = st.multiselect(
+            "Selecciona unidades funcionales a incluir:",
             options=st.session_state.unidades_funcionales,
-            default=st.session_state.unidades_seleccionadas
+            default=[u for u in st.session_state.unidades_funcionales if u in UNIDADES_POR_DEFECTO]
         )
+        st.session_state.unidades_seleccionadas = unidades_seleccionadas
         
-        # Mostrar cuántas unidades seleccionadas contienen cada palabra clave
-        if st.session_state.unidades_seleccionadas:
-            st.markdown("---")
-            st.markdown("**📊 Vista previa del filtro:**")
-            for sede, config in SEDES.items():
-                unidades_sede = [u for u in st.session_state.unidades_seleccionadas if config['palabra_clave'] in u]
-                st.write(f"**{sede}:** {len(unidades_sede)} unidades seleccionadas que contienen '{config['palabra_clave']}'")
+        if unidades_seleccionadas:
+            st.info(f"📌 {len(unidades_seleccionadas)} unidades funcionales seleccionadas")
+        else:
+            st.warning("⚠️ No hay unidades funcionales seleccionadas. No se contarán ingresos.")
     
     st.markdown("---")
     
@@ -641,12 +634,6 @@ if st.session_state.datos_cargados:
             
             df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
             df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
-            
-            # Mostrar estadísticas de la sede
-            with st.expander(f"📊 Estadísticas de {sede}", expanded=False):
-                st.write(f"**Registros de ingreso para {sede}:** {len(df_ingresos):,}")
-                if not df_ingresos.empty:
-                    st.write(f"**Rango de fechas de ingreso:** {df_ingresos['_fecha'].min()} a {df_ingresos['_fecha'].max()}")
             
             # Selector de período
             periodo = st.selectbox(
