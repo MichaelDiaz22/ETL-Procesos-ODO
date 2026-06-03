@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import calendar
+import numpy as np
 
 # Configuración de la página
 st.set_page_config(
@@ -174,8 +175,8 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, config):
     if col_unidad_operativa and not df_temp.empty:
         valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
         mask_operativa = valores_unidad_operativa == config['unidad_operativa']
-        # Aplicar máscara solo a las filas que ya tenemos en df_temp
-        df_temp = df_temp[mask_operativa[mask_unidades]]
+        mask_operativa_filtrada = mask_operativa[mask_unidades]
+        df_temp = df_temp[mask_operativa_filtrada]
     
     return df_temp
 
@@ -223,17 +224,29 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
     # Crear DataFrame temporal
     df_temp = pd.DataFrame({
         '_fecha': fechas_convertidas,
-        '_valor_funcional': valores_funcionales
+        '_valor_funcional': valores_funcionales,
+        '_idx': range(len(df))
     })[mask_unidades]
     
     # Filtrar por centro de atención
     if col_centro and not df_temp.empty:
+        # Obtener los índices originales de las filas filtradas
+        indices_filtrados = df_temp['_idx'].values
+        # Aplicar filtro de centro solo a esas filas
         centros_normalizados = df[col_centro].astype(str).str.upper().str.strip()
         centros_normalizados = [normalizar_texto(c) for c in centros_normalizados]
         centro_upper = normalizar_texto(config['centro_atencion'])
-        mask_centro = [c == centro_upper for c in centros_normalizados]
-        # Aplicar máscara solo a las filas que ya tenemos en df_temp
-        df_temp = df_temp[mask_centro[mask_unidades]]
+        
+        # Crear máscara de centro solo para los índices filtrados
+        mask_centro_filtrada = []
+        for idx in indices_filtrados:
+            mask_centro_filtrada.append(centros_normalizados[idx] == centro_upper)
+        
+        df_temp = df_temp.iloc[mask_centro_filtrada]
+    
+    # Eliminar columna auxiliar
+    if '_idx' in df_temp.columns:
+        df_temp = df_temp.drop(columns=['_idx'])
     
     return df_temp
 
@@ -290,7 +303,8 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
     if col_unidad_operativa and not df_temp.empty:
         valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
         mask_operativa = valores_unidad_operativa == config['unidad_operativa']
-        df_temp = df_temp[mask_operativa[mask_unidades]]
+        mask_operativa_filtrada = mask_operativa[mask_unidades]
+        df_temp = df_temp[mask_operativa_filtrada]
     
     return df_temp
 
