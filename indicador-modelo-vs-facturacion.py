@@ -174,8 +174,8 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, config):
     if col_unidad_operativa and not df_temp.empty:
         valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
         mask_operativa = valores_unidad_operativa == config['unidad_operativa']
-        # Aplicar máscara solo a las filas que ya tenemos en df_temp
-        df_temp = df_temp[mask_operativa[mask_unidades]]
+        # CORREGIDO: Aplicar máscara directamente a df_temp usando loc
+        df_temp = df_temp.loc[mask_operativa[mask_unidades].values]
     
     return df_temp
 
@@ -232,8 +232,9 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
         centros_normalizados = [normalizar_texto(c) for c in centros_normalizados]
         centro_upper = normalizar_texto(config['centro_atencion'])
         mask_centro = [c == centro_upper for c in centros_normalizados]
-        # Aplicar máscara solo a las filas que ya tenemos en df_temp
-        df_temp = df_temp[mask_centro[mask_unidades]]
+        # CORREGIDO: Aplicar máscara directamente a df_temp usando loc con .values
+        mask_combinada = mask_unidades & pd.Series(mask_centro)
+        df_temp = df_temp.loc[mask_combinada[mask_unidades].values]
     
     return df_temp
 
@@ -290,7 +291,8 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
     if col_unidad_operativa and not df_temp.empty:
         valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
         mask_operativa = valores_unidad_operativa == config['unidad_operativa']
-        df_temp = df_temp[mask_operativa[mask_unidades]]
+        # CORREGIDO: Aplicar máscara directamente a df_temp usando loc con .values
+        df_temp = df_temp.loc[mask_operativa[mask_unidades].values]
     
     return df_temp
 
