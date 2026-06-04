@@ -788,6 +788,126 @@ def graficar_distribucion_motivos_meses(df_novedades_sede):
     
     return fig
 
+def generar_narrativa_ejecutiva(df_resumen):
+    """
+    Genera una narrativa automática basada en los resultados del análisis
+    """
+    if df_resumen.empty:
+        return "No hay datos suficientes para generar conclusiones."
+    
+    narrativa = []
+    narrativa.append("## 📋 ANÁLISIS Y CONCLUSIONES EJECUTIVAS\n")
+    
+    # 1. Análisis general de volumen
+    total_ingresos = sum([int(row['Ingresos'].replace(',', '')) for _, row in df_resumen.iterrows()])
+    total_facturado = sum([int(row['Facturado total'].replace(',', '')) for _, row in df_resumen.iterrows()])
+    total_novedades_pct = sum([float(row['% novedades / ingresos'].replace('%', '')) for _, row in df_resumen.iterrows()]) / len(df_resumen)
+    
+    narrativa.append("### 📊 PANORAMA GENERAL\n")
+    narrativa.append(f"Durante el período analizado, se procesaron **{total_ingresos:,} ingresos** en todas las sedes, ")
+    narrativa.append(f"de los cuales se han facturado **{total_facturado:,}** ({(total_facturado/total_ingresos*100):.1f}% del total). ")
+    narrativa.append(f"El promedio de novedades sobre ingresos es del **{total_novedades_pct:.1f}%**, ")
+    narrativa.append("lo que indica el nivel de devoluciones o ajustes necesarios en los procesos de facturación.\n")
+    
+    # 2. Identificar sede con mejor desempeño
+    df_resumen['%_facturado'] = df_resumen['% facturado total / ingresos'].str.replace('%', '').astype(float)
+    df_resumen['%_novedades'] = df_resumen['% novedades / ingresos'].str.replace('%', '').astype(float)
+    df_resumen['%_bloqueantes'] = df_resumen['% novedades bloqueantes / ingresos'].str.replace('%', '').astype(float)
+    
+    mejor_sede = df_resumen.loc[df_resumen['%_facturado'].idxmax(), 'Sede']
+    peor_sede = df_resumen.loc[df_resumen['%_facturado'].idxmin(), 'Sede']
+    menor_novedades = df_resumen.loc[df_resumen['%_novedades'].idxmin(), 'Sede']
+    mayor_novedades = df_resumen.loc[df_resumen['%_novedades'].idxmax(), 'Sede']
+    
+    narrativa.append("### 🏆 COMPARATIVO POR SEDE\n")
+    narrativa.append(f"**Mejor desempeño en facturación:** {mejor_sede} con ")
+    narrativa.append(f"{df_resumen.loc[df_resumen['Sede'] == mejor_sede, '% facturado total / ingresos'].values[0]} de facturación.\n")
+    
+    narrativa.append(f"**Sede con menor facturación:** {peor_sede} con ")
+    narrativa.append(f"{df_resumen.loc[df_resumen['Sede'] == peor_sede, '% facturado total / ingresos'].values[0]}.\n")
+    
+    narrativa.append(f"**Sede con menos novedades:** {menor_novedades} ")
+    narrativa.append(f"({df_resumen.loc[df_resumen['Sede'] == menor_novedades, '% novedades / ingresos'].values[0]}).\n")
+    
+    narrativa.append(f"**Sede con más novedades:** {mayor_novedades} ")
+    narrativa.append(f"({df_resumen.loc[df_resumen['Sede'] == mayor_novedades, '% novedades / ingresos'].values[0]}).\n")
+    
+    # 3. Análisis de brechas
+    brecha_facturacion = df_resumen['%_facturado'].max() - df_resumen['%_facturado'].min()
+    
+    narrativa.append("### ⚠️ BRECHAS Y OPORTUNIDADES\n")
+    narrativa.append(f"Existe una brecha significativa del **{brecha_facturacion:.1f}%** entre la sede con mejor y peor facturación. ")
+    
+    if brecha_facturacion > 30:
+        narrativa.append("Esta diferencia es crítica y sugiere que las sedes con bajo desempeño requieren una revisión inmediata de sus procesos de facturación.\n")
+    elif brecha_facturacion > 15:
+        narrativa.append("Esta brecha moderada indica oportunidades de mejora en las sedes con menor desempeño.\n")
+    else:
+        narrativa.append("La brecha es relativamente pequeña, lo que sugiere un desempeño homogéneo entre las sedes.\n")
+    
+    # 4. Análisis de novedades bloqueantes
+    avg_bloqueantes = df_resumen['%_bloqueantes'].mean()
+    
+    narrativa.append("### 🔒 NOVEDADES BLOQUEANTES\n")
+    narrativa.append(f"En promedio, el **{avg_bloqueantes:.1f}%** de las novedades son bloqueantes, ")
+    
+    if avg_bloqueantes > 20:
+        narrativa.append("lo cual es **CRÍTICO**. Las novedades bloqueantes afectan directamente el flujo de caja ")
+        narrativa.append("y requieren atención prioritaria para su resolución.\n")
+    elif avg_bloqueantes > 10:
+        narrativa.append("lo cual es **MODERADO**. Se recomienda implementar controles preventivos para reducir este indicador.\n")
+    else:
+        narrativa.append("lo cual es **BAJO**, indicando que la mayoría de novedades son subsanables sin mayor impacto.\n")
+    
+    # 5. Recomendaciones específicas
+    narrativa.append("### 💡 RECOMENDACIONES ESTRATÉGICAS\n")
+    
+    # Identificar sedes que necesitan atención
+    sedes_criticas = df_resumen[df_resumen['%_facturado'] < 50]['Sede'].tolist()
+    if sedes_criticas:
+        narrativa.append(f"**Prioridad Alta:** Las sedes {', '.join(sedes_criticas)} presentan facturación por debajo del 50%. ")
+        narrativa.append("Se sugiere:\n")
+        narrativa.append("  - Auditar los procesos de facturación en estas sedes\n")
+        narrativa.append("  - Revisar la asignación de recursos y personal\n")
+        narrativa.append("  - Implementar capacitaciones específicas\n")
+    
+    # Sedes con altas novedades
+    sedes_alta_novedad = df_resumen[df_resumen['%_novedades'] > 20]['Sede'].tolist()
+    if sedes_alta_novedad:
+        narrativa.append(f"**Control de Calidad:** Las sedes {', '.join(sedes_alta_novedad)} tienen más del 20% de novedades. ")
+        narrativa.append("Se recomienda:\n")
+        narrativa.append("  - Analizar las causas raíz de las devoluciones\n")
+        narrativa.append("  - Revisar los motivos más frecuentes en la gráfica de Pareto\n")
+        narrativa.append("  - Implementar acciones correctivas inmediatas\n")
+    
+    # Sedes con alto porcentaje de bloqueantes
+    sedes_bloqueantes = df_resumen[df_resumen['%_bloqueantes'] > 15]['Sede'].tolist()
+    if sedes_bloqueantes:
+        narrativa.append(f"**Gestión de Riesgo:** Las sedes {', '.join(sedes_bloqueantes)} presentan alto porcentaje de novedades bloqueantes. ")
+        narrativa.append("Es fundamental:\n")
+        narrativa.append("  - Priorizar la resolución de casos bloqueantes\n")
+        narrativa.append("  - Establecer un comité de seguimiento semanal\n")
+        narrativa.append("  - Definir planes de acción con responsables\n")
+    
+    if not sedes_criticas and not sedes_alta_novedad and not sedes_bloqueantes:
+        narrativa.append("✅ **Buen desempeño general:** Todas las sedes muestran indicadores dentro de rangos aceptables. ")
+        narrativa.append("Se recomienda mantener los controles actuales y realizar seguimiento preventivo.\n")
+    
+    # 6. Resumen ejecutivo final
+    narrativa.append("\n### 📌 CONCLUSIÓN FINAL\n")
+    
+    if total_facturado/total_ingresos*100 > 80:
+        narrativa.append(f"✅ **DESEMPEÑO EXCELENTE:** El sistema de facturación está operando al {total_facturado/total_ingresos*100:.1f}% de eficiencia. ")
+        narrativa.append("Los procesos están bien estructurados y las novedades están controladas.")
+    elif total_facturado/total_ingresos*100 > 60:
+        narrativa.append(f"⚠️ **DESEMPEÑO MODERADO:** La eficiencia de facturación es del {total_facturado/total_ingresos*100:.1f}%. ")
+        narrativa.append("Existen oportunidades de mejora identificadas en el análisis por sede.")
+    else:
+        narrativa.append(f"🔴 **DESEMPEÑO CRÍTICO:** Solo el {total_facturado/total_ingresos*100:.1f}% de los ingresos está facturado. ")
+        narrativa.append("Se requiere una intervención inmediata de la gerencia para revisar los procesos.")
+    
+    return "".join(narrativa)
+
 # Sidebar
 with st.sidebar:
     st.header("📋 Información de Sedes")
@@ -876,6 +996,25 @@ if st.session_state.datos_cargados:
                 fecha_inicio_str = row['fecha_inicio'].strftime('%d/%m/%Y')
                 fecha_fin_str = row['fecha_fin'].strftime('%d/%m/%Y')
                 st.markdown(f"- **{row['Sede']}:** {fecha_inicio_str} al {fecha_fin_str}")
+            
+            # Generar y mostrar narrativa ejecutiva
+            st.markdown("---")
+            narrativa = generar_narrativa_ejecutiva(st.session_state.resumen_ejecutivo)
+            st.markdown(narrativa)
+            
+            # Opcional: Botón para descargar el análisis
+            st.markdown("---")
+            if st.button("📥 Descargar Análisis Ejecutivo (TXT)"):
+                from io import BytesIO
+                output = BytesIO()
+                output.write(narrativa.encode('utf-8'))
+                st.download_button(
+                    label="📄 Descargar Análisis",
+                    data=output.getvalue(),
+                    file_name="analisis_ejecutivo.txt",
+                    mime="text/plain",
+                    key="download_analisis"
+                )
         else:
             st.info("No hay datos para mostrar en el resumen ejecutivo")
     
