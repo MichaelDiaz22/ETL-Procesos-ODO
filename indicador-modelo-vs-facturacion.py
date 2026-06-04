@@ -892,16 +892,10 @@ if st.session_state.datos_cargados:
             df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
             df_novedades_sede = st.session_state.dfs.get(f'NOVEDADES_DETALLE_{sede}', pd.DataFrame())
             
-            periodo = st.selectbox(
-                "📊 Agrupar por:",
-                options=['Diario', 'Semanal', 'Mensual'],
-                key=f"periodo_{sede}"
-            )
-            
             with st.spinner(f"Calculando {sede}..."):
-                # Tabla principal
+                # Tabla principal (inicialmente diaria para cálculos de totales)
                 df_tabla = construir_tabla_sede(
-                    sede, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo
+                    sede, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, 'Diario'
                 )
                 
                 if len(df_tabla) > 0:
@@ -918,6 +912,7 @@ if st.session_state.datos_cargados:
                     pct_novedades = (total_novedades / total_ingresos * 100) if total_ingresos > 0 else 0
                     pct_bloqueantes = (total_novedades_bloqueantes / total_ingresos * 100) if total_ingresos > 0 else 0
                     
+                    # Métricas en la parte superior
                     col1, col2, col3, col4, col5, col6 = st.columns(6)
                     col1.metric("📥 Total Ingresos", f"{total_ingresos:,}")
                     col2.metric("✅ Facturado Modelo", f"{total_facturado_modelo:,}", f"{pct_modelo:.1f}%")
@@ -925,6 +920,44 @@ if st.session_state.datos_cargados:
                     col4.metric("💰 Facturado Total", f"{total_facturado:,}", f"{pct_total:.1f}%")
                     col5.metric("⚠️ Novedades", f"{total_novedades:,}", f"{pct_novedades:.1f}%")
                     col6.metric("🔒 Novedades Bloqueantes", f"{total_novedades_bloqueantes:,}", f"{pct_bloqueantes:.1f}%")
+                    
+                    st.markdown("---")
+                    
+                    # Selector de agrupación
+                    periodo = st.selectbox(
+                        "📊 Agrupar por:",
+                        options=['Diario', 'Semanal', 'Mensual'],
+                        key=f"periodo_{sede}"
+                    )
+                    
+                    # Recalcular tabla con el período seleccionado
+                    df_tabla = construir_tabla_sede(
+                        sede, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo
+                    )
+                    
+                    # Tabla de datos detallados
+                    st.markdown("---")
+                    st.subheader("📋 Datos Detallados")
+                    
+                    columnas_mostrar = ['Fecha', 'ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades', 'Novedades Bloqueantes']
+                    if periodo == 'Semanal':
+                        columnas_mostrar.insert(1, 'semana')
+                    elif periodo == 'Mensual':
+                        columnas_mostrar.insert(1, 'mes')
+                    
+                    df_display = df_tabla[columnas_mostrar].copy()
+                    if 'Fecha' in df_display.columns:
+                        df_display['Fecha'] = df_display['Fecha'].dt.strftime('%Y-%m-%d')
+                    
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+                    
+                    # Gráfica de líneas (opcional)
+                    if len(df_tabla) > 1:
+                        st.markdown("---")
+                        st.subheader("📈 Tendencia de Ingresos y Facturación")
+                        chart_data = df_tabla[['ingresos', 'facturado total', 'Novedades', 'Novedades Bloqueantes']].copy()
+                        chart_data.index = df_tabla['Fecha']
+                        st.line_chart(chart_data)
                     
                     # Gráfica 1: Novedades generadas (afectada por el período seleccionado)
                     st.markdown("---")
@@ -956,28 +989,8 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos suficientes para generar la distribución por mes")
                     
-                    # Tabla de datos
-                    st.markdown("---")
-                    st.subheader("📋 Datos Detallados")
-                    
-                    columnas_mostrar = ['Fecha', 'ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades', 'Novedades Bloqueantes']
-                    if periodo == 'Semanal':
-                        columnas_mostrar.insert(1, 'semana')
-                    elif periodo == 'Mensual':
-                        columnas_mostrar.insert(1, 'mes')
-                    
-                    df_display = df_tabla[columnas_mostrar].copy()
-                    if 'Fecha' in df_display.columns:
-                        df_display['Fecha'] = df_display['Fecha'].dt.strftime('%Y-%m-%d')
-                    
-                    st.dataframe(df_display, use_container_width=True, hide_index=True)
-                    
-                    if len(df_tabla) > 1:
-                        chart_data = df_tabla[['ingresos', 'facturado total', 'Novedades', 'Novedades Bloqueantes']].copy()
-                        chart_data.index = df_tabla['Fecha']
-                        st.line_chart(chart_data)
-                    
                     # Botón de descarga
+                    st.markdown("---")
                     from io import BytesIO
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
