@@ -796,27 +796,39 @@ def generar_narrativa_ejecutiva(df_resumen):
     if df_resumen.empty:
         return "No hay datos suficientes para generar conclusiones."
     
-    # Filtrar sedes que tienen datos (ingresos > 0)
-    df_filtrado = df_resumen.copy()
-    df_filtrado['Ingresos_num'] = df_filtrado['Ingresos'].str.replace(',', '').astype(int)
-    df_filtrado = df_filtrado[df_filtrado['Ingresos_num'] > 0].copy()
+    # Crear una copia y calcular ingresos numéricos
+    df_temp = df_resumen.copy()
+    df_temp['Ingresos_num'] = df_temp['Ingresos'].str.replace(',', '').astype(int)
     
-    if df_filtrado.empty:
-        return "No hay sedes con datos válidos para generar el análisis. Todas las sedes tienen 0 ingresos en el período seleccionado."
+    # Identificar sedes excluidas
+    sedes_excluidas = df_temp[df_temp['Ingresos_num'] == 0]['Sede'].tolist()
+    
+    # Filtrar solo sedes con datos
+    df_activas = df_temp[df_temp['Ingresos_num'] > 0].copy()
+    
+    if df_activas.empty:
+        if sedes_excluidas:
+            return f"No hay sedes con datos válidos para generar el análisis. Las siguientes sedes tienen 0 ingresos en el período seleccionado: {', '.join(sedes_excluidas)}"
+        else:
+            return "No hay sedes con datos válidos para generar el análisis. Todas las sedes tienen 0 ingresos en el período seleccionado."
+    
+    # Calcular métricas para sedes activas
+    df_activas['%_facturado'] = df_activas['% facturado total / ingresos'].str.replace('%', '').astype(float)
+    df_activas['%_novedades'] = df_activas['% novedades / ingresos'].str.replace('%', '').astype(float)
+    df_activas['%_bloqueantes'] = df_activas['% novedades bloqueantes / ingresos'].str.replace('%', '').astype(float)
     
     narrativa = []
     narrativa.append("## 📋 ANÁLISIS Y CONCLUSIONES EJECUTIVAS\n")
     
     # Mostrar sedes excluidas si las hay
-    sedes_excluidas = df_resumen[df_resumen['Ingresos_num'] == 0]['Sede'].tolist()
     if sedes_excluidas:
         narrativa.append(f"**ℹ️ Nota:** Las siguientes sedes no presentan actividad en el período analizado y han sido excluidas del análisis: ")
         narrativa.append(f"{', '.join(sedes_excluidas)}.\n\n")
     
-    # 1. Análisis general de volumen (solo con sedes activas)
-    total_ingresos = df_filtrado['Ingresos_num'].sum()
-    total_facturado = sum([int(row['Facturado total'].replace(',', '')) for _, row in df_filtrado.iterrows()])
-    total_novedades_pct = df_filtrado['%_novedades'].mean() if '%_novedades' in df_filtrado.columns else 0
+    # 1. Análisis general de volumen
+    total_ingresos = df_activas['Ingresos_num'].sum()
+    total_facturado = df_activas['Facturado total'].str.replace(',', '').astype(int).sum()
+    total_novedades_pct = df_activas['%_novedades'].mean()
     
     narrativa.append("### 📊 PANORAMA GENERAL\n")
     narrativa.append(f"Durante el período analizado, se procesaron **{total_ingresos:,} ingresos** en las sedes activas, ")
@@ -824,32 +836,27 @@ def generar_narrativa_ejecutiva(df_resumen):
     narrativa.append(f"El promedio de novedades sobre ingresos es del **{total_novedades_pct:.1f}%**, ")
     narrativa.append("lo que indica el nivel de devoluciones o ajustes necesarios en los procesos de facturación.\n")
     
-    # Calcular métricas solo con sedes activas
-    df_filtrado['%_facturado'] = df_filtrado['% facturado total / ingresos'].str.replace('%', '').astype(float)
-    df_filtrado['%_novedades'] = df_filtrado['% novedades / ingresos'].str.replace('%', '').astype(float)
-    df_filtrado['%_bloqueantes'] = df_filtrado['% novedades bloqueantes / ingresos'].str.replace('%', '').astype(float)
-    
-    # 2. Identificar sede con mejor desempeño (solo sedes activas)
-    mejor_sede = df_filtrado.loc[df_filtrado['%_facturado'].idxmax(), 'Sede']
-    peor_sede = df_filtrado.loc[df_filtrado['%_facturado'].idxmin(), 'Sede']
-    menor_novedades = df_filtrado.loc[df_filtrado['%_novedades'].idxmin(), 'Sede']
-    mayor_novedades = df_filtrado.loc[df_filtrado['%_novedades'].idxmax(), 'Sede']
+    # 2. Identificar sede con mejor desempeño
+    mejor_sede = df_activas.loc[df_activas['%_facturado'].idxmax(), 'Sede']
+    peor_sede = df_activas.loc[df_activas['%_facturado'].idxmin(), 'Sede']
+    menor_novedades = df_activas.loc[df_activas['%_novedades'].idxmin(), 'Sede']
+    mayor_novedades = df_activas.loc[df_activas['%_novedades'].idxmax(), 'Sede']
     
     narrativa.append("### 🏆 COMPARATIVO POR SEDE (Sedes Activas)\n")
     narrativa.append(f"**Mejor desempeño en facturación:** {mejor_sede} con ")
-    narrativa.append(f"{df_filtrado.loc[df_filtrado['Sede'] == mejor_sede, '% facturado total / ingresos'].values[0]} de facturación.\n")
+    narrativa.append(f"{df_activas.loc[df_activas['Sede'] == mejor_sede, '% facturado total / ingresos'].values[0]} de facturación.\n")
     
     narrativa.append(f"**Sede con menor facturación:** {peor_sede} con ")
-    narrativa.append(f"{df_filtrado.loc[df_filtrado['Sede'] == peor_sede, '% facturado total / ingresos'].values[0]}.\n")
+    narrativa.append(f"{df_activas.loc[df_activas['Sede'] == peor_sede, '% facturado total / ingresos'].values[0]}.\n")
     
     narrativa.append(f"**Sede con menos novedades:** {menor_novedades} ")
-    narrativa.append(f"({df_filtrado.loc[df_filtrado['Sede'] == menor_novedades, '% novedades / ingresos'].values[0]}).\n")
+    narrativa.append(f"({df_activas.loc[df_activas['Sede'] == menor_novedades, '% novedades / ingresos'].values[0]}).\n")
     
     narrativa.append(f"**Sede con más novedades:** {mayor_novedades} ")
-    narrativa.append(f"({df_filtrado.loc[df_filtrado['Sede'] == mayor_novedades, '% novedades / ingresos'].values[0]}).\n")
+    narrativa.append(f"({df_activas.loc[df_activas['Sede'] == mayor_novedades, '% novedades / ingresos'].values[0]}).\n")
     
-    # 3. Análisis de brechas (solo sedes activas)
-    brecha_facturacion = df_filtrado['%_facturado'].max() - df_filtrado['%_facturado'].min()
+    # 3. Análisis de brechas
+    brecha_facturacion = df_activas['%_facturado'].max() - df_activas['%_facturado'].min()
     
     narrativa.append("### ⚠️ BRECHAS Y OPORTUNIDADES\n")
     narrativa.append(f"Existe una brecha del **{brecha_facturacion:.1f}%** entre la sede con mejor y peor facturación. ")
@@ -861,8 +868,8 @@ def generar_narrativa_ejecutiva(df_resumen):
     else:
         narrativa.append("La brecha es relativamente pequeña, lo que sugiere un desempeño homogéneo entre las sedes activas.\n")
     
-    # 4. Análisis de novedades bloqueantes (solo sedes activas)
-    avg_bloqueantes = df_filtrado['%_bloqueantes'].mean()
+    # 4. Análisis de novedades bloqueantes
+    avg_bloqueantes = df_activas['%_bloqueantes'].mean()
     
     narrativa.append("### 🔒 NOVEDADES BLOQUEANTES\n")
     narrativa.append(f"En promedio, el **{avg_bloqueantes:.1f}%** de las novedades son bloqueantes, ")
@@ -875,11 +882,11 @@ def generar_narrativa_ejecutiva(df_resumen):
     else:
         narrativa.append("lo cual es **BAJO**, indicando que la mayoría de novedades son subsanables sin mayor impacto.\n")
     
-    # 5. Recomendaciones específicas (solo sedes activas)
+    # 5. Recomendaciones específicas
     narrativa.append("### 💡 RECOMENDACIONES ESTRATÉGICAS\n")
     
     # Identificar sedes que necesitan atención
-    sedes_criticas = df_filtrado[df_filtrado['%_facturado'] < 50]['Sede'].tolist()
+    sedes_criticas = df_activas[df_activas['%_facturado'] < 50]['Sede'].tolist()
     if sedes_criticas:
         narrativa.append(f"**Prioridad Alta:** Las sedes {', '.join(sedes_criticas)} presentan facturación por debajo del 50%. ")
         narrativa.append("Se sugiere:\n")
@@ -888,7 +895,7 @@ def generar_narrativa_ejecutiva(df_resumen):
         narrativa.append("  - Implementar capacitaciones específicas\n")
     
     # Sedes con altas novedades
-    sedes_alta_novedad = df_filtrado[df_filtrado['%_novedades'] > 20]['Sede'].tolist()
+    sedes_alta_novedad = df_activas[df_activas['%_novedades'] > 20]['Sede'].tolist()
     if sedes_alta_novedad:
         narrativa.append(f"**Control de Calidad:** Las sedes {', '.join(sedes_alta_novedad)} tienen más del 20% de novedades. ")
         narrativa.append("Se recomienda:\n")
@@ -897,7 +904,7 @@ def generar_narrativa_ejecutiva(df_resumen):
         narrativa.append("  - Implementar acciones correctivas inmediatas\n")
     
     # Sedes con alto porcentaje de bloqueantes
-    sedes_bloqueantes = df_filtrado[df_filtrado['%_bloqueantes'] > 15]['Sede'].tolist()
+    sedes_bloqueantes = df_activas[df_activas['%_bloqueantes'] > 15]['Sede'].tolist()
     if sedes_bloqueantes:
         narrativa.append(f"**Gestión de Riesgo:** Las sedes {', '.join(sedes_bloqueantes)} presentan alto porcentaje de novedades bloqueantes. ")
         narrativa.append("Es fundamental:\n")
