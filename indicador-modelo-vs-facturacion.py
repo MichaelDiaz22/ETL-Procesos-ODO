@@ -445,13 +445,6 @@ def cargar_archivo(archivo, unidades_filtro):
             else:
                 dfs_resultado[f'NOVEDADES_DETALLE_{sede}'] = pd.DataFrame()
         
-        # Mostrar resumen
-        st.write("---")
-        st.write("### 📊 RESUMEN DE INGRESOS")
-        for sede in SEDES.keys():
-            total = len(dfs_resultado[f'INGRESOS_{sede}'])
-            st.write(f"**{sede}:** {total:,} registros")
-        
         return True, dfs_resultado, datetime.now()
     
     except Exception as e:
