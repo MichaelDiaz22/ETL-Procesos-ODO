@@ -792,6 +792,7 @@ def generar_narrativa_ejecutiva(df_resumen):
     """
     Genera una narrativa automática basada en los resultados del análisis
     Excluye sedes que tengan 0 en todos sus datos
+    Los objetivos son: facturación > 90% y novedades < 5%
     """
     if df_resumen.empty:
         return "No hay datos suficientes para generar conclusiones."
@@ -817,6 +818,10 @@ def generar_narrativa_ejecutiva(df_resumen):
     df_activas['%_novedades'] = df_activas['% novedades / ingresos'].str.replace('%', '').astype(float)
     df_activas['%_bloqueantes'] = df_activas['% novedades bloqueantes / ingresos'].str.replace('%', '').astype(float)
     
+    # Definir objetivos
+    OBJETIVO_FACTURACION = 90.0
+    OBJETIVO_NOVEDADES = 5.0
+    
     narrativa = []
     narrativa.append("## 📋 ANÁLISIS Y CONCLUSIONES EJECUTIVAS\n")
     
@@ -825,48 +830,69 @@ def generar_narrativa_ejecutiva(df_resumen):
         narrativa.append(f"**ℹ️ Nota:** Las siguientes sedes no presentan actividad en el período analizado y han sido excluidas del análisis: ")
         narrativa.append(f"{', '.join(sedes_excluidas)}.\n\n")
     
-    # 1. Análisis general de volumen
+    # 1. Análisis general de volumen vs objetivos
     total_ingresos = df_activas['Ingresos_num'].sum()
     total_facturado = df_activas['Facturado total'].str.replace(',', '').astype(int).sum()
+    eficiencia_total = (total_facturado/total_ingresos*100) if total_ingresos > 0 else 0
     total_novedades_pct = df_activas['%_novedades'].mean()
     
     narrativa.append("### 📊 PANORAMA GENERAL\n")
     narrativa.append(f"Durante el período analizado, se procesaron **{total_ingresos:,} ingresos** en las sedes activas, ")
-    narrativa.append(f"de los cuales se han facturado **{total_facturado:,}** ({(total_facturado/total_ingresos*100) if total_ingresos > 0 else 0:.1f}% del total). ")
-    narrativa.append(f"El promedio de novedades sobre ingresos es del **{total_novedades_pct:.1f}%**, ")
-    narrativa.append("lo que indica el nivel de devoluciones o ajustes necesarios en los procesos de facturación.\n")
+    narrativa.append(f"de los cuales se han facturado **{total_facturado:,}** ({eficiencia_total:.1f}% del total). ")
     
-    # 2. Identificar sede con mejor desempeño
-    mejor_sede = df_activas.loc[df_activas['%_facturado'].idxmax(), 'Sede']
-    peor_sede = df_activas.loc[df_activas['%_facturado'].idxmin(), 'Sede']
-    menor_novedades = df_activas.loc[df_activas['%_novedades'].idxmin(), 'Sede']
-    mayor_novedades = df_activas.loc[df_activas['%_novedades'].idxmax(), 'Sede']
-    
-    narrativa.append("### 🏆 COMPARATIVO POR SEDE (Sedes Activas)\n")
-    narrativa.append(f"**Mejor desempeño en facturación:** {mejor_sede} con ")
-    narrativa.append(f"{df_activas.loc[df_activas['Sede'] == mejor_sede, '% facturado total / ingresos'].values[0]} de facturación.\n")
-    
-    narrativa.append(f"**Sede con menor facturación:** {peor_sede} con ")
-    narrativa.append(f"{df_activas.loc[df_activas['Sede'] == peor_sede, '% facturado total / ingresos'].values[0]}.\n")
-    
-    narrativa.append(f"**Sede con menos novedades:** {menor_novedades} ")
-    narrativa.append(f"({df_activas.loc[df_activas['Sede'] == menor_novedades, '% novedades / ingresos'].values[0]}).\n")
-    
-    narrativa.append(f"**Sede con más novedades:** {mayor_novedades} ")
-    narrativa.append(f"({df_activas.loc[df_activas['Sede'] == mayor_novedades, '% novedades / ingresos'].values[0]}).\n")
-    
-    # 3. Análisis de brechas
-    brecha_facturacion = df_activas['%_facturado'].max() - df_activas['%_facturado'].min()
-    
-    narrativa.append("### ⚠️ BRECHAS Y OPORTUNIDADES\n")
-    narrativa.append(f"Existe una brecha del **{brecha_facturacion:.1f}%** entre la sede con mejor y peor facturación. ")
-    
-    if brecha_facturacion > 30:
-        narrativa.append("Esta diferencia es crítica y sugiere que las sedes con bajo desempeño requieren una revisión inmediata de sus procesos de facturación.\n")
-    elif brecha_facturacion > 15:
-        narrativa.append("Esta brecha moderada indica oportunidades de mejora en las sedes con menor desempeño.\n")
+    # Evaluar cumplimiento del objetivo de facturación
+    if eficiencia_total >= OBJETIVO_FACTURACION:
+        narrativa.append(f"✅ **CUMPLE el objetivo de facturación** (meta: >{OBJETIVO_FACTURACION}%). ")
     else:
-        narrativa.append("La brecha es relativamente pequeña, lo que sugiere un desempeño homogéneo entre las sedes activas.\n")
+        narrativa.append(f"❌ **NO CUMPLE el objetivo de facturación** (meta: >{OBJETIVO_FACTURACION}%). ")
+    
+    narrativa.append(f"El promedio de novedades sobre ingresos es del **{total_novedades_pct:.1f}%**, ")
+    
+    # Evaluar cumplimiento del objetivo de novedades
+    if total_novedades_pct <= OBJETIVO_NOVEDADES:
+        narrativa.append(f"✅ **CUMPLE el objetivo de novedades** (meta: <{OBJETIVO_NOVEDADES}%). ")
+    else:
+        narrativa.append(f"❌ **NO CUMPLE el objetivo de novedades** (meta: <{OBJETIVO_NOVEDADES}%). ")
+    
+    narrativa.append("\n")
+    
+    # 2. Evaluación por sede individual
+    narrativa.append("### 🏆 EVALUACIÓN POR SEDE\n")
+    narrativa.append("| Sede | Facturación | vs Objetivo | Novedades | vs Objetivo |\n")
+    narrativa.append("|------|-------------|-------------|-----------|-------------|\n")
+    
+    for _, row in df_activas.iterrows():
+        sede = row['Sede']
+        pct_fact = row['%_facturado']
+        pct_nov = row['%_novedades']
+        
+        fact_icon = "✅" if pct_fact >= OBJETIVO_FACTURACION else "❌"
+        nov_icon = "✅" if pct_nov <= OBJETIVO_NOVEDADES else "❌"
+        
+        narrativa.append(f"| {sede} | {pct_fact:.1f}% | {fact_icon} | {pct_nov:.1f}% | {nov_icon} |\n")
+    
+    narrativa.append("\n")
+    
+    # 3. Identificar sedes que requieren atención
+    sedes_facturacion_baja = df_activas[df_activas['%_facturado'] < OBJETIVO_FACTURACION]['Sede'].tolist()
+    sedes_novedades_alta = df_activas[df_activas['%_novedades'] > OBJETIVO_NOVEDADES]['Sede'].tolist()
+    
+    if sedes_facturacion_baja or sedes_novedades_alta:
+        narrativa.append("### ⚠️ SEDES QUE REQUIEREN ATENCIÓN\n")
+        
+        if sedes_facturacion_baja:
+            narrativa.append(f"**Facturación por debajo del objetivo ({OBJETIVO_FACTURACION}%):** ")
+            narrativa.append(f"{', '.join(sedes_facturacion_baja)}\n")
+            narrativa.append("  - Revisar procesos de facturación en estas sedes\n")
+            narrativa.append("  - Identificar cuellos de botella en el ciclo de facturación\n")
+            narrativa.append("  - Implementar seguimiento diario de facturación pendiente\n\n")
+        
+        if sedes_novedades_alta:
+            narrativa.append(f"**Novedades por encima del objetivo ({OBJETIVO_NOVEDADES}%):** ")
+            narrativa.append(f"{', '.join(sedes_novedades_alta)}\n")
+            narrativa.append("  - Analizar causas raíz de las devoluciones\n")
+            narrativa.append("  - Revisar los motivos más frecuentes en la gráfica de Pareto\n")
+            narrativa.append("  - Implementar acciones correctivas inmediatas\n\n")
     
     # 4. Análisis de novedades bloqueantes
     avg_bloqueantes = df_activas['%_bloqueantes'].mean()
@@ -882,53 +908,28 @@ def generar_narrativa_ejecutiva(df_resumen):
     else:
         narrativa.append("lo cual es **BAJO**, indicando que la mayoría de novedades son subsanables sin mayor impacto.\n")
     
-    # 5. Recomendaciones específicas
-    narrativa.append("### 💡 RECOMENDACIONES ESTRATÉGICAS\n")
-    
-    # Identificar sedes que necesitan atención
-    sedes_criticas = df_activas[df_activas['%_facturado'] < 50]['Sede'].tolist()
-    if sedes_criticas:
-        narrativa.append(f"**Prioridad Alta:** Las sedes {', '.join(sedes_criticas)} presentan facturación por debajo del 50%. ")
-        narrativa.append("Se sugiere:\n")
-        narrativa.append("  - Auditar los procesos de facturación en estas sedes\n")
-        narrativa.append("  - Revisar la asignación de recursos y personal\n")
-        narrativa.append("  - Implementar capacitaciones específicas\n")
-    
-    # Sedes con altas novedades
-    sedes_alta_novedad = df_activas[df_activas['%_novedades'] > 20]['Sede'].tolist()
-    if sedes_alta_novedad:
-        narrativa.append(f"**Control de Calidad:** Las sedes {', '.join(sedes_alta_novedad)} tienen más del 20% de novedades. ")
-        narrativa.append("Se recomienda:\n")
-        narrativa.append("  - Analizar las causas raíz de las devoluciones\n")
-        narrativa.append("  - Revisar los motivos más frecuentes en la gráfica de Pareto\n")
-        narrativa.append("  - Implementar acciones correctivas inmediatas\n")
-    
-    # Sedes con alto porcentaje de bloqueantes
-    sedes_bloqueantes = df_activas[df_activas['%_bloqueantes'] > 15]['Sede'].tolist()
-    if sedes_bloqueantes:
-        narrativa.append(f"**Gestión de Riesgo:** Las sedes {', '.join(sedes_bloqueantes)} presentan alto porcentaje de novedades bloqueantes. ")
-        narrativa.append("Es fundamental:\n")
-        narrativa.append("  - Priorizar la resolución de casos bloqueantes\n")
-        narrativa.append("  - Establecer un comité de seguimiento semanal\n")
-        narrativa.append("  - Definir planes de acción con responsables\n")
-    
-    if not sedes_criticas and not sedes_alta_novedad and not sedes_bloqueantes:
-        narrativa.append("✅ **Buen desempeño general:** Todas las sedes activas muestran indicadores dentro de rangos aceptables. ")
-        narrativa.append("Se recomienda mantener los controles actuales y realizar seguimiento preventivo.\n")
-    
-    # 6. Resumen ejecutivo final
+    # 5. Resumen ejecutivo final con evaluación de objetivos
     narrativa.append("\n### 📌 CONCLUSIÓN FINAL\n")
     
-    eficiencia_total = (total_facturado/total_ingresos*100) if total_ingresos > 0 else 0
+    cumple_facturacion = eficiencia_total >= OBJETIVO_FACTURACION
+    cumple_novedades = total_novedades_pct <= OBJETIVO_NOVEDADES
     
-    if eficiencia_total > 80:
-        narrativa.append(f"✅ **DESEMPEÑO EXCELENTE:** El sistema de facturación está operando al {eficiencia_total:.1f}% de eficiencia. ")
-        narrativa.append("Los procesos están bien estructurados y las novedades están controladas.")
-    elif eficiencia_total > 60:
-        narrativa.append(f"⚠️ **DESEMPEÑO MODERADO:** La eficiencia de facturación es del {eficiencia_total:.1f}%. ")
-        narrativa.append("Existen oportunidades de mejora identificadas en el análisis por sede.")
+    if cumple_facturacion and cumple_novedades:
+        narrativa.append(f"✅ **DESEMPEÑO EXCELENTE:** El sistema de facturación está operando al {eficiencia_total:.1f}% de eficiencia ")
+        narrativa.append(f"y las novedades están en {total_novedades_pct:.1f}%. ")
+        narrativa.append("Se cumplen ambos objetivos estratégicos. Mantener los controles actuales y realizar seguimiento preventivo.")
+    elif cumple_facturacion and not cumple_novedades:
+        narrativa.append(f"⚠️ **DESEMPEÑO MODERADO:** La facturación está en {eficiencia_total:.1f}% (cumple objetivo), ")
+        narrativa.append(f"pero las novedades están en {total_novedades_pct:.1f}% (superan el objetivo del {OBJETIVO_NOVEDADES}%). ")
+        narrativa.append("Se recomienda enfocar esfuerzos en reducir las devoluciones y ajustes.")
+    elif not cumple_facturacion and cumple_novedades:
+        narrativa.append(f"⚠️ **DESEMPEÑO MODERADO:** Las novedades están controladas ({total_novedades_pct:.1f}% < {OBJETIVO_NOVEDADES}%), ")
+        narrativa.append(f"pero la facturación está en {eficiencia_total:.1f}% (por debajo del objetivo del {OBJETIVO_FACTURACION}%). ")
+        narrativa.append("Se requiere mejorar la eficiencia en el ciclo de facturación.")
     else:
-        narrativa.append(f"🔴 **DESEMPEÑO CRÍTICO:** Solo el {eficiencia_total:.1f}% de los ingresos está facturado. ")
+        narrativa.append(f"🔴 **DESEMPEÑO CRÍTICO:** No se cumplen los objetivos estratégicos. ")
+        narrativa.append(f"Facturación: {eficiencia_total:.1f}% (meta: >{OBJETIVO_FACTURACION}%), ")
+        narrativa.append(f"Novedades: {total_novedades_pct:.1f}% (meta: <{OBJETIVO_NOVEDADES}%). ")
         narrativa.append("Se requiere una intervención inmediata de la gerencia para revisar los procesos.")
     
     return "".join(narrativa)
@@ -1033,6 +1034,13 @@ if st.session_state.datos_cargados:
                     fecha_inicio_str = row['fecha_inicio'].strftime('%d/%m/%Y')
                     fecha_fin_str = row['fecha_fin'].strftime('%d/%m/%Y')
                     st.markdown(f"- **{row['Sede']}:** {fecha_inicio_str} al {fecha_fin_str}")
+                
+                # Mostrar objetivos
+                st.markdown("---")
+                st.markdown("### 🎯 OBJETIVOS ESTRATÉGICOS")
+                col1, col2 = st.columns(2)
+                col1.metric("🎯 Facturación Total / Ingresos", "> 90%", delta="Meta", delta_color="normal")
+                col2.metric("🎯 Novedades / Ingresos", "< 5%", delta="Meta", delta_color="normal")
                 
                 # Generar y mostrar narrativa ejecutiva
                 st.markdown("---")
