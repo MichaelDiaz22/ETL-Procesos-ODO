@@ -668,7 +668,7 @@ def graficar_novedades_temporales(df_novedades_sede, periodo):
     return fig
 
 def graficar_pareto_novedades(df_novedades_sede):
-    """Gráfica de Pareto de motivos de novedades usando matplotlib"""
+    """Gráfica de Pareto de motivos de novedades usando matplotlib - Versión mejorada"""
     if df_novedades_sede.empty or '_motivo' not in df_novedades_sede.columns:
         return None
     
@@ -676,58 +676,81 @@ def graficar_pareto_novedades(df_novedades_sede):
     conteo_motivos = df_novedades_sede['_motivo'].value_counts().reset_index()
     conteo_motivos.columns = ['Motivo', 'Frecuencia']
     
-    # Limitar a top 15 para mejor visualización
-    if len(conteo_motivos) > 15:
+    # Limitar a top 10 para mejor visualización
+    if len(conteo_motivos) > 10:
         otros = pd.DataFrame({
             'Motivo': ['OTROS'],
-            'Frecuencia': [conteo_motivos.iloc[15:]['Frecuencia'].sum()]
+            'Frecuencia': [conteo_motivos.iloc[10:]['Frecuencia'].sum()]
         })
-        conteo_motivos = pd.concat([conteo_motivos.iloc[:15], otros], ignore_index=True)
+        conteo_motivos = pd.concat([conteo_motivos.iloc[:10], otros], ignore_index=True)
     
     # Calcular porcentaje acumulado
     total = conteo_motivos['Frecuencia'].sum()
-    conteo_motivos['Porcentaje'] = (conteo_motivos['Frecuencia'] / total * 100).round(2)
+    conteo_motivos['Porcentaje'] = (conteo_motivos['Frecuencia'] / total * 100).round(1)
     conteo_motivos['Porcentaje Acumulado'] = conteo_motivos['Porcentaje'].cumsum()
     
-    # Crear gráfica con dos ejes
-    fig, ax1 = plt.subplots(figsize=(14, 6))
+    # Crear gráfica con dos ejes - TAMAÑO MEJORADO
+    fig, ax1 = plt.subplots(figsize=(14, 7))
     
     # Barras para frecuencias
     x = range(len(conteo_motivos))
-    bars = ax1.bar(x, conteo_motivos['Frecuencia'], color='#FF6B6B', alpha=0.7, label='Frecuencia')
-    ax1.set_xlabel('Motivos', fontsize=12)
-    ax1.set_ylabel('Frecuencia', fontsize=12, color='#FF6B6B')
-    ax1.tick_params(axis='y', labelcolor='#FF6B6B')
+    bars = ax1.bar(x, conteo_motivos['Frecuencia'], color='#FF6B6B', alpha=0.8, label='Frecuencia', width=0.6)
+    ax1.set_xlabel('Motivos', fontsize=13, fontweight='bold')
+    ax1.set_ylabel('Frecuencia', fontsize=13, fontweight='bold', color='#FF6B6B')
+    ax1.tick_params(axis='y', labelcolor='#FF6B6B', labelsize=11)
     
     # Línea para porcentaje acumulado
     ax2 = ax1.twinx()
     line = ax2.plot(x, conteo_motivos['Porcentaje Acumulado'], color='#2C3E50', 
-                   marker='o', linewidth=2, markersize=8, label='% Acumulado')
-    ax2.set_ylabel('Porcentaje Acumulado (%)', fontsize=12, color='#2C3E50')
-    ax2.tick_params(axis='y', labelcolor='#2C3E50')
+                   marker='o', linewidth=2.5, markersize=8, label='% Acumulado')
+    ax2.set_ylabel('Porcentaje Acumulado (%)', fontsize=13, fontweight='bold', color='#2C3E50')
+    ax2.tick_params(axis='y', labelcolor='#2C3E50', labelsize=11)
     
-    # Configurar etiquetas del eje X
+    # Configurar etiquetas del eje X con mejor espaciado
     ax1.set_xticks(x)
-    ax1.set_xticklabels(conteo_motivos['Motivo'], rotation=45, ha='right', fontsize=10)
+    ax1.set_xticklabels(conteo_motivos['Motivo'], rotation=30, ha='right', fontsize=10)
     
     # Agregar línea del 80%
-    ax2.axhline(y=80, color='red', linestyle='--', alpha=0.5, linewidth=2, label='80%')
+    ax2.axhline(y=80, color='red', linestyle='--', alpha=0.7, linewidth=2, label='80%')
     
-    # Agregar valores en las barras
-    for bar, valor in zip(bars, conteo_motivos['Frecuencia']):
+    # Agregar valores y porcentajes en las barras
+    for i, (bar, valor, pct) in enumerate(zip(bars, conteo_motivos['Frecuencia'], conteo_motivos['Porcentaje'])):
         if valor > 0:
-            ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5, 
-                    str(valor), ha='center', va='bottom', fontsize=8)
+            # Valor de frecuencia sobre la barra
+            ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(1, valor*0.02), 
+                    f'{int(valor)}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+            # Porcentaje dentro de la barra (si es suficientemente alta)
+            if bar.get_height() > max(conteo_motivos['Frecuencia']) * 0.05:
+                ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height()/2, 
+                        f'{pct}%', ha='center', va='center', fontsize=9, color='white', fontweight='bold')
+    
+    # Agregar porcentajes acumulados en los puntos de la línea
+    for i, (x_val, pct_acum) in enumerate(zip(x, conteo_motivos['Porcentaje Acumulado'])):
+        ax2.annotate(f'{pct_acum:.1f}%', 
+                    xy=(x_val, pct_acum), 
+                    xytext=(0, 10), 
+                    textcoords='offset points',
+                    ha='center', 
+                    fontsize=9, 
+                    fontweight='bold',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
     
     # Agregar título y leyenda
-    plt.title('Pareto de Motivos de Novedades', fontsize=14, fontweight='bold')
+    plt.title('Pareto de Motivos de Novedades', fontsize=16, fontweight='bold', pad=20)
     
     # Combinar leyendas
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=10)
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=11, framealpha=0.9)
     
-    ax1.grid(True, alpha=0.3, axis='y')
+    # Mejorar la cuadrícula
+    ax1.grid(True, alpha=0.3, axis='y', linestyle='--')
+    ax1.set_axisbelow(True)
+    
+    # Ajustar límites para mejor visualización
+    ax1.set_ylim(0, max(conteo_motivos['Frecuencia']) * 1.15)
+    ax2.set_ylim(0, 105)
+    
     plt.tight_layout()
     
     return fig
@@ -749,8 +772,8 @@ def graficar_distribucion_motivos_meses(df_novedades_sede):
     pivot_table = pivot_table.sort_values('Total', ascending=False)
     pivot_table = pivot_table.drop('Total', axis=1)
     
-    # Obtener top 10 motivos
-    top_motivos = pivot_table.head(10)
+    # Obtener top 8 motivos
+    top_motivos = pivot_table.head(8)
     
     # Reordenar columnas (meses) cronológicamente
     meses_ordenados = sorted(top_motivos.columns)
@@ -767,6 +790,11 @@ def graficar_distribucion_motivos_meses(df_novedades_sede):
         valores = top_motivos.loc[motivo].values
         bars = ax.bar(range(len(top_motivos.columns)), valores, bottom=bottom, 
                       label=motivo, color=colores[i], alpha=0.8)
+        # Agregar valores en las barras si son significativos
+        for j, valor in enumerate(valores):
+            if valor > 0 and valor > max(top_motivos.values.flatten()) * 0.05:
+                ax.text(j, bottom[j] + valor/2, str(valor), 
+                       ha='center', va='center', fontsize=8, fontweight='bold')
         bottom += valores
     
     ax.set_xlabel('Mes', fontsize=12)
@@ -1148,7 +1176,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos de novedades para mostrar en esta sede")
                     
-                    # Gráfica 2: Pareto de novedades (NO afectada por el período)
+                    # Gráfica 2: Pareto de novedades (NO afectada por el período) - VERSIÓN MEJORADA
                     st.markdown("---")
                     st.subheader("📊 Pareto de Motivos de Novedades")
                     fig_pareto = graficar_pareto_novedades(df_novedades_sede)
