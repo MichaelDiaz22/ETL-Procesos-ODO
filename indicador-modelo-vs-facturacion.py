@@ -1206,7 +1206,15 @@ if st.session_state.datos_cargados:
                     
                     st.dataframe(df_display, use_container_width=True, hide_index=True)
                     
-                    # NUEVA GRÁFICA: Facturación por período
+                    # Gráfica 1: Tendencia de Ingresos y Facturación
+                    if len(df_tabla) > 1:
+                        st.markdown("---")
+                        st.subheader("📈 Tendencia de Ingresos y Facturación")
+                        chart_data = df_tabla[['ingresos', 'facturado total', 'Novedades', 'Novedades Bloqueantes']].copy()
+                        chart_data.index = df_tabla['Fecha']
+                        st.line_chart(chart_data)
+                    
+                    # Gráfica 2: Facturación por período (NUEVA GRÁFICA)
                     st.markdown("---")
                     st.subheader("💰 Facturación por Período")
                     fig_facturacion = graficar_facturacion_temporal(df_tabla, periodo)
@@ -1216,15 +1224,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos de facturación para mostrar")
                     
-                    # Gráfica de líneas de tendencia (opcional - puede eliminarse si se prefiere solo la nueva)
-                    if len(df_tabla) > 1:
-                        st.markdown("---")
-                        st.subheader("📈 Tendencia de Ingresos y Facturación")
-                        chart_data = df_tabla[['ingresos', 'facturado total', 'Novedades', 'Novedades Bloqueantes']].copy()
-                        chart_data.index = df_tabla['Fecha']
-                        st.line_chart(chart_data)
-                    
-                    # Gráfica 1: Novedades generadas (afectada por el período seleccionado)
+                    # Gráfica 3: Novedades generadas (afectada por el período seleccionado)
                     st.markdown("---")
                     st.subheader("📈 Novedades Generadas")
                     fig_novedades_temp = graficar_novedades_temporales(df_novedades_sede, periodo)
@@ -1234,7 +1234,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos de novedades para mostrar en esta sede")
                     
-                    # Gráfica 2: Pareto de novedades (NO afectada por el período)
+                    # Gráfica 4: Pareto de novedades (NO afectada por el período)
                     st.markdown("---")
                     st.subheader("📊 Pareto de Motivos de Novedades")
                     fig_pareto = graficar_pareto_novedades(df_novedades_sede)
@@ -1244,7 +1244,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos suficientes para generar el Pareto de novedades")
                     
-                    # Gráfica 3: Distribución por mes (NO afectada por el período)
+                    # Gráfica 5: Distribución por mes (NO afectada por el período)
                     st.markdown("---")
                     st.subheader("📅 Distribución de Motivos por Mes")
                     fig_distribucion = graficar_distribucion_motivos_meses(df_novedades_sede)
