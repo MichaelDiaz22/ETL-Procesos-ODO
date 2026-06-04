@@ -667,6 +667,54 @@ def graficar_novedades_temporales(df_novedades_sede, periodo):
     
     return fig
 
+def graficar_facturacion_temporal(df_tabla, periodo):
+    """Gráfica de facturación por período usando matplotlib"""
+    if df_tabla.empty:
+        return None
+    
+    # Preparar datos según el período
+    if periodo == 'Mensual':
+        x_data = df_tabla['mes'].astype(str)
+        titulo = "Facturación por Mes"
+        xlabel = "Mes"
+    elif periodo == 'Semanal':
+        x_data = df_tabla['semana'].astype(str)
+        titulo = "Facturación por Semana"
+        xlabel = "Semana"
+    else:
+        x_data = df_tabla['Fecha'].dt.strftime('%Y-%m-%d')
+        titulo = "Facturación por Día"
+        xlabel = "Fecha"
+    
+    # Crear gráfica
+    fig, ax = plt.subplots(figsize=(12, 5))
+    
+    # Barras para facturación total
+    bars = ax.bar(range(len(df_tabla)), df_tabla['facturado total'], 
+                  color='#4CAF50', alpha=0.7, label='Facturado Total', width=0.7)
+    
+    # Línea para tendencia
+    ax.plot(range(len(df_tabla)), df_tabla['facturado total'], 
+            color='#2E7D32', linewidth=2, marker='o', markersize=6, label='Tendencia')
+    
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel('Cantidad Facturada', fontsize=12)
+    ax.set_title(titulo, fontsize=14, fontweight='bold')
+    ax.set_xticks(range(len(df_tabla)))
+    ax.set_xticklabels(x_data, rotation=45, ha='right', fontsize=9)
+    
+    # Agregar valores en las barras
+    for bar, valor in zip(bars, df_tabla['facturado total']):
+        if valor > 0:
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(1, valor*0.02), 
+                   str(int(valor)), ha='center', va='bottom', fontsize=8)
+    
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.legend(loc='upper left', fontsize=10)
+    plt.tight_layout()
+    
+    return fig
+
 def graficar_pareto_novedades(df_novedades_sede):
     """Gráfica de Pareto de motivos de novedades usando matplotlib - Versión mejorada"""
     if df_novedades_sede.empty or '_motivo' not in df_novedades_sede.columns:
@@ -1158,7 +1206,17 @@ if st.session_state.datos_cargados:
                     
                     st.dataframe(df_display, use_container_width=True, hide_index=True)
                     
-                    # Gráfica de líneas (opcional)
+                    # NUEVA GRÁFICA: Facturación por período
+                    st.markdown("---")
+                    st.subheader("💰 Facturación por Período")
+                    fig_facturacion = graficar_facturacion_temporal(df_tabla, periodo)
+                    if fig_facturacion:
+                        st.pyplot(fig_facturacion, use_container_width=True)
+                        plt.close()
+                    else:
+                        st.info("No hay datos de facturación para mostrar")
+                    
+                    # Gráfica de líneas de tendencia (opcional - puede eliminarse si se prefiere solo la nueva)
                     if len(df_tabla) > 1:
                         st.markdown("---")
                         st.subheader("📈 Tendencia de Ingresos y Facturación")
@@ -1176,7 +1234,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos de novedades para mostrar en esta sede")
                     
-                    # Gráfica 2: Pareto de novedades (NO afectada por el período) - VERSIÓN MEJORADA
+                    # Gráfica 2: Pareto de novedades (NO afectada por el período)
                     st.markdown("---")
                     st.subheader("📊 Pareto de Motivos de Novedades")
                     fig_pareto = graficar_pareto_novedades(df_novedades_sede)
