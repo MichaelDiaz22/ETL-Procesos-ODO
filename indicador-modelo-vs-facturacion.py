@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import calendar
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # Configuración de la página
 st.set_page_config(
@@ -174,7 +177,6 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, config):
     if col_unidad_operativa and not df_temp.empty:
         valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
         mask_operativa = valores_unidad_operativa == config['unidad_operativa']
-        # CORREGIDO: Aplicar máscara directamente a df_temp usando loc
         df_temp = df_temp.loc[mask_operativa[mask_unidades].values]
     
     return df_temp
@@ -232,7 +234,6 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
         centros_normalizados = [normalizar_texto(c) for c in centros_normalizados]
         centro_upper = normalizar_texto(config['centro_atencion'])
         mask_centro = [c == centro_upper for c in centros_normalizados]
-        # CORREGIDO: Aplicar máscara directamente a df_temp usando loc con .values
         mask_combinada = mask_unidades & pd.Series(mask_centro)
         df_temp = df_temp.loc[mask_combinada[mask_unidades].values]
     
@@ -291,13 +292,16 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
     if col_unidad_operativa and not df_temp.empty:
         valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
         mask_operativa = valores_unidad_operativa == config['unidad_operativa']
-        # CORREGIDO: Aplicar máscara directamente a df_temp usando loc con .values
         df_temp = df_temp.loc[mask_operativa[mask_unidades].values]
     
     return df_temp
 
-def procesar_hoja_novedades(df, centro_atencion, fecha_inicio, fecha_fin):
-    """Procesa la hoja NOVEDADES"""
+def procesar_novedades_completo(df, centro_atencion):
+    """Procesa la hoja NOVEDADES para obtener todos los detalles"""
+    if df is None or df.empty or not centro_atencion:
+        return pd.DataFrame()
+    
+    # Buscar columnas relevantes
     col_fecha = None
     for col in df.columns:
         if 'fechadevolucion' in col.lower() or 'fecha devolucion' in col.lower():
@@ -310,49 +314,73 @@ def procesar_hoja_novedades(df, centro_atencion, fecha_inicio, fecha_fin):
             col_centro = col
             break
     
+    col_motivo = None
+    for col in df.columns:
+        col_lower = col.lower()
+        if 'motivo' in col_lower or 'causa' in col_lower or 'descripcion' in col_lower:
+            col_motivo = col
+            break
+    
     col_bloqueante = None
     for col in df.columns:
         if 'bloqueante' in col.lower():
             col_bloqueante = col
             break
     
-    if col_fecha and col_centro and centro_atencion:
-        fechas_convertidas = []
-        for v in df[col_fecha]:
-            fecha = convertir_fecha_excel(v)
-            fechas_convertidas.append(fecha.date() if fecha else None)
-        
-        centros_normalizados = [normalizar_texto(v) for v in df[col_centro]]
-        centro_upper = normalizar_texto(centro_atencion)
-        
-        df_procesado = pd.DataFrame({
-            '_fecha': fechas_convertidas,
-            '_centro': centros_normalizados
-        })
-        
-        if col_bloqueante:
-            df_procesado['_bloqueante'] = df[col_bloqueante].astype(str).str.upper().str.strip()
-        
-        mask_centro = df_procesado['_centro'] == centro_upper
-        df_filtrado = df_procesado[mask_centro]
-        
-        mask_fecha = (df_filtrado['_fecha'] >= fecha_inicio.date()) & (df_filtrado['_fecha'] <= fecha_fin.date())
-        df_filtrado = df_filtrado[mask_fecha]
-        
-        conteo_total = {}
-        conteo_bloqueantes = {}
-        
-        for fecha in df_filtrado['_fecha']:
-            conteo_total[fecha] = conteo_total.get(fecha, 0) + 1
-        
-        if col_bloqueante:
-            for idx, row in df_filtrado.iterrows():
-                if row['_bloqueante'] == 'SI':
-                    conteo_bloqueantes[row['_fecha']] = conteo_bloqueantes.get(row['_fecha'], 0) + 1
-        
-        return conteo_total, conteo_bloqueantes
+    if not col_fecha or not col_centro:
+        return pd.DataFrame()
     
-    return {}, {}
+    # Convertir fechas
+    fechas_convertidas = []
+    for v in df[col_fecha]:
+        fecha = convertir_fecha_excel(v)
+        fechas_convertidas.append(fecha.date() if fecha else None)
+    
+    centros_normalizados = [normalizar_texto(v) for v in df[col_centro]]
+    centro_upper = normalizar_texto(centro_atencion)
+    
+    df_procesado = pd.DataFrame({
+        '_fecha': fechas_convertidas,
+        '_centro': centros_normalizados
+    })
+    
+    if col_motivo:
+        df_procesado['_motivo'] = df[col_motivo].astype(str).str.upper().str.strip()
+    else:
+        df_procesado['_motivo'] = 'SIN ESPECIFICAR'
+    
+    if col_bloqueante:
+        df_procesado['_bloqueante'] = df[col_bloqueante].astype(str).str.upper().str.strip()
+    
+    # Filtrar por centro
+    df_filtrado = df_procesado[df_procesado['_centro'] == centro_upper]
+    
+    return df_filtrado
+
+def procesar_hoja_novedades(df, centro_atencion, fecha_inicio, fecha_fin):
+    """Procesa la hoja NOVEDADES para conteo"""
+    if df is None or df.empty or not centro_atencion:
+        return {}, {}
+    
+    df_novedades = procesar_novedades_completo(df, centro_atencion)
+    if df_novedades.empty:
+        return {}, {}
+    
+    mask_fecha = (df_novedades['_fecha'] >= fecha_inicio.date()) & (df_novedades['_fecha'] <= fecha_fin.date())
+    df_filtrado = df_novedades[mask_fecha]
+    
+    conteo_total = {}
+    conteo_bloqueantes = {}
+    
+    for fecha in df_filtrado['_fecha']:
+        conteo_total[fecha] = conteo_total.get(fecha, 0) + 1
+    
+    if '_bloqueante' in df_filtrado.columns:
+        for idx, row in df_filtrado.iterrows():
+            if row['_bloqueante'] == 'SI':
+                conteo_bloqueantes[row['_fecha']] = conteo_bloqueantes.get(row['_fecha'], 0) + 1
+    
+    return conteo_total, conteo_bloqueantes
 
 def cargar_archivo(archivo, unidades_filtro):
     try:
@@ -409,6 +437,14 @@ def cargar_archivo(archivo, unidades_filtro):
                 dfs_resultado[f'FACTURACION_{sede}'] = pd.DataFrame()
         
         dfs_resultado['NOVEDADES'] = df_novedades
+        
+        # Procesar novedades completas para cada sede
+        for sede, config in SEDES.items():
+            if config['centro_atencion']:
+                df_novedades_sede = procesar_novedades_completo(df_novedades, config['centro_atencion'])
+                dfs_resultado[f'NOVEDADES_DETALLE_{sede}'] = df_novedades_sede
+            else:
+                dfs_resultado[f'NOVEDADES_DETALLE_{sede}'] = pd.DataFrame()
         
         # Mostrar resumen
         st.write("---")
@@ -594,6 +630,124 @@ def construir_tabla_sede(sede, config, fecha_inicio, fecha_fin, df_ingresos, df_
     
     return df_agrupado
 
+def graficar_novedades_temporales(df_novedades_sede, periodo):
+    """Gráfica de novedades generadas por período"""
+    if df_novedades_sede.empty:
+        return None
+    
+    # Agrupar por fecha
+    df_novedades_sede['Fecha'] = pd.to_datetime(df_novedades_sede['_fecha'])
+    
+    if periodo == 'Mensual':
+        df_agrupado = df_novedades_sede.groupby(df_novedades_sede['Fecha'].dt.to_period('M')).size().reset_index(name='Cantidad')
+        df_agrupado['Fecha'] = df_agrupado['Fecha'].astype(str)
+        titulo = "Novedades Generadas por Mes"
+    elif periodo == 'Semanal':
+        df_agrupado = df_novedades_sede.groupby(df_novedades_sede['Fecha'].dt.to_period('W')).size().reset_index(name='Cantidad')
+        df_agrupado['Fecha'] = df_agrupado['Fecha'].astype(str)
+        titulo = "Novedades Generadas por Semana"
+    else:
+        df_agrupado = df_novedades_sede.groupby('_fecha').size().reset_index(name='Cantidad')
+        df_agrupado.columns = ['Fecha', 'Cantidad']
+        titulo = "Novedades Generadas por Día"
+    
+    fig = px.bar(df_agrupado, x='Fecha', y='Cantidad', 
+                 title=titulo,
+                 labels={'Fecha': 'Período', 'Cantidad': 'Número de Novedades'},
+                 color_discrete_sequence=['#FF6B6B'])
+    fig.update_layout(showlegend=False, xaxis_tickangle=-45)
+    return fig
+
+def graficar_pareto_novedades(df_novedades_sede):
+    """Gráfica de Pareto de motivos de novedades"""
+    if df_novedades_sede.empty or '_motivo' not in df_novedades_sede.columns:
+        return None
+    
+    # Contar motivos
+    conteo_motivos = df_novedades_sede['_motivo'].value_counts().reset_index()
+    conteo_motivos.columns = ['Motivo', 'Frecuencia']
+    
+    # Calcular porcentaje acumulado
+    conteo_motivos['Porcentaje'] = (conteo_motivos['Frecuencia'] / conteo_motivos['Frecuencia'].sum() * 100).round(2)
+    conteo_motivos['Porcentaje Acumulado'] = conteo_motivos['Porcentaje'].cumsum()
+    
+    # Crear gráfica con dos ejes
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    # Barras para frecuencias
+    fig.add_trace(
+        go.Bar(x=conteo_motivos['Motivo'], y=conteo_motivos['Frecuencia'], 
+               name='Frecuencia', marker_color='#FF6B6B'),
+        secondary_y=False
+    )
+    
+    # Línea para porcentaje acumulado
+    fig.add_trace(
+        go.Scatter(x=conteo_motivos['Motivo'], y=conteo_motivos['Porcentaje Acumulado'], 
+                   name='% Acumulado', marker_color='#2C3E50', line=dict(width=3)),
+        secondary_y=True
+    )
+    
+    # Configurar ejes
+    fig.update_xaxes(title_text="Motivos", tickangle=-45)
+    fig.update_yaxes(title_text="Frecuencia", secondary_y=False)
+    fig.update_yaxes(title_text="Porcentaje Acumulado (%)", secondary_y=True, range=[0, 105])
+    
+    fig.update_layout(title="Pareto de Motivos de Novedades", 
+                     height=500,
+                     showlegend=True,
+                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    
+    return fig
+
+def graficar_distribucion_motivos_meses(df_novedades_sede):
+    """Gráfica de distribución de motivos por mes"""
+    if df_novedades_sede.empty or '_motivo' not in df_novedades_sede.columns:
+        return None
+    
+    # Extraer mes y año
+    df_novedades_sede['Mes'] = pd.to_datetime(df_novedades_sede['_fecha']).dt.strftime('%Y-%m')
+    df_novedades_sede['NombreMes'] = pd.to_datetime(df_novedades_sede['_fecha']).dt.strftime('%B %Y')
+    
+    # Crear tabla pivote
+    pivot_table = pd.crosstab(df_novedades_sede['_motivo'], df_novedades_sede['Mes'])
+    
+    # Ordenar por frecuencia total descendente
+    pivot_table['Total'] = pivot_table.sum(axis=1)
+    pivot_table = pivot_table.sort_values('Total', ascending=False)
+    pivot_table = pivot_table.drop('Total', axis=1)
+    
+    # Obtener top 10 motivos
+    top_motivos = pivot_table.head(10)
+    
+    # Reordenar columnas (meses) cronológicamente
+    meses_ordenados = sorted(top_motivos.columns)
+    top_motivos = top_motivos[meses_ordenados]
+    
+    # Crear gráfica de barras apiladas
+    fig = go.Figure()
+    
+    for motivo in top_motivos.index:
+        fig.add_trace(go.Bar(
+            name=motivo,
+            x=top_motivos.columns,
+            y=top_motivos.loc[motivo],
+            text=top_motivos.loc[motivo],
+            textposition='auto'
+        ))
+    
+    fig.update_layout(
+        title="Distribución de Motivos de Devolución por Mes",
+        xaxis_title="Mes",
+        yaxis_title="Frecuencia",
+        barmode='stack',
+        height=500,
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+        xaxis_tickangle=-45
+    )
+    
+    return fig
+
 # Sidebar
 with st.sidebar:
     st.header("📋 Información de Sedes")
@@ -696,6 +850,7 @@ if st.session_state.datos_cargados:
             
             df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
             df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
+            df_novedades_sede = st.session_state.dfs.get(f'NOVEDADES_DETALLE_{sede}', pd.DataFrame())
             
             periodo = st.selectbox(
                 "📊 Agrupar por:",
@@ -704,6 +859,7 @@ if st.session_state.datos_cargados:
             )
             
             with st.spinner(f"Calculando {sede}..."):
+                # Tabla principal
                 df_tabla = construir_tabla_sede(
                     sede, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo
                 )
@@ -730,6 +886,37 @@ if st.session_state.datos_cargados:
                     cols[4].metric("⚠️ Novedades", f"{total_novedades:,}", f"{pct_novedades:.1f}%")
                     cols[5].metric("🔒 Novedades Bloqueantes", f"{total_novedades_bloqueantes:,}", f"{pct_bloqueantes:.1f}%")
                     
+                    # Gráfica 1: Novedades generadas (afectada por el período seleccionado)
+                    st.markdown("---")
+                    st.subheader("📈 Novedades Generadas")
+                    fig_novedades_temp = graficar_novedades_temporales(df_novedades_sede, periodo)
+                    if fig_novedades_temp:
+                        st.plotly_chart(fig_novedades_temp, use_container_width=True)
+                    else:
+                        st.info("No hay datos de novedades para mostrar en esta sede")
+                    
+                    # Gráfica 2: Pareto de novedades (NO afectada por el período)
+                    st.markdown("---")
+                    st.subheader("📊 Pareto de Motivos de Novedades")
+                    fig_pareto = graficar_pareto_novedades(df_novedades_sede)
+                    if fig_pareto:
+                        st.plotly_chart(fig_pareto, use_container_width=True)
+                    else:
+                        st.info("No hay datos suficientes para generar el Pareto de novedades")
+                    
+                    # Gráfica 3: Distribución por mes (NO afectada por el período)
+                    st.markdown("---")
+                    st.subheader("📅 Distribución de Motivos por Mes")
+                    fig_distribucion = graficar_distribucion_motivos_meses(df_novedades_sede)
+                    if fig_distribucion:
+                        st.plotly_chart(fig_distribucion, use_container_width=True)
+                    else:
+                        st.info("No hay datos suficientes para generar la distribución por mes")
+                    
+                    # Tabla de datos
+                    st.markdown("---")
+                    st.subheader("📋 Datos Detallados")
+                    
                     columnas_mostrar = ['Fecha', 'ingresos', 'facturado modelo', 'facturado fuera modelo', 'facturado total', 'Novedades', 'Novedades Bloqueantes']
                     if periodo == 'Semanal':
                         columnas_mostrar.insert(1, 'semana')
@@ -747,6 +934,7 @@ if st.session_state.datos_cargados:
                         chart_data.index = df_tabla['Fecha']
                         st.line_chart(chart_data)
                     
+                    # Botón de descarga
                     from io import BytesIO
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
