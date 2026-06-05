@@ -408,7 +408,7 @@ def cargar_archivo(archivo, unidades_filtro):
         
         dfs_ingresos = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion = {sede: [] for sede in SEDES.keys()}
-        dfs_facturacion_detalle = {sede: [] for sede in SEDES.keys()}  # Nuevo: para guardar detalles de facturación
+        dfs_facturacion_detalle = {sede: [] for sede in SEDES.keys()}
         
         # Procesar hojas EVENTO y PGP
         for hoja in ['EVENTO', 'PGP']:
@@ -683,36 +683,74 @@ def obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_
     
     return resultado
 
-def graficar_facturacion_por_usuario(df_usuario, titulo="Facturación por Usuario"):
-    """Gráfica de barras de facturación por usuario"""
-    if df_usuario.empty:
+def graficar_facturacion_por_usuario_mensual(df_facturacion_detalle, fecha_inicio, fecha_fin, sede):
+    """
+    Gráfica de barras apiladas mostrando la facturación por usuario por mes
+    NO se ve afectada por el selector de período (siempre muestra datos mensuales)
+    """
+    if df_facturacion_detalle.empty:
         return None
     
-    # Preparar datos (top 10 usuarios)
-    df_top = df_usuario.head(10).copy()
-    usuarios = df_top.index.tolist()
-    cantidades = df_top['TOTAL'].tolist()
+    # Filtrar por fechas
+    mask_fecha = (df_facturacion_detalle['_fecha_factura'] >= fecha_inicio.date()) & (df_facturacion_detalle['_fecha_factura'] <= fecha_fin.date())
+    df_filtrado = df_facturacion_detalle[mask_fecha].copy()
     
-    # Crear gráfica
-    fig, ax = plt.subplots(figsize=(12, 6))
+    if df_filtrado.empty:
+        return None
     
-    # Colores degradados
-    colors = plt.cm.Blues(np.linspace(0.4, 0.9, len(usuarios)))
+    # Crear columna de mes
+    df_filtrado['fecha_dt'] = pd.to_datetime(df_filtrado['_fecha_factura'])
+    df_filtrado['Mes'] = df_filtrado['fecha_dt'].dt.strftime('%Y-%m')
+    df_filtrado['NombreMes'] = df_filtrado['fecha_dt'].dt.strftime('%B %Y')
     
-    bars = ax.barh(range(len(usuarios)), cantidades, color=colors, alpha=0.8)
-    ax.set_yticks(range(len(usuarios)))
-    ax.set_yticklabels(usuarios, fontsize=10)
-    ax.set_xlabel('Cantidad Facturada', fontsize=12)
-    ax.set_ylabel('Usuario Facturador', fontsize=12)
-    ax.set_title(titulo, fontsize=14, fontweight='bold')
+    # Crear tabla pivote: usuarios vs meses
+    pivot_table = pd.crosstab(df_filtrado['_usuario'], df_filtrado['Mes'])
     
-    # Agregar valores en las barras
-    for i, (bar, valor) in enumerate(zip(bars, cantidades)):
-        if valor > 0:
-            ax.text(valor + max(cantidades)*0.01, bar.get_y() + bar.get_height()/2, 
-                   str(int(valor)), ha='left', va='center', fontsize=9, fontweight='bold')
+    # Ordenar por frecuencia total descendente (top 8 usuarios)
+    pivot_table['Total'] = pivot_table.sum(axis=1)
+    pivot_table = pivot_table.sort_values('Total', ascending=False)
+    pivot_table = pivot_table.drop('Total', axis=1)
     
-    ax.grid(True, alpha=0.3, axis='x')
+    # Obtener top 8 usuarios (si hay menos, mostrar todos)
+    top_usuarios = pivot_table.head(8)
+    
+    # Si no hay usuarios, retornar None
+    if top_usuarios.empty:
+        return None
+    
+    # Reordenar columnas (meses) cronológicamente
+    meses_ordenados = sorted(top_usuarios.columns)
+    top_usuarios = top_usuarios[meses_ordenados]
+    
+    # Crear gráfica de barras apiladas
+    fig, ax = plt.subplots(figsize=(14, 6))
+    
+    # Colores para diferentes usuarios
+    colores = plt.cm.Set2(np.linspace(0, 1, len(top_usuarios.index)))
+    
+    bottom = np.zeros(len(top_usuarios.columns))
+    
+    for i, usuario in enumerate(top_usuarios.index):
+        valores = top_usuarios.loc[usuario].values
+        bars = ax.bar(range(len(top_usuarios.columns)), valores, bottom=bottom, 
+                      label=usuario, color=colores[i], alpha=0.8)
+        
+        # Agregar valores en las barras si son significativos
+        max_valor = top_usuarios.values.max()
+        for j, valor in enumerate(valores):
+            if valor > 0 and valor > max_valor * 0.05:
+                ax.text(j, bottom[j] + valor/2, str(int(valor)), 
+                       ha='center', va='center', fontsize=8, fontweight='bold')
+        bottom += valores
+    
+    ax.set_xlabel('Mes', fontsize=12)
+    ax.set_ylabel('Cantidad Facturada', fontsize=12)
+    ax.set_title(f'Distribución de Facturación por Usuario - {sede}', fontsize=14, fontweight='bold')
+    ax.set_xticks(range(len(top_usuarios.columns)))
+    ax.set_xticklabels(top_usuarios.columns, rotation=45, ha='right', fontsize=10)
+    ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
+    ax.grid(True, alpha=0.3, axis='y')
+    
     plt.tight_layout()
     
     return fig
@@ -1340,15 +1378,17 @@ if st.session_state.datos_cargados:
                         # Mostrar tabla
                         st.dataframe(df_usuario, use_container_width=True)
                         
-                        # Gráfica de facturación por usuario
+                        # Nueva gráfica de facturación por usuario (estilo mensual apilado)
                         st.markdown("---")
-                        st.subheader("📊 Top Facturadores")
-                        fig_usuario = graficar_facturacion_por_usuario(df_usuario, f"Top Facturadores - {sede}")
-                        if fig_usuario:
-                            st.pyplot(fig_usuario, use_container_width=True)
+                        st.subheader("📊 Distribución de Facturación por Usuario (Mensual)")
+                        fig_usuario_mensual = graficar_facturacion_por_usuario_mensual(
+                            df_facturacion_detalle, fecha_inicio, fecha_fin, sede
+                        )
+                        if fig_usuario_mensual:
+                            st.pyplot(fig_usuario_mensual, use_container_width=True)
                             plt.close()
                         else:
-                            st.info("No hay datos suficientes para generar la gráfica de facturadores")
+                            st.info("No hay datos suficientes para generar la gráfica de facturación por usuario")
                     else:
                         st.info("No hay datos de facturación por usuario para mostrar")
                     
@@ -1435,7 +1475,6 @@ if st.session_state.datos_cargados:
                 # Escribir la narrativa línea por línea
                 lineas = narrativa_texto.split('\n')
                 for row_num, linea in enumerate(lineas):
-                    # Limpiar markdown para Excel
                     linea_limpia = linea.replace('##', '').replace('###', '').replace('**', '').replace('📋', '').replace('📊', '').replace('🏆', '').replace('⚠️', '').replace('🔒', '').replace('💡', '').replace('📌', '').strip()
                     worksheet_narrativa.write(row_num, 0, linea_limpia)
                 
@@ -1498,13 +1537,15 @@ if st.session_state.datos_cargados:
                                 
                                 row_start += len(df_usuario) + 3
                                 
-                                # Gráfica de facturación por usuario
-                                fig_usuario = graficar_facturacion_por_usuario(df_usuario, f"Top Facturadores - {sede}")
-                                if fig_usuario:
-                                    img_path = os.path.join(temp_dir, f"{sede}_usuarios.png")
-                                    fig_usuario.savefig(img_path, dpi=100, bbox_inches='tight')
+                                # Gráfica de facturación por usuario (mensual apilada)
+                                fig_usuario_mensual = graficar_facturacion_por_usuario_mensual(
+                                    df_facturacion_detalle, fecha_inicio, fecha_fin, sede
+                                )
+                                if fig_usuario_mensual:
+                                    img_path = os.path.join(temp_dir, f"{sede}_usuarios_mensual.png")
+                                    fig_usuario_mensual.savefig(img_path, dpi=100, bbox_inches='tight')
                                     worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
-                                    plt.close(fig_usuario)
+                                    plt.close(fig_usuario_mensual)
                                     row_start += 25
                             
                             # Gráfica de Novedades Temporales
