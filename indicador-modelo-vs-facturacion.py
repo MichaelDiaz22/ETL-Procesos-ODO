@@ -716,7 +716,7 @@ def graficar_facturacion_temporal(df_tabla, periodo):
     return fig
 
 def graficar_pareto_novedades(df_novedades_sede):
-    """Gráfica de Pareto de motivos de novedades usando matplotlib - Versión mejorada"""
+    """Gráfica de Pareto de motivos de novedades usando matplotlib - Versión optimizada con etiquetas pequeñas"""
     if df_novedades_sede.empty or '_motivo' not in df_novedades_sede.columns:
         return None
     
@@ -737,66 +737,66 @@ def graficar_pareto_novedades(df_novedades_sede):
     conteo_motivos['Porcentaje'] = (conteo_motivos['Frecuencia'] / total * 100).round(1)
     conteo_motivos['Porcentaje Acumulado'] = conteo_motivos['Porcentaje'].cumsum()
     
-    # Crear gráfica con dos ejes - TAMAÑO MEJORADO
-    fig, ax1 = plt.subplots(figsize=(14, 7))
+    # Crear gráfica con dos ejes - TAMAÑO AJUSTADO
+    fig, ax1 = plt.subplots(figsize=(14, 6.5))
     
     # Barras para frecuencias
     x = range(len(conteo_motivos))
     bars = ax1.bar(x, conteo_motivos['Frecuencia'], color='#FF6B6B', alpha=0.8, label='Frecuencia', width=0.6)
-    ax1.set_xlabel('Motivos', fontsize=13, fontweight='bold')
-    ax1.set_ylabel('Frecuencia', fontsize=13, fontweight='bold', color='#FF6B6B')
-    ax1.tick_params(axis='y', labelcolor='#FF6B6B', labelsize=11)
+    ax1.set_xlabel('Motivos', fontsize=11, fontweight='bold')
+    ax1.set_ylabel('Frecuencia', fontsize=11, fontweight='bold', color='#FF6B6B')
+    ax1.tick_params(axis='y', labelcolor='#FF6B6B', labelsize=10)
     
     # Línea para porcentaje acumulado
     ax2 = ax1.twinx()
     line = ax2.plot(x, conteo_motivos['Porcentaje Acumulado'], color='#2C3E50', 
-                   marker='o', linewidth=2.5, markersize=8, label='% Acumulado')
-    ax2.set_ylabel('Porcentaje Acumulado (%)', fontsize=13, fontweight='bold', color='#2C3E50')
-    ax2.tick_params(axis='y', labelcolor='#2C3E50', labelsize=11)
+                   marker='o', linewidth=2.5, markersize=7, label='% Acumulado')
+    ax2.set_ylabel('Porcentaje Acumulado (%)', fontsize=11, fontweight='bold', color='#2C3E50')
+    ax2.tick_params(axis='y', labelcolor='#2C3E50', labelsize=10)
     
-    # Configurar etiquetas del eje X con mejor espaciado
+    # Configurar etiquetas del eje X más pequeñas
     ax1.set_xticks(x)
-    ax1.set_xticklabels(conteo_motivos['Motivo'], rotation=30, ha='right', fontsize=10)
+    ax1.set_xticklabels(conteo_motivos['Motivo'], rotation=25, ha='right', fontsize=8.5)
     
     # Agregar línea del 80%
-    ax2.axhline(y=80, color='red', linestyle='--', alpha=0.7, linewidth=2, label='80%')
+    ax2.axhline(y=80, color='red', linestyle='--', alpha=0.6, linewidth=1.5, label='80%')
     
-    # Agregar valores y porcentajes en las barras
+    # Agregar valores y porcentajes en las barras (más pequeños)
     for i, (bar, valor, pct) in enumerate(zip(bars, conteo_motivos['Frecuencia'], conteo_motivos['Porcentaje'])):
         if valor > 0:
             # Valor de frecuencia sobre la barra
             ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(1, valor*0.02), 
-                    f'{int(valor)}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+                    f'{int(valor)}', ha='center', va='bottom', fontsize=7.5, fontweight='normal')
             # Porcentaje dentro de la barra (si es suficientemente alta)
             if bar.get_height() > max(conteo_motivos['Frecuencia']) * 0.05:
                 ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height()/2, 
-                        f'{pct}%', ha='center', va='center', fontsize=9, color='white', fontweight='bold')
+                        f'{pct}%', ha='center', va='center', fontsize=7.5, color='white', fontweight='bold')
     
-    # Agregar porcentajes acumulados en los puntos de la línea
+    # Agregar porcentajes acumulados en los puntos de la línea (más pequeños)
     for i, (x_val, pct_acum) in enumerate(zip(x, conteo_motivos['Porcentaje Acumulado'])):
         ax2.annotate(f'{pct_acum:.1f}%', 
                     xy=(x_val, pct_acum), 
-                    xytext=(0, 10), 
+                    xytext=(0, 8), 
                     textcoords='offset points',
                     ha='center', 
-                    fontsize=9, 
-                    fontweight='bold',
-                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+                    fontsize=7.5, 
+                    fontweight='normal',
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.7))
     
     # Agregar título y leyenda
-    plt.title('Pareto de Motivos de Novedades', fontsize=16, fontweight='bold', pad=20)
+    plt.title('Pareto de Motivos de Novedades', fontsize=14, fontweight='bold', pad=15)
     
     # Combinar leyendas
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=11, framealpha=0.9)
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=9, framealpha=0.9)
     
     # Mejorar la cuadrícula
     ax1.grid(True, alpha=0.3, axis='y', linestyle='--')
     ax1.set_axisbelow(True)
     
     # Ajustar límites para mejor visualización
-    ax1.set_ylim(0, max(conteo_motivos['Frecuencia']) * 1.15)
+    ax1.set_ylim(0, max(conteo_motivos['Frecuencia']) * 1.12)
     ax2.set_ylim(0, 105)
     
     plt.tight_layout()
@@ -1214,7 +1214,7 @@ if st.session_state.datos_cargados:
                         chart_data.index = df_tabla['Fecha']
                         st.line_chart(chart_data)
                     
-                    # Gráfica 2: Facturación por período (NUEVA GRÁFICA)
+                    # Gráfica 2: Facturación por período
                     st.markdown("---")
                     st.subheader("💰 Facturación por Período")
                     fig_facturacion = graficar_facturacion_temporal(df_tabla, periodo)
