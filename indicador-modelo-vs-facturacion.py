@@ -243,11 +243,12 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
     return df_temp
 
 def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
-    """Procesa hojas EVENTO y PGP para facturación"""
+    """Procesa hojas EVENTO y PGP para facturación incluyendo usuario facturador"""
     col_fecha_ingreso = None
     col_fecha_factura = None
     col_unidad_funcional = None
     col_unidad_operativa = None
+    col_usuario_facturo = None
     
     for col in df.columns:
         col_lower = col.lower().strip()
@@ -259,6 +260,8 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
             col_unidad_funcional = col
         elif 'unidad operativa' in col_lower or 'ciudad unidad operativa' in col_lower:
             col_unidad_operativa = col
+        elif 'usuario facturo' in col_lower or 'usuario_facturo' in col_lower or 'facturador' in col_lower:
+            col_usuario_facturo = col
     
     if not col_fecha_ingreso or not col_fecha_factura or not col_unidad_funcional:
         return pd.DataFrame()
@@ -275,6 +278,13 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
     
     valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
     
+    # Obtener usuarios facturadores si existen
+    usuarios = []
+    if col_usuario_facturo:
+        usuarios = df[col_usuario_facturo].astype(str).str.upper().str.strip().fillna('NO ESPECIFICADO').tolist()
+    else:
+        usuarios = ['NO ESPECIFICADO'] * len(df)
+    
     # Filtrar por unidades funcionales seleccionadas
     if unidades_filtro and len(unidades_filtro) > 0:
         unidades_filtro_sede = [u for u in unidades_filtro if any(clave in u for clave in config['unidades_clave'])]
@@ -288,7 +298,8 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
     df_temp = pd.DataFrame({
         '_fecha_ingreso': fechas_ingreso,
         '_fecha_factura': fechas_factura,
-        '_valor_funcional': valores_funcionales
+        '_valor_funcional': valores_funcionales,
+        '_usuario': usuarios
     })[mask_unidades]
     
     # Filtrar por unidad operativa
@@ -397,6 +408,7 @@ def cargar_archivo(archivo, unidades_filtro):
         
         dfs_ingresos = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion = {sede: [] for sede in SEDES.keys()}
+        dfs_facturacion_detalle = {sede: [] for sede in SEDES.keys()}  # Nuevo: para guardar detalles de facturación
         
         # Procesar hojas EVENTO y PGP
         for hoja in ['EVENTO', 'PGP']:
@@ -410,6 +422,7 @@ def cargar_archivo(archivo, unidades_filtro):
                 df_fac = procesar_hoja_facturacion(df, hoja, unidades_filtro, config)
                 if not df_fac.empty:
                     dfs_facturacion[sede].append(df_fac)
+                    dfs_facturacion_detalle[sede].append(df_fac)
         
         # Procesar hojas PDTE EVENTO y PDTE PGP
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
@@ -438,6 +451,11 @@ def cargar_archivo(archivo, unidades_filtro):
                 dfs_resultado[f'FACTURACION_{sede}'] = pd.concat(dfs_facturacion[sede], ignore_index=True)
             else:
                 dfs_resultado[f'FACTURACION_{sede}'] = pd.DataFrame()
+            
+            if dfs_facturacion_detalle[sede]:
+                dfs_resultado[f'FACTURACION_DETALLE_{sede}'] = pd.concat(dfs_facturacion_detalle[sede], ignore_index=True)
+            else:
+                dfs_resultado[f'FACTURACION_DETALLE_{sede}'] = pd.DataFrame()
         
         dfs_resultado['NOVEDADES'] = df_novedades
         
@@ -625,6 +643,79 @@ def construir_tabla_sede(sede, config, fecha_inicio, fecha_fin, df_ingresos, df_
     df_agrupado = agrupar_por_periodo(df, periodo, fecha_fin)
     
     return df_agrupado
+
+def obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_fin, periodo):
+    """Obtiene la facturación agrupada por usuario y período"""
+    if df_facturacion_detalle.empty:
+        return pd.DataFrame()
+    
+    # Filtrar por fechas
+    mask_fecha = (df_facturacion_detalle['_fecha_factura'] >= fecha_inicio.date()) & (df_facturacion_detalle['_fecha_factura'] <= fecha_fin.date())
+    df_filtrado = df_facturacion_detalle[mask_fecha].copy()
+    
+    if df_filtrado.empty:
+        return pd.DataFrame()
+    
+    # Crear columna de período
+    df_filtrado['fecha_dt'] = pd.to_datetime(df_filtrado['_fecha_factura'])
+    
+    if periodo == 'Mensual':
+        df_filtrado['Periodo'] = df_filtrado['fecha_dt'].dt.strftime('%Y-%m')
+    elif periodo == 'Semanal':
+        df_filtrado['Periodo'] = df_filtrado['fecha_dt'].dt.to_period('W').astype(str)
+    else:
+        df_filtrado['Periodo'] = df_filtrado['fecha_dt'].dt.strftime('%Y-%m-%d')
+    
+    # Agrupar por usuario y período
+    resultado = df_filtrado.groupby(['_usuario', 'Periodo']).size().reset_index(name='Cantidad')
+    resultado = resultado.pivot(index='_usuario', columns='Periodo', values='Cantidad').fillna(0).astype(int)
+    
+    # Agregar total por usuario
+    resultado['TOTAL'] = resultado.sum(axis=1)
+    
+    # Ordenar por total descendente
+    resultado = resultado.sort_values('TOTAL', ascending=False)
+    
+    # Reordenar columnas cronológicamente
+    periodos = [col for col in resultado.columns if col != 'TOTAL']
+    periodos_ordenados = sorted(periodos)
+    resultado = resultado[periodos_ordenados + ['TOTAL']]
+    
+    return resultado
+
+def graficar_facturacion_por_usuario(df_usuario, titulo="Facturación por Usuario"):
+    """Gráfica de barras de facturación por usuario"""
+    if df_usuario.empty:
+        return None
+    
+    # Preparar datos (top 10 usuarios)
+    df_top = df_usuario.head(10).copy()
+    usuarios = df_top.index.tolist()
+    cantidades = df_top['TOTAL'].tolist()
+    
+    # Crear gráfica
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Colores degradados
+    colors = plt.cm.Blues(np.linspace(0.4, 0.9, len(usuarios)))
+    
+    bars = ax.barh(range(len(usuarios)), cantidades, color=colors, alpha=0.8)
+    ax.set_yticks(range(len(usuarios)))
+    ax.set_yticklabels(usuarios, fontsize=10)
+    ax.set_xlabel('Cantidad Facturada', fontsize=12)
+    ax.set_ylabel('Usuario Facturador', fontsize=12)
+    ax.set_title(titulo, fontsize=14, fontweight='bold')
+    
+    # Agregar valores en las barras
+    for i, (bar, valor) in enumerate(zip(bars, cantidades)):
+        if valor > 0:
+            ax.text(valor + max(cantidades)*0.01, bar.get_y() + bar.get_height()/2, 
+                   str(int(valor)), ha='left', va='center', fontsize=9, fontweight='bold')
+    
+    ax.grid(True, alpha=0.3, axis='x')
+    plt.tight_layout()
+    
+    return fig
 
 # Funciones de gráficas con matplotlib
 def graficar_novedades_temporales(df_novedades_sede, periodo):
@@ -1159,6 +1250,7 @@ if st.session_state.datos_cargados:
             
             df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
             df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
+            df_facturacion_detalle = st.session_state.dfs.get(f'FACTURACION_DETALLE_{sede}', pd.DataFrame())
             df_novedades_sede = st.session_state.dfs.get(f'NOVEDADES_DETALLE_{sede}', pd.DataFrame())
             
             with st.spinner(f"Calculando {sede}..."):
@@ -1238,6 +1330,28 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos de facturación para mostrar")
                     
+                    # NUEVA TABLA: Facturación por Usuario
+                    st.markdown("---")
+                    st.subheader("👥 Facturación por Usuario (Facturador)")
+                    
+                    df_usuario = obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_fin, periodo)
+                    
+                    if not df_usuario.empty:
+                        # Mostrar tabla
+                        st.dataframe(df_usuario, use_container_width=True)
+                        
+                        # Gráfica de facturación por usuario
+                        st.markdown("---")
+                        st.subheader("📊 Top Facturadores")
+                        fig_usuario = graficar_facturacion_por_usuario(df_usuario, f"Top Facturadores - {sede}")
+                        if fig_usuario:
+                            st.pyplot(fig_usuario, use_container_width=True)
+                            plt.close()
+                        else:
+                            st.info("No hay datos suficientes para generar la gráfica de facturadores")
+                    else:
+                        st.info("No hay datos de facturación por usuario para mostrar")
+                    
                     # Gráfica 3: Novedades generadas (afectada por el período seleccionado)
                     st.markdown("---")
                     st.subheader("📈 Novedades Generadas")
@@ -1273,6 +1387,8 @@ if st.session_state.datos_cargados:
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         df_tabla.to_excel(writer, sheet_name=f'Resumen_{periodo}', index=False)
+                        if not df_usuario.empty:
+                            df_usuario.to_excel(writer, sheet_name=f'Facturadores_{periodo}', index=True)
                     
                     st.download_button(
                         "📥 Descargar Excel (Sede)",
@@ -1331,6 +1447,7 @@ if st.session_state.datos_cargados:
                     if fecha_fin >= fecha_inicio:
                         df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
                         df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
+                        df_facturacion_detalle = st.session_state.dfs.get(f'FACTURACION_DETALLE_{sede}', pd.DataFrame())
                         df_novedades_sede = st.session_state.dfs.get(f'NOVEDADES_DETALLE_{sede}', pd.DataFrame())
                         
                         # Calcular tabla resumen diaria
@@ -1347,17 +1464,16 @@ if st.session_state.datos_cargados:
                             df_export = df_sede.copy()
                             df_export['Fecha'] = df_export['Fecha'].dt.strftime('%Y-%m-%d')
                             
-                            # Escribir datos
+                            # Escribir datos principales
                             for col_num, value in enumerate(df_export.columns.values):
                                 worksheet.write(0, col_num, value)
                             for row_num, row in enumerate(df_export.values, 1):
                                 for col_num, value in enumerate(row):
                                     worksheet.write(row_num, col_num, value)
                             
-                            # Generar y guardar gráficas
                             row_start = len(df_export) + 3
                             
-                            # Gráfica de Facturación (usando df_sede con fechas datetime)
+                            # Gráfica de Facturación
                             fig_fact = graficar_facturacion_temporal(df_sede, 'Diario')
                             if fig_fact:
                                 img_path = os.path.join(temp_dir, f"{sede}_facturacion.png")
@@ -1365,6 +1481,31 @@ if st.session_state.datos_cargados:
                                 worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
                                 plt.close(fig_fact)
                                 row_start += 25
+                            
+                            # Tabla de facturación por usuario (período diario)
+                            df_usuario = obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_fin, 'Diario')
+                            if not df_usuario.empty:
+                                # Escribir título de la tabla
+                                worksheet.write(row_start, 0, "Facturación por Usuario (Diario)")
+                                row_start += 1
+                                
+                                # Escribir datos de la tabla
+                                for col_num, value in enumerate(df_usuario.columns.values):
+                                    worksheet.write(row_start, col_num, value)
+                                for row_num, row in enumerate(df_usuario.values, row_start + 1):
+                                    for col_num, value in enumerate(row):
+                                        worksheet.write(row_num, col_num, value)
+                                
+                                row_start += len(df_usuario) + 3
+                                
+                                # Gráfica de facturación por usuario
+                                fig_usuario = graficar_facturacion_por_usuario(df_usuario, f"Top Facturadores - {sede}")
+                                if fig_usuario:
+                                    img_path = os.path.join(temp_dir, f"{sede}_usuarios.png")
+                                    fig_usuario.savefig(img_path, dpi=100, bbox_inches='tight')
+                                    worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
+                                    plt.close(fig_usuario)
+                                    row_start += 25
                             
                             # Gráfica de Novedades Temporales
                             fig_nov_temp = graficar_novedades_temporales(df_novedades_sede, 'Diario')
