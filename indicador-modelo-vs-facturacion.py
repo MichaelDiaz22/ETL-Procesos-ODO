@@ -80,6 +80,8 @@ if 'unidades_seleccionadas' not in st.session_state:
     st.session_state.unidades_seleccionadas = UNIDADES_POR_DEFECTO.copy()
 if 'resumen_ejecutivo' not in st.session_state:
     st.session_state.resumen_ejecutivo = None
+if 'periodos_sedes' not in st.session_state:
+    st.session_state.periodos_sedes = {}
 
 def convertir_fecha_excel(numero):
     try:
@@ -1322,12 +1324,17 @@ if st.session_state.datos_cargados:
                     
                     st.markdown("---")
                     
-                    # Selector de agrupación
+                    # Selector de agrupación (default: Semanal)
+                    periodo_key = f"periodo_{sede}"
+                    default_periodo = st.session_state.periodos_sedes.get(sede, 'Semanal')
                     periodo = st.selectbox(
                         "📊 Agrupar por:",
                         options=['Diario', 'Semanal', 'Mensual'],
-                        key=f"periodo_{sede}"
+                        index=['Diario', 'Semanal', 'Mensual'].index(default_periodo),
+                        key=periodo_key
                     )
+                    # Guardar el período seleccionado en session state
+                    st.session_state.periodos_sedes[sede] = periodo
                     
                     # Recalcular tabla con el período seleccionado
                     df_tabla = construir_tabla_sede(
@@ -1368,7 +1375,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos de facturación para mostrar")
                     
-                    # NUEVA TABLA: Facturación por Usuario
+                    # Tabla de facturación por usuario (con la agrupación seleccionada)
                     st.markdown("---")
                     st.subheader("👥 Facturación por Usuario (Facturador)")
                     
@@ -1378,7 +1385,7 @@ if st.session_state.datos_cargados:
                         # Mostrar tabla
                         st.dataframe(df_usuario, use_container_width=True)
                         
-                        # Nueva gráfica de facturación por usuario (estilo mensual apilado)
+                        # Gráfica de facturación por usuario (estilo mensual apilado - independiente del selector)
                         st.markdown("---")
                         st.subheader("📊 Distribución de Facturación por Usuario (Mensual)")
                         fig_usuario_mensual = graficar_facturacion_por_usuario_mensual(
@@ -1422,7 +1429,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos suficientes para generar la distribución por mes")
                     
-                    # Botón de descarga de Excel para esta sede individual
+                    # Botón de descarga de Excel para esta sede individual (con la agrupación seleccionada)
                     st.markdown("---")
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -1478,7 +1485,7 @@ if st.session_state.datos_cargados:
                     linea_limpia = linea.replace('##', '').replace('###', '').replace('**', '').replace('📋', '').replace('📊', '').replace('🏆', '').replace('⚠️', '').replace('🔒', '').replace('💡', '').replace('📌', '').strip()
                     worksheet_narrativa.write(row_num, 0, linea_limpia)
                 
-                # Procesar cada sede
+                # Procesar cada sede con su período seleccionado
                 for sede in SEDES.keys():
                     config = SEDES[sede]
                     fecha_inicio = config['fecha_inicio']
@@ -1489,10 +1496,13 @@ if st.session_state.datos_cargados:
                         df_facturacion_detalle = st.session_state.dfs.get(f'FACTURACION_DETALLE_{sede}', pd.DataFrame())
                         df_novedades_sede = st.session_state.dfs.get(f'NOVEDADES_DETALLE_{sede}', pd.DataFrame())
                         
-                        # Calcular tabla resumen diaria
+                        # Obtener el período seleccionado para esta sede (default: Semanal)
+                        periodo_export = st.session_state.periodos_sedes.get(sede, 'Semanal')
+                        
+                        # Calcular tabla resumen con el período seleccionado
                         df_sede = construir_tabla_sede(
                             sede, config, fecha_inicio, fecha_fin, 
-                            df_ingresos, df_facturacion, df_novedades, 'Diario'
+                            df_ingresos, df_facturacion, df_novedades, periodo_export
                         )
                         
                         if not df_sede.empty and df_sede['ingresos'].sum() > 0:
@@ -1501,7 +1511,8 @@ if st.session_state.datos_cargados:
                             
                             # Asegurar que Fecha sea string para Excel
                             df_export = df_sede.copy()
-                            df_export['Fecha'] = df_export['Fecha'].dt.strftime('%Y-%m-%d')
+                            if 'Fecha' in df_export.columns:
+                                df_export['Fecha'] = df_export['Fecha'].dt.strftime('%Y-%m-%d')
                             
                             # Escribir datos principales
                             for col_num, value in enumerate(df_export.columns.values):
@@ -1512,8 +1523,8 @@ if st.session_state.datos_cargados:
                             
                             row_start = len(df_export) + 3
                             
-                            # Gráfica de Facturación
-                            fig_fact = graficar_facturacion_temporal(df_sede, 'Diario')
+                            # Gráfica de Facturación (con el período seleccionado)
+                            fig_fact = graficar_facturacion_temporal(df_sede, periodo_export)
                             if fig_fact:
                                 img_path = os.path.join(temp_dir, f"{sede}_facturacion.png")
                                 fig_fact.savefig(img_path, dpi=100, bbox_inches='tight')
@@ -1521,11 +1532,11 @@ if st.session_state.datos_cargados:
                                 plt.close(fig_fact)
                                 row_start += 25
                             
-                            # Tabla de facturación por usuario (período diario)
-                            df_usuario = obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_fin, 'Diario')
+                            # Tabla de facturación por usuario (con el período seleccionado)
+                            df_usuario = obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_fin, periodo_export)
                             if not df_usuario.empty:
                                 # Escribir título de la tabla
-                                worksheet.write(row_start, 0, "Facturación por Usuario (Diario)")
+                                worksheet.write(row_start, 0, f"Facturación por Usuario ({periodo_export})")
                                 row_start += 1
                                 
                                 # Escribir datos de la tabla
@@ -1537,7 +1548,7 @@ if st.session_state.datos_cargados:
                                 
                                 row_start += len(df_usuario) + 3
                                 
-                                # Gráfica de facturación por usuario (mensual apilada)
+                                # Gráfica de facturación por usuario (mensual apilada - independiente)
                                 fig_usuario_mensual = graficar_facturacion_por_usuario_mensual(
                                     df_facturacion_detalle, fecha_inicio, fecha_fin, sede
                                 )
@@ -1548,8 +1559,8 @@ if st.session_state.datos_cargados:
                                     plt.close(fig_usuario_mensual)
                                     row_start += 25
                             
-                            # Gráfica de Novedades Temporales
-                            fig_nov_temp = graficar_novedades_temporales(df_novedades_sede, 'Diario')
+                            # Gráfica de Novedades Temporales (con el período seleccionado)
+                            fig_nov_temp = graficar_novedades_temporales(df_novedades_sede, periodo_export)
                             if fig_nov_temp:
                                 img_path = os.path.join(temp_dir, f"{sede}_novedades_temp.png")
                                 fig_nov_temp.savefig(img_path, dpi=100, bbox_inches='tight')
