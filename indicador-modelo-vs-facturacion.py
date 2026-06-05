@@ -1535,18 +1535,22 @@ if st.session_state.datos_cargados:
                             # Tabla de facturación por usuario (con el período seleccionado)
                             df_usuario = obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_fin, periodo_export)
                             if not df_usuario.empty:
+                                # Resetear índice para que el nombre del usuario sea una columna
+                                df_usuario_export = df_usuario.reset_index()
+                                df_usuario_export.columns.name = None
+                                
                                 # Escribir título de la tabla
                                 worksheet.write(row_start, 0, f"Facturación por Usuario ({periodo_export})")
                                 row_start += 1
                                 
-                                # Escribir datos de la tabla
-                                for col_num, value in enumerate(df_usuario.columns.values):
+                                # Escribir datos de la tabla (incluyendo la columna de usuario)
+                                for col_num, value in enumerate(df_usuario_export.columns.values):
                                     worksheet.write(row_start, col_num, value)
-                                for row_num, row in enumerate(df_usuario.values, row_start + 1):
+                                for row_num, row in enumerate(df_usuario_export.values, row_start + 1):
                                     for col_num, value in enumerate(row):
                                         worksheet.write(row_num, col_num, value)
                                 
-                                row_start += len(df_usuario) + 3
+                                row_start += len(df_usuario_export) + 3
                                 
                                 # Gráfica de facturación por usuario (mensual apilada - independiente)
                                 fig_usuario_mensual = graficar_facturacion_por_usuario_mensual(
