@@ -4,6 +4,10 @@ from datetime import datetime, timedelta
 import calendar
 import matplotlib.pyplot as plt
 import numpy as np
+import xlsxwriter
+from io import BytesIO
+import tempfile
+import os
 
 # Configuración de la página
 st.set_page_config(
@@ -761,7 +765,7 @@ def graficar_pareto_novedades(df_novedades_sede):
     # Agregar línea del 80%
     ax2.axhline(y=80, color='red', linestyle='--', alpha=0.6, linewidth=1.5)
     
-    # Agregar valores y porcentajes en las barras (tamaño original)
+    # Agregar valores y porcentajes en las barras
     for i, (bar, valor, pct) in enumerate(zip(bars, conteo_motivos['Frecuencia'], conteo_motivos['Porcentaje'])):
         if valor > 0:
             # Valor de frecuencia sobre la barra
@@ -1119,7 +1123,6 @@ if st.session_state.datos_cargados:
                 # Botón para descargar el análisis
                 st.markdown("---")
                 if st.button("📥 Descargar Análisis Ejecutivo (TXT)"):
-                    from io import BytesIO
                     output = BytesIO()
                     output.write(narrativa.encode('utf-8'))
                     st.download_button(
@@ -1254,7 +1257,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos suficientes para generar la distribución por mes")
                     
-                    # Botón de descarga
+                    # Botón de descarga de Excel para esta sede individual
                     st.markdown("---")
                     from io import BytesIO
                     output = BytesIO()
@@ -1262,7 +1265,7 @@ if st.session_state.datos_cargados:
                         df_tabla.to_excel(writer, sheet_name=f'Resumen_{periodo}', index=False)
                     
                     st.download_button(
-                        "📥 Descargar Excel",
+                        "📥 Descargar Excel (Sede)",
                         output.getvalue(),
                         f"{sede.lower().replace(' ', '_')}_{periodo.lower()}.xlsx",
                         key=f"excel_{sede}_{periodo}"
@@ -1271,6 +1274,124 @@ if st.session_state.datos_cargados:
                     st.info(f"La sede {sede} no tiene ingresos en el período seleccionado.")
                 else:
                     st.info(f"No hay datos para {sede} en el período seleccionado")
+    
+    # Botón para exportar TODO (datos + gráficas)
+    st.markdown("---")
+    st.subheader("📥 Exportar Reporte Completo")
+    
+    if st.button("📊 Exportar todo (Datos + Gráficas a Excel)", type="primary"):
+        with st.spinner("Generando archivo Excel con todas las gráficas insertadas..."):
+            from io import BytesIO
+            import tempfile
+            
+            # Crear archivo temporal para guardar las imágenes
+            temp_dir = tempfile.mkdtemp()
+            imagenes_paths = []
+            
+            try:
+                # Crear el archivo Excel con xlsxwriter
+                output = BytesIO()
+                workbook = xlsxwriter.Workbook(output, {'constant_memory': False})
+                
+                # Hoja 1: Resumen Ejecutivo (solo datos)
+                if st.session_state.resumen_ejecutivo is not None and not st.session_state.resumen_ejecutivo.empty:
+                    df_resumen_export = st.session_state.resumen_ejecutivo.copy()
+                    df_resumen_export['Ingresos_num'] = df_resumen_export['Ingresos'].str.replace(',', '').astype(int)
+                    df_resumen_export = df_resumen_export[df_resumen_export['Ingresos_num'] > 0]
+                    df_resumen_export = df_resumen_export.drop(columns=['Ingresos_num', 'fecha_inicio', 'fecha_fin'], errors='ignore')
+                    
+                    worksheet = workbook.add_worksheet('Resumen_Ejecutivo')
+                    for col_num, value in enumerate(df_resumen_export.columns.values):
+                        worksheet.write(0, col_num, value)
+                    for row_num, row in enumerate(df_resumen_export.values, 1):
+                        for col_num, value in enumerate(row):
+                            worksheet.write(row_num, col_num, value)
+                
+                # Procesar cada sede
+                for sede in SEDES.keys():
+                    config = SEDES[sede]
+                    fecha_inicio = config['fecha_inicio']
+                    
+                    if fecha_fin >= fecha_inicio:
+                        df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
+                        df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
+                        df_novedades_sede = st.session_state.dfs.get(f'NOVEDADES_DETALLE_{sede}', pd.DataFrame())
+                        
+                        # Calcular tabla resumen diaria
+                        df_sede = construir_tabla_sede(
+                            sede, config, fecha_inicio, fecha_fin, 
+                            df_ingresos, df_facturacion, df_novedades, 'Diario'
+                        )
+                        
+                        if not df_sede.empty and df_sede['ingresos'].sum() > 0:
+                            sheet_name = sede.replace(' ', '_')[:31]
+                            worksheet = workbook.add_worksheet(sheet_name)
+                            
+                            # Escribir datos
+                            df_sede['Fecha'] = df_sede['Fecha'].dt.strftime('%Y-%m-%d')
+                            for col_num, value in enumerate(df_sede.columns.values):
+                                worksheet.write(0, col_num, value)
+                            for row_num, row in enumerate(df_sede.values, 1):
+                                for col_num, value in enumerate(row):
+                                    worksheet.write(row_num, col_num, value)
+                            
+                            # Generar y guardar gráficas
+                            row_start = len(df_sede) + 3
+                            
+                            # Gráfica de Facturación
+                            fig_fact = graficar_facturacion_temporal(df_sede, 'Diario')
+                            if fig_fact:
+                                img_path = os.path.join(temp_dir, f"{sede}_facturacion.png")
+                                fig_fact.savefig(img_path, dpi=100, bbox_inches='tight')
+                                worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
+                                plt.close(fig_fact)
+                                row_start += 25
+                            
+                            # Gráfica de Novedades Temporales
+                            fig_nov_temp = graficar_novedades_temporales(df_novedades_sede, 'Diario')
+                            if fig_nov_temp:
+                                img_path = os.path.join(temp_dir, f"{sede}_novedades_temp.png")
+                                fig_nov_temp.savefig(img_path, dpi=100, bbox_inches='tight')
+                                worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
+                                plt.close(fig_nov_temp)
+                                row_start += 25
+                            
+                            # Gráfica de Pareto
+                            fig_pareto = graficar_pareto_novedades(df_novedades_sede)
+                            if fig_pareto:
+                                img_path = os.path.join(temp_dir, f"{sede}_pareto.png")
+                                fig_pareto.savefig(img_path, dpi=100, bbox_inches='tight')
+                                worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
+                                plt.close(fig_pareto)
+                                row_start += 25
+                            
+                            # Gráfica de Distribución
+                            fig_dist = graficar_distribucion_motivos_meses(df_novedades_sede)
+                            if fig_dist:
+                                img_path = os.path.join(temp_dir, f"{sede}_distribucion.png")
+                                fig_dist.savefig(img_path, dpi=100, bbox_inches='tight')
+                                worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
+                                plt.close(fig_dist)
+                
+                workbook.close()
+                
+                # Limpiar archivos temporales
+                for file in os.listdir(temp_dir):
+                    os.remove(os.path.join(temp_dir, file))
+                os.rmdir(temp_dir)
+                
+                st.success("✅ Reporte completo generado exitosamente!")
+                st.download_button(
+                    label="📥 Descargar Reporte Completo (Datos + Gráficas)",
+                    data=output.getvalue(),
+                    file_name=f"reporte_completo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                
+            except Exception as e:
+                st.error(f"Error al generar el reporte: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
     
     if st.button("🔄 Reiniciar"):
         for key in list(st.session_state.keys()):
