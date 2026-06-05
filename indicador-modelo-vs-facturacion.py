@@ -1157,8 +1157,6 @@ with st.sidebar:
         st.markdown(f"**{sede}:** Inicio {fecha_str}")
 
 # Interfaz principal
-st.header("📁 Cargar Archivo")
-
 st.markdown("### ⚙️ Configuración del Reporte")
 
 fecha_actual = datetime.now()
