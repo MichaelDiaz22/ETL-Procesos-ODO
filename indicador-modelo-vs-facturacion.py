@@ -676,13 +676,24 @@ def graficar_facturacion_temporal(df_tabla, periodo):
     if df_tabla.empty:
         return None
     
+    # Asegurar que Fecha sea datetime
+    df_tabla = df_tabla.copy()
+    if 'Fecha' in df_tabla.columns and not pd.api.types.is_datetime64_any_dtype(df_tabla['Fecha']):
+        df_tabla['Fecha'] = pd.to_datetime(df_tabla['Fecha'])
+    
     # Preparar datos según el período
     if periodo == 'Mensual':
-        x_data = df_tabla['mes'].astype(str)
+        if 'mes' in df_tabla.columns:
+            x_data = df_tabla['mes'].astype(str)
+        else:
+            x_data = df_tabla['Fecha'].dt.strftime('%Y-%m')
         titulo = "Facturación por Mes"
         xlabel = "Mes"
     elif periodo == 'Semanal':
-        x_data = df_tabla['semana'].astype(str)
+        if 'semana' in df_tabla.columns:
+            x_data = df_tabla['semana'].astype(str)
+        else:
+            x_data = df_tabla['Fecha'].dt.isocalendar().week.astype(str)
         titulo = "Facturación por Semana"
         xlabel = "Semana"
     else:
@@ -1259,7 +1270,6 @@ if st.session_state.datos_cargados:
                     
                     # Botón de descarga de Excel para esta sede individual
                     st.markdown("---")
-                    from io import BytesIO
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         df_tabla.to_excel(writer, sheet_name=f'Resumen_{periodo}', index=False)
@@ -1281,12 +1291,7 @@ if st.session_state.datos_cargados:
     
     if st.button("📊 Exportar todo (Datos + Gráficas a Excel)", type="primary"):
         with st.spinner("Generando archivo Excel con todas las gráficas insertadas..."):
-            from io import BytesIO
-            import tempfile
-            
-            # Crear archivo temporal para guardar las imágenes
             temp_dir = tempfile.mkdtemp()
-            imagenes_paths = []
             
             try:
                 # Crear el archivo Excel con xlsxwriter
@@ -1327,18 +1332,21 @@ if st.session_state.datos_cargados:
                             sheet_name = sede.replace(' ', '_')[:31]
                             worksheet = workbook.add_worksheet(sheet_name)
                             
+                            # Asegurar que Fecha sea string para Excel
+                            df_export = df_sede.copy()
+                            df_export['Fecha'] = df_export['Fecha'].dt.strftime('%Y-%m-%d')
+                            
                             # Escribir datos
-                            df_sede['Fecha'] = df_sede['Fecha'].dt.strftime('%Y-%m-%d')
-                            for col_num, value in enumerate(df_sede.columns.values):
+                            for col_num, value in enumerate(df_export.columns.values):
                                 worksheet.write(0, col_num, value)
-                            for row_num, row in enumerate(df_sede.values, 1):
+                            for row_num, row in enumerate(df_export.values, 1):
                                 for col_num, value in enumerate(row):
                                     worksheet.write(row_num, col_num, value)
                             
                             # Generar y guardar gráficas
-                            row_start = len(df_sede) + 3
+                            row_start = len(df_export) + 3
                             
-                            # Gráfica de Facturación
+                            # Gráfica de Facturación (usando df_sede con fechas datetime)
                             fig_fact = graficar_facturacion_temporal(df_sede, 'Diario')
                             if fig_fact:
                                 img_path = os.path.join(temp_dir, f"{sede}_facturacion.png")
@@ -1392,6 +1400,17 @@ if st.session_state.datos_cargados:
                 st.error(f"Error al generar el reporte: {str(e)}")
                 import traceback
                 st.code(traceback.format_exc())
+                
+                # Limpiar archivos temporales en caso de error
+                for file in os.listdir(temp_dir):
+                    try:
+                        os.remove(os.path.join(temp_dir, file))
+                    except:
+                        pass
+                try:
+                    os.rmdir(temp_dir)
+                except:
+                    pass
     
     if st.button("🔄 Reiniciar"):
         for key in list(st.session_state.keys()):
