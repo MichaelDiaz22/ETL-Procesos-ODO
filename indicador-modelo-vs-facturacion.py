@@ -11,12 +11,12 @@ import os
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Tabla Resumen por Ciudad",
+    page_title="Indicador novedades en modelo de acceso (Admisiones vs. Facturación)",
     page_icon="📊",
     layout="wide"
 )
 
-st.title("📊 Tabla Resumen por Ciudad")
+st.title("📊 Indicador novedades en modelo de acceso (Admisiones vs. Facturación)")
 st.markdown("---")
 
 # Unidades funcionales por defecto
@@ -1170,9 +1170,9 @@ fecha_hasta = st.date_input(
     max_value=fecha_actual.date()
 )
 
-st.markdown("---")
-
 archivo = st.file_uploader("Selecciona el archivo Excel", type=['xlsx', 'xls'])
+
+st.markdown("---")
 
 if archivo:
     st.markdown("### 🔍 Filtro por Unidad Funcional")
