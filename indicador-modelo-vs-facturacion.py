@@ -1285,11 +1285,11 @@ if st.session_state.datos_cargados:
                 else:
                     st.info(f"No hay datos para {sede} en el período seleccionado")
     
-    # Botón para exportar TODO (datos + gráficas)
+    # Botón para exportar TODO (datos + gráficas + narrativa)
     st.markdown("---")
     st.subheader("📥 Exportar Reporte Completo")
     
-    if st.button("📊 Exportar todo (Datos + Gráficas a Excel)", type="primary"):
+    if st.button("📊 Exportar todo (Datos + Gráficas + Narrativa a Excel)", type="primary"):
         with st.spinner("Generando archivo Excel con todas las gráficas insertadas..."):
             temp_dir = tempfile.mkdtemp()
             
@@ -1298,7 +1298,7 @@ if st.session_state.datos_cargados:
                 output = BytesIO()
                 workbook = xlsxwriter.Workbook(output, {'constant_memory': False})
                 
-                # Hoja 1: Resumen Ejecutivo (solo datos)
+                # Hoja 1: Resumen Ejecutivo (datos)
                 if st.session_state.resumen_ejecutivo is not None and not st.session_state.resumen_ejecutivo.empty:
                     df_resumen_export = st.session_state.resumen_ejecutivo.copy()
                     df_resumen_export['Ingresos_num'] = df_resumen_export['Ingresos'].str.replace(',', '').astype(int)
@@ -1311,6 +1311,17 @@ if st.session_state.datos_cargados:
                     for row_num, row in enumerate(df_resumen_export.values, 1):
                         for col_num, value in enumerate(row):
                             worksheet.write(row_num, col_num, value)
+                
+                # Hoja 2: Narrativa Ejecutiva
+                worksheet_narrativa = workbook.add_worksheet('Narrativa_Ejecutiva')
+                narrativa_texto = generar_narrativa_ejecutiva(st.session_state.resumen_ejecutivo)
+                
+                # Escribir la narrativa línea por línea
+                lineas = narrativa_texto.split('\n')
+                for row_num, linea in enumerate(lineas):
+                    # Limpiar markdown para Excel
+                    linea_limpia = linea.replace('##', '').replace('###', '').replace('**', '').replace('📋', '').replace('📊', '').replace('🏆', '').replace('⚠️', '').replace('🔒', '').replace('💡', '').replace('📌', '').strip()
+                    worksheet_narrativa.write(row_num, 0, linea_limpia)
                 
                 # Procesar cada sede
                 for sede in SEDES.keys():
@@ -1390,7 +1401,7 @@ if st.session_state.datos_cargados:
                 
                 st.success("✅ Reporte completo generado exitosamente!")
                 st.download_button(
-                    label="📥 Descargar Reporte Completo (Datos + Gráficas)",
+                    label="📥 Descargar Reporte Completo (Datos + Gráficas + Narrativa)",
                     data=output.getvalue(),
                     file_name=f"reporte_completo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
