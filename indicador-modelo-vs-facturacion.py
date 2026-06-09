@@ -124,51 +124,6 @@ def obtener_unidades_funcionales(archivo):
         st.error(f"Error: {str(e)}")
         return []
 
-def obtener_todas_unidades_funcionales(archivo):
-    """Obtiene TODAS las unidades funcionales sin filtro para la tabla de conteo"""
-    try:
-        unidades_conteo = {}
-        for hoja in ['EVENTO', 'PGP', 'PDTE EVENTO', 'PDTE PGP']:
-            try:
-                df = pd.read_excel(archivo, sheet_name=hoja)
-                col_unidad_funcional = None
-                for col in df.columns:
-                    col_lower = col.lower().strip()
-                    if 'unidad funcional ingreso' in col_lower:
-                        col_unidad_funcional = col
-                        break
-                
-                col_fecha_factura = None
-                for col in df.columns:
-                    col_lower = col.lower().strip()
-                    if 'fecha factura' in col_lower or 'fecha_factura' in col_lower:
-                        col_fecha_factura = col
-                        break
-                
-                if col_unidad_funcional and col_fecha_factura:
-                    for idx, row in df.iterrows():
-                        unidad = str(row[col_unidad_funcional]).strip() if pd.notna(row[col_unidad_funcional]) else None
-                        if unidad and unidad != 'nan':
-                            fecha_factura = convertir_fecha_excel(row[col_fecha_factura])
-                            if fecha_factura:
-                                if unidad not in unidades_conteo:
-                                    unidades_conteo[unidad] = {'fechas': [], 'usuario': None}
-                                unidades_conteo[unidad]['fechas'].append(fecha_factura)
-                                
-                                # Intentar obtener usuario facturador
-                                col_usuario = None
-                                for col in df.columns:
-                                    if 'usuario facturo' in col.lower() or 'usuario_facturo' in col.lower():
-                                        col_usuario = col
-                                        break
-                                if col_usuario and unidades_conteo[unidad]['usuario'] is None:
-                                    unidades_conteo[unidad]['usuario'] = str(row[col_usuario]) if pd.notna(row[col_usuario]) else 'NO ESPECIFICADO'
-            except:
-                continue
-        return unidades_conteo
-    except Exception as e:
-        return {}
-
 def normalizar_texto(texto):
     if pd.isna(texto):
         return ""
@@ -455,10 +410,6 @@ def cargar_archivo(archivo, unidades_filtro):
             st.error(f"Faltan hojas: {', '.join(hojas_faltantes)}")
             return False, None, None
         
-        # Obtener TODAS las unidades funcionales para la tabla de conteo
-        todas_unidades = obtener_todas_unidades_funcionales(archivo)
-        st.session_state.unidades_funcionales_completas = todas_unidades
-        
         dfs_ingresos = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion_detalle = {sede: [] for sede in SEDES.keys()}
@@ -697,7 +648,7 @@ def construir_tabla_sede(sede, config, fecha_inicio, fecha_fin, df_ingresos, df_
     
     return df_agrupado
 
-def obtener_tabla_unidades_funcionales(archivo, df_facturacion_detalle, fecha_inicio, fecha_fin, periodo, usuarios_seleccionados=None):
+def obtener_tabla_unidades_funcionales(df_facturacion_detalle, fecha_inicio, fecha_fin, periodo, usuarios_seleccionados=None):
     """
     Genera tabla con todas las unidades funcionales y conteo de facturación por período
     NO se ve afectada por el filtro inicial de unidades funcionales
@@ -705,7 +656,8 @@ def obtener_tabla_unidades_funcionales(archivo, df_facturacion_detalle, fecha_in
     if df_facturacion_detalle.empty:
         return pd.DataFrame()
     
-    # Filtrar por fechas    mask_fecha = (df_facturacion_detalle['_fecha_factura'] >= fecha_inicio.date()) & (df_facturacion_detalle['_fecha_factura'] <= fecha_fin.date())
+    # Filtrar por fechas
+    mask_fecha = (df_facturacion_detalle['_fecha_factura'] >= fecha_inicio.date()) & (df_facturacion_detalle['_fecha_factura'] <= fecha_fin.date())
     df_filtrado = df_facturacion_detalle[mask_fecha].copy()
     
     if df_filtrado.empty:
@@ -1455,7 +1407,7 @@ if st.session_state.datos_cargados:
                     
                     # Generar tabla de unidades funcionales
                     df_unidades = obtener_tabla_unidades_funcionales(
-                        archivo, df_facturacion_detalle, fecha_inicio, fecha_fin, periodo, usuarios_seleccionados_unidades
+                        df_facturacion_detalle, fecha_inicio, fecha_fin, periodo, usuarios_seleccionados_unidades
                     )
                     
                     if not df_unidades.empty:
@@ -1661,7 +1613,7 @@ if st.session_state.datos_cargados:
                             
                             # Tabla de Unidades Funcionales
                             df_unidades_export = obtener_tabla_unidades_funcionales(
-                                archivo, df_facturacion_detalle, fecha_inicio, fecha_fin, periodo_export, []
+                                df_facturacion_detalle, fecha_inicio, fecha_fin, periodo_export, []
                             )
                             if not df_unidades_export.empty:
                                 worksheet.write(row_start, 0, f"Facturación por Unidad Funcional ({periodo_export})")
