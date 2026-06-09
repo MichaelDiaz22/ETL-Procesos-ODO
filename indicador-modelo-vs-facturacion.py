@@ -8,7 +8,6 @@ import xlsxwriter
 from io import BytesIO
 import tempfile
 import os
-import seaborn as sns
 
 # Configuración de la página
 st.set_page_config(
@@ -662,68 +661,46 @@ def obtener_matriz_usuario_unidad(df_facturacion_detalle, fecha_inicio, fecha_fi
     if df_filtrado.empty:
         return pd.DataFrame(), pd.DataFrame()
     
-    # Crear columna de período si es necesario (para agrupación temporal)
-    if periodo != 'Diario':
-        df_filtrado['fecha_dt'] = pd.to_datetime(df_filtrado['_fecha_factura'])
-        if periodo == 'Mensual':
-            df_filtrado['Periodo'] = df_filtrado['fecha_dt'].dt.strftime('%Y-%m')
-        elif periodo == 'Semanal':
-            df_filtrado['Periodo'] = df_filtrado['fecha_dt'].dt.to_period('W').astype(str)
-        
-        # Agrupar por usuario, unidad funcional y período
-        matriz = df_filtrado.groupby(['_usuario', '_valor_funcional', 'Periodo']).size().reset_index(name='Cantidad')
-    else:
-        # Agrupar solo por usuario y unidad funcional (sin período)
-        matriz = df_filtrado.groupby(['_usuario', '_valor_funcional']).size().reset_index(name='Cantidad')
-        matriz['Periodo'] = 'Total'
+    # Agrupar por usuario y unidad funcional (sin período para la matriz principal)
+    matriz = df_filtrado.groupby(['_usuario', '_valor_funcional']).size().reset_index(name='Cantidad')
     
-    # Crear tabla pivote: Usuarios vs Unidades Funcionales (con período como columnas adicionales)
-    # Primero, crear una tabla para cada período
-    if periodo != 'Diario':
-        pivot_usuario_unidad = matriz.pivot_table(
-            index=['_usuario', '_valor_funcional'], 
-            columns='Periodo', 
-            values='Cantidad', 
-            fill_value=0
-        ).reset_index()
-        
-        # Agregar columna de total
-        periodos = [col for col in pivot_usuario_unidad.columns if col not in ['_usuario', '_valor_funcional']]
-        pivot_usuario_unidad['TOTAL'] = pivot_usuario_unidad[periodos].sum(axis=1)
-        
-        # Ordenar columnas cronológicamente
-        periodos_ordenados = sorted(periodos)
-        columnas_ordenadas = ['_usuario', '_valor_funcional'] + periodos_ordenados + ['TOTAL']
-        pivot_usuario_unidad = pivot_usuario_unidad[columnas_ordenadas]
-    else:
-        pivot_usuario_unidad = matriz.pivot_table(
-            index='_usuario', 
-            columns='_valor_funcional', 
-            values='Cantidad', 
-            fill_value=0
-        ).reset_index()
-        pivot_usuario_unidad['TOTAL'] = pivot_usuario_unidad.select_dtypes(include=['number']).sum(axis=1)
+    # Crear tabla pivote: Usuarios vs Unidades Funcionales
+    pivot_usuario_unidad = matriz.pivot_table(
+        index='_usuario', 
+        columns='_valor_funcional', 
+        values='Cantidad', 
+        fill_value=0
+    ).reset_index()
+    
+    # Agregar columna de total
+    pivot_usuario_unidad['TOTAL'] = pivot_usuario_unidad.select_dtypes(include=['number']).sum(axis=1)
     
     # Ordenar por total descendente
     pivot_usuario_unidad = pivot_usuario_unidad.sort_values('TOTAL', ascending=False)
     
-    # Crear también la matriz transpuesta (Unidades vs Usuarios) para mejor visualización
-    if periodo != 'Diario':
-        pivot_unidad_usuario = matriz.pivot_table(
-            index='_valor_funcional', 
-            columns=['_usuario', 'Periodo'], 
-            values='Cantidad', 
-            fill_value=0
-        ).reset_index()
-    else:
-        pivot_unidad_usuario = matriz.pivot_table(
-            index='_valor_funcional', 
-            columns='_usuario', 
-            values='Cantidad', 
-            fill_value=0
-        ).reset_index()
-        pivot_unidad_usuario['TOTAL'] = pivot_unidad_usuario.select_dtypes(include=['number']).sum(axis=1)
-        pivot_unidad_usuario = pivot_unidad_usuario.sort_values('TOTAL', ascending=False)
+    # Reordenar columnas: usuario, luego unidades ordenadas alfabéticamente, luego total
+    columnas_unidades = [col for col in pivot_usuario_unidad.columns if col not in ['_usuario', 'TOTAL']]
+    columnas_unidades_ordenadas = sorted(columnas_unidades)
+    pivot_usuario_unidad = pivot_usuario_unidad[['_usuario'] + columnas_unidades_ordenadas + ['TOTAL']]
+    
+    # Crear también la matriz transpuesta (Unidades vs Usuarios)
+    pivot_unidad_usuario = matriz.pivot_table(
+        index='_valor_funcional', 
+        columns='_usuario', 
+        values='Cantidad', 
+        fill_value=0
+    ).reset_index()
+    
+    # Agregar columna de total para unidades
+    pivot_unidad_usuario['TOTAL'] = pivot_unidad_usuario.select_dtypes(include=['number']).sum(axis=1)
+    
+    # Ordenar por total descendente
+    pivot_unidad_usuario = pivot_unidad_usuario.sort_values('TOTAL', ascending=False)
+    
+    # Reordenar columnas: unidad funcional, luego usuarios ordenados alfabéticamente, luego total
+    columnas_usuarios = [col for col in pivot_unidad_usuario.columns if col not in ['_valor_funcional', 'TOTAL']]
+    columnas_usuarios_ordenadas = sorted(columnas_usuarios)
+    pivot_unidad_usuario = pivot_unidad_usuario[['_valor_funcional'] + columnas_usuarios_ordenadas + ['TOTAL']]
     
     return pivot_usuario_unidad, pivot_unidad_usuario
 
@@ -736,19 +713,22 @@ def graficar_matriz_calor(df_matriz, titulo):
     if '_usuario' in df_matriz.columns:
         # Matriz de usuarios vs unidades
         df_heat = df_matriz.set_index('_usuario')
-        # Eliminar columnas no numéricas
-        columnas_numericas = [col for col in df_heat.columns if col not in ['TOTAL', '_valor_funcional']]
-        df_heat = df_heat[columnas_numericas]
+        # Eliminar columna TOTAL si existe
+        df_heat = df_heat.drop(columns=['TOTAL'], errors='ignore')
         
         # Limitar a top 10 usuarios y top 10 unidades para mejor visualización
-        usuarios_top = df_heat.sum(axis=1).nlargest(10).index
-        unidades_top = df_heat.sum(axis=0).nlargest(10).index
-        df_heat = df_heat.loc[usuarios_top, unidades_top]
+        if len(df_heat.index) > 10:
+            usuarios_top = df_heat.sum(axis=1).nlargest(10).index
+            df_heat = df_heat.loc[usuarios_top]
+        
+        if len(df_heat.columns) > 10:
+            unidades_top = df_heat.sum(axis=0).nlargest(10).index
+            df_heat = df_heat[unidades_top]
         
         if df_heat.empty:
             return None
         
-        fig, ax = plt.subplots(figsize=(14, max(8, len(df_heat) * 0.5)))
+        fig, ax = plt.subplots(figsize=(max(10, len(df_heat.columns) * 0.4), max(6, len(df_heat.index) * 0.4)))
         
         # Crear heatmap
         im = ax.imshow(df_heat.values, cmap='YlOrRd', aspect='auto', interpolation='nearest')
@@ -764,11 +744,12 @@ def graficar_matriz_calor(df_matriz, titulo):
         ax.set_title(titulo, fontsize=13, fontweight='bold')
         
         # Agregar valores en las celdas
+        max_valor = df_heat.values.max()
         for i in range(len(df_heat.index)):
             for j in range(len(df_heat.columns)):
                 valor = df_heat.iloc[i, j]
                 if valor > 0:
-                    text_color = 'white' if valor > df_heat.values.max() * 0.6 else 'black'
+                    text_color = 'white' if valor > max_valor * 0.6 else 'black'
                     ax.text(j, i, str(int(valor)), ha='center', va='center', fontsize=7, color=text_color)
         
         # Agregar barra de color
@@ -1528,7 +1509,7 @@ if st.session_state.datos_cargados:
                         else:
                             st.info("No hay datos suficientes para generar la gráfica de facturación por usuario")
                         
-                        # ============ NUEVA SECCIÓN: Matriz Usuario vs Unidad Funcional ============
+                        # ============ SECCIÓN: Matriz Usuario vs Unidad Funcional ============
                         with st.expander("🏢 Ver Facturación por Usuario vs Unidad Funcional", expanded=False):
                             st.markdown("*Esta tabla muestra la cantidad de registros facturados por cada usuario en cada unidad funcional, basado en los filtros de unidad funcional seleccionados.*")
                             
@@ -1561,12 +1542,21 @@ if st.session_state.datos_cargados:
                                 # Botón para descargar matrices
                                 output_matrices = BytesIO()
                                 with pd.ExcelWriter(output_matrices, engine='openpyxl') as writer:
-                                    df_matriz_usuario.to_excel(writer, sheet_name='Usuarios_vs_Unidades', index=False)
-                                    df_matriz_unidad.to_excel(writer, sheet_name='Unidades_vs_Usuarios', index=False)
+                                    # Asegurarse de que los DataFrames tengan formato plano
+                                    df_usuario_export = df_matriz_usuario.copy()
+                                    df_unidad_export = df_matriz_unidad.copy()
+                                    
+                                    # Convertir nombres de columnas a string para evitar problemas
+                                    df_usuario_export.columns = [str(col) for col in df_usuario_export.columns]
+                                    df_unidad_export.columns = [str(col) for col in df_unidad_export.columns]
+                                    
+                                    df_usuario_export.to_excel(writer, sheet_name='Usuarios_vs_Unidades', index=False)
+                                    df_unidad_export.to_excel(writer, sheet_name='Unidades_vs_Usuarios', index=False)
+                                
                                 st.download_button(
                                     label="📥 Descargar Matrices (Excel)",
                                     data=output_matrices.getvalue(),
-                                    file_name=f"{sede.lower().replace(' ', '_')}_matriz_usuario_unidad_{periodo.lower()}.xlsx",
+                                    file_name=f"{sede.lower().replace(' ', '_')}_matriz_usuario_unidad.xlsx",
                                     key=f"excel_matriz_{sede}_{periodo}"
                                 )
                             else:
@@ -1704,19 +1694,19 @@ if st.session_state.datos_cargados:
                                 df_facturacion_detalle, fecha_inicio, fecha_fin, periodo_export
                             )
                             if not df_matriz_usuario.empty:
-                                worksheet.write(row_start, 0, f"Matriz: Usuarios vs Unidades Funcionales ({periodo_export})")
+                                worksheet.write(row_start, 0, f"Matriz: Usuarios vs Unidades Funcionales")
                                 row_start += 1
                                 for col_num, value in enumerate(df_matriz_usuario.columns.values):
-                                    worksheet.write(row_start, col_num, value)
+                                    worksheet.write(row_start, col_num, str(value))
                                 for row_num, row in enumerate(df_matriz_usuario.values, row_start + 1):
                                     for col_num, value in enumerate(row):
                                         worksheet.write(row_num, col_num, value)
                                 row_start += len(df_matriz_usuario) + 3
                                 
-                                worksheet.write(row_start, 0, f"Matriz: Unidades Funcionales vs Usuarios ({periodo_export})")
+                                worksheet.write(row_start, 0, f"Matriz: Unidades Funcionales vs Usuarios")
                                 row_start += 1
                                 for col_num, value in enumerate(df_matriz_unidad.columns.values):
-                                    worksheet.write(row_start, col_num, value)
+                                    worksheet.write(row_start, col_num, str(value))
                                 for row_num, row in enumerate(df_matriz_unidad.values, row_start + 1):
                                     for col_num, value in enumerate(row):
                                         worksheet.write(row_num, col_num, value)
