@@ -82,6 +82,8 @@ if 'resumen_ejecutivo' not in st.session_state:
     st.session_state.resumen_ejecutivo = None
 if 'periodos_sedes' not in st.session_state:
     st.session_state.periodos_sedes = {}
+if 'unidades_funcionales_completas' not in st.session_state:
+    st.session_state.unidades_funcionales_completas = {}
 
 def convertir_fecha_excel(numero):
     try:
@@ -121,6 +123,51 @@ def obtener_unidades_funcionales(archivo):
     except Exception as e:
         st.error(f"Error: {str(e)}")
         return []
+
+def obtener_todas_unidades_funcionales(archivo):
+    """Obtiene TODAS las unidades funcionales sin filtro para la tabla de conteo"""
+    try:
+        unidades_conteo = {}
+        for hoja in ['EVENTO', 'PGP', 'PDTE EVENTO', 'PDTE PGP']:
+            try:
+                df = pd.read_excel(archivo, sheet_name=hoja)
+                col_unidad_funcional = None
+                for col in df.columns:
+                    col_lower = col.lower().strip()
+                    if 'unidad funcional ingreso' in col_lower:
+                        col_unidad_funcional = col
+                        break
+                
+                col_fecha_factura = None
+                for col in df.columns:
+                    col_lower = col.lower().strip()
+                    if 'fecha factura' in col_lower or 'fecha_factura' in col_lower:
+                        col_fecha_factura = col
+                        break
+                
+                if col_unidad_funcional and col_fecha_factura:
+                    for idx, row in df.iterrows():
+                        unidad = str(row[col_unidad_funcional]).strip() if pd.notna(row[col_unidad_funcional]) else None
+                        if unidad and unidad != 'nan':
+                            fecha_factura = convertir_fecha_excel(row[col_fecha_factura])
+                            if fecha_factura:
+                                if unidad not in unidades_conteo:
+                                    unidades_conteo[unidad] = {'fechas': [], 'usuario': None}
+                                unidades_conteo[unidad]['fechas'].append(fecha_factura)
+                                
+                                # Intentar obtener usuario facturador
+                                col_usuario = None
+                                for col in df.columns:
+                                    if 'usuario facturo' in col.lower() or 'usuario_facturo' in col.lower():
+                                        col_usuario = col
+                                        break
+                                if col_usuario and unidades_conteo[unidad]['usuario'] is None:
+                                    unidades_conteo[unidad]['usuario'] = str(row[col_usuario]) if pd.notna(row[col_usuario]) else 'NO ESPECIFICADO'
+            except:
+                continue
+        return unidades_conteo
+    except Exception as e:
+        return {}
 
 def normalizar_texto(texto):
     if pd.isna(texto):
@@ -408,6 +455,10 @@ def cargar_archivo(archivo, unidades_filtro):
             st.error(f"Faltan hojas: {', '.join(hojas_faltantes)}")
             return False, None, None
         
+        # Obtener TODAS las unidades funcionales para la tabla de conteo
+        todas_unidades = obtener_todas_unidades_funcionales(archivo)
+        st.session_state.unidades_funcionales_completas = todas_unidades
+        
         dfs_ingresos = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion_detalle = {sede: [] for sede in SEDES.keys()}
@@ -645,6 +696,51 @@ def construir_tabla_sede(sede, config, fecha_inicio, fecha_fin, df_ingresos, df_
     df_agrupado = agrupar_por_periodo(df, periodo, fecha_fin)
     
     return df_agrupado
+
+def obtener_tabla_unidades_funcionales(archivo, df_facturacion_detalle, fecha_inicio, fecha_fin, periodo, usuarios_seleccionados=None):
+    """
+    Genera tabla con todas las unidades funcionales y conteo de facturación por período
+    NO se ve afectada por el filtro inicial de unidades funcionales
+    """
+    if df_facturacion_detalle.empty:
+        return pd.DataFrame()
+    
+    # Filtrar por fechas    mask_fecha = (df_facturacion_detalle['_fecha_factura'] >= fecha_inicio.date()) & (df_facturacion_detalle['_fecha_factura'] <= fecha_fin.date())
+    df_filtrado = df_facturacion_detalle[mask_fecha].copy()
+    
+    if df_filtrado.empty:
+        return pd.DataFrame()
+    
+    # Filtrar por usuarios si se seleccionaron
+    if usuarios_seleccionados and len(usuarios_seleccionados) > 0:
+        df_filtrado = df_filtrado[df_filtrado['_usuario'].isin(usuarios_seleccionados)]
+    
+    # Crear columna de período
+    df_filtrado['fecha_dt'] = pd.to_datetime(df_filtrado['_fecha_factura'])
+    
+    if periodo == 'Mensual':
+        df_filtrado['Periodo'] = df_filtrado['fecha_dt'].dt.strftime('%Y-%m')
+    elif periodo == 'Semanal':
+        df_filtrado['Periodo'] = df_filtrado['fecha_dt'].dt.to_period('W').astype(str)
+    else:
+        df_filtrado['Periodo'] = df_filtrado['fecha_dt'].dt.strftime('%Y-%m-%d')
+    
+    # Agrupar por unidad funcional y período
+    resultado = df_filtrado.groupby(['_valor_funcional', 'Periodo']).size().reset_index(name='Cantidad')
+    resultado = resultado.pivot(index='_valor_funcional', columns='Periodo', values='Cantidad').fillna(0).astype(int)
+    
+    # Agregar total por unidad funcional
+    resultado['TOTAL'] = resultado.sum(axis=1)
+    
+    # Ordenar por total descendente
+    resultado = resultado.sort_values('TOTAL', ascending=False)
+    
+    # Reordenar columnas cronológicamente
+    periodos = [col for col in resultado.columns if col != 'TOTAL']
+    periodos_ordenados = sorted(periodos)
+    resultado = resultado[periodos_ordenados + ['TOTAL']]
+    
+    return resultado
 
 def obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_fin, periodo):
     """Obtiene la facturación agrupada por usuario y período"""
@@ -1339,6 +1435,46 @@ if st.session_state.datos_cargados:
                         sede, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo
                     )
                     
+                    # ============ NUEVA SECCIÓN: TABLA DE UNIDADES FUNCIONALES ============
+                    st.markdown("---")
+                    st.subheader("🏢 Facturación por Unidad Funcional")
+                    st.markdown("*Esta tabla incluye **TODAS** las unidades funcionales encontradas en el archivo, sin afectarse por el filtro de unidades funcionales seleccionado al inicio.*")
+                    
+                    # Obtener lista de usuarios disponibles para filtrar
+                    usuarios_disponibles = df_facturacion_detalle['_usuario'].unique().tolist() if not df_facturacion_detalle.empty else []
+                    usuarios_disponibles = sorted([u for u in usuarios_disponibles if u != 'NO ESPECIFICADO'])
+                    
+                    # Selector de usuarios para filtrar la tabla de unidades funcionales
+                    usuarios_seleccionados_unidades = st.multiselect(
+                        "🔍 Filtrar por usuario facturador (opcional - afecta solo esta tabla):",
+                        options=usuarios_disponibles,
+                        default=[],
+                        key=f"usuarios_unidades_{sede}",
+                        help="Selecciona uno o varios usuarios para filtrar la tabla. Si no seleccionas ninguno, se muestran todos."
+                    )
+                    
+                    # Generar tabla de unidades funcionales
+                    df_unidades = obtener_tabla_unidades_funcionales(
+                        archivo, df_facturacion_detalle, fecha_inicio, fecha_fin, periodo, usuarios_seleccionados_unidades
+                    )
+                    
+                    if not df_unidades.empty:
+                        st.dataframe(df_unidades, use_container_width=True)
+                        
+                        # Botón para descargar la tabla de unidades funcionales
+                        output_unidades = BytesIO()
+                        with pd.ExcelWriter(output_unidades, engine='openpyxl') as writer:
+                            df_unidades.to_excel(writer, sheet_name=f'Unidades_{periodo}')
+                        st.download_button(
+                            label="📥 Descargar Tabla de Unidades Funcionales (Excel)",
+                            data=output_unidades.getvalue(),
+                            file_name=f"{sede.lower().replace(' ', '_')}_unidades_funcionales_{periodo.lower()}.xlsx",
+                            key=f"excel_unidades_{sede}_{periodo}"
+                        )
+                    else:
+                        st.info("No hay datos de facturación por unidad funcional para mostrar en este período")
+                    # ============ FIN NUEVA SECCIÓN ============
+                    
                     # Tabla de datos detallados
                     st.markdown("---")
                     st.subheader("📋 Datos Detallados")
@@ -1434,6 +1570,8 @@ if st.session_state.datos_cargados:
                         df_tabla.to_excel(writer, sheet_name=f'Resumen_{periodo}', index=False)
                         if not df_usuario.empty:
                             df_usuario.to_excel(writer, sheet_name=f'Facturadores_{periodo}', index=True)
+                        if not df_unidades.empty:
+                            df_unidades.to_excel(writer, sheet_name=f'Unidades_{periodo}', index=True)
                     
                     st.download_button(
                         "📥 Descargar Excel (Sede)",
@@ -1520,6 +1658,20 @@ if st.session_state.datos_cargados:
                                     worksheet.write(row_num, col_num, value)
                             
                             row_start = len(df_export) + 3
+                            
+                            # Tabla de Unidades Funcionales
+                            df_unidades_export = obtener_tabla_unidades_funcionales(
+                                archivo, df_facturacion_detalle, fecha_inicio, fecha_fin, periodo_export, []
+                            )
+                            if not df_unidades_export.empty:
+                                worksheet.write(row_start, 0, f"Facturación por Unidad Funcional ({periodo_export})")
+                                row_start += 1
+                                for col_num, value in enumerate(df_unidades_export.columns.values):
+                                    worksheet.write(row_start, col_num, value)
+                                for row_num, row in enumerate(df_unidades_export.values, row_start + 1):
+                                    for col_num, value in enumerate(row):
+                                        worksheet.write(row_num, col_num, value)
+                                row_start += len(df_unidades_export) + 3
                             
                             # Gráfica de Facturación (con el período seleccionado)
                             fig_fact = graficar_facturacion_temporal(df_sede, periodo_export)
