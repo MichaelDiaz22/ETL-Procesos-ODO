@@ -46,43 +46,62 @@ if uploaded_file is not None:
 else:
     st.info("Please upload an Excel file to get started.")
 
-# Función para partición equitativa (CORREGIDA - trabaja con registros)
+# Función para partición equitativa
 def particion_equitativa(df_filtered, num_partitions, unidades_seleccionadas):
-    """Divide los registros asegurando que cada partición tenga la misma cantidad de registros de cada unidad funcional"""
+    """Divide los pacientes asegurando que cada partición tenga la misma cantidad de pacientes de cada unidad funcional"""
     
-    # Inicializar listas para almacenar índices de registros por partición
-    particiones_indices = [[] for _ in range(num_partitions)]
-    
-    # Para cada unidad funcional, distribuir sus registros equitativamente
+    # Para cada unidad funcional, obtener sus pacientes únicos
+    pacientes_por_unidad = {}
     for unidad in unidades_seleccionadas:
         df_unidad = df_filtered[df_filtered['Unidad Funcional'] == unidad]
+        pacientes_unidad = df_unidad['Identificación'].drop_duplicates().values
+        pacientes_por_unidad[unidad] = list(pacientes_unidad)
+    
+    # Inicializar diccionario para almacenar qué pacientes van a cada partición
+    # Estructura: {particion_id: {unidad: [pacientes]}}
+    asignacion = {i: defaultdict(list) for i in range(num_partitions)}
+    
+    # Distribuir pacientes de cada unidad funcional equitativamente
+    for unidad, pacientes in pacientes_por_unidad.items():
+        num_pacientes = len(pacientes)
         
-        if len(df_unidad) > 0:
-            # Obtener índices de los registros de esta unidad
-            indices_unidad = df_unidad.index.tolist()
+        if num_pacientes > 0:
+            # Mezclar pacientes para mejor distribución
+            pacientes_mezclados = pacientes.copy()
+            random.shuffle(pacientes_mezclados)
             
-            # Mezclar aleatoriamente para mejor distribución
-            random.shuffle(indices_unidad)
+            # Calcular cuántos pacientes por partición
+            pacientes_por_particion = num_pacientes // num_partitions
+            resto = num_pacientes % num_partitions
             
-            num_registros = len(indices_unidad)
-            
-            # Calcular cuántos registros por partición
-            registros_por_particion = num_registros // num_partitions
-            resto = num_registros % num_partitions
-            
-            # Distribuir registros
+            # Distribuir pacientes
             idx = 0
             for i in range(num_partitions):
-                num_asignar = registros_por_particion + (1 if i < resto else 0)
-                if num_asignar > 0 and idx < num_registros:
-                    particiones_indices[i].extend(indices_unidad[idx:idx + num_asignar])
+                num_asignar = pacientes_por_particion + (1 if i < resto else 0)
+                if num_asignar > 0 and idx < num_pacientes:
+                    pacientes_asignar = pacientes_mezclados[idx:idx + num_asignar]
+                    asignacion[i][unidad].extend(pacientes_asignar)
                     idx += num_asignar
     
     # Crear DataFrames de partición
     partitioned_dfs = []
-    for i, indices in enumerate(particiones_indices):
-        if len(indices) > 0:
-            partition_df = df_filtered.loc[indices].copy()
+    for i in range(num_partitions):
+        # Recolectar todos los pacientes asignados a esta partición
+        pacientes_particion = []
+        for unidad, pacientes in asignacion[i].items():
+            pacientes_particion.extend(pacientes)
+        
+        if len(pacientes_particion) > 0:
+            # Eliminar duplicados de pacientes
+            pacientes_unicos = list(set(pacientes_particion))
+            partition_df = df_filtered[df_filtered['Identificación'].isin(pacientes_unicos)]
+            
+            # IMPORTANTE: Filtrar para mantener SOLO los registros de las unidades 
+            # que fueron asignadas a esta partición
+            unidades_en_particion = list(asignacion[i].keys())
+            if unidades_en_particion:
+                partition_df = partition_df[partition_df['Unidad Funcional'].isin(unidades_en_particion)]
+            
             partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
             partitioned_dfs.append(partition_df)
         else:
@@ -98,71 +117,83 @@ def particion_equitativa(df_filtered, num_partitions, unidades_seleccionadas):
     
     return partitioned_dfs, pacientes_por_particion
 
-# Función para procesar partición personalizada (CORREGIDA DEFINITIVAMENTE - trabaja con registros)
+# Función para procesar partición personalizada (CORREGIDA)
 def procesar_particion_personalizada(df_filtered, num_partitions, unidades_seleccionadas, configuracion):
     """Procesa la partición personalizada según la configuración guardada"""
     
-    # Determinar para cada unidad, en qué particiones aparece
+    # Obtener todos los pacientes por unidad funcional
+    pacientes_por_unidad = {}
+    for unidad in unidades_seleccionadas:
+        df_unidad = df_filtered[df_filtered['Unidad Funcional'] == unidad]
+        pacientes_unidad = df_unidad['Identificación'].drop_duplicates().values
+        pacientes_por_unidad[unidad] = list(pacientes_unidad)
+    
+    # Inicializar diccionario para almacenar asignación
+    # Estructura: {particion_id: {unidad: [pacientes]}}
+    asignacion = {i: defaultdict(list) for i in range(num_partitions)}
+    
+    # Para cada unidad, determinar en qué particiones aparece
     unidades_por_particion = defaultdict(list)
     for particion_id, unidades in configuracion.items():
         for unidad in unidades:
             if unidad in unidades_seleccionadas:
                 unidades_por_particion[unidad].append(particion_id)
     
-    # Inicializar listas para almacenar índices de registros por partición
-    particiones_indices = [[] for _ in range(num_partitions)]
-    
-    # Para cada unidad funcional, distribuir sus registros SOLO entre las particiones donde aparece
+    # Para cada unidad, distribuir sus pacientes SOLO entre las particiones donde aparece
     for unidad, particiones_destino in unidades_por_particion.items():
-        # Obtener los registros de esta unidad
-        df_unidad = df_filtered[df_filtered['Unidad Funcional'] == unidad]
-        
-        if len(df_unidad) == 0:
-            continue
-        
-        indices_unidad = df_unidad.index.tolist()
-        num_registros = len(indices_unidad)
+        pacientes = pacientes_por_unidad.get(unidad, [])
+        num_pacientes = len(pacientes)
         num_particiones = len(particiones_destino)
         
+        if num_pacientes == 0:
+            continue
+        
         if num_particiones == 1:
-            # Si aparece en una sola partición, TODOS los registros van a esa partición
+            # Si aparece en una sola partición, TODOS los pacientes van a esa partición
             particion_id = particiones_destino[0]
-            particiones_indices[particion_id].extend(indices_unidad)
+            asignacion[particion_id][unidad].extend(pacientes)
         else:
-            # Si aparece en múltiples particiones, dividir registros equitativamente
-            indices_mezclados = indices_unidad.copy()
-            random.shuffle(indices_mezclados)
+            # Si aparece en múltiples particiones, dividir pacientes equitativamente
+            pacientes_mezclados = pacientes.copy()
+            random.shuffle(pacientes_mezclados)
             
-            registros_por_particion = num_registros // num_particiones
-            resto = num_registros % num_particiones
+            pacientes_por_particion = num_pacientes // num_particiones
+            resto = num_pacientes % num_particiones
             
             idx = 0
             particiones_ordenadas = sorted(particiones_destino)
             for j, particion_id in enumerate(particiones_ordenadas):
-                num_asignar = registros_por_particion + (1 if j < resto else 0)
-                if num_asignar > 0 and idx < num_registros:
-                    particiones_indices[particion_id].extend(indices_mezclados[idx:idx + num_asignar])
+                num_asignar = pacientes_por_particion + (1 if j < resto else 0)
+                if num_asignar > 0 and idx < num_pacientes:
+                    pacientes_asignar = pacientes_mezclados[idx:idx + num_asignar]
+                    asignacion[particion_id][unidad].extend(pacientes_asignar)
                     idx += num_asignar
     
     # Crear DataFrames para cada partición
     partitioned_dfs = []
     for i in range(num_partitions):
-        indices = particiones_indices[i]
+        # Recolectar todos los pacientes asignados a esta partición
+        pacientes_particion = []
+        for unidad, pacientes in asignacion[i].items():
+            pacientes_particion.extend(pacientes)
         
-        if len(indices) > 0:
-            partition_df = df_filtered.loc[indices].copy()
+        if len(pacientes_particion) > 0:
+            # Eliminar duplicados de pacientes
+            pacientes_unicos = list(set(pacientes_particion))
+            partition_df = df_filtered[df_filtered['Identificación'].isin(pacientes_unicos)]
             
-            # Verificar que SOLO contenga unidades asignadas a esta partición
-            unidades_permitidas = configuracion.get(i, [])
-            if unidades_permitidas:
-                partition_df = partition_df[partition_df['Unidad Funcional'].isin(unidades_permitidas)]
+            # IMPORTANTE: Filtrar para mantener SOLO los registros de las unidades 
+            # que fueron asignadas a esta partición
+            unidades_en_particion = list(asignacion[i].keys())
+            if unidades_en_particion:
+                partition_df = partition_df[partition_df['Unidad Funcional'].isin(unidades_en_particion)]
             
             partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
             partitioned_dfs.append(partition_df)
         else:
             partitioned_dfs.append(pd.DataFrame())
     
-    # Calcular estadísticas reales
+    # Calcular estadísticas reales de pacientes únicos por partición
     pacientes_por_particion = []
     for df_part in partitioned_dfs:
         if len(df_part) > 0:
@@ -201,7 +232,7 @@ if df_loaded and unidades_disponibles:
     # Si es partición personalizada, mostrar los selectores de unidades ANTES del botón
     if tipo_particion == "Partición personalizada":
         st.subheader("🔧 Configuración de Partición Personalizada")
-        st.info("Para cada partición, selecciona las unidades funcionales que deseas asignar. Si una unidad aparece en múltiples particiones, sus registros se dividirán equitativamente entre esas particiones.")
+        st.info("Para cada partición, selecciona las unidades funcionales que deseas asignar. Si una unidad aparece en múltiples particiones, sus pacientes se dividirán equitativamente entre esas particiones.")
         
         # Mostrar selectores para cada partición
         configuracion_personalizada = {}
@@ -239,25 +270,25 @@ if df_loaded and unidades_disponibles:
             estado = "✅ Asignada" if num_particiones > 0 else "❌ No asignada"
             detalle = f"Partición(es): {', '.join([str(p+1) for p in sorted(particiones_asignadas)])}" if num_particiones > 0 else "⚠️ Sin asignar"
             
-            # Obtener número de registros y pacientes
+            # Obtener número de pacientes
             df_unidad = df_subset[df_subset['Unidad Funcional'] == unidad]
-            num_registros = len(df_unidad)
             num_pacientes = df_unidad['Identificación'].nunique()
+            num_registros = len(df_unidad)
             
             # Calcular cómo se distribuirán
             if num_particiones > 1:
-                por_particion = num_registros // num_particiones
-                resto = num_registros % num_particiones
-                distribucion = f"{por_particion} registros por partición"
+                por_particion = num_pacientes // num_particiones
+                resto = num_pacientes % num_particiones
+                distribucion = f"{por_particion} pacientes por partición"
                 if resto > 0:
-                    distribucion += f" (+{resto} registros adicionales distribuidos)"
+                    distribucion += f" (+{resto} pacientes adicionales distribuidos)"
             else:
-                distribucion = "Todos los registros"
+                distribucion = "Todos los pacientes"
             
             resumen_asignacion.append({
                 'Unidad': unidad,
+                'Pacientes': num_pacientes,
                 'Registros': num_registros,
-                'Pacientes Únicos': num_pacientes,
                 'Particiones Asignadas': num_particiones,
                 'Distribución': distribucion,
                 'Detalle': detalle,
@@ -278,8 +309,6 @@ if df_loaded and unidades_disponibles:
             st.warning(f"⚠️ Las siguientes unidades funcionales no han sido asignadas a ninguna partición: {', '.join(unidades_no_asignadas)}")
         elif unidades_seleccionadas:
             st.success("✅ Todas las unidades funcionales han sido asignadas correctamente")
-            
-            # Verificar distribución equitativa
             st.info("💡 Las unidades asignadas a múltiples particiones se distribuirán equitativamente entre ellas.")
     
     # Botón para procesar
@@ -352,9 +381,10 @@ if df_loaded and unidades_disponibles:
                     # Mostrar resumen de particiones
                     st.subheader("📊 Resumen de Particiones")
                     
-                    # Mostrar estadísticas detalladas
+                    total_registros = 0
                     for i, partition_df in enumerate(partitioned_dfs):
                         num_pacientes = pacientes_por_particion[i] if i < len(pacientes_por_particion) else 0
+                        total_registros += len(partition_df)
                         st.write(f"**Partition {i+1}**: {len(partition_df)} registros, {num_pacientes} pacientes únicos")
                         
                         # Mostrar desglose por unidad funcional
@@ -364,6 +394,9 @@ if df_loaded and unidades_disponibles:
                                 if len(df_unidad) > 0:
                                     pacientes_unidad = df_unidad['Identificación'].nunique()
                                     st.write(f"   - {unidad}: {len(df_unidad)} registros, {pacientes_unidad} pacientes")
+                    
+                    # Mostrar total de registros procesados
+                    st.write(f"**Total de registros procesados:** {total_registros}")
 
                     # Generate Excel file in memory
                     output_buffer = io.BytesIO()
