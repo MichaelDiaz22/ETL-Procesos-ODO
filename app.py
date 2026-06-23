@@ -104,15 +104,9 @@ def particion_equitativa(df_filtered, num_partitions, unidades_seleccionadas):
     
     return partitioned_dfs, pacientes_por_particion
 
-# Función para procesar partición personalizada (CORREGIDA)
+# Función para procesar partición personalizada (CORREGIDA DEFINITIVAMENTE)
 def procesar_particion_personalizada(df_filtered, num_partitions, unidades_seleccionadas, configuracion):
     """Procesa la partición personalizada según la configuración guardada"""
-    
-    # Para cada unidad funcional, determinar en qué particiones aparece
-    apariciones_por_unidad = defaultdict(list)
-    for particion_id, unidades in configuracion.items():
-        for unidad in unidades:
-            apariciones_por_unidad[unidad].append(particion_id)
     
     # Obtener pacientes por unidad funcional
     pacientes_por_unidad = {}
@@ -124,49 +118,50 @@ def procesar_particion_personalizada(df_filtered, num_partitions, unidades_selec
     # Inicializar listas para cada partición
     particiones = [[] for _ in range(num_partitions)]
     
-    # Distribuir pacientes según las reglas
-    for unidad, particiones_destino in apariciones_por_unidad.items():
-        pacientes = pacientes_por_unidad.get(unidad, [])
-        num_pacientes = len(pacientes)
-        num_particiones_asignadas = len(particiones_destino)
-        
-        if num_particiones_asignadas == 0 or num_pacientes == 0:
-            continue
-        elif num_particiones_asignadas == 1:
-            # Si aparece en una sola partición, asignar todos los pacientes a esa partición
-            particion_id = particiones_destino[0]
-            particiones[particion_id].extend(pacientes)
-        else:
-            # Si aparece en múltiples particiones, dividir pacientes equitativamente
-            # Ordenar las particiones destino para tener consistencia
-            particiones_destino_ordenadas = sorted(particiones_destino)
-            
-            # Mezclar aleatoriamente los pacientes para mejor distribución
-            pacientes_mezclados = pacientes.copy()
-            random.shuffle(pacientes_mezclados)
-            
-            # Calcular cuántos pacientes por partición
-            pacientes_por_particion = num_pacientes // num_particiones_asignadas
-            resto = num_pacientes % num_particiones_asignadas
-            
-            idx = 0
-            for j, particion_id in enumerate(particiones_destino_ordenadas):
-                # Asignar pacientes_por_particion + (1 si hay resto y j < resto)
-                num_asignar = pacientes_por_particion + (1 if j < resto else 0)
+    # Para cada partición, procesar las unidades que le corresponden
+    for particion_id, unidades_asignadas in configuracion.items():
+        for unidad in unidades_asignadas:
+            if unidad not in pacientes_por_unidad:
+                continue
                 
-                if num_asignar > 0 and idx < num_pacientes:
-                    # Asignar los pacientes a esta partición
-                    pacientes_asignar = pacientes_mezclados[idx:idx + num_asignar]
-                    particiones[particion_id].extend(pacientes_asignar)
-                    idx += num_asignar
+            pacientes = pacientes_por_unidad[unidad]
+            num_pacientes = len(pacientes)
             
-            # Verificar que no se haya perdido ningún paciente
-            if idx < num_pacientes:
-                # Si quedan pacientes sin asignar, distribuirlos equitativamente
-                pacientes_restantes = pacientes_mezclados[idx:]
-                for i, paciente in enumerate(pacientes_restantes):
-                    particion_idx = i % num_particiones_asignadas
-                    particiones[particiones_destino_ordenadas[particion_idx]].append(paciente)
+            if num_pacientes == 0:
+                continue
+            
+            # Contar en cuántas particiones aparece esta unidad
+            num_particiones_asignadas = sum(1 for u in configuracion.values() if unidad in u)
+            
+            if num_particiones_asignadas == 1:
+                # Si aparece en una sola partición, asignar todos los pacientes a esa partición
+                particiones[particion_id].extend(pacientes)
+            else:
+                # Si aparece en múltiples particiones, determinar en qué posiciones
+                particiones_con_unidad = [p_id for p_id, u_list in configuracion.items() if unidad in u_list]
+                
+                # Ordenar las particiones
+                particiones_con_unidad_ordenadas = sorted(particiones_con_unidad)
+                
+                # Mezclar pacientes aleatoriamente para mejor distribución
+                pacientes_mezclados = pacientes.copy()
+                random.shuffle(pacientes_mezclados)
+                
+                # Calcular cuántos pacientes por partición
+                pacientes_por_particion = num_pacientes // len(particiones_con_unidad_ordenadas)
+                resto = num_pacientes % len(particiones_con_unidad_ordenadas)
+                
+                # Distribuir solo entre las particiones donde aparece la unidad
+                idx = 0
+                for j, p_id in enumerate(particiones_con_unidad_ordenadas):
+                    # Solo asignar a esta partición si es la que estamos procesando
+                    if p_id == particion_id:
+                        num_asignar = pacientes_por_particion + (1 if j < resto else 0)
+                        if num_asignar > 0 and idx < num_pacientes:
+                            pacientes_asignar = pacientes_mezclados[idx:idx + num_asignar]
+                            particiones[particion_id].extend(pacientes_asignar)
+                            break
+                    idx += pacientes_por_particion + (1 if j < resto else 0)
     
     # Crear DataFrames de partición
     partitioned_dfs = []
@@ -240,7 +235,7 @@ if df_loaded and unidades_disponibles:
         # Guardar en session state
         st.session_state.configuracion_personalizada = configuracion_personalizada
         
-        # Mostrar resumen de asignación (NUEVO)
+        # Mostrar resumen de asignación
         st.subheader("📋 Resumen de Asignación de Unidades")
         
         # Contar en cuántas particiones aparece cada unidad
