@@ -333,17 +333,15 @@ if df_loaded and unidades_disponibles:
                         st.warning("No se pudieron generar particiones. Verifica la asignación de unidades funcionales.")
                         st.stop()
                     
-                    # Mostrar resumen de particiones como TABLA INVERTIDA (unidades como filas)
+                    # Mostrar resumen de particiones como TABLA SIMPLIFICADA
                     st.subheader("📊 Resumen de Particiones por Unidad Funcional")
                     
                     # Crear datos para la tabla con unidades como filas
                     tabla_datos = []
                     
-                    # Primero, obtener los totales por partición
-                    totales_particion = {
-                        'Total Registros': [len(partitioned_dfs[i]) for i in range(num_partitions)],
-                        'Pacientes Únicos': pacientes_por_particion
-                    }
+                    # Obtener totales por partición
+                    totales_pacientes = pacientes_por_particion
+                    totales_registros = [len(partitioned_dfs[i]) for i in range(num_partitions)]
                     
                     # Para cada unidad funcional, crear una fila
                     for unidad in unidades_seleccionadas:
@@ -355,33 +353,36 @@ if df_loaded and unidades_disponibles:
                             if len(partition_df) > 0 and 'Unidad Funcional' in partition_df.columns:
                                 df_unidad = partition_df[partition_df['Unidad Funcional'] == unidad]
                                 if len(df_unidad) > 0:
-                                    fila[f'Part {i+1} (Registros)'] = len(df_unidad)
-                                    fila[f'Part {i+1} (Pacientes)'] = df_unidad['Identificación'].nunique()
+                                    pacientes = df_unidad['Identificación'].nunique()
+                                    registros = len(df_unidad)
+                                    fila[f'Part {i+1}'] = f"{pacientes} ({registros})"
                                 else:
-                                    fila[f'Part {i+1} (Registros)'] = 0
-                                    fila[f'Part {i+1} (Pacientes)'] = 0
+                                    fila[f'Part {i+1}'] = "0 (0)"
                             else:
-                                fila[f'Part {i+1} (Registros)'] = 0
-                                fila[f'Part {i+1} (Pacientes)'] = 0
+                                fila[f'Part {i+1}'] = "0 (0)"
                         
                         # Calcular totales por unidad
-                        total_registros_unidad = sum(fila[f'Part {i+1} (Registros)'] for i in range(num_partitions))
-                        total_pacientes_unidad = sum(fila[f'Part {i+1} (Pacientes)'] for i in range(num_partitions))
-                        fila['Total Registros'] = total_registros_unidad
-                        fila['Total Pacientes'] = total_pacientes_unidad
+                        total_registros_unidad = 0
+                        total_pacientes_unidad = 0
+                        for i in range(num_partitions):
+                            partition_df = partitioned_dfs[i]
+                            if len(partition_df) > 0 and 'Unidad Funcional' in partition_df.columns:
+                                df_unidad = partition_df[partition_df['Unidad Funcional'] == unidad]
+                                if len(df_unidad) > 0:
+                                    total_registros_unidad += len(df_unidad)
+                                    total_pacientes_unidad += df_unidad['Identificación'].nunique()
                         
+                        fila['Total'] = f"{total_pacientes_unidad} ({total_registros_unidad})"
                         tabla_datos.append(fila)
                     
                     # Agregar fila de totales generales
                     fila_totales = {'Unidad Funcional': 'TOTALES'}
                     for i in range(num_partitions):
-                        fila_totales[f'Part {i+1} (Registros)'] = totales_particion['Total Registros'][i]
-                        fila_totales[f'Part {i+1} (Pacientes)'] = totales_particion['Pacientes Únicos'][i]
+                        fila_totales[f'Part {i+1}'] = f"{totales_pacientes[i]} ({totales_registros[i]})"
                     
-                    total_registros_general = sum(totales_particion['Total Registros'])
-                    total_pacientes_general = sum(totales_particion['Pacientes Únicos'])
-                    fila_totales['Total Registros'] = total_registros_general
-                    fila_totales['Total Pacientes'] = total_pacientes_general
+                    total_pacientes_general = sum(totales_pacientes)
+                    total_registros_general = sum(totales_registros)
+                    fila_totales['Total'] = f"{total_pacientes_general} ({total_registros_general})"
                     
                     tabla_datos.append(fila_totales)
                     
@@ -405,40 +406,34 @@ if df_loaded and unidades_disponibles:
                             part_df_export = part_df[columnas_finales] if len(part_df) > 0 else pd.DataFrame(columns=columnas_finales)
                             part_df_export.to_excel(writer, sheet_name=sheet_name, index=False)
                         
-                        # Agregar una hoja de resumen
+                        # Agregar una hoja de resumen simplificada
                         resumen_data = {
                             'Unidad Funcional': unidades_seleccionadas + ['TOTALES']
                         }
                         
-                        # Agregar columnas por partición
+                        # Agregar columnas por partición (formato simplificado)
                         for i in range(num_partitions):
-                            col_registros = f'Part {i+1} (Registros)'
-                            col_pacientes = f'Part {i+1} (Pacientes)'
-                            resumen_data[col_registros] = []
-                            resumen_data[col_pacientes] = []
+                            col_name = f'Part {i+1}'
+                            resumen_data[col_name] = []
                             
                             for unidad in unidades_seleccionadas:
                                 df_part = partitioned_dfs[i]
                                 if len(df_part) > 0 and 'Unidad Funcional' in df_part.columns:
                                     df_unidad = df_part[df_part['Unidad Funcional'] == unidad]
                                     if len(df_unidad) > 0:
-                                        resumen_data[col_registros].append(len(df_unidad))
-                                        resumen_data[col_pacientes].append(df_unidad['Identificación'].nunique())
+                                        pacientes = df_unidad['Identificación'].nunique()
+                                        registros = len(df_unidad)
+                                        resumen_data[col_name].append(f"{pacientes} ({registros})")
                                     else:
-                                        resumen_data[col_registros].append(0)
-                                        resumen_data[col_pacientes].append(0)
+                                        resumen_data[col_name].append("0 (0)")
                                 else:
-                                    resumen_data[col_registros].append(0)
-                                    resumen_data[col_pacientes].append(0)
+                                    resumen_data[col_name].append("0 (0)")
                             
                             # Agregar totales
-                            resumen_data[col_registros].append(totales_particion['Total Registros'][i])
-                            resumen_data[col_pacientes].append(totales_particion['Pacientes Únicos'][i])
+                            resumen_data[col_name].append(f"{totales_pacientes[i]} ({totales_registros[i]})")
                         
-                        # Agregar columnas de totales
-                        resumen_data['Total Registros'] = []
-                        resumen_data['Total Pacientes'] = []
-                        
+                        # Agregar columna de totales
+                        resumen_data['Total'] = []
                         for unidad in unidades_seleccionadas:
                             total_reg = 0
                             total_pac = 0
@@ -449,12 +444,10 @@ if df_loaded and unidades_disponibles:
                                     if len(df_unidad) > 0:
                                         total_reg += len(df_unidad)
                                         total_pac += df_unidad['Identificación'].nunique()
-                            resumen_data['Total Registros'].append(total_reg)
-                            resumen_data['Total Pacientes'].append(total_pac)
+                            resumen_data['Total'].append(f"{total_pac} ({total_reg})")
                         
                         # Agregar totales generales
-                        resumen_data['Total Registros'].append(total_registros_general)
-                        resumen_data['Total Pacientes'].append(total_pacientes_general)
+                        resumen_data['Total'].append(f"{total_pacientes_general} ({total_registros_general})")
                         
                         resumen_df = pd.DataFrame(resumen_data)
                         resumen_df.to_excel(writer, sheet_name='Resumen', index=False)
