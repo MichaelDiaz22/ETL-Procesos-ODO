@@ -390,6 +390,9 @@ if df_loaded and unidades_disponibles:
                     df_resumen = pd.DataFrame(tabla_datos)
                     st.dataframe(df_resumen, use_container_width=True)
                     
+                    # Nota aclaratoria debajo de la tabla
+                    st.caption("📌 **Nota:** El valor **fuera del paréntesis** corresponde a la cantidad de **pacientes**, y el valor **dentro del paréntesis** corresponde a la cantidad de **registros (CUPS)**.")
+                    
                     # Mostrar total de registros procesados
                     st.write(f"**Total de registros procesados:** {total_registros_general}")
 
