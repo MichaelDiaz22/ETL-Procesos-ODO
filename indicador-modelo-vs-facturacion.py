@@ -45,8 +45,8 @@ SEDES = {
         "unidad_operativa": "PEREIRA"
     },
     "CIRCUNVALAR": {
-        "fecha_inicio": datetime(2026, 4, 15),
-        "centro_atencion": None,
+        "fecha_inicio": datetime(2026, 7, 2),
+        "centro_atencion": "CIRCUNVALAR",
         "unidades_clave": ["CIRCUNVALAR"],
         "unidad_operativa": "PEREIRA"
     },
