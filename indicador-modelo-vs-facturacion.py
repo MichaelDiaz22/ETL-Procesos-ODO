@@ -37,31 +37,36 @@ SEDES = {
         "fecha_inicio": datetime(2025, 9, 16),
         "centro_atencion": "SAN MARCEL",
         "unidades_clave": ["SAN MARCEL"],
-        "unidad_operativa": "MANIZALES"
+        "unidad_operativa": "MANIZALES",
+        "activa": True
     },
     "CAT MARAYA": {
         "fecha_inicio": datetime(2026, 4, 15),
         "centro_atencion": "CLINICA DE ALTA TECNOLOGIA MARAYA",
         "unidades_clave": ["MARAYA"],
-        "unidad_operativa": "PEREIRA"
+        "unidad_operativa": "PEREIRA",
+        "activa": True
     },
     "CIRCUNVALAR": {
         "fecha_inicio": datetime(2026, 7, 2),
         "centro_atencion": "CIRCUNVALAR",
         "unidades_clave": ["CIRCUNVALAR"],
-        "unidad_operativa": "PEREIRA"
+        "unidad_operativa": "PEREIRA",
+        "activa": True
     },
     "CENTENARIO": {
         "fecha_inicio": datetime(2025, 11, 20),
         "centro_atencion": "CENTENARIO",
         "unidades_clave": ["CENTENARIO"],
-        "unidad_operativa": "ARMENIA"
+        "unidad_operativa": "ARMENIA",
+        "activa": True
     },
     "CAT ARMENIA": {
         "fecha_inicio": datetime(2025, 11, 20),
-        "centro_atencion": None,
+        "centro_atencion": None,  # CAT Armenia no tiene centro de atención específico
         "unidades_clave": ["CAT ARMENIA"],
-        "unidad_operativa": "ARMENIA"
+        "unidad_operativa": "ARMENIA",
+        "activa": False  # Desactivamos CAT Armenia temporalmente
     }
 }
 
@@ -209,7 +214,7 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
             col_centro = col
             break
     
-    if not col_fecha or not col_unidad_funcional or not config['centro_atencion']:
+    if not col_fecha or not col_unidad_funcional:
         return pd.DataFrame()
     
     # Convertir fechas
@@ -236,8 +241,8 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
         '_valor_funcional': valores_funcionales
     })[mask_unidades]
     
-    # Filtrar por centro de atención
-    if col_centro and not df_temp.empty:
+    # Filtrar por centro de atención (solo si está definido)
+    if col_centro and config['centro_atencion'] and not df_temp.empty:
         centros_normalizados = df[col_centro].astype(str).str.upper().str.strip()
         centros_normalizados = [normalizar_texto(c) for c in centros_normalizados]
         centro_upper = normalizar_texto(config['centro_atencion'])
@@ -420,6 +425,10 @@ def cargar_archivo(archivo, unidades_filtro):
             df = pd.read_excel(archivo, sheet_name=hoja)
             
             for sede, config in SEDES.items():
+                # Saltar sedes inactivas
+                if not config.get('activa', True):
+                    continue
+                    
                 df_ing = procesar_hoja_ingresos_evento_pgp(df, hoja, unidades_filtro, config)
                 if not df_ing.empty:
                     dfs_ingresos[sede].append(df_ing)
@@ -434,10 +443,13 @@ def cargar_archivo(archivo, unidades_filtro):
             df = pd.read_excel(archivo, sheet_name=hoja)
             
             for sede, config in SEDES.items():
-                if config['centro_atencion']:
-                    df_ing = procesar_hoja_ingresos_pdte(df, hoja, unidades_filtro, config)
-                    if not df_ing.empty:
-                        dfs_ingresos[sede].append(df_ing)
+                # Saltar sedes inactivas
+                if not config.get('activa', True):
+                    continue
+                    
+                df_ing = procesar_hoja_ingresos_pdte(df, hoja, unidades_filtro, config)
+                if not df_ing.empty:
+                    dfs_ingresos[sede].append(df_ing)
         
         # Cargar novedades
         df_novedades = None
@@ -447,6 +459,10 @@ def cargar_archivo(archivo, unidades_filtro):
         # Combinar resultados
         dfs_resultado = {}
         for sede in SEDES.keys():
+            # Saltar sedes inactivas
+            if not SEDES[sede].get('activa', True):
+                continue
+                
             if dfs_ingresos[sede]:
                 dfs_resultado[f'INGRESOS_{sede}'] = pd.concat(dfs_ingresos[sede], ignore_index=True)
             else:
@@ -466,6 +482,10 @@ def cargar_archivo(archivo, unidades_filtro):
         
         # Procesar novedades completas para cada sede
         for sede, config in SEDES.items():
+            # Saltar sedes inactivas
+            if not config.get('activa', True):
+                continue
+                
             if config['centro_atencion']:
                 df_novedades_sede = procesar_novedades_completo(df_novedades, config['centro_atencion'])
                 dfs_resultado[f'NOVEDADES_DETALLE_{sede}'] = df_novedades_sede
@@ -535,6 +555,10 @@ def calcular_resumen_ejecutivo(dfs, fecha_fin):
     resultados = []
     
     for sede, config in SEDES.items():
+        # Saltar sedes inactivas
+        if not config.get('activa', True):
+            continue
+            
         fecha_inicio = config['fecha_inicio']
         
         # Si la fecha de fin es anterior a la fecha de inicio, saltar esta sede
@@ -1271,8 +1295,9 @@ def generar_narrativa_ejecutiva(df_resumen):
 with st.sidebar:
     st.header("📋 Información de Sedes")
     for sede, config in SEDES.items():
-        fecha_str = config['fecha_inicio'].strftime('%d/%m/%Y')
-        st.markdown(f"**{sede}:** Inicio {fecha_str}")
+        if config.get('activa', True):
+            fecha_str = config['fecha_inicio'].strftime('%d/%m/%Y')
+            st.markdown(f"**{sede}:** Inicio {fecha_str}")
 
 # Interfaz principal
 st.markdown("### ⚙️ Configuración del Reporte")
@@ -1348,7 +1373,9 @@ if st.session_state.datos_cargados:
     df_novedades = st.session_state.dfs.get('NOVEDADES', None)
     fecha_fin = st.session_state.fecha_hasta
     
-    sedes_lista = list(SEDES.keys())
+    # Filtrar sedes activas
+    sedes_activas = [sede for sede, config in SEDES.items() if config.get('activa', True)]
+    sedes_lista = sedes_activas
     tabs = st.tabs(["📊 Resumen Ejecutivo"] + sedes_lista)
     
     with tabs[0]:
@@ -1409,7 +1436,7 @@ if st.session_state.datos_cargados:
         else:
             st.info("No hay datos para mostrar en el resumen ejecutivo")
     
-    for i, sede in enumerate(sedes_lista):
+    for i, sede in enumerate(sedes_activas):
         with tabs[i + 1]:
             config = SEDES[sede]
             fecha_inicio = config['fecha_inicio']
@@ -1673,6 +1700,11 @@ if st.session_state.datos_cargados:
                 # Procesar cada sede con su período seleccionado
                 for sede in SEDES.keys():
                     config = SEDES[sede]
+                    
+                    # Saltar sedes inactivas
+                    if not config.get('activa', True):
+                        continue
+                        
                     fecha_inicio = config['fecha_inicio']
                     
                     if fecha_fin >= fecha_inicio:
