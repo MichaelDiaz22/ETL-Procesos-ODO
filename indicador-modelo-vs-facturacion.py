@@ -166,11 +166,13 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, config):
     
     # Filtrar por unidades funcionales seleccionadas
     if unidades_filtro and len(unidades_filtro) > 0:
+        # Buscar unidades que coincidan con las claves de la sede
         unidades_filtro_sede = [u for u in unidades_filtro if any(clave in u for clave in config['unidades_clave'])]
         if unidades_filtro_sede:
             mask_unidades = valores_funcionales.isin(unidades_filtro_sede)
         else:
-            return pd.DataFrame()
+            # Si no hay unidades específicas para esta sede, intentar con las claves
+            mask_unidades = valores_funcionales.str.contains('|'.join(config['unidades_clave']), na=False, regex=False)
     else:
         mask_unidades = valores_funcionales.str.contains('|'.join(config['unidades_clave']), na=False, regex=False)
     
@@ -224,7 +226,7 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
         if unidades_filtro_sede:
             mask_unidades = valores_funcionales.isin(unidades_filtro_sede)
         else:
-            return pd.DataFrame()
+            mask_unidades = valores_funcionales.str.contains('|'.join(config['unidades_clave']), na=False, regex=False)
     else:
         mask_unidades = valores_funcionales.str.contains('|'.join(config['unidades_clave']), na=False, regex=False)
     
@@ -294,7 +296,7 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
         if unidades_filtro_sede:
             mask_unidades = valores_funcionales.isin(unidades_filtro_sede)
         else:
-            return pd.DataFrame()
+            mask_unidades = valores_funcionales.str.contains('|'.join(config['unidades_clave']), na=False, regex=False)
     else:
         mask_unidades = valores_funcionales.str.contains('|'.join(config['unidades_clave']), na=False, regex=False)
     
@@ -535,6 +537,7 @@ def calcular_resumen_ejecutivo(dfs, fecha_fin):
     for sede, config in SEDES.items():
         fecha_inicio = config['fecha_inicio']
         
+        # Si la fecha de fin es anterior a la fecha de inicio, saltar esta sede
         if fecha_fin < fecha_inicio:
             continue
         
@@ -1297,15 +1300,29 @@ if archivo:
             st.success(f"✅ {len(unidades)} unidades funcionales encontradas")
     
     if st.session_state.unidades_funcionales:
+        # Incluir automáticamente las unidades de CIRCUNVALAR si existen
+        default_selection = []
+        for u in st.session_state.unidades_funcionales:
+            if u in UNIDADES_POR_DEFECTO:
+                default_selection.append(u)
+            # También incluir unidades que contengan "CIRCUNVALAR"
+            elif "CIRCUNVALAR" in u.upper():
+                default_selection.append(u)
+        
         unidades_seleccionadas = st.multiselect(
             "Selecciona unidades funcionales a incluir:",
             options=st.session_state.unidades_funcionales,
-            default=[u for u in st.session_state.unidades_funcionales if u in UNIDADES_POR_DEFECTO]
+            default=[u for u in st.session_state.unidades_funcionales if u in default_selection] or st.session_state.unidades_funcionales[:10]
         )
         st.session_state.unidades_seleccionadas = unidades_seleccionadas
         
         if unidades_seleccionadas:
-            st.info(f"📌 {len(unidades_seleccionadas)} unidades funcionales seleccionadas")
+            # Verificar si CIRCUNVALAR está seleccionada
+            tiene_circunvalar = any("CIRCUNVALAR" in u.upper() for u in unidades_seleccionadas)
+            if tiene_circunvalar:
+                st.info(f"📌 {len(unidades_seleccionadas)} unidades funcionales seleccionadas - Incluye CIRCUNVALAR")
+            else:
+                st.info(f"📌 {len(unidades_seleccionadas)} unidades funcionales seleccionadas")
     
     st.markdown("---")
     
@@ -1397,8 +1414,9 @@ if st.session_state.datos_cargados:
             config = SEDES[sede]
             fecha_inicio = config['fecha_inicio']
             
+            # Verificar si la fecha de fin es anterior a la fecha de inicio
             if fecha_fin < fecha_inicio:
-                st.warning(f"La fecha {fecha_fin.date()} es anterior a la fecha de inicio de {sede}")
+                st.warning(f"⚠️ La fecha seleccionada ({fecha_fin.strftime('%d/%m/%Y')}) es anterior a la fecha de inicio de {sede} ({fecha_inicio.strftime('%d/%m/%Y')}). No hay datos disponibles.")
                 continue
             
             df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
@@ -1611,9 +1629,9 @@ if st.session_state.datos_cargados:
                         key=f"excel_{sede}_{periodo}"
                     )
                 elif len(df_tabla) > 0 and df_tabla['ingresos'].sum() == 0:
-                    st.info(f"La sede {sede} no tiene ingresos en el período seleccionado.")
+                    st.info(f"📌 La sede {sede} no tiene ingresos en el período seleccionado (desde {fecha_inicio.strftime('%d/%m/%Y')} hasta {fecha_fin.strftime('%d/%m/%Y')}).")
                 else:
-                    st.info(f"No hay datos para {sede} en el período seleccionado")
+                    st.info(f"📌 No hay datos para {sede} en el período seleccionado (desde {fecha_inicio.strftime('%d/%m/%Y')} hasta {fecha_fin.strftime('%d/%m/%Y')}).")
     
     # Botón para exportar TODO (datos + gráficas + narrativa)
     st.markdown("---")
