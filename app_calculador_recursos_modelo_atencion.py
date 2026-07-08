@@ -194,8 +194,33 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     
     df_cita_filtrado['hora entrega documentos'] = df_cita_filtrado['hora final cita'].apply(convertir_hora_entrega)
     
-    # Convertir fecha cita a datetime
-    df_cita_filtrado['fecha_cita_dt'] = pd.to_datetime(df_cita_filtrado['fecha cita'], errors='coerce')
+    # Convertir fecha cita a datetime - manejar diferentes formatos
+    def convertir_fecha(fecha_valor):
+        try:
+            if pd.isna(fecha_valor):
+                return None
+            # Si es número (formato Excel)
+            if isinstance(fecha_valor, (int, float)):
+                if fecha_valor > 40000:
+                    base_date = datetime(1899, 12, 30)
+                    return base_date + timedelta(days=fecha_valor)
+            # Si es string
+            if isinstance(fecha_valor, str):
+                # Intentar diferentes formatos
+                formatos = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y']
+                for formato in formatos:
+                    try:
+                        return datetime.strptime(fecha_valor, formato)
+                    except:
+                        continue
+            # Si ya es datetime
+            if isinstance(fecha_valor, (datetime, pd.Timestamp)):
+                return fecha_valor
+            return None
+        except:
+            return None
+    
+    df_cita_filtrado['fecha_cita_dt'] = df_cita_filtrado['fecha cita'].apply(convertir_fecha)
     
     # Eliminar registros con fecha inválida
     df_cita_filtrado = df_cita_filtrado.dropna(subset=['fecha_cita_dt'])
@@ -219,6 +244,21 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     
     # Diccionario para almacenar las tablas
     tablas = {}
+    
+    # Mostrar información de depuración
+    with st.expander("🔍 Información de depuración", expanded=False):
+        st.write("**Distribución de días de la semana en los datos:**")
+        if len(df_cita_proc) > 0:
+            distribucion = df_cita_proc['dia_semana'].value_counts().sort_index()
+            for dia_idx, count in distribucion.items():
+                nombre_dia = dias_semana[dia_idx] if dia_idx < 5 else f"Día {dia_idx}"
+                st.write(f"{nombre_dia}: {count} registros")
+            
+            st.write("**Ejemplos de fechas y días de semana:**")
+            muestras = df_cita_proc[['fecha_cita_dt', 'dia_semana']].head(10)
+            st.dataframe(muestras)
+        else:
+            st.write("No hay datos después del filtrado")
     
     # Procesar por cada día de la semana
     for dia_idx, dia_nombre in enumerate(dias_semana):
@@ -342,7 +382,7 @@ if uploaded_file is not None:
                             df_cita, df_registro, df_usuarios, unidades_seleccionadas
                         )
                         
-                        # Generar tablas de resumen (solo lunes a viernes)
+                        # Generar tablas de resumen
                         tablas_resumen = generar_tablas_resumen(df_cita_proc, unidades_seleccionadas)
                         
                         # Guardar datos procesados
@@ -376,7 +416,7 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
         
         tablas = st.session_state.dfs_procesados['TABLAS']
         
-        # Crear pestañas solo para lunes a viernes (sin promedio)
+        # Crear pestañas para lunes a viernes
         nombres_tabs = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
         tabs = st.tabs(nombres_tabs)
         
