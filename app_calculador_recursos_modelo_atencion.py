@@ -155,18 +155,13 @@ def convertir_fecha(fecha_valor):
     except:
         return None
 
-def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas, cups_seleccionados):
+def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     """
-    Procesa los datos filtrando por unidades funcionales, descripción CUPS y estado cumplida
+    Procesa los datos filtrando por unidades funcionales y estado cumplida
     """
     # Filtrar por unidades funcionales seleccionadas
     df_cita_filtrado = df_cita[df_cita['unidad funcional'].isin(unidades_seleccionadas)].copy()
     df_registro_filtrado = df_registro[df_registro['unidad funcional'].isin(unidades_seleccionadas)].copy()
-    
-    # Filtrar por descripción CUPS seleccionadas
-    if cups_seleccionados:
-        df_cita_filtrado = df_cita_filtrado[df_cita_filtrado['descripcion cups'].isin(cups_seleccionados)].copy()
-        df_registro_filtrado = df_registro_filtrado[df_registro_filtrado['descripcion cups'].isin(cups_seleccionados)].copy()
     
     # Filtrar FECHA DE CITA por estado "Cumplida"
     df_cita_filtrado = df_cita_filtrado[df_cita_filtrado['estado cita'] == 'Cumplida'].copy()
@@ -309,7 +304,7 @@ def generar_grafico_matplotlib(df, titulo):
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.set_axisbelow(True)
         
-        # Ajustar layout
+        # Ajustar layout (sin anotación de total)
         plt.tight_layout()
         
         return fig
@@ -458,11 +453,6 @@ if uploaded_file is not None:
             unidades_registro = set(df_registro['unidad funcional'].dropna().unique())
             unidades_disponibles = sorted(list(unidades_cita.union(unidades_registro)))
             
-            # Obtener descripciones CUPS únicas de ambas hojas
-            cups_cita = set(df_cita['descripcion cups'].dropna().unique())
-            cups_registro = set(df_registro['descripcion cups'].dropna().unique())
-            cups_disponibles = sorted(list(cups_cita.union(cups_registro)))
-            
             # Selector de unidades funcionales
             st.subheader("🏥 Selección de Unidades Funcionales")
             unidades_seleccionadas = st.multiselect(
@@ -477,20 +467,6 @@ if uploaded_file is not None:
             else:
                 st.warning("⚠️ Por favor, selecciona al menos una unidad funcional")
             
-            # Selector de descripciones CUPS
-            st.subheader("📋 Selección de Descripciones CUPS")
-            cups_seleccionados = st.multiselect(
-                "Selecciona una o más descripciones CUPS (opcional):",
-                options=cups_disponibles,
-                help="Puedes seleccionar múltiples descripciones CUPS. Si no seleccionas ninguna, se tomarán todas."
-            )
-            
-            # Mostrar cantidad de CUPS seleccionados
-            if cups_seleccionados:
-                st.info(f"✅ {len(cups_seleccionados)} descripción(es) CUPS seleccionada(s)")
-            else:
-                st.info("📌 No has seleccionado ninguna descripción CUPS. Se tomarán todas.")
-            
             # Botón para procesar
             if st.button("🔄 Procesar", type="primary", use_container_width=True):
                 if not unidades_seleccionadas:
@@ -499,7 +475,7 @@ if uploaded_file is not None:
                     with st.spinner("Procesando datos..."):
                         # Procesar los datos con los filtros
                         df_cita_proc, df_registro_proc = procesar_datos(
-                            df_cita, df_registro, df_usuarios, unidades_seleccionadas, cups_seleccionados
+                            df_cita, df_registro, df_usuarios, unidades_seleccionadas
                         )
                         
                         # Generar tablas de resumen
@@ -513,7 +489,6 @@ if uploaded_file is not None:
                         }
                         st.session_state.process_clicked = True
                         st.session_state.unidades_seleccionadas = unidades_seleccionadas
-                        st.session_state.cups_seleccionados = cups_seleccionados
                     
     except Exception as e:
         st.error(f"❌ Error al leer el archivo: {str(e)}")
@@ -529,11 +504,6 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
         col1, col2 = st.columns(2)
         with col1:
             st.write(f"**Unidades Funcionales:** {', '.join(st.session_state.unidades_seleccionadas)}")
-        with col2:
-            if st.session_state.cups_seleccionados:
-                st.write(f"**Descripciones CUPS:** {', '.join(st.session_state.cups_seleccionados)}")
-            else:
-                st.write("**Descripciones CUPS:** Todas")
         
         st.header("📊 Tablas de Resumen")
         
@@ -619,7 +589,7 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
 
 # Mensaje informativo cuando el archivo está cargado pero no se ha procesado
 elif st.session_state.data_loaded and not st.session_state.process_clicked:
-    st.info("📌 Selecciona las unidades funcionales y las descripciones CUPS (opcional) y haz clic en el botón 'Procesar' para generar las tablas de resumen")
+    st.info("📌 Selecciona las unidades funcionales y haz clic en el botón 'Procesar' para generar las tablas de resumen")
 
 # Si no hay archivo cargado
 else:
