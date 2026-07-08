@@ -4,15 +4,9 @@ import io
 from datetime import datetime, timedelta
 import re
 import calendar
-
-# Intentar importar plotly, si no está disponible, mostrar mensaje
-try:
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-    st.warning("⚠️ Plotly no está instalado. Los gráficos no estarán disponibles. Instala con: pip install plotly")
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import numpy as np
 
 st.set_page_config(page_title="Procesador de Excel", layout="wide")
 
@@ -280,90 +274,60 @@ def agregar_columnas_adicionales(df, unidades_seleccionadas):
     
     return df_resultado
 
-def generar_grafico(df, titulo):
+def generar_grafico_matplotlib(df, titulo):
     """
-    Genera un gráfico de líneas con los datos de Recurso a necesidad
+    Genera un gráfico de líneas con matplotlib
     """
-    if not PLOTLY_AVAILABLE:
-        st.warning("⚠️ Plotly no está instalado. No se puede generar el gráfico.")
-        return None
-    
-    if df.empty or 'Recurso a necesidad' not in df.columns:
-        # Si no hay datos, mostrar gráfico vacío
-        fig = go.Figure()
-        fig.add_annotation(
-            text="No hay datos disponibles para graficar",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, showarrow=False,
-            font=dict(size=16)
-        )
-        fig.update_layout(
-            title=titulo,
-            xaxis_title="Hora",
-            yaxis_title="Recurso a necesidad",
-            height=400
-        )
+    try:
+        if df.empty or 'Recurso a necesidad' not in df.columns:
+            # Si no hay datos, mostrar gráfico vacío
+            fig, ax = plt.subplots(figsize=(12, 4))
+            ax.text(0.5, 0.5, 'No hay datos disponibles para graficar', 
+                   horizontalalignment='center', verticalalignment='center',
+                   transform=ax.transAxes, fontsize=14)
+            ax.set_title(titulo)
+            ax.set_xlabel('Hora')
+            ax.set_ylabel('Recurso a necesidad')
+            plt.tight_layout()
+            return fig
+        
+        # Preparar datos
+        horas = df['Hora'].tolist()
+        valores = df['Recurso a necesidad'].tolist()
+        
+        # Crear figura
+        fig, ax = plt.subplots(figsize=(12, 4))
+        
+        # Graficar línea y puntos
+        ax.plot(horas, valores, marker='o', linewidth=2, markersize=3, 
+                color='#E84A5F', label='Recurso a necesidad')
+        
+        # Configurar ejes
+        ax.set_xlabel('Hora', fontsize=10)
+        ax.set_ylabel('Recurso a necesidad', fontsize=10)
+        ax.set_title(titulo, fontsize=12, fontweight='bold')
+        
+        # Rotar etiquetas del eje X para mejor legibilidad
+        plt.xticks(rotation=45, ha='right', fontsize=8)
+        
+        # Mostrar grid
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_axisbelow(True)
+        
+        # Agregar anotación con el total
+        total_recurso = sum(valores)
+        ax.annotate(f'Total recurso necesario: {total_recurso:.1f}',
+                   xy=(0.02, 0.95), xycoords='axes fraction',
+                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8),
+                   fontsize=9, color='#E84A5F')
+        
+        # Ajustar layout
+        plt.tight_layout()
+        
         return fig
-    
-    # Crear figura
-    fig = go.Figure()
-    
-    # Agregar línea de Recurso a necesidad
-    fig.add_trace(go.Scatter(
-        x=df['Hora'],
-        y=df['Recurso a necesidad'],
-        mode='lines+markers',
-        name='Recurso a necesidad',
-        line=dict(color='#E84A5F', width=2),
-        marker=dict(size=4, color='#E84A5F')
-    ))
-    
-    # Configurar layout
-    fig.update_layout(
-        title=titulo,
-        xaxis_title="Hora",
-        yaxis_title="Recurso a necesidad",
-        height=400,
-        hovermode='x unified',
-        template='plotly_white',
-        xaxis=dict(
-            tickangle=45,
-            tickfont=dict(size=10),
-            gridcolor='lightgray',
-            showgrid=True
-        ),
-        yaxis=dict(
-            gridcolor='lightgray',
-            showgrid=True,
-            zeroline=True,
-            zerolinecolor='lightgray'
-        ),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
-    # Agregar anotación con el total
-    total_recurso = df['Recurso a necesidad'].sum()
-    fig.add_annotation(
-        x=0.02,
-        y=0.98,
-        xref="paper",
-        yref="paper",
-        text=f"Total recurso necesario: {total_recurso:.1f}",
-        showarrow=False,
-        font=dict(size=12, color='#E84A5F'),
-        bgcolor='rgba(255,255,255,0.8)',
-        bordercolor='#E84A5F',
-        borderwidth=1,
-        borderpad=4
-    )
-    
-    return fig
+    except Exception as e:
+        st.error(f"Error al generar gráfico: {str(e)}")
+        return None
 
 def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     """
@@ -602,14 +566,14 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 # Mostrar el DataFrame
                 st.dataframe(df, use_container_width=True, height=400)
                 
-                # Generar y mostrar gráfico
-                if PLOTLY_AVAILABLE:
-                    st.subheader("📈 Evolución del Recurso a Necesidad")
-                    fig = generar_grafico(df, f"{nombre_tab} - Recurso a necesidad por hora")
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
+                # Generar y mostrar gráfico con matplotlib
+                st.subheader("📈 Evolución del Recurso a Necesidad")
+                fig = generar_grafico_matplotlib(df, f"{nombre_tab} - Recurso a necesidad por hora")
+                if fig:
+                    st.pyplot(fig)
+                    plt.close(fig)  # Liberar memoria
                 else:
-                    st.warning("⚠️ Plotly no está instalado. Los gráficos no están disponibles.")
+                    st.warning("⚠️ No se pudo generar el gráfico.")
         
         # Opción para descargar todas las tablas
         st.divider()
