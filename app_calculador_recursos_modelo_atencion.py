@@ -12,7 +12,8 @@ import os
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.utils.dataframe import dataframe_to_rows
 
-st.set_page_config(page_config_title="Procesador de Excel", layout="wide")
+# Configuración de la página - DEBE SER LO PRIMERO
+st.set_page_config(page_title="Procesador de Excel", layout="wide")
 
 st.title("📊 Procesador de Archivos Excel")
 st.write("Carga un archivo Excel con las hojas: **FECHA DE CITA**, **FECHA DE REGISTRO** y **USUARIOS**")
@@ -427,9 +428,7 @@ def exportar_excel_con_graficos(tablas, df_cita_proc):
     """
     import tempfile
     import os
-    from openpyxl import Workbook
     from openpyxl.drawing.image import Image as XLImage
-    from openpyxl.utils.dataframe import dataframe_to_rows
     
     # Crear un archivo temporal para guardar los gráficos
     temp_dir = tempfile.mkdtemp()
@@ -471,8 +470,8 @@ def exportar_excel_con_graficos(tablas, df_cita_proc):
             img.anchor = f'A{row_offset}'
             ws_graficos.add_image(img)
             
-            # Calcular altura de la imagen (aproximadamente 5 filas)
-            row_offset += 25  # Espacio para la imagen y separación
+            # Calcular altura de la imagen (aproximadamente 25 filas)
+            row_offset += 25
     
     # Limpiar archivos temporales
     for _, path in imagenes_paths:
