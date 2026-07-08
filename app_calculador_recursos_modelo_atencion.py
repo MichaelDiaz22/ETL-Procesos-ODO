@@ -4,6 +4,8 @@ import io
 from datetime import datetime, timedelta
 import re
 import calendar
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 st.set_page_config(page_title="Procesador de Excel", layout="wide")
 
@@ -265,6 +267,87 @@ def agregar_columnas_adicionales(df, unidades_seleccionadas):
     
     return df_resultado
 
+def generar_grafico(df, titulo):
+    """
+    Genera un gráfico de líneas con los datos de Total pacientes en cola
+    """
+    if df.empty or 'Total pacientes en cola' not in df.columns:
+        # Si no hay datos, mostrar gráfico vacío
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No hay datos disponibles para graficar",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=16)
+        )
+        fig.update_layout(
+            title=titulo,
+            xaxis_title="Hora",
+            yaxis_title="Cantidad de Pacientes",
+            height=400
+        )
+        return fig
+    
+    # Crear figura
+    fig = go.Figure()
+    
+    # Agregar línea de Total pacientes en cola
+    fig.add_trace(go.Scatter(
+        x=df['Hora'],
+        y=df['Total pacientes en cola'],
+        mode='lines+markers',
+        name='Total pacientes en cola',
+        line=dict(color='#2E86AB', width=2),
+        marker=dict(size=4, color='#2E86AB')
+    ))
+    
+    # Configurar layout
+    fig.update_layout(
+        title=titulo,
+        xaxis_title="Hora",
+        yaxis_title="Cantidad de Pacientes",
+        height=400,
+        hovermode='x unified',
+        template='plotly_white',
+        xaxis=dict(
+            tickangle=45,
+            tickfont=dict(size=10),
+            gridcolor='lightgray',
+            showgrid=True
+        ),
+        yaxis=dict(
+            gridcolor='lightgray',
+            showgrid=True,
+            zeroline=True,
+            zerolinecolor='lightgray'
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    # Agregar anotación con el total
+    total_pacientes = df['Total pacientes en cola'].sum()
+    fig.add_annotation(
+        x=0.02,
+        y=0.98,
+        xref="paper",
+        yref="paper",
+        text=f"Total pacientes: {total_pacientes:.1f}",
+        showarrow=False,
+        font=dict(size=12, color='#2E86AB'),
+        bgcolor='rgba(255,255,255,0.8)',
+        bordercolor='#2E86AB',
+        borderwidth=1,
+        borderpad=4
+    )
+    
+    return fig
+
 def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     """
     Genera las tablas de resumen por día de la semana, promedio y resumen ejecutivo
@@ -277,9 +360,6 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     
     # Diccionario para almacenar las tablas
     tablas = {}
-    
-    # Diccionario para almacenar los DataFrames de cada día
-    dfs_dias = {}
     
     # Procesar por cada día de la semana
     for dia_idx, dia_nombre in enumerate(dias_semana):
@@ -294,7 +374,6 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
             # Agregar columnas adicionales
             df_resultado = agregar_columnas_adicionales(df_resultado, unidades_seleccionadas)
             tablas[dia_nombre] = df_resultado
-            dfs_dias[dia_nombre] = df_resultado
             continue
         
         # Crear tabla de resumen para este día
@@ -329,7 +408,6 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
         # Agregar columnas adicionales
         df_resultado = agregar_columnas_adicionales(df_resultado, unidades_seleccionadas)
         tablas[dia_nombre] = df_resultado
-        dfs_dias[dia_nombre] = df_resultado
     
     # Generar tabla de Promedio
     df_promedio = df_base.copy()
@@ -511,7 +589,12 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                     st.metric("Hora Pico", hora_max)
                 
                 # Mostrar el DataFrame
-                st.dataframe(df, use_container_width=True, height=600)
+                st.dataframe(df, use_container_width=True, height=400)
+                
+                # Generar y mostrar gráfico
+                st.subheader("📈 Evolución de Pacientes en Cola")
+                fig = generar_grafico(df, f"{nombre_tab} - Pacientes en cola por hora")
+                st.plotly_chart(fig, use_container_width=True)
         
         # Opción para descargar todas las tablas
         st.divider()
