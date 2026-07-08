@@ -276,13 +276,13 @@ def agregar_columnas_adicionales(df, unidades_seleccionadas):
 
 def generar_grafico_matplotlib(df, titulo):
     """
-    Genera un gráfico de líneas con matplotlib mostrando Recurso a necesidad
-    con promediación cada 15 minutos para mejor visualización
+    Genera un gráfico de líneas con matplotlib mostrando todos los datos sin agrupar
+    con etiquetas legibles (mostrando cada 30 minutos)
     """
     try:
         if df.empty or 'Recurso a necesidad' not in df.columns:
             # Si no hay datos, mostrar gráfico vacío
-            fig, ax = plt.subplots(figsize=(12, 4))
+            fig, ax = plt.subplots(figsize=(14, 5))
             ax.text(0.5, 0.5, 'No hay datos disponibles para graficar', 
                    horizontalalignment='center', verticalalignment='center',
                    transform=ax.transAxes, fontsize=14)
@@ -292,41 +292,64 @@ def generar_grafico_matplotlib(df, titulo):
             plt.tight_layout()
             return fig
         
-        # Preparar datos - promediar cada 15 minutos
-        df_agrupado = df.copy()
-        # Crear columna de hora en formato datetime para agrupar
-        df_agrupado['hora_dt'] = pd.to_datetime(df_agrupado['Hora'], format='%H:%M')
-        # Redondear a 15 minutos
-        df_agrupado['hora_15min'] = df_agrupado['hora_dt'].dt.floor('15min')
-        # Agrupar promediando los valores de Recurso a necesidad
-        df_agrupado_15 = df_agrupado.groupby('hora_15min')['Recurso a necesidad'].mean().reset_index()
-        # Formatear hora para mostrar
-        df_agrupado_15['Hora'] = df_agrupado_15['hora_15min'].dt.strftime('%H:%M')
+        # Preparar datos - usar todos los datos sin agrupar
+        df_grafico = df.copy()
         
-        # Ordenar por hora
-        df_agrupado_15 = df_agrupado_15.sort_values('hora_15min')
+        # Filtrar solo las filas con datos (donde Recurso a necesidad > 0)
+        df_grafico = df_grafico[df_grafico['Recurso a necesidad'] > 0]
         
-        # Crear figura
-        fig, ax = plt.subplots(figsize=(12, 4))
+        if df_grafico.empty:
+            # Si no hay datos con valores > 0, mostrar gráfico vacío
+            fig, ax = plt.subplots(figsize=(14, 5))
+            ax.text(0.5, 0.5, 'No hay datos con valores positivos para graficar', 
+                   horizontalalignment='center', verticalalignment='center',
+                   transform=ax.transAxes, fontsize=14)
+            ax.set_title(titulo)
+            ax.set_xlabel('Hora')
+            ax.set_ylabel('Recurso a necesidad')
+            plt.tight_layout()
+            return fig
         
-        # Graficar línea y puntos
-        ax.plot(df_agrupado_15['Hora'], df_agrupado_15['Recurso a necesidad'], 
-                marker='o', linewidth=2, markersize=5, 
-                color='#E84A5F', label='Recurso a necesidad (promedio 15 min)')
+        # Crear figura con tamaño más amplio para mejor legibilidad
+        fig, ax = plt.subplots(figsize=(14, 5))
+        
+        # Graficar línea y puntos con todos los datos
+        ax.plot(df_grafico['Hora'], df_grafico['Recurso a necesidad'], 
+                marker='o', linewidth=2, markersize=4, 
+                color='#E84A5F', label='Recurso a necesidad')
         
         # Configurar ejes
-        ax.set_xlabel('Hora (promediado cada 15 min)', fontsize=10)
-        ax.set_ylabel('Recurso a necesidad', fontsize=10)
-        ax.set_title(titulo, fontsize=12, fontweight='bold')
+        ax.set_xlabel('Hora', fontsize=11)
+        ax.set_ylabel('Recurso a necesidad', fontsize=11)
+        ax.set_title(titulo, fontsize=13, fontweight='bold')
         
-        # Rotar etiquetas del eje X para mejor legibilidad
-        plt.xticks(rotation=45, ha='right', fontsize=8)
+        # Configurar el eje X para mostrar etiquetas cada 30 minutos
+        # Obtener todas las horas únicas
+        horas_unicas = df_grafico['Hora'].unique()
+        
+        # Crear un tick cada 30 minutos (o cada 6 intervalos de 5 minutos)
+        tick_positions = []
+        tick_labels = []
+        
+        # Generar horas desde 06:30 hasta 19:00 cada 30 minutos
+        hora_actual = datetime(2000, 1, 1, 6, 30)
+        hora_fin = datetime(2000, 1, 1, 19, 0)
+        
+        while hora_actual <= hora_fin:
+            hora_str = hora_actual.strftime('%H:%M')
+            tick_positions.append(hora_str)
+            tick_labels.append(hora_str)
+            hora_actual += timedelta(minutes=30)
+        
+        # Configurar ticks del eje X
+        ax.set_xticks(tick_positions)
+        ax.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=9)
         
         # Mostrar grid
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.set_axisbelow(True)
         
-        # Ajustar layout (sin anotación de total)
+        # Ajustar layout
         plt.tight_layout()
         
         return fig
@@ -584,7 +607,7 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 st.dataframe(df, use_container_width=True, height=400)
                 
                 # Generar y mostrar gráfico con matplotlib
-                st.subheader("📈 Evolución del Recurso a Necesidad (promediado cada 15 min)")
+                st.subheader("📈 Evolución del Recurso a Necesidad")
                 fig = generar_grafico_matplotlib(df, f"{nombre_tab} - Recurso a necesidad por hora")
                 if fig:
                     st.pyplot(fig)
