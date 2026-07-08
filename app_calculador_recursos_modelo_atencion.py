@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime, timedelta
+import re
 
 st.set_page_config(page_title="Procesador de Excel", layout="wide")
 
@@ -15,6 +16,62 @@ if 'dfs' not in st.session_state:
     st.session_state.dfs = {}
 if 'process_clicked' not in st.session_state:
     st.session_state.process_clicked = False
+
+def convertir_a_hora(valor):
+    """
+    Convierte diferentes formatos a objeto datetime
+    """
+    try:
+        if pd.isna(valor) or valor == '' or valor is None:
+            return None
+        
+        # Si ya es datetime o Timestamp
+        if isinstance(valor, (datetime, pd.Timestamp)):
+            return valor
+        
+        # Si es string
+        if isinstance(valor, str):
+            # Limpiar el string
+            valor = valor.strip()
+            
+            # Intentar diferentes formatos
+            formatos = [
+                '%H:%M:%S',
+                '%H:%M',
+                '%I:%M:%S %p',
+                '%I:%M %p',
+                '%H:%M:%S.%f',
+                '%I:%M:%S.%f %p'
+            ]
+            
+            for formato in formatos:
+                try:
+                    return datetime.strptime(valor, formato)
+                except:
+                    continue
+            
+            # Intentar extraer hora con regex
+            match = re.search(r'(\d{1,2}):(\d{2})', valor)
+            if match:
+                hora = int(match.group(1))
+                minuto = int(match.group(2))
+                # Si la hora es mayor a 12 y tiene AM/PM, ajustar
+                if 'PM' in valor.upper() and hora < 12:
+                    hora += 12
+                if 'AM' in valor.upper() and hora == 12:
+                    hora = 0
+                return datetime(2000, 1, 1, hora, minuto)
+            
+            return None
+        
+        # Si es time o timedelta
+        if hasattr(valor, 'hour') and hasattr(valor, 'minute'):
+            return datetime(2000, 1, 1, valor.hour, valor.minute)
+        
+        return None
+    except Exception as e:
+        print(f"Error al convertir hora: {valor}, Error: {e}")
+        return None
 
 def procesar_datos(df_cita, df_registro, df_usuarios):
     """
@@ -36,60 +93,34 @@ def procesar_datos(df_cita, df_registro, df_usuarios):
     df_registro_proc['rol'] = df_registro_proc['usuario registra'].map(usuario_rol_map)
     
     # 2. Calcular "hora ingreso a cita" (hora inicio cita - 30 minutos)
-    def calcular_hora_ingreso(hora_str):
+    def calcular_hora_ingreso(hora_valor):
         try:
-            if pd.isna(hora_str) or hora_str == '':
+            # Convertir a datetime
+            hora_dt = convertir_a_hora(hora_valor)
+            if hora_dt is None:
                 return None
-            # Convertir a datetime si es string
-            if isinstance(hora_str, str):
-                # Intentar diferentes formatos
-                try:
-                    hora = datetime.strptime(hora_str, '%H:%M')
-                except:
-                    try:
-                        hora = datetime.strptime(hora_str, '%H:%M:%S')
-                    except:
-                        return None
-            else:
-                # Si ya es datetime o time
-                if isinstance(hora_str, (datetime, pd.Timestamp)):
-                    hora = hora_str
-                else:
-                    return None
-                    
+            
             # Restar 30 minutos
-            nueva_hora = hora - timedelta(minutes=30)
+            nueva_hora = hora_dt - timedelta(minutes=30)
             return nueva_hora.strftime('%H:%M')
-        except:
+        except Exception as e:
+            print(f"Error calculando hora ingreso: {e}")
             return None
     
     # Aplicar la función a la columna 'hora inicio cita'
     df_cita_proc['hora ingreso a cita'] = df_cita_proc['hora inicio cita'].apply(calcular_hora_ingreso)
     
     # 3. Calcular "hora entrega documentos" (hora final cita en formato HH:MM)
-    def convertir_hora_entrega(hora_str):
+    def convertir_hora_entrega(hora_valor):
         try:
-            if pd.isna(hora_str) or hora_str == '':
+            # Convertir a datetime
+            hora_dt = convertir_a_hora(hora_valor)
+            if hora_dt is None:
                 return None
-            # Convertir a datetime si es string
-            if isinstance(hora_str, str):
-                # Intentar diferentes formatos
-                try:
-                    hora = datetime.strptime(hora_str, '%H:%M')
-                except:
-                    try:
-                        hora = datetime.strptime(hora_str, '%H:%M:%S')
-                    except:
-                        return None
-            else:
-                # Si ya es datetime o time
-                if isinstance(hora_str, (datetime, pd.Timestamp)):
-                    hora = hora_str
-                else:
-                    return None
-                    
-            return hora.strftime('%H:%M')
-        except:
+            
+            return hora_dt.strftime('%H:%M')
+        except Exception as e:
+            print(f"Error convirtiendo hora entrega: {e}")
             return None
     
     # Aplicar la función a la columna 'hora final cita'
@@ -143,6 +174,14 @@ if uploaded_file is not None:
             with col3:
                 st.metric("👥 USUARIOS", f"{len(df_usuarios)} registros")
             
+            # Mostrar ejemplos de los datos de hora para depuración
+            with st.expander("🔍 Ver datos de ejemplo para depuración", expanded=False):
+                st.write("**Ejemplos de 'hora inicio cita':**")
+                st.write(df_cita['hora inicio cita'].head(10).tolist())
+                st.write("**Tipos de datos:**", df_cita['hora inicio cita'].dtype)
+                st.write("**Ejemplos de 'hora final cita':**")
+                st.write(df_cita['hora final cita'].head(10).tolist())
+            
             # Botón para procesar
             if st.button("🔄 Procesar", type="primary", use_container_width=True):
                 with st.spinner("Procesando datos..."):
@@ -184,7 +223,7 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
             df = st.session_state.dfs_procesados['FECHA DE CITA']
             
             # Mostrar estadísticas de la hoja
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Total registros", len(df))
             with col2:
@@ -194,7 +233,11 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
             with col3:
                 # Contar cuántos tienen hora ingreso calculada
                 horas_ingreso = df['hora ingreso a cita'].notna().sum()
-                st.metric("Horas ingreso calculadas", f"{horas_ingreso}/{len(df)}")
+                st.metric("Horas ingreso", f"{horas_ingreso}/{len(df)}")
+            with col4:
+                # Contar cuántos tienen hora entrega calculada
+                horas_entrega = df['hora entrega documentos'].notna().sum()
+                st.metric("Horas entrega", f"{horas_entrega}/{len(df)}")
             
             st.subheader(f"Primeros 10 registros de FECHA DE CITA (Total: {len(df)})")
             
@@ -209,6 +252,11 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
             
             if len(df) > 0:
                 st.dataframe(df[columnas_existentes].head(10), use_container_width=True)
+                
+                # Mostrar comparación de horas en formato más claro
+                st.subheader("📊 Comparación de horas calculadas")
+                comparacion_df = df[['hora inicio cita', 'hora ingreso a cita', 'hora final cita', 'hora entrega documentos']].head(10)
+                st.dataframe(comparacion_df, use_container_width=True)
             else:
                 st.info("La hoja está vacía")
         
