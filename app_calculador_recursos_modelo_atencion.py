@@ -276,10 +276,11 @@ def agregar_columnas_adicionales(df, unidades_seleccionadas):
 
 def generar_grafico_matplotlib(df, titulo):
     """
-    Genera un gráfico de líneas con matplotlib
+    Genera un gráfico de líneas con matplotlib mostrando Total pacientes en cola
+    con agrupación de 15 minutos para mejor visualización
     """
     try:
-        if df.empty or 'Recurso a necesidad' not in df.columns:
+        if df.empty or 'Total pacientes en cola' not in df.columns:
             # Si no hay datos, mostrar gráfico vacío
             fig, ax = plt.subplots(figsize=(12, 4))
             ax.text(0.5, 0.5, 'No hay datos disponibles para graficar', 
@@ -287,24 +288,35 @@ def generar_grafico_matplotlib(df, titulo):
                    transform=ax.transAxes, fontsize=14)
             ax.set_title(titulo)
             ax.set_xlabel('Hora')
-            ax.set_ylabel('Recurso a necesidad')
+            ax.set_ylabel('Total pacientes en cola')
             plt.tight_layout()
             return fig
         
-        # Preparar datos
-        horas = df['Hora'].tolist()
-        valores = df['Recurso a necesidad'].tolist()
+        # Preparar datos - agrupar cada 15 minutos
+        df_agrupado = df.copy()
+        # Crear columna de hora en formato datetime para agrupar
+        df_agrupado['hora_dt'] = pd.to_datetime(df_agrupado['Hora'], format='%H:%M')
+        # Redondear a 15 minutos
+        df_agrupado['hora_15min'] = df_agrupado['hora_dt'].dt.floor('15min')
+        # Agrupar sumando los valores de Total pacientes en cola
+        df_agrupado_15 = df_agrupado.groupby('hora_15min')['Total pacientes en cola'].sum().reset_index()
+        # Formatear hora para mostrar
+        df_agrupado_15['Hora'] = df_agrupado_15['hora_15min'].dt.strftime('%H:%M')
+        
+        # Ordenar por hora
+        df_agrupado_15 = df_agrupado_15.sort_values('hora_15min')
         
         # Crear figura
         fig, ax = plt.subplots(figsize=(12, 4))
         
         # Graficar línea y puntos
-        ax.plot(horas, valores, marker='o', linewidth=2, markersize=3, 
-                color='#E84A5F', label='Recurso a necesidad')
+        ax.plot(df_agrupado_15['Hora'], df_agrupado_15['Total pacientes en cola'], 
+                marker='o', linewidth=2, markersize=5, 
+                color='#2E86AB', label='Total pacientes en cola')
         
         # Configurar ejes
-        ax.set_xlabel('Hora', fontsize=10)
-        ax.set_ylabel('Recurso a necesidad', fontsize=10)
+        ax.set_xlabel('Hora (agrupado cada 15 min)', fontsize=10)
+        ax.set_ylabel('Total pacientes en cola', fontsize=10)
         ax.set_title(titulo, fontsize=12, fontweight='bold')
         
         # Rotar etiquetas del eje X para mejor legibilidad
@@ -315,11 +327,11 @@ def generar_grafico_matplotlib(df, titulo):
         ax.set_axisbelow(True)
         
         # Agregar anotación con el total
-        total_recurso = sum(valores)
-        ax.annotate(f'Total recurso necesario: {total_recurso:.1f}',
+        total_pacientes = df_agrupado_15['Total pacientes en cola'].sum()
+        ax.annotate(f'Total pacientes: {total_pacientes:.1f}',
                    xy=(0.02, 0.95), xycoords='axes fraction',
                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8),
-                   fontsize=9, color='#E84A5F')
+                   fontsize=9, color='#2E86AB')
         
         # Ajustar layout
         plt.tight_layout()
@@ -539,8 +551,20 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 
                 st.subheader(f"📊 {nombre_tab}")
                 
+                # Calcular estadísticas de Recurso a necesidad
+                if 'Recurso a necesidad' in df.columns:
+                    max_recurso = df['Recurso a necesidad'].max()
+                    min_recurso = df['Recurso a necesidad'].min()
+                    hora_max = df.loc[df['Recurso a necesidad'].idxmax(), 'Hora'] if max_recurso > 0 else "N/A"
+                    hora_min = df.loc[df['Recurso a necesidad'].idxmin(), 'Hora'] if min_recurso > 0 else "N/A"
+                else:
+                    max_recurso = 0
+                    min_recurso = 0
+                    hora_max = "N/A"
+                    hora_min = "N/A"
+                
                 # Mostrar estadísticas
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     # Sumar Total pacientes en cola
                     if 'Total pacientes en cola' in df.columns:
@@ -549,26 +573,23 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                         total = 0
                     st.metric("Total Pacientes en Cola", f"{total:.1f}")
                 with col2:
-                    # Sumar Recurso a necesidad
-                    if 'Recurso a necesidad' in df.columns:
-                        total_recurso = df['Recurso a necesidad'].sum()
-                    else:
-                        total_recurso = 0
-                    st.metric("Total Recurso Necesario", f"{total_recurso:.1f}")
+                    st.metric("Máximo Recurso Necesario", f"{max_recurso:.1f}", delta=f"a las {hora_max}")
                 with col3:
-                    # Hora pico (usando Recurso a necesidad)
-                    if 'Recurso a necesidad' in df.columns:
-                        hora_max = df.loc[df['Recurso a necesidad'].idxmax(), 'Hora'] if df['Recurso a necesidad'].max() > 0 else "N/A"
+                    st.metric("Mínimo Recurso Necesario", f"{min_recurso:.1f}", delta=f"a las {hora_min}")
+                with col4:
+                    # Hora pico (usando Total pacientes en cola)
+                    if 'Total pacientes en cola' in df.columns:
+                        hora_pico = df.loc[df['Total pacientes en cola'].idxmax(), 'Hora'] if df['Total pacientes en cola'].max() > 0 else "N/A"
                     else:
-                        hora_max = "N/A"
-                    st.metric("Hora Pico", hora_max)
+                        hora_pico = "N/A"
+                    st.metric("Hora Pico", hora_pico)
                 
                 # Mostrar el DataFrame
                 st.dataframe(df, use_container_width=True, height=400)
                 
                 # Generar y mostrar gráfico con matplotlib
-                st.subheader("📈 Evolución del Recurso a Necesidad")
-                fig = generar_grafico_matplotlib(df, f"{nombre_tab} - Recurso a necesidad por hora")
+                st.subheader("📈 Evolución de Pacientes en Cola (agrupado cada 15 min)")
+                fig = generar_grafico_matplotlib(df, f"{nombre_tab} - Pacientes en cola por hora")
                 if fig:
                     st.pyplot(fig)
                     plt.close(fig)  # Liberar memoria
