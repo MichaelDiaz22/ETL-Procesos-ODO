@@ -3,6 +3,7 @@ import pandas as pd
 import io
 from datetime import datetime, timedelta
 import re
+import calendar
 
 st.set_page_config(page_title="Procesador de Excel", layout="wide")
 
@@ -91,6 +92,23 @@ def extraer_hora_de_fecha(fecha_datetime):
         return None
     return datetime(2000, 1, 1, fecha_datetime.hour, fecha_datetime.minute)
 
+def redondear_hora_5_minutos(hora_str):
+    """
+    Redondea una hora al siguiente intervalo de 5 minutos
+    """
+    try:
+        hora_dt = datetime.strptime(hora_str, '%H:%M')
+        minutos = hora_dt.minute
+        # Redondear hacia arriba al siguiente múltiplo de 5
+        minutos_redondeados = ((minutos + 4) // 5) * 5
+        if minutos_redondeados >= 60:
+            hora_dt = hora_dt.replace(hour=hora_dt.hour + 1, minute=0)
+        else:
+            hora_dt = hora_dt.replace(minute=minutos_redondeados)
+        return hora_dt.strftime('%H:%M')
+    except:
+        return hora_str
+
 def generar_tabla_horas():
     """
     Genera una tabla con las horas desde 06:30 hasta 19:00 cada 5 minutos
@@ -104,6 +122,26 @@ def generar_tabla_horas():
         hora_actual += timedelta(minutes=5)
     
     return pd.DataFrame({'Hora': horas})
+
+def contar_dias_mes(fecha_str):
+    """
+    Cuenta cuántos días del mismo día de la semana tiene el mes
+    """
+    try:
+        fecha = datetime.strptime(fecha_str, '%Y-%m-%d')
+        dia_semana = fecha.weekday()
+        mes = fecha.month
+        año = fecha.year
+        
+        # Contar cuántos días del mismo día de la semana hay en el mes
+        count = 0
+        for dia in range(1, calendar.monthrange(año, mes)[1] + 1):
+            fecha_temp = datetime(año, mes, dia)
+            if fecha_temp.weekday() == dia_semana:
+                count += 1
+        return count
+    except:
+        return 1
 
 def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     """
@@ -137,6 +175,9 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     
     df_cita_filtrado['hora ingreso a cita'] = df_cita_filtrado['hora inicio cita'].apply(calcular_hora_ingreso)
     
+    # Redondear hora ingreso a cita al siguiente intervalo de 5 minutos
+    df_cita_filtrado['hora ingreso redondeada'] = df_cita_filtrado['hora ingreso a cita'].apply(redondear_hora_5_minutos)
+    
     # Calcular hora entrega documentos
     def convertir_hora_entrega(hora_valor):
         try:
@@ -152,24 +193,84 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     
     df_cita_filtrado['hora entrega documentos'] = df_cita_filtrado['hora final cita'].apply(convertir_hora_entrega)
     
+    # Agregar información de fecha para agrupar
+    df_cita_filtrado['fecha_cita_dt'] = pd.to_datetime(df_cita_filtrado['fecha cita'])
+    df_cita_filtrado['dia_semana'] = df_cita_filtrado['fecha_cita_dt'].dt.weekday
+    df_cita_filtrado['mes'] = df_cita_filtrado['fecha_cita_dt'].dt.month
+    df_cita_filtrado['año'] = df_cita_filtrado['fecha_cita_dt'].dt.year
+    df_cita_filtrado['fecha_str'] = df_cita_filtrado['fecha_cita_dt'].dt.strftime('%Y-%m-%d')
+    
     return df_cita_filtrado, df_registro_filtrado
 
-def generar_tabla_resumen_con_conteo(df_cita_proc, df_registro_proc):
+def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     """
-    Genera la tabla de resumen con el conteo de "En cola de admisiones"
+    Genera las tablas de resumen por día de la semana y promedio
     """
+    # Nombres de los días de la semana
+    dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
+    
     # Generar tabla base de horas
-    df_resumen = generar_tabla_horas()
+    df_base = generar_tabla_horas()
     
-    # Contar registros de FECHA DE CITA por hora de ingreso
-    if 'hora ingreso a cita' in df_cita_proc.columns:
-        citas_validas = df_cita_proc['hora ingreso a cita'].dropna()
-        conteo_citas = citas_validas.value_counts()
-        df_resumen['En cola de admisiones'] = df_resumen['Hora'].map(conteo_citas).fillna(0).astype(int)
-    else:
-        df_resumen['En cola de admisiones'] = 0
+    # Diccionario para almacenar las tablas
+    tablas = {}
     
-    return df_resumen
+    # Procesar por cada día de la semana
+    for dia_idx, dia_nombre in enumerate(dias_semana):
+        # Filtrar por día de la semana
+        df_dia = df_cita_proc[df_cita_proc['dia_semana'] == dia_idx].copy()
+        
+        if len(df_dia) == 0:
+            # Si no hay datos para este día, crear tabla vacía
+            df_resultado = df_base.copy()
+            for unidad in unidades_seleccionadas:
+                df_resultado[f'En cola de admisiones {unidad}'] = 0
+            tablas[dia_nombre] = df_resultado
+            continue
+        
+        # Agrupar por fecha, profesional, centro y unidad funcional
+        df_agrupado = df_dia.groupby(['fecha_str', 'profesional', 'centro de atencion', 'unidad funcional', 'hora ingreso redondeada']).size().reset_index(name='conteo')
+        
+        # Calcular días del mismo día de la semana en el mes
+        df_agrupado['dias_mes'] = df_agrupado['fecha_str'].apply(contar_dias_mes)
+        
+        # Calcular el valor ajustado (conteo / días_mes)
+        df_agrupado['valor_ajustado'] = df_agrupado['conteo'] / df_agrupado['dias_mes']
+        
+        # Agrupar por hora y unidad funcional para el resumen
+        df_resumen = df_agrupado.groupby(['hora ingreso redondeada', 'unidad funcional'])['valor_ajustado'].sum().reset_index()
+        
+        # Crear tabla de resumen para este día
+        df_resultado = df_base.copy()
+        
+        # Pivotear para tener una columna por unidad funcional
+        for unidad in unidades_seleccionadas:
+            df_unidad = df_resumen[df_resumen['unidad funcional'] == unidad]
+            # Mapear los valores a las horas
+            df_resultado[f'En cola de admisiones {unidad}'] = df_resultado['Hora'].map(
+                dict(zip(df_unidad['hora ingreso redondeada'], df_unidad['valor_ajustado']))
+            ).fillna(0)
+        
+        tablas[dia_nombre] = df_resultado
+    
+    # Calcular tabla de promedio
+    df_promedio = df_base.copy()
+    for unidad in unidades_seleccionadas:
+        # Recolectar valores de todos los días para esta unidad
+        valores_unidad = []
+        for dia in dias_semana:
+            if dia in tablas and f'En cola de admisiones {unidad}' in tablas[dia].columns:
+                valores_unidad.append(tablas[dia][f'En cola de admisiones {unidad}'])
+        
+        if valores_unidad:
+            # Calcular promedio de los 5 días
+            df_promedio[f'En cola de admisiones {unidad}'] = sum(valores_unidad) / len(valores_unidad)
+        else:
+            df_promedio[f'En cola de admisiones {unidad}'] = 0
+    
+    tablas['Promedio'] = df_promedio
+    
+    return tablas
 
 # Cargar archivo
 uploaded_file = st.file_uploader(
@@ -247,12 +348,12 @@ if uploaded_file is not None:
                             df_cita, df_registro, df_usuarios, unidades_seleccionadas
                         )
                         
-                        # Generar tabla de resumen con conteo
-                        df_resumen = generar_tabla_resumen_con_conteo(df_cita_proc, df_registro_proc)
+                        # Generar tablas de resumen
+                        tablas_resumen = generar_tablas_resumen(df_cita_proc, unidades_seleccionadas)
                         
                         # Guardar datos procesados
                         st.session_state.dfs_procesados = {
-                            'RESUMEN': df_resumen,
+                            'TABLAS': tablas_resumen,
                             'CITA_PROCESADA': df_cita_proc,
                             'REGISTRO_PROCESADO': df_registro_proc
                         }
@@ -276,51 +377,69 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
             df_cita = st.session_state.dfs_procesados['CITA_PROCESADA']
             st.write(f"**Registros FECHA DE CITA (Cumplidas):** {len(df_cita)}")
         
-        st.header("📊 Tabla de Resumen")
-        st.write("Distribución de citas en cola de admisiones por hora")
+        st.header("📊 Tablas de Resumen por Día y Promedio")
         
-        df = st.session_state.dfs_procesados['RESUMEN']
+        tablas = st.session_state.dfs_procesados['TABLAS']
         
-        # Mostrar estadísticas del resumen
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            total_citas = df['En cola de admisiones'].sum()
-            st.metric("Total en Cola de Admisiones", f"{total_citas:,}")
-        with col2:
-            horas_con_actividad = len(df[df['En cola de admisiones'] > 0])
-            st.metric("Horas con Actividad", f"{horas_con_actividad}")
-        with col3:
-            hora_max = df.loc[df['En cola de admisiones'].idxmax(), 'Hora'] if df['En cola de admisiones'].max() > 0 else "N/A"
-            st.metric("Hora Pico", hora_max)
+        # Crear pestañas para cada día y promedio
+        nombres_tabs = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Promedio']
+        tabs = st.tabs(nombres_tabs)
         
-        # Mostrar el DataFrame completo
-        st.dataframe(df, use_container_width=True, height=600)
+        for i, tab in enumerate(tabs):
+            with tab:
+                nombre_tab = nombres_tabs[i]
+                df = tablas[nombre_tab]
+                
+                st.subheader(f"📊 {nombre_tab}")
+                
+                # Mostrar estadísticas
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    total = 0
+                    for col in df.columns:
+                        if col != 'Hora':
+                            total += df[col].sum()
+                    st.metric("Total", f"{total:.1f}")
+                with col2:
+                    horas_con_actividad = 0
+                    for col in df.columns:
+                        if col != 'Hora':
+                            horas_con_actividad += len(df[df[col] > 0])
+                    st.metric("Horas con Actividad", f"{horas_con_actividad}")
+                with col3:
+                    # Hora pico (sumando todas las unidades)
+                    df['total'] = df[[col for col in df.columns if col != 'Hora']].sum(axis=1)
+                    hora_max = df.loc[df['total'].idxmax(), 'Hora'] if df['total'].max() > 0 else "N/A"
+                    st.metric("Hora Pico", hora_max)
+                
+                # Mostrar el DataFrame
+                st.dataframe(df, use_container_width=True, height=600)
         
-        # Opción para descargar la tabla de resumen
+        # Opción para descargar todas las tablas
         st.divider()
-        st.subheader("📥 Descargar Tabla de Resumen")
+        st.subheader("📥 Descargar Tablas de Resumen")
         col1, col2, col3 = st.columns(3)
         with col2:
-            # Crear archivo Excel con la tabla de resumen
+            # Crear archivo Excel con todas las tablas
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, sheet_name='RESUMEN', index=False)
+                for nombre, df in tablas.items():
+                    df.to_excel(writer, sheet_name=nombre, index=False)
                 # También guardar los datos procesados
                 st.session_state.dfs_procesados['CITA_PROCESADA'].to_excel(writer, sheet_name='CITAS_FILTRADAS', index=False)
-                st.session_state.dfs_procesados['REGISTRO_PROCESADO'].to_excel(writer, sheet_name='REGISTROS_FILTRADOS', index=False)
             
             output.seek(0)
             st.download_button(
-                label="📥 Descargar Tabla Resumen (Excel)",
+                label="📥 Descargar Tablas Resumen (Excel)",
                 data=output,
-                file_name="tabla_resumen.xlsx",
+                file_name="tablas_resumen.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
 
 # Mensaje informativo cuando el archivo está cargado pero no se ha procesado
 elif st.session_state.data_loaded and not st.session_state.process_clicked:
-    st.info("📌 Selecciona las unidades funcionales y haz clic en el botón 'Procesar' para generar la tabla de resumen")
+    st.info("📌 Selecciona las unidades funcionales y haz clic en el botón 'Procesar' para generar las tablas de resumen")
 
 # Si no hay archivo cargado
 else:
