@@ -281,7 +281,6 @@ def generar_grafico_matplotlib(df, titulo):
     """
     try:
         if df.empty or 'Recurso a necesidad' not in df.columns:
-            # Si no hay datos, mostrar gráfico vacío
             fig, ax = plt.subplots(figsize=(14, 5))
             ax.text(0.5, 0.5, 'No hay datos disponibles para graficar', 
                    horizontalalignment='center', verticalalignment='center',
@@ -292,14 +291,10 @@ def generar_grafico_matplotlib(df, titulo):
             plt.tight_layout()
             return fig
         
-        # Preparar datos - usar todos los datos sin agrupar
         df_grafico = df.copy()
-        
-        # Filtrar solo las filas con datos (donde Recurso a necesidad > 0)
         df_grafico = df_grafico[df_grafico['Recurso a necesidad'] > 0]
         
         if df_grafico.empty:
-            # Si no hay datos con valores > 0, mostrar gráfico vacío
             fig, ax = plt.subplots(figsize=(14, 5))
             ax.text(0.5, 0.5, 'No hay datos con valores positivos para graficar', 
                    horizontalalignment='center', verticalalignment='center',
@@ -310,28 +305,19 @@ def generar_grafico_matplotlib(df, titulo):
             plt.tight_layout()
             return fig
         
-        # Crear figura con tamaño más amplio para mejor legibilidad
         fig, ax = plt.subplots(figsize=(14, 5))
         
-        # Graficar línea y puntos con todos los datos
         ax.plot(df_grafico['Hora'], df_grafico['Recurso a necesidad'], 
                 marker='o', linewidth=2, markersize=4, 
                 color='#E84A5F', label='Recurso a necesidad')
         
-        # Configurar ejes
         ax.set_xlabel('Hora', fontsize=11)
         ax.set_ylabel('Recurso a necesidad', fontsize=11)
         ax.set_title(titulo, fontsize=13, fontweight='bold')
         
-        # Configurar el eje X para mostrar etiquetas cada 30 minutos
-        # Obtener todas las horas únicas
-        horas_unicas = df_grafico['Hora'].unique()
-        
-        # Crear un tick cada 30 minutos (o cada 6 intervalos de 5 minutos)
+        # Configurar ticks cada 30 minutos
         tick_positions = []
         tick_labels = []
-        
-        # Generar horas desde 06:30 hasta 19:00 cada 30 minutos
         hora_actual = datetime(2000, 1, 1, 6, 30)
         hora_fin = datetime(2000, 1, 1, 19, 0)
         
@@ -341,15 +327,12 @@ def generar_grafico_matplotlib(df, titulo):
             tick_labels.append(hora_str)
             hora_actual += timedelta(minutes=30)
         
-        # Configurar ticks del eje X
         ax.set_xticks(tick_positions)
         ax.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=9)
         
-        # Mostrar grid
         ax.grid(True, alpha=0.3, linestyle='--')
         ax.set_axisbelow(True)
         
-        # Ajustar layout
         plt.tight_layout()
         
         return fig
@@ -380,7 +363,6 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
             df_resultado = df_base.copy()
             for unidad in unidades_seleccionadas:
                 df_resultado[f'En cola de admisiones {unidad}'] = 0
-            # Agregar columnas adicionales
             df_resultado = agregar_columnas_adicionales(df_resultado, unidades_seleccionadas)
             tablas[dia_nombre] = df_resultado
             continue
@@ -397,16 +379,18 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
                 df_resultado[f'En cola de admisiones {unidad}'] = 0
                 continue
             
-            # PASO 1: Identificar registros únicos por día de semana + mes + profesional + centro de atención
-            # Crear una llave única para cada combinación
-            df_unidad['llave_unica'] = df_unidad['fecha_cita_dt'].dt.strftime('%Y-%m') + '_' + \
+            # PASO 1: Crear llave única combinando: mes + profesional + centro de atención
+            df_unidad['mes'] = df_unidad['fecha_cita_dt'].dt.month
+            df_unidad['año'] = df_unidad['fecha_cita_dt'].dt.year
+            df_unidad['llave_unica'] = df_unidad['año'].astype(str) + '-' + \
+                                       df_unidad['mes'].astype(str) + '_' + \
                                        df_unidad['profesional'].astype(str) + '_' + \
                                        df_unidad['centro de atencion'].astype(str)
             
-            # PASO 2: Identificar registros únicos (eliminar duplicados por llave y hora redondeada)
+            # PASO 2: Identificar registros únicos por llave y hora redondeada
             df_unicos = df_unidad.drop_duplicates(subset=['llave_unica', 'hora ingreso redondeada'])
             
-            # PASO 3: Calcular el número de días del mismo día de semana en el mes para cada fecha
+            # PASO 3: Calcular días del mismo día de semana en el mes para cada fecha
             df_unicos['dias_mes'] = df_unicos['fecha_cita_dt'].apply(contar_dias_mes)
             
             # PASO 4: Calcular el peso de cada registro único (1 / dias_mes)
@@ -415,7 +399,7 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
             # PASO 5: Agrupar por hora redondeada, sumando los pesos
             df_horas = df_unicos.groupby('hora ingreso redondeada')['peso_registro'].sum().reset_index()
             
-            # Mapear los valores a las horas (coincidencia exacta)
+            # PASO 6: Mapear los valores a las horas
             df_resultado[f'En cola de admisiones {unidad}'] = df_resultado['Hora'].map(
                 dict(zip(df_horas['hora ingreso redondeada'], df_horas['peso_registro']))
             ).fillna(0)
@@ -427,23 +411,20 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     # Generar tabla de Promedio
     df_promedio = df_base.copy()
     for unidad in unidades_seleccionadas:
-        # Recolectar valores de todos los días para esta unidad
         valores_unidad = []
         for dia in dias_semana:
             if dia in tablas and f'En cola de admisiones {unidad}' in tablas[dia].columns:
                 valores_unidad.append(tablas[dia][f'En cola de admisiones {unidad}'])
         
         if valores_unidad:
-            # Calcular promedio de los 5 días
             df_promedio[f'En cola de admisiones {unidad}'] = sum(valores_unidad) / len(valores_unidad)
         else:
             df_promedio[f'En cola de admisiones {unidad}'] = 0
     
-    # Agregar columnas adicionales al promedio
     df_promedio = agregar_columnas_adicionales(df_promedio, unidades_seleccionadas)
     tablas['Promedio'] = df_promedio
     
-    # Generar Resumen Ejecutivo (vacío por ahora)
+    # Generar Resumen Ejecutivo (vacío)
     df_resumen_ejecutivo = df_base.copy()
     for unidad in unidades_seleccionadas:
         df_resumen_ejecutivo[f'En cola de admisiones {unidad}'] = 0
@@ -461,11 +442,9 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     try:
-        # Leer todas las hojas del Excel
         excel_file = pd.ExcelFile(uploaded_file)
         sheet_names = excel_file.sheet_names
         
-        # Verificar que existan las hojas requeridas
         required_sheets = ['FECHA DE CITA', 'FECHA DE REGISTRO', 'USUARIOS']
         missing_sheets = [sheet for sheet in required_sheets if sheet not in sheet_names]
         
@@ -473,12 +452,10 @@ if uploaded_file is not None:
             st.error(f"❌ Faltan las siguientes hojas en el archivo: {', '.join(missing_sheets)}")
             st.info(f"Hojas encontradas: {', '.join(sheet_names)}")
         else:
-            # Leer cada hoja
             df_cita = pd.read_excel(uploaded_file, sheet_name='FECHA DE CITA')
             df_registro = pd.read_excel(uploaded_file, sheet_name='FECHA DE REGISTRO')
             df_usuarios = pd.read_excel(uploaded_file, sheet_name='USUARIOS')
             
-            # Guardar en estado de sesión
             st.session_state.dfs = {
                 'FECHA DE CITA': df_cita,
                 'FECHA DE REGISTRO': df_registro,
@@ -487,7 +464,6 @@ if uploaded_file is not None:
             st.session_state.data_loaded = True
             st.session_state.process_clicked = False
             
-            # Mostrar información básica
             st.success("✅ Archivo cargado correctamente")
             
             col1, col2, col3 = st.columns(3)
@@ -498,12 +474,11 @@ if uploaded_file is not None:
             with col3:
                 st.metric("👥 USUARIOS", f"{len(df_usuarios)} registros")
             
-            # Obtener unidades funcionales únicas de ambas hojas
+            # Obtener unidades funcionales
             unidades_cita = set(df_cita['unidad funcional'].dropna().unique())
             unidades_registro = set(df_registro['unidad funcional'].dropna().unique())
             unidades_disponibles = sorted(list(unidades_cita.union(unidades_registro)))
             
-            # Selector de unidades funcionales
             st.subheader("🏥 Selección de Unidades Funcionales")
             unidades_seleccionadas = st.multiselect(
                 "Selecciona una o más unidades funcionales:",
@@ -511,27 +486,22 @@ if uploaded_file is not None:
                 help="Puedes seleccionar múltiples unidades funcionales"
             )
             
-            # Mostrar cantidad de unidades seleccionadas
             if unidades_seleccionadas:
                 st.info(f"✅ {len(unidades_seleccionadas)} unidad(es) funcional(es) seleccionada(s)")
             else:
                 st.warning("⚠️ Por favor, selecciona al menos una unidad funcional")
             
-            # Botón para procesar
             if st.button("🔄 Procesar", type="primary", use_container_width=True):
                 if not unidades_seleccionadas:
                     st.error("❌ Debes seleccionar al menos una unidad funcional")
                 else:
                     with st.spinner("Procesando datos..."):
-                        # Procesar los datos con los filtros
                         df_cita_proc, df_registro_proc = procesar_datos(
                             df_cita, df_registro, df_usuarios, unidades_seleccionadas
                         )
                         
-                        # Generar tablas de resumen
                         tablas_resumen = generar_tablas_resumen(df_cita_proc, unidades_seleccionadas)
                         
-                        # Guardar datos procesados
                         st.session_state.dfs_procesados = {
                             'TABLAS': tablas_resumen,
                             'CITA_PROCESADA': df_cita_proc,
@@ -544,12 +514,11 @@ if uploaded_file is not None:
         st.error(f"❌ Error al leer el archivo: {str(e)}")
         st.exception(e)
 
-# Mostrar resumen SOLO si se ha presionado el botón "Procesar"
+# Mostrar resumen
 if st.session_state.process_clicked and st.session_state.data_loaded:
     if 'dfs_procesados' in st.session_state:
         st.divider()
         
-        # Mostrar filtros aplicados
         st.subheader("🔍 Filtros Aplicados")
         col1, col2 = st.columns(2)
         with col1:
@@ -559,7 +528,6 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
         
         tablas = st.session_state.dfs_procesados['TABLAS']
         
-        # Crear pestañas: Resumen Ejecutivo, Lunes a Viernes, Promedio
         nombres_tabs = ['Resumen Ejecutivo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Promedio']
         tabs = st.tabs(nombres_tabs)
         
@@ -570,7 +538,6 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 
                 st.subheader(f"📊 {nombre_tab}")
                 
-                # Calcular estadísticas de Recurso a necesidad
                 if 'Recurso a necesidad' in df.columns:
                     max_recurso = df['Recurso a necesidad'].max()
                     min_recurso = df['Recurso a necesidad'].min()
@@ -582,10 +549,8 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                     hora_max = "N/A"
                     hora_min = "N/A"
                 
-                # Mostrar estadísticas
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    # Sumar Total pacientes en cola
                     if 'Total pacientes en cola' in df.columns:
                         total = df['Total pacientes en cola'].sum()
                     else:
@@ -596,36 +561,30 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 with col3:
                     st.metric("Mínimo Recurso Necesario", f"{min_recurso:.1f}", delta=f"a las {hora_min}")
                 with col4:
-                    # Hora pico (usando Recurso a necesidad)
                     if 'Recurso a necesidad' in df.columns:
                         hora_pico = df.loc[df['Recurso a necesidad'].idxmax(), 'Hora'] if df['Recurso a necesidad'].max() > 0 else "N/A"
                     else:
                         hora_pico = "N/A"
                     st.metric("Hora Pico", hora_pico)
                 
-                # Mostrar el DataFrame
                 st.dataframe(df, use_container_width=True, height=400)
                 
-                # Generar y mostrar gráfico con matplotlib
                 st.subheader("📈 Evolución del Recurso a Necesidad")
                 fig = generar_grafico_matplotlib(df, f"{nombre_tab} - Recurso a necesidad por hora")
                 if fig:
                     st.pyplot(fig)
-                    plt.close(fig)  # Liberar memoria
+                    plt.close(fig)
                 else:
                     st.warning("⚠️ No se pudo generar el gráfico.")
         
-        # Opción para descargar todas las tablas
         st.divider()
         st.subheader("📥 Descargar Tablas de Resumen")
         col1, col2, col3 = st.columns(3)
         with col2:
-            # Crear archivo Excel con todas las tablas
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 for nombre, df in tablas.items():
                     df.to_excel(writer, sheet_name=nombre, index=False)
-                # También guardar los datos procesados
                 st.session_state.dfs_procesados['CITA_PROCESADA'].to_excel(writer, sheet_name='CITAS_FILTRADAS', index=False)
             
             output.seek(0)
@@ -637,10 +596,8 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 use_container_width=True
             )
 
-# Mensaje informativo cuando el archivo está cargado pero no se ha procesado
 elif st.session_state.data_loaded and not st.session_state.process_clicked:
     st.info("📌 Selecciona las unidades funcionales y haz clic en el botón 'Procesar' para generar las tablas de resumen")
 
-# Si no hay archivo cargado
 else:
     st.info("📂 Por favor, carga un archivo Excel para comenzar")
