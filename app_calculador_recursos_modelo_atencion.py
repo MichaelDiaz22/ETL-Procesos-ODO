@@ -25,10 +25,6 @@ def convertir_a_hora(valor):
         if pd.isna(valor) or valor == '' or valor is None:
             return None
         
-        # Si ya es datetime o Timestamp
-        if isinstance(valor, (datetime, pd.Timestamp)):
-            return valor
-        
         # Si es string
         if isinstance(valor, str):
             # Limpiar el string
@@ -41,7 +37,10 @@ def convertir_a_hora(valor):
                 '%I:%M:%S %p',
                 '%I:%M %p',
                 '%H:%M:%S.%f',
-                '%I:%M:%S.%f %p'
+                '%I:%M:%S.%f %p',
+                '%H:%M:%S %p',
+                '%I:%M:%S.%f',
+                '%I:%M'
             ]
             
             for formato in formatos:
@@ -55,18 +54,33 @@ def convertir_a_hora(valor):
             if match:
                 hora = int(match.group(1))
                 minuto = int(match.group(2))
-                # Si la hora es mayor a 12 y tiene AM/PM, ajustar
-                if 'PM' in valor.upper() and hora < 12:
-                    hora += 12
-                if 'AM' in valor.upper() and hora == 12:
-                    hora = 0
                 return datetime(2000, 1, 1, hora, minuto)
             
             return None
         
-        # Si es time o timedelta
+        # Si es datetime o Timestamp
+        if isinstance(valor, (datetime, pd.Timestamp)):
+            return valor
+        
+        # Si es time
         if hasattr(valor, 'hour') and hasattr(valor, 'minute'):
             return datetime(2000, 1, 1, valor.hour, valor.minute)
+        
+        # Si es timedelta
+        if isinstance(valor, timedelta):
+            total_seconds = valor.total_seconds()
+            hours = int(total_seconds // 3600)
+            minutes = int((total_seconds % 3600) // 60)
+            return datetime(2000, 1, 1, hours, minutes)
+        
+        # Si es un número (posiblemente hora en formato Excel)
+        if isinstance(valor, (int, float)):
+            # Si es un número entre 0 y 1, es una fracción de día
+            if 0 <= valor <= 1:
+                total_seconds = valor * 86400  # 86400 segundos en un día
+                hours = int(total_seconds // 3600)
+                minutes = int((total_seconds % 3600) // 60)
+                return datetime(2000, 1, 1, hours, minutes)
         
         return None
     except Exception as e:
@@ -83,7 +97,6 @@ def procesar_datos(df_cita, df_registro, df_usuarios):
     df_usuarios_proc = df_usuarios.copy()
     
     # 1. Cruzar datos de usuarios con las otras hojas
-    # Crear un diccionario de mapeo usuario -> rol
     usuario_rol_map = dict(zip(df_usuarios_proc['usuario registra'], df_usuarios_proc['rol']))
     
     # Agregar columna 'rol' a FECHA DE CITA
@@ -161,7 +174,7 @@ if uploaded_file is not None:
                 'USUARIOS': df_usuarios
             }
             st.session_state.data_loaded = True
-            st.session_state.process_clicked = False  # Resetear estado al cargar nuevo archivo
+            st.session_state.process_clicked = False
             
             # Mostrar información básica
             st.success("✅ Archivo cargado correctamente")
@@ -174,13 +187,38 @@ if uploaded_file is not None:
             with col3:
                 st.metric("👥 USUARIOS", f"{len(df_usuarios)} registros")
             
-            # Mostrar ejemplos de los datos de hora para depuración
-            with st.expander("🔍 Ver datos de ejemplo para depuración", expanded=False):
-                st.write("**Ejemplos de 'hora inicio cita':**")
+            # Mostrar información detallada de las columnas de hora
+            with st.expander("🔍 Información de depuración - Columnas de hora", expanded=True):
+                st.subheader("📊 Datos de muestra - 'hora inicio cita'")
+                st.write("**Primeros 5 valores:**")
                 st.write(df_cita['hora inicio cita'].head(10).tolist())
-                st.write("**Tipos de datos:**", df_cita['hora inicio cita'].dtype)
-                st.write("**Ejemplos de 'hora final cita':**")
+                
+                st.write("**Tipo de datos de la columna:**", df_cita['hora inicio cita'].dtype)
+                
+                st.write("**Valores únicos (primeros 10):**")
+                st.write(df_cita['hora inicio cita'].unique()[:10].tolist())
+                
+                st.subheader("📊 Datos de muestra - 'hora final cita'")
+                st.write("**Primeros 5 valores:**")
                 st.write(df_cita['hora final cita'].head(10).tolist())
+                
+                st.write("**Tipo de datos de la columna:**", df_cita['hora final cita'].dtype)
+                
+                st.write("**Valores únicos (primeros 10):**")
+                st.write(df_cita['hora final cita'].unique()[:10].tolist())
+                
+                # Probar la conversión en algunos valores
+                st.subheader("🧪 Prueba de conversión")
+                test_values = df_cita['hora inicio cita'].head(5).tolist()
+                test_results = []
+                for val in test_values:
+                    result = convertir_a_hora(val)
+                    test_results.append({
+                        'Original': val,
+                        'Convertido': result.strftime('%H:%M') if result else 'None',
+                        'Tipo': type(val)
+                    })
+                st.dataframe(pd.DataFrame(test_results))
             
             # Botón para procesar
             if st.button("🔄 Procesar", type="primary", use_container_width=True):
@@ -227,15 +265,12 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
             with col1:
                 st.metric("Total registros", len(df))
             with col2:
-                # Contar cuántos tienen rol asignado
                 roles_asignados = df['rol'].notna().sum()
                 st.metric("Roles asignados", f"{roles_asignados}/{len(df)}")
             with col3:
-                # Contar cuántos tienen hora ingreso calculada
                 horas_ingreso = df['hora ingreso a cita'].notna().sum()
                 st.metric("Horas ingreso", f"{horas_ingreso}/{len(df)}")
             with col4:
-                # Contar cuántos tienen hora entrega calculada
                 horas_entrega = df['hora entrega documentos'].notna().sum()
                 st.metric("Horas entrega", f"{horas_entrega}/{len(df)}")
             
@@ -254,7 +289,7 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 st.dataframe(df[columnas_existentes].head(10), use_container_width=True)
                 
                 # Mostrar comparación de horas en formato más claro
-                st.subheader("📊 Comparación de horas calculadas")
+                st.subheader("📊 Comparación de horas calculadas (primeros 10 registros)")
                 comparacion_df = df[['hora inicio cita', 'hora ingreso a cita', 'hora final cita', 'hora entrega documentos']].head(10)
                 st.dataframe(comparacion_df, use_container_width=True)
             else:
