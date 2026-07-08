@@ -255,7 +255,7 @@ def agregar_columnas_adicionales(df, unidades_seleccionadas):
 def generar_grafico_matplotlib(df, titulo):
     """
     Genera un gráfico de líneas con matplotlib mostrando Recurso a necesidad
-    con agrupación de 15 minutos para mejor visualización
+    con promediación cada 15 minutos para mejor visualización
     """
     try:
         if df.empty or 'Recurso a necesidad' not in df.columns:
@@ -270,14 +270,14 @@ def generar_grafico_matplotlib(df, titulo):
             plt.tight_layout()
             return fig
         
-        # Preparar datos - agrupar cada 15 minutos
+        # Preparar datos - promediar cada 15 minutos
         df_agrupado = df.copy()
         # Crear columna de hora en formato datetime para agrupar
         df_agrupado['hora_dt'] = pd.to_datetime(df_agrupado['Hora'], format='%H:%M')
         # Redondear a 15 minutos
         df_agrupado['hora_15min'] = df_agrupado['hora_dt'].dt.floor('15min')
-        # Agrupar sumando los valores de Recurso a necesidad
-        df_agrupado_15 = df_agrupado.groupby('hora_15min')['Recurso a necesidad'].sum().reset_index()
+        # Agrupar promediando los valores de Recurso a necesidad (no sumando)
+        df_agrupado_15 = df_agrupado.groupby('hora_15min')['Recurso a necesidad'].mean().reset_index()
         # Formatear hora para mostrar
         df_agrupado_15['Hora'] = df_agrupado_15['hora_15min'].dt.strftime('%H:%M')
         
@@ -290,10 +290,10 @@ def generar_grafico_matplotlib(df, titulo):
         # Graficar línea y puntos
         ax.plot(df_agrupado_15['Hora'], df_agrupado_15['Recurso a necesidad'], 
                 marker='o', linewidth=2, markersize=5, 
-                color='#E84A5F', label='Recurso a necesidad')
+                color='#E84A5F', label='Recurso a necesidad (promedio 15 min)')
         
         # Configurar ejes
-        ax.set_xlabel('Hora (agrupado cada 15 min)', fontsize=10)
+        ax.set_xlabel('Hora (promediado cada 15 min)', fontsize=10)
         ax.set_ylabel('Recurso a necesidad', fontsize=10)
         ax.set_title(titulo, fontsize=12, fontweight='bold')
         
@@ -562,7 +562,7 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 st.dataframe(df, use_container_width=True, height=400)
                 
                 # Generar y mostrar gráfico con matplotlib
-                st.subheader("📈 Evolución del Recurso a Necesidad (agrupado cada 15 min)")
+                st.subheader("📈 Evolución del Recurso a Necesidad (promediado cada 15 min)")
                 fig = generar_grafico_matplotlib(df, f"{nombre_tab} - Recurso a necesidad por hora")
                 if fig:
                     st.pyplot(fig)
