@@ -25,6 +25,22 @@ def convertir_a_hora(valor):
         if pd.isna(valor) or valor == '' or valor is None:
             return None
         
+        # Si es un número (formato Excel)
+        if isinstance(valor, (int, float)):
+            # Si el número es mayor a 40000, es una fecha completa de Excel
+            if valor > 40000:
+                # Convertir número de Excel a datetime
+                # Excel usa el 1/1/1900 como base (con un bug para 1900)
+                base_date = datetime(1899, 12, 30)
+                fecha_excel = base_date + timedelta(days=valor)
+                return fecha_excel
+            # Si es un número entre 0 y 1, es solo una hora
+            elif 0 <= valor <= 1:
+                total_seconds = valor * 86400  # 86400 segundos en un día
+                hours = int(total_seconds // 3600)
+                minutes = int((total_seconds % 3600) // 60)
+                return datetime(2000, 1, 1, hours, minutes)
+        
         # Si es string
         if isinstance(valor, str):
             # Limpiar el string
@@ -73,19 +89,18 @@ def convertir_a_hora(valor):
             minutes = int((total_seconds % 3600) // 60)
             return datetime(2000, 1, 1, hours, minutes)
         
-        # Si es un número (posiblemente hora en formato Excel)
-        if isinstance(valor, (int, float)):
-            # Si es un número entre 0 y 1, es una fracción de día
-            if 0 <= valor <= 1:
-                total_seconds = valor * 86400  # 86400 segundos en un día
-                hours = int(total_seconds // 3600)
-                minutes = int((total_seconds % 3600) // 60)
-                return datetime(2000, 1, 1, hours, minutes)
-        
         return None
     except Exception as e:
         print(f"Error al convertir hora: {valor}, Error: {e}")
         return None
+
+def extraer_hora_de_fecha(fecha_datetime):
+    """
+    Extrae solo la hora de un objeto datetime
+    """
+    if fecha_datetime is None:
+        return None
+    return datetime(2000, 1, 1, fecha_datetime.hour, fecha_datetime.minute)
 
 def procesar_datos(df_cita, df_registro, df_usuarios):
     """
@@ -113,8 +128,11 @@ def procesar_datos(df_cita, df_registro, df_usuarios):
             if hora_dt is None:
                 return None
             
+            # Extraer solo la hora si es una fecha completa
+            hora_solo = extraer_hora_de_fecha(hora_dt)
+            
             # Restar 30 minutos
-            nueva_hora = hora_dt - timedelta(minutes=30)
+            nueva_hora = hora_solo - timedelta(minutes=30)
             return nueva_hora.strftime('%H:%M')
         except Exception as e:
             print(f"Error calculando hora ingreso: {e}")
@@ -131,7 +149,10 @@ def procesar_datos(df_cita, df_registro, df_usuarios):
             if hora_dt is None:
                 return None
             
-            return hora_dt.strftime('%H:%M')
+            # Extraer solo la hora si es una fecha completa
+            hora_solo = extraer_hora_de_fecha(hora_dt)
+            
+            return hora_solo.strftime('%H:%M')
         except Exception as e:
             print(f"Error convirtiendo hora entrega: {e}")
             return None
@@ -195,28 +216,18 @@ if uploaded_file is not None:
                 
                 st.write("**Tipo de datos de la columna:**", df_cita['hora inicio cita'].dtype)
                 
-                st.write("**Valores únicos (primeros 10):**")
-                st.write(df_cita['hora inicio cita'].unique()[:10].tolist())
-                
-                st.subheader("📊 Datos de muestra - 'hora final cita'")
-                st.write("**Primeros 5 valores:**")
-                st.write(df_cita['hora final cita'].head(10).tolist())
-                
-                st.write("**Tipo de datos de la columna:**", df_cita['hora final cita'].dtype)
-                
-                st.write("**Valores únicos (primeros 10):**")
-                st.write(df_cita['hora final cita'].unique()[:10].tolist())
-                
                 # Probar la conversión en algunos valores
                 st.subheader("🧪 Prueba de conversión")
                 test_values = df_cita['hora inicio cita'].head(5).tolist()
                 test_results = []
                 for val in test_values:
                     result = convertir_a_hora(val)
+                    hora_solo = extraer_hora_de_fecha(result) if result else None
                     test_results.append({
                         'Original': val,
-                        'Convertido': result.strftime('%H:%M') if result else 'None',
-                        'Tipo': type(val)
+                        'Fecha completa': result.strftime('%Y-%m-%d %H:%M') if result else 'None',
+                        'Hora extraída': hora_solo.strftime('%H:%M') if hora_solo else 'None',
+                        'Menos 30 min': (hora_solo - timedelta(minutes=30)).strftime('%H:%M') if hora_solo else 'None'
                     })
                 st.dataframe(pd.DataFrame(test_results))
             
