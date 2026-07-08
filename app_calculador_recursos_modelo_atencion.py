@@ -352,22 +352,27 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
                 df_resultado[f'En cola de admisiones {unidad}'] = 0
                 continue
             
-            # Agrupar por fecha, profesional y centro para obtener conteos únicos
-            # Usamos hora ingreso a cita (no redondeada) para asignación exacta
-            df_agrupado = df_unidad.groupby(['fecha_cita_dt', 'profesional', 'centro de atencion', 'hora ingreso a cita']).size().reset_index(name='conteo')
+            # PASO 1: Identificar registros únicos por día de semana + mes + profesional + centro de atención
+            # Crear una llave única para cada combinación
+            df_unidad['llave_unica'] = df_unidad['fecha_cita_dt'].dt.strftime('%Y-%m') + '_' + \
+                                       df_unidad['profesional'].astype(str) + '_' + \
+                                       df_unidad['centro de atencion'].astype(str)
             
-            # Calcular días del mismo día de la semana en el mes para cada fecha
-            df_agrupado['dias_mes'] = df_agrupado['fecha_cita_dt'].apply(contar_dias_mes)
+            # PASO 2: Identificar registros únicos (eliminar duplicados por llave)
+            df_unicos = df_unidad.drop_duplicates(subset=['llave_unica', 'hora ingreso a cita'])
             
-            # Calcular el valor ajustado (conteo / días_mes)
-            df_agrupado['valor_ajustado'] = df_agrupado['conteo'] / df_agrupado['dias_mes']
+            # PASO 3: Calcular el número de días del mismo día de semana en el mes para cada fecha
+            df_unicos['dias_mes'] = df_unicos['fecha_cita_dt'].apply(contar_dias_mes)
             
-            # Agrupar por hora exacta sumando los valores ajustados
-            df_horas = df_agrupado.groupby('hora ingreso a cita')['valor_ajustado'].sum().reset_index()
+            # PASO 4: Calcular el peso de cada registro único (1 / dias_mes)
+            df_unicos['peso_registro'] = 1 / df_unicos['dias_mes']
+            
+            # PASO 5: Agrupar por hora ingreso a cita, sumando los pesos
+            df_horas = df_unicos.groupby('hora ingreso a cita')['peso_registro'].sum().reset_index()
             
             # Mapear los valores a las horas (coincidencia exacta)
             df_resultado[f'En cola de admisiones {unidad}'] = df_resultado['Hora'].map(
-                dict(zip(df_horas['hora ingreso a cita'], df_horas['valor_ajustado']))
+                dict(zip(df_horas['hora ingreso a cita'], df_horas['peso_registro']))
             ).fillna(0)
         
         # Agregar columnas adicionales
