@@ -95,25 +95,6 @@ def extraer_hora_de_fecha(fecha_datetime):
         return None
     return datetime(2000, 1, 1, fecha_datetime.hour, fecha_datetime.minute)
 
-def redondear_hora_5_minutos(hora_str):
-    """
-    Redondea una hora al siguiente intervalo de 5 minutos
-    """
-    try:
-        if pd.isna(hora_str) or hora_str is None:
-            return None
-        hora_dt = datetime.strptime(hora_str, '%H:%M')
-        minutos = hora_dt.minute
-        # Redondear hacia arriba al siguiente múltiplo de 5
-        minutos_redondeados = ((minutos + 4) // 5) * 5
-        if minutos_redondeados >= 60:
-            hora_dt = hora_dt.replace(hour=hora_dt.hour + 1, minute=0)
-        else:
-            hora_dt = hora_dt.replace(minute=minutos_redondeados)
-        return hora_dt.strftime('%H:%M')
-    except:
-        return hora_str
-
 def generar_tabla_horas():
     """
     Genera una tabla con las horas desde 06:30 hasta 19:00 cada 5 minutos
@@ -206,9 +187,6 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     
     df_cita_filtrado['hora ingreso a cita'] = df_cita_filtrado['hora inicio cita'].apply(calcular_hora_ingreso)
     
-    # Redondear hora ingreso a cita al siguiente intervalo de 5 minutos
-    df_cita_filtrado['hora ingreso redondeada'] = df_cita_filtrado['hora ingreso a cita'].apply(redondear_hora_5_minutos)
-    
     # Calcular hora entrega documentos
     def convertir_hora_entrega(hora_valor):
         try:
@@ -276,11 +254,11 @@ def agregar_columnas_adicionales(df, unidades_seleccionadas):
 
 def generar_grafico_matplotlib(df, titulo):
     """
-    Genera un gráfico de líneas con matplotlib mostrando Total pacientes en cola
+    Genera un gráfico de líneas con matplotlib mostrando Recurso a necesidad
     con agrupación de 15 minutos para mejor visualización
     """
     try:
-        if df.empty or 'Total pacientes en cola' not in df.columns:
+        if df.empty or 'Recurso a necesidad' not in df.columns:
             # Si no hay datos, mostrar gráfico vacío
             fig, ax = plt.subplots(figsize=(12, 4))
             ax.text(0.5, 0.5, 'No hay datos disponibles para graficar', 
@@ -288,7 +266,7 @@ def generar_grafico_matplotlib(df, titulo):
                    transform=ax.transAxes, fontsize=14)
             ax.set_title(titulo)
             ax.set_xlabel('Hora')
-            ax.set_ylabel('Total pacientes en cola')
+            ax.set_ylabel('Recurso a necesidad')
             plt.tight_layout()
             return fig
         
@@ -298,8 +276,8 @@ def generar_grafico_matplotlib(df, titulo):
         df_agrupado['hora_dt'] = pd.to_datetime(df_agrupado['Hora'], format='%H:%M')
         # Redondear a 15 minutos
         df_agrupado['hora_15min'] = df_agrupado['hora_dt'].dt.floor('15min')
-        # Agrupar sumando los valores de Total pacientes en cola
-        df_agrupado_15 = df_agrupado.groupby('hora_15min')['Total pacientes en cola'].sum().reset_index()
+        # Agrupar sumando los valores de Recurso a necesidad
+        df_agrupado_15 = df_agrupado.groupby('hora_15min')['Recurso a necesidad'].sum().reset_index()
         # Formatear hora para mostrar
         df_agrupado_15['Hora'] = df_agrupado_15['hora_15min'].dt.strftime('%H:%M')
         
@@ -310,13 +288,13 @@ def generar_grafico_matplotlib(df, titulo):
         fig, ax = plt.subplots(figsize=(12, 4))
         
         # Graficar línea y puntos
-        ax.plot(df_agrupado_15['Hora'], df_agrupado_15['Total pacientes en cola'], 
+        ax.plot(df_agrupado_15['Hora'], df_agrupado_15['Recurso a necesidad'], 
                 marker='o', linewidth=2, markersize=5, 
-                color='#2E86AB', label='Total pacientes en cola')
+                color='#E84A5F', label='Recurso a necesidad')
         
         # Configurar ejes
         ax.set_xlabel('Hora (agrupado cada 15 min)', fontsize=10)
-        ax.set_ylabel('Total pacientes en cola', fontsize=10)
+        ax.set_ylabel('Recurso a necesidad', fontsize=10)
         ax.set_title(titulo, fontsize=12, fontweight='bold')
         
         # Rotar etiquetas del eje X para mejor legibilidad
@@ -327,11 +305,11 @@ def generar_grafico_matplotlib(df, titulo):
         ax.set_axisbelow(True)
         
         # Agregar anotación con el total
-        total_pacientes = df_agrupado_15['Total pacientes en cola'].sum()
-        ax.annotate(f'Total pacientes: {total_pacientes:.1f}',
+        total_recurso = df_agrupado_15['Recurso a necesidad'].sum()
+        ax.annotate(f'Total recurso necesario: {total_recurso:.1f}',
                    xy=(0.02, 0.95), xycoords='axes fraction',
                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8),
-                   fontsize=9, color='#2E86AB')
+                   fontsize=9, color='#E84A5F')
         
         # Ajustar layout
         plt.tight_layout()
@@ -382,7 +360,8 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
                 continue
             
             # Agrupar por fecha, profesional y centro para obtener conteos únicos
-            df_agrupado = df_unidad.groupby(['fecha_cita_dt', 'profesional', 'centro de atencion', 'hora ingreso redondeada']).size().reset_index(name='conteo')
+            # Usamos hora ingreso a cita (no redondeada) para asignación exacta
+            df_agrupado = df_unidad.groupby(['fecha_cita_dt', 'profesional', 'centro de atencion', 'hora ingreso a cita']).size().reset_index(name='conteo')
             
             # Calcular días del mismo día de la semana en el mes para cada fecha
             df_agrupado['dias_mes'] = df_agrupado['fecha_cita_dt'].apply(contar_dias_mes)
@@ -390,12 +369,12 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
             # Calcular el valor ajustado (conteo / días_mes)
             df_agrupado['valor_ajustado'] = df_agrupado['conteo'] / df_agrupado['dias_mes']
             
-            # Agrupar por hora redondeada sumando los valores ajustados
-            df_horas = df_agrupado.groupby('hora ingreso redondeada')['valor_ajustado'].sum().reset_index()
+            # Agrupar por hora exacta sumando los valores ajustados
+            df_horas = df_agrupado.groupby('hora ingreso a cita')['valor_ajustado'].sum().reset_index()
             
-            # Mapear los valores a las horas
+            # Mapear los valores a las horas (coincidencia exacta)
             df_resultado[f'En cola de admisiones {unidad}'] = df_resultado['Hora'].map(
-                dict(zip(df_horas['hora ingreso redondeada'], df_horas['valor_ajustado']))
+                dict(zip(df_horas['hora ingreso a cita'], df_horas['valor_ajustado']))
             ).fillna(0)
         
         # Agregar columnas adicionales
@@ -577,9 +556,9 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 with col3:
                     st.metric("Mínimo Recurso Necesario", f"{min_recurso:.1f}", delta=f"a las {hora_min}")
                 with col4:
-                    # Hora pico (usando Total pacientes en cola)
-                    if 'Total pacientes en cola' in df.columns:
-                        hora_pico = df.loc[df['Total pacientes en cola'].idxmax(), 'Hora'] if df['Total pacientes en cola'].max() > 0 else "N/A"
+                    # Hora pico (usando Recurso a necesidad)
+                    if 'Recurso a necesidad' in df.columns:
+                        hora_pico = df.loc[df['Recurso a necesidad'].idxmax(), 'Hora'] if df['Recurso a necesidad'].max() > 0 else "N/A"
                     else:
                         hora_pico = "N/A"
                     st.metric("Hora Pico", hora_pico)
@@ -588,8 +567,8 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 st.dataframe(df, use_container_width=True, height=400)
                 
                 # Generar y mostrar gráfico con matplotlib
-                st.subheader("📈 Evolución de Pacientes en Cola (agrupado cada 15 min)")
-                fig = generar_grafico_matplotlib(df, f"{nombre_tab} - Pacientes en cola por hora")
+                st.subheader("📈 Evolución del Recurso a Necesidad (agrupado cada 15 min)")
+                fig = generar_grafico_matplotlib(df, f"{nombre_tab} - Recurso a necesidad por hora")
                 if fig:
                     st.pyplot(fig)
                     plt.close(fig)  # Liberar memoria
