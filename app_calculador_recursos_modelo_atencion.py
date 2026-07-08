@@ -234,6 +234,37 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     
     return df_cita_filtrado, df_registro_filtrado
 
+def agregar_columnas_adicionales(df, unidades_seleccionadas):
+    """
+    Agrega las columnas de Tiempo atención, Total pacientes en cola y Total tiempo requerido
+    """
+    df_resultado = df.copy()
+    
+    # 1. Agregar columnas de Tiempo atención para cada unidad
+    for unidad in unidades_seleccionadas:
+        columna_conteo = f'En cola de admisiones {unidad}'
+        columna_tiempo = f'Tiempo atención {unidad}'
+        if columna_conteo in df_resultado.columns:
+            df_resultado[columna_tiempo] = df_resultado[columna_conteo] * 2.5
+        else:
+            df_resultado[columna_tiempo] = 0
+    
+    # 2. Agregar columna Total pacientes en cola (suma de todos los conteos)
+    columnas_conteo = [f'En cola de admisiones {unidad}' for unidad in unidades_seleccionadas if f'En cola de admisiones {unidad}' in df_resultado.columns]
+    if columnas_conteo:
+        df_resultado['Total pacientes en cola'] = df_resultado[columnas_conteo].sum(axis=1)
+    else:
+        df_resultado['Total pacientes en cola'] = 0
+    
+    # 3. Agregar columna Total tiempo requerido del segmento (suma de todos los tiempos)
+    columnas_tiempo = [f'Tiempo atención {unidad}' for unidad in unidades_seleccionadas if f'Tiempo atención {unidad}' in df_resultado.columns]
+    if columnas_tiempo:
+        df_resultado['Total tiempo requerido del segmento (mins)'] = df_resultado[columnas_tiempo].sum(axis=1)
+    else:
+        df_resultado['Total tiempo requerido del segmento (mins)'] = 0
+    
+    return df_resultado
+
 def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     """
     Genera las tablas de resumen por día de la semana, promedio y resumen ejecutivo
@@ -260,6 +291,8 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
             df_resultado = df_base.copy()
             for unidad in unidades_seleccionadas:
                 df_resultado[f'En cola de admisiones {unidad}'] = 0
+            # Agregar columnas adicionales
+            df_resultado = agregar_columnas_adicionales(df_resultado, unidades_seleccionadas)
             tablas[dia_nombre] = df_resultado
             dfs_dias[dia_nombre] = df_resultado
             continue
@@ -293,6 +326,8 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
                 dict(zip(df_horas['hora ingreso redondeada'], df_horas['valor_ajustado']))
             ).fillna(0)
         
+        # Agregar columnas adicionales
+        df_resultado = agregar_columnas_adicionales(df_resultado, unidades_seleccionadas)
         tablas[dia_nombre] = df_resultado
         dfs_dias[dia_nombre] = df_resultado
     
@@ -311,25 +346,15 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
         else:
             df_promedio[f'En cola de admisiones {unidad}'] = 0
     
+    # Agregar columnas adicionales al promedio
+    df_promedio = agregar_columnas_adicionales(df_promedio, unidades_seleccionadas)
     tablas['Promedio'] = df_promedio
     
-    # Generar Resumen Ejecutivo
+    # Generar Resumen Ejecutivo (vacío por ahora)
     df_resumen_ejecutivo = df_base.copy()
-    
-    # Para cada unidad, calcular el total por hora sumando todos los días
     for unidad in unidades_seleccionadas:
-        columna_unidad = f'En cola de admisiones {unidad}'
-        df_resumen_ejecutivo[columna_unidad] = 0
-        
-        # Sumar los valores de cada día para esta unidad
-        for dia in dias_semana:
-            if dia in tablas and columna_unidad in tablas[dia].columns:
-                df_resumen_ejecutivo[columna_unidad] += tablas[dia][columna_unidad]
-    
-    # Agregar columna de total general (suma de todas las unidades)
-    columnas_unidades = [f'En cola de admisiones {unidad}' for unidad in unidades_seleccionadas]
-    df_resumen_ejecutivo['Total General'] = df_resumen_ejecutivo[columnas_unidades].sum(axis=1)
-    
+        df_resumen_ejecutivo[f'En cola de admisiones {unidad}'] = 0
+    df_resumen_ejecutivo = agregar_columnas_adicionales(df_resumen_ejecutivo, unidades_seleccionadas)
     tablas['Resumen Ejecutivo'] = df_resumen_ejecutivo
     
     return tablas
@@ -458,35 +483,32 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 # Mostrar estadísticas
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    # Sumar todas las columnas de unidades
-                    total = 0
-                    for col in df.columns:
-                        if col != 'Hora':
-                            total += df[col].sum()
-                    st.metric("Total", f"{total:.1f}")
+                    # Sumar Total pacientes en cola
+                    if 'Total pacientes en cola' in df.columns:
+                        total = df['Total pacientes en cola'].sum()
+                    else:
+                        total = 0
+                    st.metric("Total Pacientes en Cola", f"{total:.1f}")
                 with col2:
-                    # Contar horas con actividad en cualquier unidad
+                    # Contar horas con actividad
                     horas_con_actividad = 0
                     for idx, row in df.iterrows():
                         tiene_actividad = False
                         for col in df.columns:
-                            if col != 'Hora' and row[col] > 0:
-                                tiene_actividad = True
-                                break
+                            if col != 'Hora' and col != 'Total pacientes en cola' and col != 'Total tiempo requerido del segmento (mins)':
+                                if 'En cola de admisiones' in col and row[col] > 0:
+                                    tiene_actividad = True
+                                    break
                         if tiene_actividad:
                             horas_con_actividad += 1
                     st.metric("Horas con Actividad", f"{horas_con_actividad}")
                 with col3:
-                    # Hora pico (sumando todas las unidades)
-                    if nombre_tab != 'Resumen Ejecutivo':
-                        df['total'] = df[[col for col in df.columns if col != 'Hora']].sum(axis=1)
-                        hora_max = df.loc[df['total'].idxmax(), 'Hora'] if df['total'].max() > 0 else "N/A"
-                        st.metric("Hora Pico", hora_max)
-                        df = df.drop('total', axis=1)
+                    # Hora pico (usando Total pacientes en cola)
+                    if 'Total pacientes en cola' in df.columns:
+                        hora_max = df.loc[df['Total pacientes en cola'].idxmax(), 'Hora'] if df['Total pacientes en cola'].max() > 0 else "N/A"
                     else:
-                        # Para Resumen Ejecutivo, usar la columna Total General
-                        hora_max = df.loc[df['Total General'].idxmax(), 'Hora'] if df['Total General'].max() > 0 else "N/A"
-                        st.metric("Hora Pico", hora_max)
+                        hora_max = "N/A"
+                    st.metric("Hora Pico", hora_max)
                 
                 # Mostrar el DataFrame
                 st.dataframe(df, use_container_width=True, height=600)
