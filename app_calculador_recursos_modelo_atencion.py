@@ -102,6 +102,69 @@ def extraer_hora_de_fecha(fecha_datetime):
         return None
     return datetime(2000, 1, 1, fecha_datetime.hour, fecha_datetime.minute)
 
+def generar_tabla_resumen(df_cita, df_registro):
+    """
+    Genera una tabla de resumen con las horas desde 06:30 hasta 19:00 cada 5 minutos
+    """
+    # Crear el rango de horas
+    horas = []
+    hora_actual = datetime(2000, 1, 1, 6, 30)  # 06:30
+    hora_fin = datetime(2000, 1, 1, 19, 0)     # 19:00
+    
+    while hora_actual <= hora_fin:
+        horas.append(hora_actual.strftime('%H:%M'))
+        hora_actual += timedelta(minutes=5)
+    
+    # Crear DataFrame de resumen
+    resumen_df = pd.DataFrame({'Hora': horas})
+    
+    # Procesar FECHA DE CITA
+    def contar_citas_por_hora(hora_str):
+        try:
+            hora_dt = datetime.strptime(hora_str, '%H:%M')
+            # Buscar citas que coincidan con esta hora
+            count = 0
+            for idx, row in df_cita.iterrows():
+                if pd.isna(row['hora ingreso a cita']):
+                    continue
+                # Convertir hora ingreso a datetime
+                hora_ingreso = datetime.strptime(row['hora ingreso a cita'], '%H:%M')
+                # Verificar si la hora de ingreso coincide con la hora actual
+                if hora_ingreso.hour == hora_dt.hour and hora_ingreso.minute == hora_dt.minute:
+                    count += 1
+            return count
+        except:
+            return 0
+    
+    # Aplicar el conteo para cada hora
+    resumen_df['Citas Programadas'] = resumen_df['Hora'].apply(contar_citas_por_hora)
+    
+    # Procesar FECHA DE REGISTRO
+    def contar_registros_por_hora(hora_str):
+        try:
+            hora_dt = datetime.strptime(hora_str, '%H:%M')
+            # Buscar registros que coincidan con esta hora
+            count = 0
+            for idx, row in df_registro.iterrows():
+                # Convertir hora inicio cita a datetime
+                hora_inicio = convertir_a_hora(row['hora inicio cita'])
+                if hora_inicio is None:
+                    continue
+                hora_inicio_solo = extraer_hora_de_fecha(hora_inicio)
+                if hora_inicio_solo is None:
+                    continue
+                # Verificar si la hora de inicio coincide con la hora actual
+                if hora_inicio_solo.hour == hora_dt.hour and hora_inicio_solo.minute == hora_dt.minute:
+                    count += 1
+            return count
+        except:
+            return 0
+    
+    # Aplicar el conteo para cada hora
+    resumen_df['Registros'] = resumen_df['Hora'].apply(contar_registros_por_hora)
+    
+    return resumen_df
+
 def procesar_datos(df_cita, df_registro, df_usuarios):
     """
     Función que procesa los datos realizando todas las transformaciones necesarias
@@ -208,29 +271,6 @@ if uploaded_file is not None:
             with col3:
                 st.metric("👥 USUARIOS", f"{len(df_usuarios)} registros")
             
-            # Mostrar información detallada de las columnas de hora
-            with st.expander("🔍 Información de depuración - Columnas de hora", expanded=True):
-                st.subheader("📊 Datos de muestra - 'hora inicio cita'")
-                st.write("**Primeros 5 valores:**")
-                st.write(df_cita['hora inicio cita'].head(10).tolist())
-                
-                st.write("**Tipo de datos de la columna:**", df_cita['hora inicio cita'].dtype)
-                
-                # Probar la conversión en algunos valores
-                st.subheader("🧪 Prueba de conversión")
-                test_values = df_cita['hora inicio cita'].head(5).tolist()
-                test_results = []
-                for val in test_values:
-                    result = convertir_a_hora(val)
-                    hora_solo = extraer_hora_de_fecha(result) if result else None
-                    test_results.append({
-                        'Original': val,
-                        'Fecha completa': result.strftime('%Y-%m-%d %H:%M') if result else 'None',
-                        'Hora extraída': hora_solo.strftime('%H:%M') if hora_solo else 'None',
-                        'Menos 30 min': (hora_solo - timedelta(minutes=30)).strftime('%H:%M') if hora_solo else 'None'
-                    })
-                st.dataframe(pd.DataFrame(test_results))
-            
             # Botón para procesar
             if st.button("🔄 Procesar", type="primary", use_container_width=True):
                 with st.spinner("Procesando datos..."):
@@ -239,11 +279,15 @@ if uploaded_file is not None:
                         df_cita, df_registro, df_usuarios
                     )
                     
+                    # Generar tabla de resumen
+                    df_resumen = generar_tabla_resumen(df_cita_proc, df_registro_proc)
+                    
                     # Guardar datos procesados
                     st.session_state.dfs_procesados = {
                         'FECHA DE CITA': df_cita_proc,
                         'FECHA DE REGISTRO': df_registro_proc,
-                        'USUARIOS': df_usuarios_proc
+                        'USUARIOS': df_usuarios_proc,
+                        'RESUMEN': df_resumen
                     }
                     st.session_state.process_clicked = True
                     
@@ -256,19 +300,48 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
         st.divider()
         st.header("📊 Resumen de Datos Procesados")
         
-        # Información de las transformaciones realizadas
-        with st.expander("ℹ️ Transformaciones realizadas", expanded=False):
-            st.markdown("""
-            **Transformaciones aplicadas:**
-            1. ✅ **Cruce con USUARIOS**: Se agregó la columna 'rol' a las hojas FECHA DE CITA y FECHA DE REGISTRO
-            2. ✅ **Hora ingreso a cita**: Se calculó restando 30 minutos a 'hora inicio cita' (formato HH:MM)
-            3. ✅ **Hora entrega documentos**: Se convirtió 'hora final cita' a formato HH:MM
-            """)
-        
         # Crear tabs para cada hoja
-        tab1, tab2, tab3 = st.tabs(["📅 FECHA DE CITA", "📝 FECHA DE REGISTRO", "👥 USUARIOS"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 TABLA RESUMEN", "📅 FECHA DE CITA", "📝 FECHA DE REGISTRO", "👥 USUARIOS"])
         
         with tab1:
+            df = st.session_state.dfs_procesados['RESUMEN']
+            st.subheader("📊 Tabla de Resumen de Citas y Registros")
+            st.write("Distribución de citas programadas y registros por hora (desde 06:30 hasta 19:00 cada 5 minutos)")
+            
+            # Mostrar estadísticas del resumen
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                total_citas = df['Citas Programadas'].sum()
+                st.metric("Total Citas Programadas", f"{total_citas:,}")
+            with col2:
+                total_registros = df['Registros'].sum()
+                st.metric("Total Registros", f"{total_registros:,}")
+            with col3:
+                horas_con_datos = len(df[(df['Citas Programadas'] > 0) | (df['Registros'] > 0)])
+                st.metric("Horas con Actividad", f"{horas_con_datos}")
+            
+            # Mostrar el DataFrame completo
+            st.dataframe(df, use_container_width=True, height=600)
+            
+            # Opción para descargar la tabla de resumen
+            st.subheader("📥 Descargar Tabla de Resumen")
+            col1, col2, col3 = st.columns(3)
+            with col2:
+                # Crear archivo Excel con la tabla de resumen
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df.to_excel(writer, sheet_name='TABLA RESUMEN', index=False)
+                
+                output.seek(0)
+                st.download_button(
+                    label="📥 Descargar Tabla Resumen (Excel)",
+                    data=output,
+                    file_name="tabla_resumen_horas.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        
+        with tab2:
             df = st.session_state.dfs_procesados['FECHA DE CITA']
             
             # Mostrar estadísticas de la hoja
@@ -298,15 +371,10 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
             
             if len(df) > 0:
                 st.dataframe(df[columnas_existentes].head(10), use_container_width=True)
-                
-                # Mostrar comparación de horas en formato más claro
-                st.subheader("📊 Comparación de horas calculadas (primeros 10 registros)")
-                comparacion_df = df[['hora inicio cita', 'hora ingreso a cita', 'hora final cita', 'hora entrega documentos']].head(10)
-                st.dataframe(comparacion_df, use_container_width=True)
             else:
                 st.info("La hoja está vacía")
         
-        with tab2:
+        with tab3:
             df = st.session_state.dfs_procesados['FECHA DE REGISTRO']
             
             # Mostrar estadísticas de la hoja
@@ -333,7 +401,7 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
             else:
                 st.info("La hoja está vacía")
         
-        with tab3:
+        with tab4:
             df = st.session_state.dfs_procesados['USUARIOS']
             st.subheader(f"Primeros 10 registros de USUARIOS (Total: {len(df)})")
             
@@ -341,25 +409,6 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 st.dataframe(df.head(10), use_container_width=True)
             else:
                 st.info("La hoja está vacía")
-        
-        # Opción para descargar el resumen procesado
-        st.divider()
-        col1, col2, col3 = st.columns(3)
-        with col2:
-            # Crear archivo Excel con el resumen procesado
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                for sheet_name, df in st.session_state.dfs_procesados.items():
-                    df.head(10).to_excel(writer, sheet_name=sheet_name, index=False)
-            
-            output.seek(0)
-            st.download_button(
-                label="📥 Descargar Resumen Procesado (Excel)",
-                data=output,
-                file_name="resumen_datos_procesados.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
 
 # Mensaje informativo cuando el archivo está cargado pero no se ha procesado
 elif st.session_state.data_loaded and not st.session_state.process_clicked:
