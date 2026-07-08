@@ -4,8 +4,15 @@ import io
 from datetime import datetime, timedelta
 import re
 import calendar
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+
+# Intentar importar plotly, si no está disponible, mostrar mensaje
+try:
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    st.warning("⚠️ Plotly no está instalado. Los gráficos no estarán disponibles. Instala con: pip install plotly")
 
 st.set_page_config(page_title="Procesador de Excel", layout="wide")
 
@@ -238,7 +245,7 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
 
 def agregar_columnas_adicionales(df, unidades_seleccionadas):
     """
-    Agrega las columnas de Tiempo atención, Total pacientes en cola y Total tiempo requerido
+    Agrega las columnas de Tiempo atención, Total pacientes en cola, Total tiempo requerido y Recurso a necesidad
     """
     df_resultado = df.copy()
     
@@ -265,13 +272,23 @@ def agregar_columnas_adicionales(df, unidades_seleccionadas):
     else:
         df_resultado['Total tiempo requerido del segmento (mins)'] = 0
     
+    # 4. Agregar columna Recurso a necesidad (Total pacientes en cola / 1.72)
+    if 'Total pacientes en cola' in df_resultado.columns:
+        df_resultado['Recurso a necesidad'] = df_resultado['Total pacientes en cola'] / 1.72
+    else:
+        df_resultado['Recurso a necesidad'] = 0
+    
     return df_resultado
 
 def generar_grafico(df, titulo):
     """
-    Genera un gráfico de líneas con los datos de Total pacientes en cola
+    Genera un gráfico de líneas con los datos de Recurso a necesidad
     """
-    if df.empty or 'Total pacientes en cola' not in df.columns:
+    if not PLOTLY_AVAILABLE:
+        st.warning("⚠️ Plotly no está instalado. No se puede generar el gráfico.")
+        return None
+    
+    if df.empty or 'Recurso a necesidad' not in df.columns:
         # Si no hay datos, mostrar gráfico vacío
         fig = go.Figure()
         fig.add_annotation(
@@ -283,7 +300,7 @@ def generar_grafico(df, titulo):
         fig.update_layout(
             title=titulo,
             xaxis_title="Hora",
-            yaxis_title="Cantidad de Pacientes",
+            yaxis_title="Recurso a necesidad",
             height=400
         )
         return fig
@@ -291,21 +308,21 @@ def generar_grafico(df, titulo):
     # Crear figura
     fig = go.Figure()
     
-    # Agregar línea de Total pacientes en cola
+    # Agregar línea de Recurso a necesidad
     fig.add_trace(go.Scatter(
         x=df['Hora'],
-        y=df['Total pacientes en cola'],
+        y=df['Recurso a necesidad'],
         mode='lines+markers',
-        name='Total pacientes en cola',
-        line=dict(color='#2E86AB', width=2),
-        marker=dict(size=4, color='#2E86AB')
+        name='Recurso a necesidad',
+        line=dict(color='#E84A5F', width=2),
+        marker=dict(size=4, color='#E84A5F')
     ))
     
     # Configurar layout
     fig.update_layout(
         title=titulo,
         xaxis_title="Hora",
-        yaxis_title="Cantidad de Pacientes",
+        yaxis_title="Recurso a necesidad",
         height=400,
         hovermode='x unified',
         template='plotly_white',
@@ -331,17 +348,17 @@ def generar_grafico(df, titulo):
     )
     
     # Agregar anotación con el total
-    total_pacientes = df['Total pacientes en cola'].sum()
+    total_recurso = df['Recurso a necesidad'].sum()
     fig.add_annotation(
         x=0.02,
         y=0.98,
         xref="paper",
         yref="paper",
-        text=f"Total pacientes: {total_pacientes:.1f}",
+        text=f"Total recurso necesario: {total_recurso:.1f}",
         showarrow=False,
-        font=dict(size=12, color='#2E86AB'),
+        font=dict(size=12, color='#E84A5F'),
         bgcolor='rgba(255,255,255,0.8)',
-        bordercolor='#2E86AB',
+        bordercolor='#E84A5F',
         borderwidth=1,
         borderpad=4
     )
@@ -568,22 +585,16 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                         total = 0
                     st.metric("Total Pacientes en Cola", f"{total:.1f}")
                 with col2:
-                    # Contar horas con actividad
-                    horas_con_actividad = 0
-                    for idx, row in df.iterrows():
-                        tiene_actividad = False
-                        for col in df.columns:
-                            if col != 'Hora' and col != 'Total pacientes en cola' and col != 'Total tiempo requerido del segmento (mins)':
-                                if 'En cola de admisiones' in col and row[col] > 0:
-                                    tiene_actividad = True
-                                    break
-                        if tiene_actividad:
-                            horas_con_actividad += 1
-                    st.metric("Horas con Actividad", f"{horas_con_actividad}")
+                    # Sumar Recurso a necesidad
+                    if 'Recurso a necesidad' in df.columns:
+                        total_recurso = df['Recurso a necesidad'].sum()
+                    else:
+                        total_recurso = 0
+                    st.metric("Total Recurso Necesario", f"{total_recurso:.1f}")
                 with col3:
-                    # Hora pico (usando Total pacientes en cola)
-                    if 'Total pacientes en cola' in df.columns:
-                        hora_max = df.loc[df['Total pacientes en cola'].idxmax(), 'Hora'] if df['Total pacientes en cola'].max() > 0 else "N/A"
+                    # Hora pico (usando Recurso a necesidad)
+                    if 'Recurso a necesidad' in df.columns:
+                        hora_max = df.loc[df['Recurso a necesidad'].idxmax(), 'Hora'] if df['Recurso a necesidad'].max() > 0 else "N/A"
                     else:
                         hora_max = "N/A"
                     st.metric("Hora Pico", hora_max)
@@ -592,9 +603,13 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 st.dataframe(df, use_container_width=True, height=400)
                 
                 # Generar y mostrar gráfico
-                st.subheader("📈 Evolución de Pacientes en Cola")
-                fig = generar_grafico(df, f"{nombre_tab} - Pacientes en cola por hora")
-                st.plotly_chart(fig, use_container_width=True)
+                if PLOTLY_AVAILABLE:
+                    st.subheader("📈 Evolución del Recurso a Necesidad")
+                    fig = generar_grafico(df, f"{nombre_tab} - Recurso a necesidad por hora")
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("⚠️ Plotly no está instalado. Los gráficos no están disponibles.")
         
         # Opción para descargar todas las tablas
         st.divider()
