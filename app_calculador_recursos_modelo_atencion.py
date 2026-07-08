@@ -7,6 +7,11 @@ import calendar
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
+from openpyxl import Workbook
+from openpyxl.drawing.image import Image
+from openpyxl.utils.dataframe import dataframe_to_rows
+import tempfile
+import os
 
 st.set_page_config(page_title="Procesador de Excel", layout="wide")
 
@@ -274,7 +279,7 @@ def agregar_columnas_adicionales(df, unidades_seleccionadas):
     
     return df_resultado
 
-def generar_grafico_matplotlib(df, titulo):
+def generar_grafico_matplotlib(df, titulo, guardar=False, ruta=None):
     """
     Genera un gráfico de líneas con matplotlib mostrando todos los datos sin agrupar
     con etiquetas legibles (mostrando cada 30 minutos)
@@ -289,6 +294,9 @@ def generar_grafico_matplotlib(df, titulo):
             ax.set_xlabel('Hora')
             ax.set_ylabel('Recurso a necesidad')
             plt.tight_layout()
+            if guardar and ruta:
+                plt.savefig(ruta, dpi=100, bbox_inches='tight')
+                plt.close()
             return fig
         
         df_grafico = df.copy()
@@ -303,6 +311,9 @@ def generar_grafico_matplotlib(df, titulo):
             ax.set_xlabel('Hora')
             ax.set_ylabel('Recurso a necesidad')
             plt.tight_layout()
+            if guardar and ruta:
+                plt.savefig(ruta, dpi=100, bbox_inches='tight')
+                plt.close()
             return fig
         
         fig, ax = plt.subplots(figsize=(14, 5))
@@ -335,6 +346,10 @@ def generar_grafico_matplotlib(df, titulo):
         
         plt.tight_layout()
         
+        if guardar and ruta:
+            plt.savefig(ruta, dpi=100, bbox_inches='tight')
+            plt.close()
+        
         return fig
     except Exception as e:
         st.error(f"Error al generar gráfico: {str(e)}")
@@ -342,7 +357,7 @@ def generar_grafico_matplotlib(df, titulo):
 
 def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     """
-    Genera las tablas de resumen por día de la semana, promedio y resumen ejecutivo
+    Genera las tablas de resumen por día de la semana y promedio
     """
     # Nombres de los días de la semana
     dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
@@ -352,9 +367,6 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     
     # Diccionario para almacenar las tablas
     tablas = {}
-    
-    # Diccionario para almacenar los datos por día para el resumen ejecutivo
-    datos_por_dia = {}
     
     # Procesar por cada día de la semana
     for dia_idx, dia_nombre in enumerate(dias_semana):
@@ -368,7 +380,6 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
                 df_resultado[f'En cola de admisiones {unidad}'] = 0
             df_resultado = agregar_columnas_adicionales(df_resultado, unidades_seleccionadas)
             tablas[dia_nombre] = df_resultado
-            datos_por_dia[dia_nombre] = df_resultado
             continue
         
         # Crear tabla de resumen para este día
@@ -411,7 +422,6 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
         # Agregar columnas adicionales
         df_resultado = agregar_columnas_adicionales(df_resultado, unidades_seleccionadas)
         tablas[dia_nombre] = df_resultado
-        datos_por_dia[dia_nombre] = df_resultado
     
     # Generar tabla de Promedio
     df_promedio = df_base.copy()
@@ -429,49 +439,69 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     df_promedio = agregar_columnas_adicionales(df_promedio, unidades_seleccionadas)
     tablas['Promedio'] = df_promedio
     
-    # Generar Resumen Ejecutivo - Tabla de Pacientes por hora por día
-    df_resumen_pacientes = df_base.copy()
-    
-    # Para cada hora, crear columnas para cada día y unidad funcional
-    for unidad in unidades_seleccionadas:
-        for dia in dias_semana:
-            columna_nombre = f'{dia}_{unidad}'
-            if dia in datos_por_dia and f'En cola de admisiones {unidad}' in datos_por_dia[dia].columns:
-                df_resumen_pacientes[columna_nombre] = datos_por_dia[dia][f'En cola de admisiones {unidad}']
-            else:
-                df_resumen_pacientes[columna_nombre] = 0
-    
-    # Generar Resumen Ejecutivo - Tabla de Recursos necesarios (promedio por hora)
-    df_resumen_recursos = df_base.copy()
-    
-    # Calcular el promedio de recursos para cada hora basado en todos los días
-    for idx, row in df_resumen_pacientes.iterrows():
-        hora = row['Hora']
-        total_recurso = 0
-        count_dias = 0
-        
-        for unidad in unidades_seleccionadas:
-            for dia in dias_semana:
-                columna_nombre = f'{dia}_{unidad}'
-                if columna_nombre in df_resumen_pacientes.columns:
-                    pacientes = df_resumen_pacientes.loc[idx, columna_nombre]
-                    if pacientes > 0:
-                        # Calcular recurso necesario para esta combinación (pacientes / 1.72)
-                        recurso = pacientes / 1.72
-                        total_recurso += recurso
-                        count_dias += 1
-        
-        # Promedio de recursos por hora
-        if count_dias > 0:
-            df_resumen_recursos.loc[idx, 'Recurso promedio por hora'] = total_recurso / count_dias
-        else:
-            df_resumen_recursos.loc[idx, 'Recurso promedio por hora'] = 0
-    
-    # Guardar las tablas de resumen ejecutivo
-    tablas['Resumen Ejecutivo - Pacientes'] = df_resumen_pacientes
-    tablas['Resumen Ejecutivo - Recursos'] = df_resumen_recursos
-    
     return tablas
+
+def exportar_excel_con_graficos(tablas, df_cita_proc, titulos_graficos):
+    """
+    Exporta todas las tablas y gráficos a un archivo Excel
+    """
+    import tempfile
+    import os
+    from openpyxl import Workbook
+    from openpyxl.drawing.image import Image as XLImage
+    from openpyxl.utils.dataframe import dataframe_to_rows
+    import matplotlib.pyplot as plt
+    
+    # Crear un archivo temporal para guardar los gráficos
+    temp_dir = tempfile.mkdtemp()
+    imagenes_paths = []
+    
+    # Generar y guardar gráficos como imágenes
+    for nombre_tab, df in tablas.items():
+        if nombre_tab != 'Promedio':
+            titulo = f"{nombre_tab} - Recurso a necesidad por hora"
+            ruta_imagen = os.path.join(temp_dir, f"{nombre_tab}.png")
+            fig = generar_grafico_matplotlib(df, titulo, guardar=True, ruta=ruta_imagen)
+            if fig:
+                imagenes_paths.append((nombre_tab, ruta_imagen))
+    
+    # Crear el archivo Excel
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # Escribir cada tabla en una hoja
+        for nombre, df in tablas.items():
+            df.to_excel(writer, sheet_name=nombre, index=False)
+        
+        # Escribir datos procesados
+        df_cita_proc.to_excel(writer, sheet_name='CITAS_FILTRADAS', index=False)
+        
+        # Obtener el workbook para insertar imágenes
+        workbook = writer.book
+        
+        # Insertar gráficos en hojas correspondientes
+        for nombre_tab, ruta_imagen in imagenes_paths:
+            if nombre_tab in workbook.sheetnames:
+                ws = workbook[nombre_tab]
+                # Insertar imagen debajo de los datos
+                img = XLImage(ruta_imagen)
+                # Calcular posición (debajo de los datos)
+                df = tablas[nombre_tab]
+                row_offset = len(df) + 5  # 5 filas de espacio después de los datos
+                img.anchor = f'A{row_offset}'
+                ws.add_image(img)
+    
+    # Limpiar archivos temporales
+    for _, path in imagenes_paths:
+        try:
+            os.remove(path)
+        except:
+            pass
+    try:
+        os.rmdir(temp_dir)
+    except:
+        pass
+    
+    return output
 
 # Cargar archivo
 uploaded_file = st.file_uploader(
@@ -568,9 +598,8 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
         
         tablas = st.session_state.dfs_procesados['TABLAS']
         
-        # Crear pestañas: Resumen Ejecutivo - Pacientes, Resumen Ejecutivo - Recursos, Lunes a Viernes, Promedio
-        nombres_tabs = ['Resumen Ejecutivo - Pacientes', 'Resumen Ejecutivo - Recursos', 
-                       'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Promedio']
+        # Crear pestañas: Lunes a Viernes y Promedio (sin Resumen Ejecutivo)
+        nombres_tabs = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Promedio']
         tabs = st.tabs(nombres_tabs)
         
         for i, tab in enumerate(tabs):
@@ -580,119 +609,65 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 
                 st.subheader(f"📊 {nombre_tab}")
                 
-                # Mostrar estadísticas para las tablas de resumen ejecutivo
-                if 'Resumen Ejecutivo' in nombre_tab:
-                    # Mostrar estadísticas generales
-                    total_general = 0
-                    for col in df.columns:
-                        if col != 'Hora':
-                            total_general += df[col].sum()
-                    st.metric("Total General", f"{total_general:.1f}")
-                    
-                    # Mostrar el DataFrame
-                    st.dataframe(df, use_container_width=True, height=500)
-                    
-                    # Generar gráfico para la tabla de recursos
-                    if 'Recursos' in nombre_tab and 'Recurso promedio por hora' in df.columns:
-                        st.subheader("📈 Evolución del Recurso Promedio por Hora")
-                        fig, ax = plt.subplots(figsize=(14, 5))
-                        
-                        # Filtrar datos con valor > 0
-                        df_grafico = df[df['Recurso promedio por hora'] > 0]
-                        
-                        if not df_grafico.empty:
-                            ax.plot(df_grafico['Hora'], df_grafico['Recurso promedio por hora'], 
-                                    marker='o', linewidth=2, markersize=4, 
-                                    color='#2E86AB', label='Recurso promedio por hora')
-                            
-                            ax.set_xlabel('Hora', fontsize=11)
-                            ax.set_ylabel('Recurso promedio', fontsize=11)
-                            ax.set_title('Recurso Promedio por Hora (Todos los días)', fontsize=13, fontweight='bold')
-                            
-                            # Configurar ticks cada 30 minutos
-                            tick_positions = []
-                            tick_labels = []
-                            hora_actual = datetime(2000, 1, 1, 6, 30)
-                            hora_fin = datetime(2000, 1, 1, 19, 0)
-                            
-                            while hora_actual <= hora_fin:
-                                hora_str = hora_actual.strftime('%H:%M')
-                                tick_positions.append(hora_str)
-                                tick_labels.append(hora_str)
-                                hora_actual += timedelta(minutes=30)
-                            
-                            ax.set_xticks(tick_positions)
-                            ax.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=9)
-                            
-                            ax.grid(True, alpha=0.3, linestyle='--')
-                            ax.set_axisbelow(True)
-                            
-                            plt.tight_layout()
-                            st.pyplot(fig)
-                            plt.close(fig)
-                        else:
-                            st.info("No hay datos con valores positivos para graficar")
+                # Mostrar estadísticas
+                if 'Recurso a necesidad' in df.columns:
+                    max_recurso = df['Recurso a necesidad'].max()
+                    min_recurso = df['Recurso a necesidad'].min()
+                    hora_max = df.loc[df['Recurso a necesidad'].idxmax(), 'Hora'] if max_recurso > 0 else "N/A"
+                    hora_min = df.loc[df['Recurso a necesidad'].idxmin(), 'Hora'] if min_recurso > 0 else "N/A"
                 else:
-                    # Para las tablas de días y promedio, mostrar estadísticas
-                    if 'Recurso a necesidad' in df.columns:
-                        max_recurso = df['Recurso a necesidad'].max()
-                        min_recurso = df['Recurso a necesidad'].min()
-                        hora_max = df.loc[df['Recurso a necesidad'].idxmax(), 'Hora'] if max_recurso > 0 else "N/A"
-                        hora_min = df.loc[df['Recurso a necesidad'].idxmin(), 'Hora'] if min_recurso > 0 else "N/A"
+                    max_recurso = 0
+                    min_recurso = 0
+                    hora_max = "N/A"
+                    hora_min = "N/A"
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    if 'Total pacientes en cola' in df.columns:
+                        total = df['Total pacientes en cola'].sum()
                     else:
-                        max_recurso = 0
-                        min_recurso = 0
-                        hora_max = "N/A"
-                        hora_min = "N/A"
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        if 'Total pacientes en cola' in df.columns:
-                            total = df['Total pacientes en cola'].sum()
-                        else:
-                            total = 0
-                        st.metric("Total Pacientes en Cola", f"{total:.1f}")
-                    with col2:
-                        st.metric("Máximo Recurso Necesario", f"{max_recurso:.1f}", delta=f"a las {hora_max}")
-                    with col3:
-                        st.metric("Mínimo Recurso Necesario", f"{min_recurso:.1f}", delta=f"a las {hora_min}")
-                    with col4:
-                        if 'Recurso a necesidad' in df.columns:
-                            hora_pico = df.loc[df['Recurso a necesidad'].idxmax(), 'Hora'] if df['Recurso a necesidad'].max() > 0 else "N/A"
-                        else:
-                            hora_pico = "N/A"
-                        st.metric("Hora Pico", hora_pico)
-                    
-                    st.dataframe(df, use_container_width=True, height=400)
-                    
-                    # Generar gráfico para días y promedio
-                    st.subheader("📈 Evolución del Recurso a Necesidad")
-                    fig = generar_grafico_matplotlib(df, f"{nombre_tab} - Recurso a necesidad por hora")
-                    if fig:
-                        st.pyplot(fig)
-                        plt.close(fig)
+                        total = 0
+                    st.metric("Total Pacientes en Cola", f"{total:.1f}")
+                with col2:
+                    st.metric("Máximo Recurso Necesario", f"{max_recurso:.1f}", delta=f"a las {hora_max}")
+                with col3:
+                    st.metric("Mínimo Recurso Necesario", f"{min_recurso:.1f}", delta=f"a las {hora_min}")
+                with col4:
+                    if 'Recurso a necesidad' in df.columns:
+                        hora_pico = df.loc[df['Recurso a necesidad'].idxmax(), 'Hora'] if df['Recurso a necesidad'].max() > 0 else "N/A"
+                    else:
+                        hora_pico = "N/A"
+                    st.metric("Hora Pico", hora_pico)
+                
+                st.dataframe(df, use_container_width=True, height=400)
+                
+                st.subheader("📈 Evolución del Recurso a Necesidad")
+                fig = generar_grafico_matplotlib(df, f"{nombre_tab} - Recurso a necesidad por hora")
+                if fig:
+                    st.pyplot(fig)
+                    plt.close(fig)
         
-        # Opción para descargar todas las tablas
+        # Opción para descargar todas las tablas con gráficos
         st.divider()
-        st.subheader("📥 Descargar Tablas de Resumen")
+        st.subheader("📥 Descargar Tablas de Resumen con Gráficos")
         col1, col2, col3 = st.columns(3)
         with col2:
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                for nombre, df in tablas.items():
-                    # Limitar nombre de hoja a 31 caracteres (máximo permitido por Excel)
-                    nombre_hoja = nombre[:31]
-                    df.to_excel(writer, sheet_name=nombre_hoja, index=False)
-                st.session_state.dfs_procesados['CITA_PROCESADA'].to_excel(writer, sheet_name='CITAS_FILTRADAS', index=False)
-            
-            output.seek(0)
-            st.download_button(
-                label="📥 Descargar Tablas Resumen (Excel)",
-                data=output,
-                file_name="tablas_resumen.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
+            if st.button("📥 Descargar Excel con Gráficos", use_container_width=True):
+                with st.spinner("Generando archivo Excel con gráficos..."):
+                    # Exportar Excel con gráficos
+                    output = exportar_excel_con_graficos(
+                        tablas, 
+                        st.session_state.dfs_procesados['CITA_PROCESADA'],
+                        [f"{nombre} - Recurso a necesidad por hora" for nombre in nombres_tabs]
+                    )
+                    
+                    st.download_button(
+                        label="📥 Descargar Tablas con Gráficos (Excel)",
+                        data=output,
+                        file_name="tablas_resumen_con_graficos.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
 
 elif st.session_state.data_loaded and not st.session_state.process_clicked:
     st.info("📌 Selecciona las unidades funcionales y haz clic en el botón 'Procesar' para generar las tablas de resumen")
