@@ -97,6 +97,8 @@ def redondear_hora_5_minutos(hora_str):
     Redondea una hora al siguiente intervalo de 5 minutos
     """
     try:
+        if pd.isna(hora_str) or hora_str is None:
+            return None
         hora_dt = datetime.strptime(hora_str, '%H:%M')
         minutos = hora_dt.minute
         # Redondear hacia arriba al siguiente múltiplo de 5
@@ -123,12 +125,11 @@ def generar_tabla_horas():
     
     return pd.DataFrame({'Hora': horas})
 
-def contar_dias_mes(fecha_str):
+def contar_dias_mes(fecha):
     """
     Cuenta cuántos días del mismo día de la semana tiene el mes
     """
     try:
-        fecha = datetime.strptime(fecha_str, '%Y-%m-%d')
         dia_semana = fecha.weekday()
         mes = fecha.month
         año = fecha.year
@@ -193,18 +194,22 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     
     df_cita_filtrado['hora entrega documentos'] = df_cita_filtrado['hora final cita'].apply(convertir_hora_entrega)
     
-    # Agregar información de fecha para agrupar
-    df_cita_filtrado['fecha_cita_dt'] = pd.to_datetime(df_cita_filtrado['fecha cita'])
+    # Convertir fecha cita a datetime
+    df_cita_filtrado['fecha_cita_dt'] = pd.to_datetime(df_cita_filtrado['fecha cita'], errors='coerce')
+    
+    # Eliminar registros con fecha inválida
+    df_cita_filtrado = df_cita_filtrado.dropna(subset=['fecha_cita_dt'])
+    
+    # Agregar información de fecha
     df_cita_filtrado['dia_semana'] = df_cita_filtrado['fecha_cita_dt'].dt.weekday
     df_cita_filtrado['mes'] = df_cita_filtrado['fecha_cita_dt'].dt.month
     df_cita_filtrado['año'] = df_cita_filtrado['fecha_cita_dt'].dt.year
-    df_cita_filtrado['fecha_str'] = df_cita_filtrado['fecha_cita_dt'].dt.strftime('%Y-%m-%d')
     
     return df_cita_filtrado, df_registro_filtrado
 
 def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     """
-    Genera las tablas de resumen por día de la semana y promedio
+    Genera las tablas de resumen por día de la semana
     """
     # Nombres de los días de la semana
     dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
@@ -228,47 +233,36 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
             tablas[dia_nombre] = df_resultado
             continue
         
-        # Agrupar por fecha, profesional, centro y unidad funcional
-        df_agrupado = df_dia.groupby(['fecha_str', 'profesional', 'centro de atencion', 'unidad funcional', 'hora ingreso redondeada']).size().reset_index(name='conteo')
-        
-        # Calcular días del mismo día de la semana en el mes
-        df_agrupado['dias_mes'] = df_agrupado['fecha_str'].apply(contar_dias_mes)
-        
-        # Calcular el valor ajustado (conteo / días_mes)
-        df_agrupado['valor_ajustado'] = df_agrupado['conteo'] / df_agrupado['dias_mes']
-        
-        # Agrupar por hora y unidad funcional para el resumen
-        df_resumen = df_agrupado.groupby(['hora ingreso redondeada', 'unidad funcional'])['valor_ajustado'].sum().reset_index()
-        
         # Crear tabla de resumen para este día
         df_resultado = df_base.copy()
         
-        # Pivotear para tener una columna por unidad funcional
+        # Para cada unidad funcional
         for unidad in unidades_seleccionadas:
-            df_unidad = df_resumen[df_resumen['unidad funcional'] == unidad]
+            # Filtrar por unidad
+            df_unidad = df_dia[df_dia['unidad funcional'] == unidad].copy()
+            
+            if len(df_unidad) == 0:
+                df_resultado[f'En cola de admisiones {unidad}'] = 0
+                continue
+            
+            # Agrupar por fecha, profesional y centro para obtener conteos únicos
+            df_agrupado = df_unidad.groupby(['fecha_cita_dt', 'profesional', 'centro de atencion', 'hora ingreso redondeada']).size().reset_index(name='conteo')
+            
+            # Calcular días del mismo día de la semana en el mes para cada fecha
+            df_agrupado['dias_mes'] = df_agrupado['fecha_cita_dt'].apply(contar_dias_mes)
+            
+            # Calcular el valor ajustado (conteo / días_mes)
+            df_agrupado['valor_ajustado'] = df_agrupado['conteo'] / df_agrupado['dias_mes']
+            
+            # Agrupar por hora redondeada sumando los valores ajustados
+            df_horas = df_agrupado.groupby('hora ingreso redondeada')['valor_ajustado'].sum().reset_index()
+            
             # Mapear los valores a las horas
             df_resultado[f'En cola de admisiones {unidad}'] = df_resultado['Hora'].map(
-                dict(zip(df_unidad['hora ingreso redondeada'], df_unidad['valor_ajustado']))
+                dict(zip(df_horas['hora ingreso redondeada'], df_horas['valor_ajustado']))
             ).fillna(0)
         
         tablas[dia_nombre] = df_resultado
-    
-    # Calcular tabla de promedio
-    df_promedio = df_base.copy()
-    for unidad in unidades_seleccionadas:
-        # Recolectar valores de todos los días para esta unidad
-        valores_unidad = []
-        for dia in dias_semana:
-            if dia in tablas and f'En cola de admisiones {unidad}' in tablas[dia].columns:
-                valores_unidad.append(tablas[dia][f'En cola de admisiones {unidad}'])
-        
-        if valores_unidad:
-            # Calcular promedio de los 5 días
-            df_promedio[f'En cola de admisiones {unidad}'] = sum(valores_unidad) / len(valores_unidad)
-        else:
-            df_promedio[f'En cola de admisiones {unidad}'] = 0
-    
-    tablas['Promedio'] = df_promedio
     
     return tablas
 
@@ -348,7 +342,7 @@ if uploaded_file is not None:
                             df_cita, df_registro, df_usuarios, unidades_seleccionadas
                         )
                         
-                        # Generar tablas de resumen
+                        # Generar tablas de resumen (solo lunes a viernes)
                         tablas_resumen = generar_tablas_resumen(df_cita_proc, unidades_seleccionadas)
                         
                         # Guardar datos procesados
@@ -362,6 +356,7 @@ if uploaded_file is not None:
                     
     except Exception as e:
         st.error(f"❌ Error al leer el archivo: {str(e)}")
+        st.exception(e)
 
 # Mostrar resumen SOLO si se ha presionado el botón "Procesar"
 if st.session_state.process_clicked and st.session_state.data_loaded:
@@ -377,12 +372,12 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
             df_cita = st.session_state.dfs_procesados['CITA_PROCESADA']
             st.write(f"**Registros FECHA DE CITA (Cumplidas):** {len(df_cita)}")
         
-        st.header("📊 Tablas de Resumen por Día y Promedio")
+        st.header("📊 Tablas de Resumen por Día")
         
         tablas = st.session_state.dfs_procesados['TABLAS']
         
-        # Crear pestañas para cada día y promedio
-        nombres_tabs = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Promedio']
+        # Crear pestañas solo para lunes a viernes (sin promedio)
+        nombres_tabs = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
         tabs = st.tabs(nombres_tabs)
         
         for i, tab in enumerate(tabs):
@@ -395,22 +390,31 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                 # Mostrar estadísticas
                 col1, col2, col3 = st.columns(3)
                 with col1:
+                    # Sumar todas las columnas de unidades
                     total = 0
                     for col in df.columns:
                         if col != 'Hora':
                             total += df[col].sum()
                     st.metric("Total", f"{total:.1f}")
                 with col2:
+                    # Contar horas con actividad en cualquier unidad
                     horas_con_actividad = 0
-                    for col in df.columns:
-                        if col != 'Hora':
-                            horas_con_actividad += len(df[df[col] > 0])
+                    for idx, row in df.iterrows():
+                        tiene_actividad = False
+                        for col in df.columns:
+                            if col != 'Hora' and row[col] > 0:
+                                tiene_actividad = True
+                                break
+                        if tiene_actividad:
+                            horas_con_actividad += 1
                     st.metric("Horas con Actividad", f"{horas_con_actividad}")
                 with col3:
                     # Hora pico (sumando todas las unidades)
                     df['total'] = df[[col for col in df.columns if col != 'Hora']].sum(axis=1)
                     hora_max = df.loc[df['total'].idxmax(), 'Hora'] if df['total'].max() > 0 else "N/A"
                     st.metric("Hora Pico", hora_max)
+                    # Eliminar columna temporal
+                    df = df.drop('total', axis=1)
                 
                 # Mostrar el DataFrame
                 st.dataframe(df, use_container_width=True, height=600)
