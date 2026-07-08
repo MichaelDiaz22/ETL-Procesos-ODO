@@ -7,11 +7,9 @@ import calendar
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
-from openpyxl import Workbook
-from openpyxl.drawing.image import Image
-from openpyxl.utils.dataframe import dataframe_to_rows
 import tempfile
 import os
+from openpyxl.drawing.image import Image as XLImage
 
 st.set_page_config(page_title="Procesador de Excel", layout="wide")
 
@@ -25,6 +23,8 @@ if 'dfs' not in st.session_state:
     st.session_state.dfs = {}
 if 'process_clicked' not in st.session_state:
     st.session_state.process_clicked = False
+if 'excel_generado' not in st.session_state:
+    st.session_state.excel_generado = None
 
 def convertir_a_hora(valor):
     """
@@ -281,8 +281,7 @@ def agregar_columnas_adicionales(df, unidades_seleccionadas):
 
 def generar_grafico_matplotlib(df, titulo, guardar=False, ruta=None):
     """
-    Genera un gráfico de líneas con matplotlib mostrando todos los datos sin agrupar
-    con etiquetas legibles (mostrando cada 30 minutos)
+    Genera un gráfico de líneas con matplotlib
     """
     try:
         if df.empty or 'Recurso a necesidad' not in df.columns:
@@ -359,22 +358,14 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     """
     Genera las tablas de resumen por día de la semana y promedio
     """
-    # Nombres de los días de la semana
     dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
-    
-    # Generar tabla base de horas (cada 5 minutos)
     df_base = generar_tabla_horas()
-    
-    # Diccionario para almacenar las tablas
     tablas = {}
     
-    # Procesar por cada día de la semana
     for dia_idx, dia_nombre in enumerate(dias_semana):
-        # Filtrar por día de la semana
         df_dia = df_cita_proc[df_cita_proc['dia_semana'] == dia_idx].copy()
         
         if len(df_dia) == 0:
-            # Si no hay datos para este día, crear tabla vacía
             df_resultado = df_base.copy()
             for unidad in unidades_seleccionadas:
                 df_resultado[f'En cola de admisiones {unidad}'] = 0
@@ -382,19 +373,15 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
             tablas[dia_nombre] = df_resultado
             continue
         
-        # Crear tabla de resumen para este día
         df_resultado = df_base.copy()
         
-        # Para cada unidad funcional
         for unidad in unidades_seleccionadas:
-            # Filtrar por unidad
             df_unidad = df_dia[df_dia['unidad funcional'] == unidad].copy()
             
             if len(df_unidad) == 0:
                 df_resultado[f'En cola de admisiones {unidad}'] = 0
                 continue
             
-            # Crear llave única combinando: mes + profesional + centro de atención
             df_unidad['mes'] = df_unidad['fecha_cita_dt'].dt.month
             df_unidad['año'] = df_unidad['fecha_cita_dt'].dt.year
             df_unidad['llave_unica'] = df_unidad['año'].astype(str) + '-' + \
@@ -402,24 +389,16 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
                                        df_unidad['profesional'].astype(str) + '_' + \
                                        df_unidad['centro de atencion'].astype(str)
             
-            # Identificar registros únicos por llave y hora redondeada
             df_unicos = df_unidad.drop_duplicates(subset=['llave_unica', 'hora ingreso redondeada'])
-            
-            # Calcular días del mismo día de semana en el mes para cada fecha
             df_unicos['dias_mes'] = df_unicos['fecha_cita_dt'].apply(contar_dias_mes)
-            
-            # Calcular el peso de cada registro único (1 / dias_mes)
             df_unicos['peso_registro'] = 1 / df_unicos['dias_mes']
             
-            # Agrupar por hora redondeada, sumando los pesos
             df_horas = df_unicos.groupby('hora ingreso redondeada')['peso_registro'].sum().reset_index()
             
-            # Mapear los valores a las horas
             df_resultado[f'En cola de admisiones {unidad}'] = df_resultado['Hora'].map(
                 dict(zip(df_horas['hora ingreso redondeada'], df_horas['peso_registro']))
             ).fillna(0)
         
-        # Agregar columnas adicionales
         df_resultado = agregar_columnas_adicionales(df_resultado, unidades_seleccionadas)
         tablas[dia_nombre] = df_resultado
     
@@ -441,7 +420,7 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     
     return tablas
 
-def exportar_excel_con_graficos(tablas, df_cita_proc, titulos_graficos):
+def exportar_excel_con_graficos(tablas, df_cita_proc):
     """
     Exporta todas las tablas y gráficos a un archivo Excel
     """
@@ -450,7 +429,6 @@ def exportar_excel_con_graficos(tablas, df_cita_proc, titulos_graficos):
     from openpyxl import Workbook
     from openpyxl.drawing.image import Image as XLImage
     from openpyxl.utils.dataframe import dataframe_to_rows
-    import matplotlib.pyplot as plt
     
     # Crear un archivo temporal para guardar los gráficos
     temp_dir = tempfile.mkdtemp()
@@ -486,7 +464,7 @@ def exportar_excel_con_graficos(tablas, df_cita_proc, titulos_graficos):
                 img = XLImage(ruta_imagen)
                 # Calcular posición (debajo de los datos)
                 df = tablas[nombre_tab]
-                row_offset = len(df) + 5  # 5 filas de espacio después de los datos
+                row_offset = len(df) + 5
                 img.anchor = f'A{row_offset}'
                 ws.add_image(img)
     
@@ -561,24 +539,34 @@ if uploaded_file is not None:
             else:
                 st.warning("⚠️ Por favor, selecciona al menos una unidad funcional")
             
-            if st.button("🔄 Procesar", type="primary", use_container_width=True):
-                if not unidades_seleccionadas:
-                    st.error("❌ Debes seleccionar al menos una unidad funcional")
-                else:
-                    with st.spinner("Procesando datos..."):
-                        df_cita_proc, df_registro_proc = procesar_datos(
-                            df_cita, df_registro, df_usuarios, unidades_seleccionadas
-                        )
-                        
-                        tablas_resumen = generar_tablas_resumen(df_cita_proc, unidades_seleccionadas)
-                        
-                        st.session_state.dfs_procesados = {
-                            'TABLAS': tablas_resumen,
-                            'CITA_PROCESADA': df_cita_proc,
-                            'REGISTRO_PROCESADO': df_registro_proc
-                        }
-                        st.session_state.process_clicked = True
-                        st.session_state.unidades_seleccionadas = unidades_seleccionadas
+            col_boton1, col_boton2, col_boton3 = st.columns([1, 2, 1])
+            with col_boton2:
+                if st.button("🔄 Procesar", type="primary", use_container_width=True):
+                    if not unidades_seleccionadas:
+                        st.error("❌ Debes seleccionar al menos una unidad funcional")
+                    else:
+                        with st.spinner("Procesando datos..."):
+                            df_cita_proc, df_registro_proc = procesar_datos(
+                                df_cita, df_registro, df_usuarios, unidades_seleccionadas
+                            )
+                            
+                            tablas_resumen = generar_tablas_resumen(df_cita_proc, unidades_seleccionadas)
+                            
+                            st.session_state.dfs_procesados = {
+                                'TABLAS': tablas_resumen,
+                                'CITA_PROCESADA': df_cita_proc,
+                                'REGISTRO_PROCESADO': df_registro_proc
+                            }
+                            st.session_state.process_clicked = True
+                            st.session_state.unidades_seleccionadas = unidades_seleccionadas
+                            
+                            # Generar Excel y guardar en session_state
+                            with st.spinner("Generando archivo Excel con gráficos..."):
+                                excel_output = exportar_excel_con_graficos(
+                                    tablas_resumen,
+                                    df_cita_proc
+                                )
+                                st.session_state.excel_generado = excel_output
                     
     except Exception as e:
         st.error(f"❌ Error al leer el archivo: {str(e)}")
@@ -598,7 +586,7 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
         
         tablas = st.session_state.dfs_procesados['TABLAS']
         
-        # Crear pestañas: Lunes a Viernes y Promedio (sin Resumen Ejecutivo)
+        # Crear pestañas: Lunes a Viernes y Promedio
         nombres_tabs = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Promedio']
         tabs = st.tabs(nombres_tabs)
         
@@ -647,27 +635,22 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                     st.pyplot(fig)
                     plt.close(fig)
         
-        # Opción para descargar todas las tablas con gráficos
+        # Botón de descarga
         st.divider()
         st.subheader("📥 Descargar Tablas de Resumen con Gráficos")
-        col1, col2, col3 = st.columns(3)
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("📥 Descargar Excel con Gráficos", use_container_width=True):
-                with st.spinner("Generando archivo Excel con gráficos..."):
-                    # Exportar Excel con gráficos
-                    output = exportar_excel_con_graficos(
-                        tablas, 
-                        st.session_state.dfs_procesados['CITA_PROCESADA'],
-                        [f"{nombre} - Recurso a necesidad por hora" for nombre in nombres_tabs]
-                    )
-                    
-                    st.download_button(
-                        label="📥 Descargar Tablas con Gráficos (Excel)",
-                        data=output,
-                        file_name="tablas_resumen_con_graficos.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
+            if st.session_state.excel_generado is not None:
+                st.download_button(
+                    label="📥 Descargar Excel con Gráficos",
+                    data=st.session_state.excel_generado,
+                    file_name="tablas_resumen_con_graficos.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            else:
+                st.info("Generando archivo Excel... Presiona 'Procesar' nuevamente si no aparece el botón de descarga.")
 
 elif st.session_state.data_loaded and not st.session_state.process_clicked:
     st.info("📌 Selecciona las unidades funcionales y haz clic en el botón 'Procesar' para generar las tablas de resumen")
