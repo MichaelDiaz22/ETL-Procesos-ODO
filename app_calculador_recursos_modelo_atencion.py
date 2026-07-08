@@ -105,13 +105,13 @@ def generar_tabla_horas():
     
     return pd.DataFrame({'Hora': horas})
 
-def procesar_datos(df_cita, df_registro, df_usuarios, centros_seleccionados):
+def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     """
-    Procesa los datos filtrando por centros de atención y estado cumplida
+    Procesa los datos filtrando por unidades funcionales y estado cumplida
     """
-    # Filtrar por centros de atención seleccionados
-    df_cita_filtrado = df_cita[df_cita['centro de atencion'].isin(centros_seleccionados)].copy()
-    df_registro_filtrado = df_registro[df_registro['centro de atencion'].isin(centros_seleccionados)].copy()
+    # Filtrar por unidades funcionales seleccionadas
+    df_cita_filtrado = df_cita[df_cita['unidad funcional'].isin(unidades_seleccionadas)].copy()
+    df_registro_filtrado = df_registro[df_registro['unidad funcional'].isin(unidades_seleccionadas)].copy()
     
     # Filtrar FECHA DE CITA por estado "Cumplida"
     df_cita_filtrado = df_cita_filtrado[df_cita_filtrado['estado cita'] == 'Cumplida'].copy()
@@ -217,34 +217,34 @@ if uploaded_file is not None:
             with col3:
                 st.metric("👥 USUARIOS", f"{len(df_usuarios)} registros")
             
-            # Obtener centros de atención únicos de ambas hojas
-            centros_cita = set(df_cita['centro de atencion'].dropna().unique())
-            centros_registro = set(df_registro['centro de atencion'].dropna().unique())
-            centros_disponibles = sorted(list(centros_cita.union(centros_registro)))
+            # Obtener unidades funcionales únicas de ambas hojas
+            unidades_cita = set(df_cita['unidad funcional'].dropna().unique())
+            unidades_registro = set(df_registro['unidad funcional'].dropna().unique())
+            unidades_disponibles = sorted(list(unidades_cita.union(unidades_registro)))
             
-            # Selector de centros de atención
-            st.subheader("🏥 Selección de Centros de Atención")
-            centros_seleccionados = st.multiselect(
-                "Selecciona uno o más centros de atención:",
-                options=centros_disponibles,
-                help="Puedes seleccionar múltiples centros de atención"
+            # Selector de unidades funcionales
+            st.subheader("🏥 Selección de Unidades Funcionales")
+            unidades_seleccionadas = st.multiselect(
+                "Selecciona una o más unidades funcionales:",
+                options=unidades_disponibles,
+                help="Puedes seleccionar múltiples unidades funcionales"
             )
             
-            # Mostrar cantidad de centros seleccionados
-            if centros_seleccionados:
-                st.info(f"✅ {len(centros_seleccionados)} centro(s) seleccionado(s)")
+            # Mostrar cantidad de unidades seleccionadas
+            if unidades_seleccionadas:
+                st.info(f"✅ {len(unidades_seleccionadas)} unidad(es) funcional(es) seleccionada(s)")
             else:
-                st.warning("⚠️ Por favor, selecciona al menos un centro de atención")
+                st.warning("⚠️ Por favor, selecciona al menos una unidad funcional")
             
             # Botón para procesar
             if st.button("🔄 Procesar", type="primary", use_container_width=True):
-                if not centros_seleccionados:
-                    st.error("❌ Debes seleccionar al menos un centro de atención")
+                if not unidades_seleccionadas:
+                    st.error("❌ Debes seleccionar al menos una unidad funcional")
                 else:
                     with st.spinner("Procesando datos..."):
                         # Procesar los datos con los filtros
                         df_cita_proc, df_registro_proc = procesar_datos(
-                            df_cita, df_registro, df_usuarios, centros_seleccionados
+                            df_cita, df_registro, df_usuarios, unidades_seleccionadas
                         )
                         
                         # Generar tabla de resumen con conteo
@@ -257,7 +257,7 @@ if uploaded_file is not None:
                             'REGISTRO_PROCESADO': df_registro_proc
                         }
                         st.session_state.process_clicked = True
-                        st.session_state.centros_seleccionados = centros_seleccionados
+                        st.session_state.unidades_seleccionadas = unidades_seleccionadas
                     
     except Exception as e:
         st.error(f"❌ Error al leer el archivo: {str(e)}")
@@ -271,7 +271,7 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
         st.subheader("🔍 Filtros Aplicados")
         col1, col2 = st.columns(2)
         with col1:
-            st.write(f"**Centros de Atención:** {', '.join(st.session_state.centros_seleccionados)}")
+            st.write(f"**Unidades Funcionales:** {', '.join(st.session_state.unidades_seleccionadas)}")
         with col2:
             df_cita = st.session_state.dfs_procesados['CITA_PROCESADA']
             st.write(f"**Registros FECHA DE CITA (Cumplidas):** {len(df_cita)}")
@@ -320,7 +320,7 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
 
 # Mensaje informativo cuando el archivo está cargado pero no se ha procesado
 elif st.session_state.data_loaded and not st.session_state.process_clicked:
-    st.info("📌 Selecciona los centros de atención y haz clic en el botón 'Procesar' para generar la tabla de resumen")
+    st.info("📌 Selecciona las unidades funcionales y haz clic en el botón 'Procesar' para generar la tabla de resumen")
 
 # Si no hay archivo cargado
 else:
