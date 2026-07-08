@@ -12,6 +12,8 @@ if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
 if 'dfs' not in st.session_state:
     st.session_state.dfs = {}
+if 'process_clicked' not in st.session_state:
+    st.session_state.process_clicked = False
 
 # Cargar archivo
 uploaded_file = st.file_uploader(
@@ -46,6 +48,7 @@ if uploaded_file is not None:
                 'USUARIOS': df_usuarios
             }
             st.session_state.data_loaded = True
+            st.session_state.process_clicked = False  # Resetear estado al cargar nuevo archivo
             
             # Mostrar información básica
             st.success("✅ Archivo cargado correctamente")
@@ -60,14 +63,13 @@ if uploaded_file is not None:
             
             # Botón para procesar
             if st.button("🔄 Procesar", type="primary", use_container_width=True):
-                st.session_state.data_loaded = True
-                st.rerun()
+                st.session_state.process_clicked = True
                 
     except Exception as e:
         st.error(f"❌ Error al leer el archivo: {str(e)}")
 
-# Mostrar resumen si los datos están cargados
-if st.session_state.data_loaded and st.session_state.dfs:
+# Mostrar resumen SOLO si se ha presionado el botón "Procesar"
+if st.session_state.process_clicked and st.session_state.data_loaded and st.session_state.dfs:
     st.divider()
     st.header("📊 Resumen de Datos")
     
@@ -102,22 +104,21 @@ if st.session_state.data_loaded and st.session_state.dfs:
     st.divider()
     col1, col2, col3 = st.columns(3)
     with col2:
-        if st.button("📥 Descargar Resumen (CSV)", use_container_width=True):
-            # Crear un archivo CSV con los primeros 10 registros de cada hoja
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                for sheet_name, df in st.session_state.dfs.items():
-                    df.head(10).to_excel(writer, sheet_name=sheet_name, index=False)
-            
-            output.seek(0)
-            st.download_button(
-                label="📥 Descargar Resumen (Excel)",
-                data=output,
-                file_name="resumen_datos.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
+        # Crear archivo Excel con el resumen
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            for sheet_name, df in st.session_state.dfs.items():
+                df.head(10).to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        output.seek(0)
+        st.download_button(
+            label="📥 Descargar Resumen (Excel)",
+            data=output,
+            file_name="resumen_datos.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
 
-else:
-    if not st.session_state.data_loaded and uploaded_file is not None:
-        st.info("📌 Haz clic en el botón 'Procesar' para mostrar el resumen de los datos")
+# Mensaje informativo cuando el archivo está cargado pero no se ha procesado
+elif st.session_state.data_loaded and not st.session_state.process_clicked:
+    st.info("📌 Haz clic en el botón 'Procesar' para mostrar el resumen de los datos")
