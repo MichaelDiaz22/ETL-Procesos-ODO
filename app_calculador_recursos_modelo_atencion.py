@@ -284,9 +284,6 @@ if uploaded_file is not None:
                     
                     # Guardar datos procesados
                     st.session_state.dfs_procesados = {
-                        'FECHA DE CITA': df_cita_proc,
-                        'FECHA DE REGISTRO': df_registro_proc,
-                        'USUARIOS': df_usuarios_proc,
                         'RESUMEN': df_resumen
                     }
                     st.session_state.process_clicked = True
@@ -298,118 +295,45 @@ if uploaded_file is not None:
 if st.session_state.process_clicked and st.session_state.data_loaded:
     if 'dfs_procesados' in st.session_state:
         st.divider()
-        st.header("📊 Resumen de Datos Procesados")
+        st.header("📊 Tabla de Resumen de Citas y Registros")
+        st.write("Distribución de citas programadas y registros por hora (desde 06:30 hasta 19:00 cada 5 minutos)")
         
-        # Crear tabs para cada hoja
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 TABLA RESUMEN", "📅 FECHA DE CITA", "📝 FECHA DE REGISTRO", "👥 USUARIOS"])
+        df = st.session_state.dfs_procesados['RESUMEN']
         
-        with tab1:
-            df = st.session_state.dfs_procesados['RESUMEN']
-            st.subheader("📊 Tabla de Resumen de Citas y Registros")
-            st.write("Distribución de citas programadas y registros por hora (desde 06:30 hasta 19:00 cada 5 minutos)")
-            
-            # Mostrar estadísticas del resumen
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                total_citas = df['Citas Programadas'].sum()
-                st.metric("Total Citas Programadas", f"{total_citas:,}")
-            with col2:
-                total_registros = df['Registros'].sum()
-                st.metric("Total Registros", f"{total_registros:,}")
-            with col3:
-                horas_con_datos = len(df[(df['Citas Programadas'] > 0) | (df['Registros'] > 0)])
-                st.metric("Horas con Actividad", f"{horas_con_datos}")
-            
-            # Mostrar el DataFrame completo
-            st.dataframe(df, use_container_width=True, height=600)
-            
-            # Opción para descargar la tabla de resumen
-            st.subheader("📥 Descargar Tabla de Resumen")
-            col1, col2, col3 = st.columns(3)
-            with col2:
-                # Crear archivo Excel con la tabla de resumen
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df.to_excel(writer, sheet_name='TABLA RESUMEN', index=False)
-                
-                output.seek(0)
-                st.download_button(
-                    label="📥 Descargar Tabla Resumen (Excel)",
-                    data=output,
-                    file_name="tabla_resumen_horas.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
+        # Mostrar estadísticas del resumen
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            total_citas = df['Citas Programadas'].sum()
+            st.metric("Total Citas Programadas", f"{total_citas:,}")
+        with col2:
+            total_registros = df['Registros'].sum()
+            st.metric("Total Registros", f"{total_registros:,}")
+        with col3:
+            horas_con_datos = len(df[(df['Citas Programadas'] > 0) | (df['Registros'] > 0)])
+            st.metric("Horas con Actividad", f"{horas_con_datos}")
         
-        with tab2:
-            df = st.session_state.dfs_procesados['FECHA DE CITA']
-            
-            # Mostrar estadísticas de la hoja
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Total registros", len(df))
-            with col2:
-                roles_asignados = df['rol'].notna().sum()
-                st.metric("Roles asignados", f"{roles_asignados}/{len(df)}")
-            with col3:
-                horas_ingreso = df['hora ingreso a cita'].notna().sum()
-                st.metric("Horas ingreso", f"{horas_ingreso}/{len(df)}")
-            with col4:
-                horas_entrega = df['hora entrega documentos'].notna().sum()
-                st.metric("Horas entrega", f"{horas_entrega}/{len(df)}")
-            
-            st.subheader(f"Primeros 10 registros de FECHA DE CITA (Total: {len(df)})")
-            
-            # Mostrar columnas relevantes para esta hoja
-            columnas_mostrar = ['centro de atencion', 'unidad funcional', 'identificación paciente', 
-                              'nombre paciente', 'profesional', 'especialidad', 'fecha cita', 
-                              'hora inicio cita', 'hora final cita', 'hora ingreso a cita', 
-                              'hora entrega documentos', 'estado cita', 'usuario registra', 'rol']
-            
-            # Filtrar solo las columnas que existen
-            columnas_existentes = [col for col in columnas_mostrar if col in df.columns]
-            
-            if len(df) > 0:
-                st.dataframe(df[columnas_existentes].head(10), use_container_width=True)
-            else:
-                st.info("La hoja está vacía")
+        # Mostrar el DataFrame completo
+        st.dataframe(df, use_container_width=True, height=600)
         
-        with tab3:
-            df = st.session_state.dfs_procesados['FECHA DE REGISTRO']
+        # Opción para descargar la tabla de resumen
+        st.divider()
+        st.subheader("📥 Descargar Tabla de Resumen")
+        col1, col2, col3 = st.columns(3)
+        with col2:
+            # Crear archivo Excel con la tabla de resumen
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='TABLA RESUMEN', index=False)
             
-            # Mostrar estadísticas de la hoja
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total registros", len(df))
-            with col2:
-                roles_asignados = df['rol'].notna().sum()
-                st.metric("Roles asignados", f"{roles_asignados}/{len(df)}")
-            
-            st.subheader(f"Primeros 10 registros de FECHA DE REGISTRO (Total: {len(df)})")
-            
-            # Mostrar columnas relevantes para esta hoja
-            columnas_mostrar = ['centro de atencion', 'unidad funcional', 'identificación paciente', 
-                              'nombre paciente', 'profesional', 'especialidad', 'fecha cita', 
-                              'hora inicio cita', 'hora final cita', 'estado cita', 
-                              'usuario registra', 'rol']
-            
-            # Filtrar solo las columnas que existen
-            columnas_existentes = [col for col in columnas_mostrar if col in df.columns]
-            
-            if len(df) > 0:
-                st.dataframe(df[columnas_existentes].head(10), use_container_width=True)
-            else:
-                st.info("La hoja está vacía")
-        
-        with tab4:
-            df = st.session_state.dfs_procesados['USUARIOS']
-            st.subheader(f"Primeros 10 registros de USUARIOS (Total: {len(df)})")
-            
-            if len(df) > 0:
-                st.dataframe(df.head(10), use_container_width=True)
-            else:
-                st.info("La hoja está vacía")
+            output.seek(0)
+            st.download_button(
+                label="📥 Descargar Tabla Resumen (Excel)",
+                data=output,
+                file_name="tabla_resumen_horas.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
 
 # Mensaje informativo cuando el archivo está cargado pero no se ha procesado
 elif st.session_state.data_loaded and not st.session_state.process_clicked:
-    st.info("📌 Haz clic en el botón 'Procesar' para aplicar las transformaciones y mostrar el resumen de los datos")
+    st.info("📌 Haz clic en el botón 'Procesar' para generar la tabla de resumen")
