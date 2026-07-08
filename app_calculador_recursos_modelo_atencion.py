@@ -95,6 +95,25 @@ def extraer_hora_de_fecha(fecha_datetime):
         return None
     return datetime(2000, 1, 1, fecha_datetime.hour, fecha_datetime.minute)
 
+def redondear_hora_5_minutos(hora_str):
+    """
+    Redondea una hora al siguiente intervalo de 5 minutos
+    """
+    try:
+        if pd.isna(hora_str) or hora_str is None:
+            return None
+        hora_dt = datetime.strptime(hora_str, '%H:%M')
+        minutos = hora_dt.minute
+        # Redondear hacia arriba al siguiente múltiplo de 5
+        minutos_redondeados = ((minutos + 4) // 5) * 5
+        if minutos_redondeados >= 60:
+            hora_dt = hora_dt.replace(hour=hora_dt.hour + 1, minute=0)
+        else:
+            hora_dt = hora_dt.replace(minute=minutos_redondeados)
+        return hora_dt.strftime('%H:%M')
+    except:
+        return hora_str
+
 def generar_tabla_horas():
     """
     Genera una tabla con las horas desde 06:30 hasta 19:00 cada 5 minutos
@@ -187,6 +206,9 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     
     df_cita_filtrado['hora ingreso a cita'] = df_cita_filtrado['hora inicio cita'].apply(calcular_hora_ingreso)
     
+    # Redondear hora ingreso a cita al siguiente intervalo de 5 minutos
+    df_cita_filtrado['hora ingreso redondeada'] = df_cita_filtrado['hora ingreso a cita'].apply(redondear_hora_5_minutos)
+    
     # Calcular hora entrega documentos
     def convertir_hora_entrega(hora_valor):
         try:
@@ -276,7 +298,7 @@ def generar_grafico_matplotlib(df, titulo):
         df_agrupado['hora_dt'] = pd.to_datetime(df_agrupado['Hora'], format='%H:%M')
         # Redondear a 15 minutos
         df_agrupado['hora_15min'] = df_agrupado['hora_dt'].dt.floor('15min')
-        # Agrupar promediando los valores de Recurso a necesidad (no sumando)
+        # Agrupar promediando los valores de Recurso a necesidad
         df_agrupado_15 = df_agrupado.groupby('hora_15min')['Recurso a necesidad'].mean().reset_index()
         # Formatear hora para mostrar
         df_agrupado_15['Hora'] = df_agrupado_15['hora_15min'].dt.strftime('%H:%M')
@@ -319,7 +341,7 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     # Nombres de los días de la semana
     dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
     
-    # Generar tabla base de horas
+    # Generar tabla base de horas (cada 5 minutos)
     df_base = generar_tabla_horas()
     
     # Diccionario para almacenar las tablas
@@ -358,8 +380,8 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
                                        df_unidad['profesional'].astype(str) + '_' + \
                                        df_unidad['centro de atencion'].astype(str)
             
-            # PASO 2: Identificar registros únicos (eliminar duplicados por llave)
-            df_unicos = df_unidad.drop_duplicates(subset=['llave_unica', 'hora ingreso a cita'])
+            # PASO 2: Identificar registros únicos (eliminar duplicados por llave y hora redondeada)
+            df_unicos = df_unidad.drop_duplicates(subset=['llave_unica', 'hora ingreso redondeada'])
             
             # PASO 3: Calcular el número de días del mismo día de semana en el mes para cada fecha
             df_unicos['dias_mes'] = df_unicos['fecha_cita_dt'].apply(contar_dias_mes)
@@ -367,12 +389,12 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
             # PASO 4: Calcular el peso de cada registro único (1 / dias_mes)
             df_unicos['peso_registro'] = 1 / df_unicos['dias_mes']
             
-            # PASO 5: Agrupar por hora ingreso a cita, sumando los pesos
-            df_horas = df_unicos.groupby('hora ingreso a cita')['peso_registro'].sum().reset_index()
+            # PASO 5: Agrupar por hora redondeada, sumando los pesos
+            df_horas = df_unicos.groupby('hora ingreso redondeada')['peso_registro'].sum().reset_index()
             
             # Mapear los valores a las horas (coincidencia exacta)
             df_resultado[f'En cola de admisiones {unidad}'] = df_resultado['Hora'].map(
-                dict(zip(df_horas['hora ingreso a cita'], df_horas['peso_registro']))
+                dict(zip(df_horas['hora ingreso redondeada'], df_horas['peso_registro']))
             ).fillna(0)
         
         # Agregar columnas adicionales
