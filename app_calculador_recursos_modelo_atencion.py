@@ -144,6 +144,33 @@ def contar_dias_mes(fecha):
     except:
         return 1
 
+def convertir_fecha(fecha_valor):
+    """
+    Convierte diferentes formatos de fecha a datetime
+    """
+    try:
+        if pd.isna(fecha_valor):
+            return None
+        # Si es número (formato Excel)
+        if isinstance(fecha_valor, (int, float)):
+            if fecha_valor > 40000:
+                base_date = datetime(1899, 12, 30)
+                return base_date + timedelta(days=fecha_valor)
+        # Si es string
+        if isinstance(fecha_valor, str):
+            formatos = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y']
+            for formato in formatos:
+                try:
+                    return datetime.strptime(fecha_valor, formato)
+                except:
+                    continue
+        # Si ya es datetime
+        if isinstance(fecha_valor, (datetime, pd.Timestamp)):
+            return fecha_valor
+        return None
+    except:
+        return None
+
 def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     """
     Procesa los datos filtrando por unidades funcionales y estado cumplida
@@ -194,32 +221,7 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     
     df_cita_filtrado['hora entrega documentos'] = df_cita_filtrado['hora final cita'].apply(convertir_hora_entrega)
     
-    # Convertir fecha cita a datetime - manejar diferentes formatos
-    def convertir_fecha(fecha_valor):
-        try:
-            if pd.isna(fecha_valor):
-                return None
-            # Si es número (formato Excel)
-            if isinstance(fecha_valor, (int, float)):
-                if fecha_valor > 40000:
-                    base_date = datetime(1899, 12, 30)
-                    return base_date + timedelta(days=fecha_valor)
-            # Si es string
-            if isinstance(fecha_valor, str):
-                # Intentar diferentes formatos
-                formatos = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y']
-                for formato in formatos:
-                    try:
-                        return datetime.strptime(fecha_valor, formato)
-                    except:
-                        continue
-            # Si ya es datetime
-            if isinstance(fecha_valor, (datetime, pd.Timestamp)):
-                return fecha_valor
-            return None
-        except:
-            return None
-    
+    # Convertir fecha cita a datetime
     df_cita_filtrado['fecha_cita_dt'] = df_cita_filtrado['fecha cita'].apply(convertir_fecha)
     
     # Eliminar registros con fecha inválida
@@ -234,7 +236,7 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
 
 def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     """
-    Genera las tablas de resumen por día de la semana
+    Genera las tablas de resumen por día de la semana, promedio y resumen ejecutivo
     """
     # Nombres de los días de la semana
     dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
@@ -245,20 +247,8 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     # Diccionario para almacenar las tablas
     tablas = {}
     
-    # Mostrar información de depuración
-    with st.expander("🔍 Información de depuración", expanded=False):
-        st.write("**Distribución de días de la semana en los datos:**")
-        if len(df_cita_proc) > 0:
-            distribucion = df_cita_proc['dia_semana'].value_counts().sort_index()
-            for dia_idx, count in distribucion.items():
-                nombre_dia = dias_semana[dia_idx] if dia_idx < 5 else f"Día {dia_idx}"
-                st.write(f"{nombre_dia}: {count} registros")
-            
-            st.write("**Ejemplos de fechas y días de semana:**")
-            muestras = df_cita_proc[['fecha_cita_dt', 'dia_semana']].head(10)
-            st.dataframe(muestras)
-        else:
-            st.write("No hay datos después del filtrado")
+    # Diccionario para almacenar los DataFrames de cada día
+    dfs_dias = {}
     
     # Procesar por cada día de la semana
     for dia_idx, dia_nombre in enumerate(dias_semana):
@@ -271,6 +261,7 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
             for unidad in unidades_seleccionadas:
                 df_resultado[f'En cola de admisiones {unidad}'] = 0
             tablas[dia_nombre] = df_resultado
+            dfs_dias[dia_nombre] = df_resultado
             continue
         
         # Crear tabla de resumen para este día
@@ -303,6 +294,43 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
             ).fillna(0)
         
         tablas[dia_nombre] = df_resultado
+        dfs_dias[dia_nombre] = df_resultado
+    
+    # Generar tabla de Promedio
+    df_promedio = df_base.copy()
+    for unidad in unidades_seleccionadas:
+        # Recolectar valores de todos los días para esta unidad
+        valores_unidad = []
+        for dia in dias_semana:
+            if dia in tablas and f'En cola de admisiones {unidad}' in tablas[dia].columns:
+                valores_unidad.append(tablas[dia][f'En cola de admisiones {unidad}'])
+        
+        if valores_unidad:
+            # Calcular promedio de los 5 días
+            df_promedio[f'En cola de admisiones {unidad}'] = sum(valores_unidad) / len(valores_unidad)
+        else:
+            df_promedio[f'En cola de admisiones {unidad}'] = 0
+    
+    tablas['Promedio'] = df_promedio
+    
+    # Generar Resumen Ejecutivo
+    df_resumen_ejecutivo = df_base.copy()
+    
+    # Para cada unidad, calcular el total por hora sumando todos los días
+    for unidad in unidades_seleccionadas:
+        columna_unidad = f'En cola de admisiones {unidad}'
+        df_resumen_ejecutivo[columna_unidad] = 0
+        
+        # Sumar los valores de cada día para esta unidad
+        for dia in dias_semana:
+            if dia in tablas and columna_unidad in tablas[dia].columns:
+                df_resumen_ejecutivo[columna_unidad] += tablas[dia][columna_unidad]
+    
+    # Agregar columna de total general (suma de todas las unidades)
+    columnas_unidades = [f'En cola de admisiones {unidad}' for unidad in unidades_seleccionadas]
+    df_resumen_ejecutivo['Total General'] = df_resumen_ejecutivo[columnas_unidades].sum(axis=1)
+    
+    tablas['Resumen Ejecutivo'] = df_resumen_ejecutivo
     
     return tablas
 
@@ -412,12 +440,12 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
             df_cita = st.session_state.dfs_procesados['CITA_PROCESADA']
             st.write(f"**Registros FECHA DE CITA (Cumplidas):** {len(df_cita)}")
         
-        st.header("📊 Tablas de Resumen por Día")
+        st.header("📊 Tablas de Resumen")
         
         tablas = st.session_state.dfs_procesados['TABLAS']
         
-        # Crear pestañas para lunes a viernes
-        nombres_tabs = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
+        # Crear pestañas: Resumen Ejecutivo, Lunes a Viernes, Promedio
+        nombres_tabs = ['Resumen Ejecutivo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Promedio']
         tabs = st.tabs(nombres_tabs)
         
         for i, tab in enumerate(tabs):
@@ -450,11 +478,15 @@ if st.session_state.process_clicked and st.session_state.data_loaded:
                     st.metric("Horas con Actividad", f"{horas_con_actividad}")
                 with col3:
                     # Hora pico (sumando todas las unidades)
-                    df['total'] = df[[col for col in df.columns if col != 'Hora']].sum(axis=1)
-                    hora_max = df.loc[df['total'].idxmax(), 'Hora'] if df['total'].max() > 0 else "N/A"
-                    st.metric("Hora Pico", hora_max)
-                    # Eliminar columna temporal
-                    df = df.drop('total', axis=1)
+                    if nombre_tab != 'Resumen Ejecutivo':
+                        df['total'] = df[[col for col in df.columns if col != 'Hora']].sum(axis=1)
+                        hora_max = df.loc[df['total'].idxmax(), 'Hora'] if df['total'].max() > 0 else "N/A"
+                        st.metric("Hora Pico", hora_max)
+                        df = df.drop('total', axis=1)
+                    else:
+                        # Para Resumen Ejecutivo, usar la columna Total General
+                        hora_max = df.loc[df['Total General'].idxmax(), 'Hora'] if df['Total General'].max() > 0 else "N/A"
+                        st.metric("Hora Pico", hora_max)
                 
                 # Mostrar el DataFrame
                 st.dataframe(df, use_container_width=True, height=600)
