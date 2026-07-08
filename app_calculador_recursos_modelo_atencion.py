@@ -10,8 +10,9 @@ import numpy as np
 import tempfile
 import os
 from openpyxl.drawing.image import Image as XLImage
+from openpyxl.utils.dataframe import dataframe_to_rows
 
-st.set_page_config(page_title="Procesador de Excel", layout="wide")
+st.set_page_config(page_config_title="Procesador de Excel", layout="wide")
 
 st.title("📊 Procesador de Archivos Excel")
 st.write("Carga un archivo Excel con las hojas: **FECHA DE CITA**, **FECHA DE REGISTRO** y **USUARIOS**")
@@ -436,12 +437,11 @@ def exportar_excel_con_graficos(tablas, df_cita_proc):
     
     # Generar y guardar gráficos como imágenes
     for nombre_tab, df in tablas.items():
-        if nombre_tab != 'Promedio':
-            titulo = f"{nombre_tab} - Recurso a necesidad por hora"
-            ruta_imagen = os.path.join(temp_dir, f"{nombre_tab}.png")
-            fig = generar_grafico_matplotlib(df, titulo, guardar=True, ruta=ruta_imagen)
-            if fig:
-                imagenes_paths.append((nombre_tab, ruta_imagen))
+        titulo = f"{nombre_tab} - Recurso a necesidad por hora"
+        ruta_imagen = os.path.join(temp_dir, f"{nombre_tab}.png")
+        fig = generar_grafico_matplotlib(df, titulo, guardar=True, ruta=ruta_imagen)
+        if fig:
+            imagenes_paths.append((nombre_tab, ruta_imagen))
     
     # Crear el archivo Excel
     output = io.BytesIO()
@@ -453,20 +453,26 @@ def exportar_excel_con_graficos(tablas, df_cita_proc):
         # Escribir datos procesados
         df_cita_proc.to_excel(writer, sheet_name='CITAS_FILTRADAS', index=False)
         
-        # Obtener el workbook para insertar imágenes
+        # Obtener el workbook
         workbook = writer.book
         
-        # Insertar gráficos en hojas correspondientes
+        # Crear una hoja para los gráficos
+        ws_graficos = workbook.create_sheet("Gráficos")
+        
+        # Insertar gráficos en la hoja de gráficos, uno debajo del otro
+        row_offset = 2
         for nombre_tab, ruta_imagen in imagenes_paths:
-            if nombre_tab in workbook.sheetnames:
-                ws = workbook[nombre_tab]
-                # Insertar imagen debajo de los datos
-                img = XLImage(ruta_imagen)
-                # Calcular posición (debajo de los datos)
-                df = tablas[nombre_tab]
-                row_offset = len(df) + 5
-                img.anchor = f'A{row_offset}'
-                ws.add_image(img)
+            # Agregar título del gráfico
+            ws_graficos.cell(row=row_offset, column=1, value=f"GRÁFICO - {nombre_tab.upper()}")
+            row_offset += 1
+            
+            # Insertar imagen
+            img = XLImage(ruta_imagen)
+            img.anchor = f'A{row_offset}'
+            ws_graficos.add_image(img)
+            
+            # Calcular altura de la imagen (aproximadamente 5 filas)
+            row_offset += 25  # Espacio para la imagen y separación
     
     # Limpiar archivos temporales
     for _, path in imagenes_paths:
