@@ -192,12 +192,15 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     # Filtrar FECHA DE CITA por estado "Cumplida"
     df_cita_filtrado = df_cita_filtrado[df_cita_filtrado['estado cita'] == 'Cumplida'].copy()
     
-    # Cruzar datos de usuarios
+    # Cruzar datos de usuarios para FECHA DE CITA
     usuario_rol_map = dict(zip(df_usuarios['usuario registra'], df_usuarios['rol']))
     df_cita_filtrado['rol'] = df_cita_filtrado['usuario registra'].map(usuario_rol_map)
-    df_registro_filtrado['rol'] = df_registro_filtrado['usuario registra'].map(usuario_rol_map)
     
-    # Calcular hora ingreso a cita (hora inicio cita - 30 minutos)
+    # Cruzar datos de usuarios para FECHA DE REGISTRO y filtrar por rol "LF"
+    df_registro_filtrado['rol'] = df_registro_filtrado['usuario registra'].map(usuario_rol_map)
+    df_registro_filtrado = df_registro_filtrado[df_registro_filtrado['rol'] == 'LF'].copy()
+    
+    # Calcular hora ingreso a cita (hora inicio cita - 30 minutos) para FECHA DE CITA
     def calcular_hora_ingreso(hora_valor):
         try:
             hora_dt = convertir_a_hora(hora_valor)
@@ -215,6 +218,9 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     
     # Redondear hora ingreso a cita al siguiente intervalo de 5 minutos
     df_cita_filtrado['hora ingreso redondeada'] = df_cita_filtrado['hora ingreso a cita'].apply(redondear_hora_5_minutos)
+    
+    # Redondear hora final cita para la columna "En cola entrega de ordenes"
+    df_cita_filtrado['hora final redondeada'] = df_cita_filtrado['hora final cita'].apply(redondear_hora_5_minutos)
     
     # Calcular hora entrega documentos
     def convertir_hora_entrega(hora_valor):
@@ -241,6 +247,17 @@ def procesar_datos(df_cita, df_registro, df_usuarios, unidades_seleccionadas):
     df_cita_filtrado['dia_semana'] = df_cita_filtrado['fecha_cita_dt'].dt.weekday
     df_cita_filtrado['mes'] = df_cita_filtrado['fecha_cita_dt'].dt.month
     df_cita_filtrado['año'] = df_cita_filtrado['fecha_cita_dt'].dt.year
+    
+    # Procesar FECHA DE REGISTRO para la columna "En cola asignación de citas"
+    # Redondear hora inicio cita para FECHA DE REGISTRO
+    df_registro_filtrado['hora inicio redondeada'] = df_registro_filtrado['hora inicio cita'].apply(redondear_hora_5_minutos)
+    
+    # Convertir fecha cita a datetime para FECHA DE REGISTRO
+    df_registro_filtrado['fecha_cita_dt'] = df_registro_filtrado['fecha cita'].apply(convertir_fecha)
+    df_registro_filtrado = df_registro_filtrado.dropna(subset=['fecha_cita_dt'])
+    df_registro_filtrado['dia_semana'] = df_registro_filtrado['fecha_cita_dt'].dt.weekday
+    df_registro_filtrado['mes'] = df_registro_filtrado['fecha_cita_dt'].dt.month
+    df_registro_filtrado['año'] = df_registro_filtrado['fecha_cita_dt'].dt.year
     
     return df_cita_filtrado, df_registro_filtrado
 
@@ -356,7 +373,7 @@ def generar_grafico_matplotlib(df, titulo, guardar=False, ruta=None):
         st.error(f"Error al generar gráfico: {str(e)}")
         return None
 
-def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
+def generar_tablas_resumen(df_cita_proc, df_registro_proc, unidades_seleccionadas):
     """
     Genera las tablas de resumen por día de la semana y promedio
     """
@@ -365,58 +382,139 @@ def generar_tablas_resumen(df_cita_proc, unidades_seleccionadas):
     tablas = {}
     
     for dia_idx, dia_nombre in enumerate(dias_semana):
-        df_dia = df_cita_proc[df_cita_proc['dia_semana'] == dia_idx].copy()
+        # Filtrar por día de la semana para FECHA DE CITA
+        df_dia_cita = df_cita_proc[df_cita_proc['dia_semana'] == dia_idx].copy()
         
-        if len(df_dia) == 0:
-            df_resultado = df_base.copy()
-            for unidad in unidades_seleccionadas:
-                df_resultado[f'En cola de admisiones {unidad}'] = 0
-            df_resultado = agregar_columnas_adicionales(df_resultado, unidades_seleccionadas)
-            tablas[dia_nombre] = df_resultado
-            continue
+        # Filtrar por día de la semana para FECHA DE REGISTRO
+        df_dia_registro = df_registro_proc[df_registro_proc['dia_semana'] == dia_idx].copy()
         
+        # Crear tabla de resumen para este día
         df_resultado = df_base.copy()
         
+        # ============================================================
+        # 1. Calcular "En cola de admisiones" (desde FECHA DE CITA)
+        # ============================================================
         for unidad in unidades_seleccionadas:
-            df_unidad = df_dia[df_dia['unidad funcional'] == unidad].copy()
+            df_unidad = df_dia_cita[df_dia_cita['unidad funcional'] == unidad].copy()
             
-            if len(df_unidad) == 0:
+            if len(df_unidad) > 0:
+                # Crear llave única combinando: mes + profesional + centro de atención
+                df_unidad['mes'] = df_unidad['fecha_cita_dt'].dt.month
+                df_unidad['año'] = df_unidad['fecha_cita_dt'].dt.year
+                df_unidad['llave_unica'] = df_unidad['año'].astype(str) + '-' + \
+                                           df_unidad['mes'].astype(str) + '_' + \
+                                           df_unidad['profesional'].astype(str) + '_' + \
+                                           df_unidad['centro de atencion'].astype(str)
+                
+                df_unicos = df_unidad.drop_duplicates(subset=['llave_unica', 'hora ingreso redondeada'])
+                df_unicos['dias_mes'] = df_unicos['fecha_cita_dt'].apply(contar_dias_mes)
+                df_unicos['peso_registro'] = 1 / df_unicos['dias_mes']
+                
+                df_horas = df_unicos.groupby('hora ingreso redondeada')['peso_registro'].sum().reset_index()
+                
+                df_resultado[f'En cola de admisiones {unidad}'] = df_resultado['Hora'].map(
+                    dict(zip(df_horas['hora ingreso redondeada'], df_horas['peso_registro']))
+                ).fillna(0)
+            else:
                 df_resultado[f'En cola de admisiones {unidad}'] = 0
-                continue
-            
-            df_unidad['mes'] = df_unidad['fecha_cita_dt'].dt.month
-            df_unidad['año'] = df_unidad['fecha_cita_dt'].dt.year
-            df_unidad['llave_unica'] = df_unidad['año'].astype(str) + '-' + \
-                                       df_unidad['mes'].astype(str) + '_' + \
-                                       df_unidad['profesional'].astype(str) + '_' + \
-                                       df_unidad['centro de atencion'].astype(str)
-            
-            df_unicos = df_unidad.drop_duplicates(subset=['llave_unica', 'hora ingreso redondeada'])
-            df_unicos['dias_mes'] = df_unicos['fecha_cita_dt'].apply(contar_dias_mes)
-            df_unicos['peso_registro'] = 1 / df_unicos['dias_mes']
-            
-            df_horas = df_unicos.groupby('hora ingreso redondeada')['peso_registro'].sum().reset_index()
-            
-            df_resultado[f'En cola de admisiones {unidad}'] = df_resultado['Hora'].map(
-                dict(zip(df_horas['hora ingreso redondeada'], df_horas['peso_registro']))
-            ).fillna(0)
         
+        # ============================================================
+        # 2. Calcular "En cola entrega de ordenes" (desde FECHA DE CITA, hora final cita * 0.1)
+        # ============================================================
+        if len(df_dia_cita) > 0:
+            # Crear llave única para entrega de órdenes
+            df_dia_cita['mes'] = df_dia_cita['fecha_cita_dt'].dt.month
+            df_dia_cita['año'] = df_dia_cita['fecha_cita_dt'].dt.year
+            df_dia_cita['llave_unica'] = df_dia_cita['año'].astype(str) + '-' + \
+                                         df_dia_cita['mes'].astype(str) + '_' + \
+                                         df_dia_cita['profesional'].astype(str) + '_' + \
+                                         df_dia_cita['centro de atencion'].astype(str)
+            
+            df_unicos_entrega = df_dia_cita.drop_duplicates(subset=['llave_unica', 'hora final redondeada'])
+            df_unicos_entrega['dias_mes'] = df_unicos_entrega['fecha_cita_dt'].apply(contar_dias_mes)
+            df_unicos_entrega['peso_registro'] = 1 / df_unicos_entrega['dias_mes']
+            
+            # Agrupar por hora final redondeada
+            df_horas_entrega = df_unicos_entrega.groupby('hora final redondeada')['peso_registro'].sum().reset_index()
+            
+            # Calcular el 10% (multiplicar por 0.1)
+            df_horas_entrega['peso_registro'] = df_horas_entrega['peso_registro'] * 0.1
+            
+            # Mapear a las horas
+            df_resultado['En cola entrega de ordenes'] = df_resultado['Hora'].map(
+                dict(zip(df_horas_entrega['hora final redondeada'], df_horas_entrega['peso_registro']))
+            ).fillna(0)
+        else:
+            df_resultado['En cola entrega de ordenes'] = 0
+        
+        # ============================================================
+        # 3. Calcular "En cola asignación de citas" (desde FECHA DE REGISTRO, solo rol LF)
+        # ============================================================
+        if len(df_dia_registro) > 0:
+            # Crear llave única para asignación de citas
+            df_dia_registro['mes'] = df_dia_registro['fecha_cita_dt'].dt.month
+            df_dia_registro['año'] = df_dia_registro['fecha_cita_dt'].dt.year
+            df_dia_registro['llave_unica'] = df_dia_registro['año'].astype(str) + '-' + \
+                                             df_dia_registro['mes'].astype(str) + '_' + \
+                                             df_dia_registro['profesional'].astype(str) + '_' + \
+                                             df_dia_registro['centro de atencion'].astype(str)
+            
+            df_unicos_asignacion = df_dia_registro.drop_duplicates(subset=['llave_unica', 'hora inicio redondeada'])
+            df_unicos_asignacion['dias_mes'] = df_unicos_asignacion['fecha_cita_dt'].apply(contar_dias_mes)
+            df_unicos_asignacion['peso_registro'] = 1 / df_unicos_asignacion['dias_mes']
+            
+            # Agrupar por hora inicio redondeada
+            df_horas_asignacion = df_unicos_asignacion.groupby('hora inicio redondeada')['peso_registro'].sum().reset_index()
+            
+            # Mapear a las horas
+            df_resultado['En cola asignación de citas'] = df_resultado['Hora'].map(
+                dict(zip(df_horas_asignacion['hora inicio redondeada'], df_horas_asignacion['peso_registro']))
+            ).fillna(0)
+        else:
+            df_resultado['En cola asignación de citas'] = 0
+        
+        # Agregar columnas adicionales (Tiempo atención, Total pacientes en cola, etc.)
         df_resultado = agregar_columnas_adicionales(df_resultado, unidades_seleccionadas)
         tablas[dia_nombre] = df_resultado
     
+    # ============================================================
     # Generar tabla de Promedio
+    # ============================================================
     df_promedio = df_base.copy()
-    for unidad in unidades_seleccionadas:
-        valores_unidad = []
-        for dia in dias_semana:
-            if dia in tablas and f'En cola de admisiones {unidad}' in tablas[dia].columns:
-                valores_unidad.append(tablas[dia][f'En cola de admisiones {unidad}'])
-        
-        if valores_unidad:
-            df_promedio[f'En cola de admisiones {unidad}'] = sum(valores_unidad) / len(valores_unidad)
-        else:
-            df_promedio[f'En cola de admisiones {unidad}'] = 0
     
+    # Para cada unidad, calcular promedio de "En cola de admisiones"
+    for unidad in unidades_seleccionadas:
+        columna = f'En cola de admisiones {unidad}'
+        valores = []
+        for dia in dias_semana:
+            if dia in tablas and columna in tablas[dia].columns:
+                valores.append(tablas[dia][columna])
+        if valores:
+            df_promedio[columna] = sum(valores) / len(valores)
+        else:
+            df_promedio[columna] = 0
+    
+    # Promedio de "En cola entrega de ordenes"
+    valores_entrega = []
+    for dia in dias_semana:
+        if dia in tablas and 'En cola entrega de ordenes' in tablas[dia].columns:
+            valores_entrega.append(tablas[dia]['En cola entrega de ordenes'])
+    if valores_entrega:
+        df_promedio['En cola entrega de ordenes'] = sum(valores_entrega) / len(valores_entrega)
+    else:
+        df_promedio['En cola entrega de ordenes'] = 0
+    
+    # Promedio de "En cola asignación de citas"
+    valores_asignacion = []
+    for dia in dias_semana:
+        if dia in tablas and 'En cola asignación de citas' in tablas[dia].columns:
+            valores_asignacion.append(tablas[dia]['En cola asignación de citas'])
+    if valores_asignacion:
+        df_promedio['En cola asignación de citas'] = sum(valores_asignacion) / len(valores_asignacion)
+    else:
+        df_promedio['En cola asignación de citas'] = 0
+    
+    # Agregar columnas adicionales al promedio
     df_promedio = agregar_columnas_adicionales(df_promedio, unidades_seleccionadas)
     tablas['Promedio'] = df_promedio
     
@@ -555,7 +653,9 @@ if uploaded_file is not None:
                                 df_cita, df_registro, df_usuarios, unidades_seleccionadas
                             )
                             
-                            tablas_resumen = generar_tablas_resumen(df_cita_proc, unidades_seleccionadas)
+                            tablas_resumen = generar_tablas_resumen(
+                                df_cita_proc, df_registro_proc, unidades_seleccionadas
+                            )
                             
                             st.session_state.dfs_procesados = {
                                 'TABLAS': tablas_resumen,
