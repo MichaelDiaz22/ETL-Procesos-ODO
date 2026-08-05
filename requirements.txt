@@ -7,4 +7,3 @@ xlsxwriter
 matplotlib
 seaborn
 fpdf
-streamlit==1.28.0
