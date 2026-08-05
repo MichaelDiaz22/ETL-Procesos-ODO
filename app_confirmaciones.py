@@ -7,7 +7,29 @@ from datetime import datetime
 import datetime as dt
 import numpy as np
 
+st.set_page_config(page_title="Excel Data Filtering App", layout="wide")
+
 st.title("Excel Data Filtering and Export App")
+
+# Inicializar estado de sesión para mantener los datos
+if 'df_processed' not in st.session_state:
+    st.session_state.df_processed = None
+if 'all_empresas' not in st.session_state:
+    st.session_state.all_empresas = []
+if 'all_ubicaciones' not in st.session_state:
+    st.session_state.all_ubicaciones = []
+if 'all_sedes' not in st.session_state:
+    st.session_state.all_sedes = []
+if 'all_unidades_funcionales' not in st.session_state:
+    st.session_state.all_unidades_funcionales = []
+if 'min_date' not in st.session_state:
+    st.session_state.min_date = None
+if 'max_date' not in st.session_state:
+    st.session_state.max_date = None
+if 'num_files' not in st.session_state:
+    st.session_state.num_files = 1
+if 'filters' not in st.session_state:
+    st.session_state.filters = []
 
 uploaded_file = st.file_uploader("Upload your Excel file", type=".xlsx")
 
@@ -20,21 +42,13 @@ if uploaded_file is not None:
     st.info(f"📊 Archivo cargado: {len(df)} filas, {len(df.columns)} columnas")
 
     # Preprocessing steps
-
-    # Sort the DataFrame by 'Numero de Identificación' in ascending order
     df = df.sort_values(by='Numero de Identificación', ascending=True).reset_index(drop=True)
 
-    # NUEVA LÓGICA MEJORADA: Crear columna 'Ubicación' basada en 'Actividad Médica'
-    # Convertir a string y a minúsculas para comparación insensible a mayúsculas
+    # Crear columna 'Ubicación'
     df['Actividad Médica_clean'] = df['Actividad Médica'].fillna('').astype(str).str.strip().str.lower()
-    
-    # Si la actividad médica inicia con "consulta", la ubicación será "Consulta"
-    # De lo contrario será "Procedimiento"
     df['Ubicación'] = df['Actividad Médica_clean'].apply(
         lambda x: 'Consulta' if x.startswith('consulta') else 'Procedimiento'
     )
-    
-    # Eliminar columna temporal
     df = df.drop(columns=['Actividad Médica_clean'])
 
     # Convert 'Fecha Cita' and 'Hora Cita' to datetime objects
@@ -56,21 +70,19 @@ if uploaded_file is not None:
 
     df['Fecha Hora Cita'] = df.apply(lambda row: parse_datetime_robust(row['Fecha Cita'], row['Hora Cita']), axis=1)
 
-    # CORRECCIÓN: Conversión robusta de fechas sin mostrar diagnóstico
+    # Parse Spanish dates
     def parse_spanish_date(date_str):
         if pd.isna(date_str) or str(date_str).strip() == '':
             return pd.NaT
             
         date_str = str(date_str).strip().lower()
         
-        # Mapeo de meses en español a inglés
         months_map = {
             'enero': 'January', 'febrero': 'February', 'marzo': 'March', 'abril': 'April',
             'mayo': 'May', 'junio': 'June', 'julio': 'July', 'agosto': 'August',
             'septiembre': 'September', 'octubre': 'October', 'noviembre': 'November', 'diciembre': 'December'
         }
         
-        # Mapeo de días en español a inglés
         days_map = {
             'lunes': 'Monday', 'martes': 'Tuesday', 'miércoles': 'Wednesday', 'miercoles': 'Wednesday',
             'jueves': 'Thursday', 'viernes': 'Friday', 'sábado': 'Saturday', 'sabado': 'Saturday',
@@ -78,44 +90,32 @@ if uploaded_file is not None:
         }
         
         try:
-            # Remover el día de la semana (lunes, martes, etc.)
             for day_es, day_en in days_map.items():
                 if date_str.startswith(day_es):
-                    # Remover el día de la semana y la coma
                     date_str = date_str.replace(day_es, '').replace(',', '').strip()
                     break
             
-            # Reemplazar meses en español por meses en inglés
             for month_es, month_en in months_map.items():
                 if month_es in date_str:
                     date_str = date_str.replace(month_es, month_en)
                     break
             
-            # Parsear la fecha en formato inglés
             return pd.to_datetime(date_str, format='%d de %B de %Y')
             
         except Exception:
             return pd.NaT
 
-    # Aplicar la conversión de fecha sin mostrar diagnóstico
     df['Fecha Programación_dt'] = df['Fecha Programación'].apply(parse_spanish_date)
     
-    # Si la conversión falla, intentar con Fecha Cita
     if df['Fecha Programación_dt'].isna().all():
         df['Fecha Programación_dt'] = df['Fecha Cita'].apply(parse_spanish_date)
 
-    # NUEVA FUNCIÓN: Formatear fecha en español con el formato solicitado
+    # Format date in Spanish
     def formato_fecha_espanol(fecha_dt):
-        """
-        Convierte datetime al formato: "Viernes, 31 DE Octubre de 2025"
-        """
         if pd.isna(fecha_dt):
             return ""
         
-        # Días de la semana en español
         dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-        
-        # Meses en español
         meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
                 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
         
@@ -126,47 +126,36 @@ if uploaded_file is not None:
         
         return f"{dia_semana}, {dia} de {mes} de {año}"
 
-    # Aplicar el formato a la columna Fecha Programación
     df['Fecha Programación Formateada'] = df['Fecha Programación_dt'].apply(formato_fecha_espanol)
 
-    # CORRECCIÓN MEJORADA: Conversión de horas decimales a formato de tiempo
+    # Convert decimal time to 12-hour format
     def convert_decimal_to_time(decimal_time):
-        """
-        Convierte tiempo decimal (0.5 = 12:00 PM) a formato 12 horas
-        """
         try:
             if pd.isna(decimal_time) or str(decimal_time).strip() in ['', 'nan', 'NaT']:
                 return ''
             
-            # Si ya es un string con formato de hora, retornar tal cual
             if isinstance(decimal_time, str) and (':' in decimal_time or 'AM' in decimal_time.upper() or 'PM' in decimal_time.upper()):
                 return decimal_time
             
-            # Convertir a float y calcular horas y minutos
             decimal_val = float(decimal_time)
             total_minutes = int(decimal_val * 24 * 60)
             
             hours = total_minutes // 60
             minutes = total_minutes % 60
             
-            # Crear objeto datetime
             time_obj = dt.time(hours, minutes)
-            
-            # Formatear a 12 horas
             return time_obj.strftime('%I:%M %p').lstrip('0')
             
         except (ValueError, TypeError):
             return str(decimal_time)
 
-    # Aplicar la conversión de hora sin mostrar diagnóstico
     df['Hora Cita Formatted'] = df['Hora Cita'].apply(convert_decimal_to_time)
 
-    # If 'Unidad Funcional' is 'INVESTIGACION MARAYA', set 'Hora Cita Formatted' to '-'
     if 'Unidad Funcional' in df.columns:
         investigacion_mask = df['Unidad Funcional'] == 'INVESTIGACION MARAYA'
         df.loc[investigacion_mask, 'Hora Cita Formatted'] = '-'
 
-    # Load the direcciones_sede DataFrame
+    # Direcciones
     direcciones_sede = pd.DataFrame({
         'Sede': [
             'SAN MARCEL MANIZALES', 'CENTENARIO ARMENIA', 'MEDISALUD',
@@ -193,26 +182,20 @@ if uploaded_file is not None:
         ]
     })
 
-    # CORRECCIÓN CRÍTICA: Merge correcto para obtener la dirección de la tabla de direcciones
-    # Hacer el merge manteniendo todas las filas del df original
     df = pd.merge(df, direcciones_sede, on='Sede', how='left')
     
-    # CORRECCIÓN: Crear la columna 'Direccion Final' usando la dirección de la tabla de direcciones
-    # Si la columna 'Dirección' (de direcciones_sede) existe, úsala, de lo contrario usa el valor original
     if 'Dirección' in df.columns:
         df['Direccion Final'] = df['Dirección']
     else:
-        # Si por alguna razón no se creó la columna 'Dirección', usar el campo original como fallback
         if 'Dirección Centro Atención' in df.columns:
             df['Direccion Final'] = df['Dirección Centro Atención']
         else:
             df['Direccion Final'] = ''
 
-    # Apply the condition: if 'Modalidad' is 'Teleconsulta', set 'Direccion Final' to 'Teleconsulta'
     if 'Modalidad' in df.columns:
         df.loc[df['Modalidad'] == 'Teleconsulta', 'Direccion Final'] = 'Teleconsulta'
 
-    # Ensure the necessary columns are treated as strings for concatenation
+    # Ensure necessary columns are strings
     df['Nombres'] = df['Nombres'].astype(str)
     df['Apellidos'] = df['Apellidos'].astype(str)
     df['Actividad Médica'] = df['Actividad Médica'].astype(str)
@@ -223,60 +206,46 @@ if uploaded_file is not None:
     if 'Unidad Funcional' in df.columns:
         df['Unidad Funcional'] = df['Unidad Funcional'].astype(str)
 
-    # MODIFICACIÓN: Usar la fecha formateada en la variable mensaje
+    # Create VARIABLE column
     df['VARIABLE'] = df.apply(
         lambda row: f"{row['Nombres']} {row['Apellidos']}|{row['Actividad Médica']}|{row['Fecha Programación Formateada']}|{row['Hora Cita Formatted']}|{row['Especialista']}|{row['Direccion Final']}",
         axis=1
     )
 
-    # Ensure phone number columns are treated as strings and handle potential missing values
+    # Phone number logic
     df['Telefono Movil'] = df['Telefono Movil'].astype(str).str.strip()
     df['Telefono Fijo'] = df['Telefono Fijo'].astype(str).str.strip()
 
-    # Create the new column 'TELEFONO CONFIRMACIÓN'
     df['TELEFONO CONFIRMACIÓN'] = 'sin número para enviar mensaje'
 
-    # Condition 1: If 'Telefono Movil' is empty, evaluate 'Telefono Fijo'
     movil_is_empty = (df['Telefono Movil'].isna()) | (df['Telefono Movil'] == '') | (df['Telefono Movil'] == 'nan')
-
-    # Condition 2: If 'Telefono Fijo' is NOT empty and does NOT start with '60', use 'Telefono Fijo'
     fijo_is_valid_fallback = (~df['Telefono Fijo'].isna()) & (df['Telefono Fijo'] != '') & (df['Telefono Fijo'] != 'nan') & (~df['Telefono Fijo'].str.startswith('60', na=False))
 
     df.loc[movil_is_empty & fijo_is_valid_fallback, 'TELEFONO CONFIRMACIÓN'] = '+57' + df.loc[movil_is_empty & fijo_is_valid_fallback, 'Telefono Fijo']
 
-    # Condition 3: If 'Telefono Movil' is NOT empty AND does NOT start with '60' AND starts with '3', use 'Telefono Movil'
     movil_is_valid_and_starts_with_3 = (~movil_is_empty) & (~df['Telefono Movil'].str.startswith('60', na=False)) & (df['Telefono Movil'].str.startswith('3', na=False))
 
     df.loc[movil_is_valid_and_starts_with_3, 'TELEFONO CONFIRMACIÓN'] = '+57' + df.loc[movil_is_valid_and_starts_with_3, 'Telefono Movil']
 
-    # Convert the column to string and remove '.0' if present
     df['TELEFONO CONFIRMACIÓN'] = df['TELEFONO CONFIRMACIÓN'].astype(str).str.replace(r'\.0$', '', regex=True)
 
-    # FUNCIÓN AUXILIAR: Convertir hora a número decimal para ordenar
+    # Helper function to convert time to decimal
     def hora_a_decimal(hora_str):
-        """
-        Convierte una hora en formato string a número decimal para ordenar
-        Ejemplos: "08:30 AM" -> 8.5, "14:30" -> 14.5, "8:30" -> 8.5
-        """
         if pd.isna(hora_str) or hora_str == '' or hora_str == 'nan':
-            return 999999  # Valor alto para que vayan al final
+            return 999999
         
         hora_str = str(hora_str).strip()
         
         try:
-            # Intentar convertir directamente a float (por si es número decimal)
             return float(hora_str)
         except:
             pass
         
         try:
-            # Verificar si tiene AM/PM
             hora_lower = hora_str.lower()
             es_pm = 'pm' in hora_lower
-            # Limpiar AM/PM
             hora_limpia = hora_str.replace('AM', '').replace('PM', '').replace('am', '').replace('pm', '').strip()
             
-            # Dividir horas y minutos
             if ':' in hora_limpia:
                 partes = hora_limpia.split(':')
                 horas = int(partes[0])
@@ -285,43 +254,31 @@ if uploaded_file is not None:
                 horas = int(hora_limpia)
                 minutos = 0
             
-            # Convertir a formato 24 horas
             if es_pm and horas != 12:
                 horas += 12
             elif not es_pm and horas == 12:
                 horas = 0
             
-            # Convertir a decimal
             return horas + minutos / 60.0
         except:
-            return 999999  # Si no se puede convertir, va al final
+            return 999999
 
-    # CORRECCIÓN MEJORADA: Función para identificar y filtrar solo la cita más temprana por paciente, día y sede
+    # Function to identify and keep only the earliest appointment
     def identificar_primer_servicio(df_filtrado):
-        """
-        Identifica y mantiene solo la cita más temprana por paciente, sede y fecha
-        (independiente de la especialidad)
-        """
         if len(df_filtrado) == 0:
             return df_filtrado
         
-        # Crear una copia para no modificar el original
         df_temp = df_filtrado.copy()
         
-        # Asegurarse de que tenemos las columnas necesarias
         required_cols = ['Numero de Identificación', 'Fecha Programación_dt', 'Sede', 'Hora Cita']
         for col in required_cols:
             if col not in df_temp.columns:
                 st.warning(f"⚠️ No se encontró la columna requerida: {col}")
                 return df_temp
         
-        # Extraer solo la fecha (sin hora) para agrupar por día
         df_temp['Fecha_Solo'] = df_temp['Fecha Programación_dt'].dt.date
-        
-        # Convertir hora a decimal para ordenar
         df_temp['Hora_para_orden'] = df_temp['Hora Cita'].apply(hora_a_decimal)
         
-        # Ordenar por paciente, sede, fecha y hora de cita (más temprana primero)
         df_temp = df_temp.sort_values([
             'Numero de Identificación', 
             'Sede', 
@@ -329,76 +286,69 @@ if uploaded_file is not None:
             'Hora_para_orden'
         ])
         
-        # Crear una clave única para identificar duplicados por paciente, sede y día
         mascara_fecha_valida = df_temp['Fecha_Solo'].notna()
-        
-        # Inicializar clave como None para todas
         df_temp['clave_duplicado'] = None
-        
-        # Solo crear clave para filas con fecha válida
         df_temp.loc[mascara_fecha_valida, 'clave_duplicado'] = (
             df_temp.loc[mascara_fecha_valida, 'Numero de Identificación'].astype(str) + '|' + 
             df_temp.loc[mascara_fecha_valida, 'Sede'].astype(str) + '|' + 
             df_temp.loc[mascara_fecha_valida, 'Fecha_Solo'].astype(str)
         )
-        
-        # Para filas sin fecha válida, asignar una clave única por fila
         df_temp.loc[~mascara_fecha_valida, 'clave_duplicado'] = df_temp.loc[~mascara_fecha_valida].index.astype(str) + '_sin_fecha'
         
-        # Mantener solo el primer registro (el más temprano) por cada clave
         df_final = df_temp.drop_duplicates(subset=['clave_duplicado'], keep='first')
-        
-        # Eliminar las columnas temporales
         df_final = df_final.drop(columns=['clave_duplicado', 'Fecha_Solo', 'Hora_para_orden'])
         
         st.success(f"✅ Después de filtrar citas duplicadas: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
         
         return df_final
 
-    # After loading and preprocessing, populate the initial options for the multiselect filters
-    all_empresas = df['EMPRESA'].unique().tolist()
-    all_ubicaciones = df['Ubicación'].unique().tolist()
-    all_sedes = df['Sede'].unique().tolist()
+    # Guardar el DataFrame procesado en el estado de sesión
+    st.session_state.df_processed = df
+    st.session_state.all_empresas = df['EMPRESA'].unique().tolist()
+    st.session_state.all_ubicaciones = df['Ubicación'].unique().tolist()
+    st.session_state.all_sedes = df['Sede'].unique().tolist()
     
     if 'Unidad Funcional' in df.columns:
-        all_unidades_funcionales = df['Unidad Funcional'].unique().tolist()
+        st.session_state.all_unidades_funcionales = df['Unidad Funcional'].unique().tolist()
     else:
-        all_unidades_funcionales = []
+        st.session_state.all_unidades_funcionales = []
 
-    # Obtener el rango de fechas REAL de los datos convertidos
-    min_date = df['Fecha Programación_dt'].min()
-    max_date = df['Fecha Programación_dt'].max()
+    st.session_state.min_date = df['Fecha Programación_dt'].min()
+    st.session_state.max_date = df['Fecha Programación_dt'].max()
     
-    if pd.notna(min_date) and pd.notna(max_date):
-        st.info(f"📅 Rango de fechas en los datos: {min_date.date()} a {max_date.date()}")
+    if pd.notna(st.session_state.min_date) and pd.notna(st.session_state.max_date):
+        st.info(f"📅 Rango de fechas en los datos: {st.session_state.min_date.date()} a {st.session_state.max_date.date()}")
     else:
         st.warning("⚠️ No se pudieron detectar fechas válidas en los datos")
 
+# Mostrar los filtros solo si hay datos procesados
+if st.session_state.df_processed is not None:
+    df = st.session_state.df_processed
+    
+    # Número de archivos
     num_files = st.number_input("Number of output files to generate", min_value=1, value=1, key='num_files_input')
-
-    # NUEVA FUNCIÓN MEJORADA: Obtener opciones filtradas basadas en las empresas y sedes seleccionadas
+    st.session_state.num_files = num_files
+    
+    # Función para obtener opciones filtradas
     def get_filtered_options(selected_empresas, selected_sedes=None):
         """Obtiene sedes y unidades funcionales filtradas por las empresas y sedes seleccionadas"""
+        df_filter = st.session_state.df_processed
+        
         if not selected_empresas:
-            # Si no hay empresas seleccionadas, mostrar todas las opciones
-            filtered_sedes = all_sedes
-            # Para unidades funcionales, si hay sedes seleccionadas, filtrar por ellas
+            filtered_sedes = st.session_state.all_sedes
             if selected_sedes:
-                filtered_df = df[df['Sede'].isin(selected_sedes)]
+                filtered_df = df_filter[df_filter['Sede'].isin(selected_sedes)]
                 if 'Unidad Funcional' in filtered_df.columns:
                     filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
                 else:
                     filtered_unidades = []
             else:
-                filtered_unidades = all_unidades_funcionales
+                filtered_unidades = st.session_state.all_unidades_funcionales
         else:
-            # Filtrar el dataframe por las empresas seleccionadas
-            filtered_df = df[df['EMPRESA'].isin(selected_empresas)]
+            filtered_df = df_filter[df_filter['EMPRESA'].isin(selected_empresas)]
             filtered_sedes = filtered_df['Sede'].unique().tolist()
             
-            # Si además hay sedes seleccionadas, filtrar también por sedes para las unidades funcionales
             if selected_sedes:
-                # Asegurarse de que las sedes seleccionadas estén dentro de las disponibles para las empresas
                 valid_sedes = [sede for sede in selected_sedes if sede in filtered_sedes]
                 if valid_sedes:
                     filtered_df = filtered_df[filtered_df['Sede'].isin(valid_sedes)]
@@ -414,73 +364,83 @@ if uploaded_file is not None:
         
         return filtered_sedes, filtered_unidades
 
-    # Collect filter selections outside the button click to retain state
-    filters = []
-    for i in range(num_files):
-        st.subheader(f"Filters for Output File {i+1}")
-        col1, col2 = st.columns(2)
-        with col1:
-            selected_empresas = st.multiselect(
-                f"Select Empresa(s) for File {i+1}", 
-                options=all_empresas, 
-                key=f"empresa_{i}", 
-                default=all_empresas
+    # Crear filtros en un contenedor
+    with st.container():
+        st.session_state.filters = []
+        for i in range(st.session_state.num_files):
+            st.subheader(f"Filters for Output File {i+1}")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Usar keys únicas para cada widget
+                selected_empresas = st.multiselect(
+                    f"Select Empresa(s) for File {i+1}", 
+                    options=st.session_state.all_empresas, 
+                    key=f"empresa_{i}_{st.session_state.num_files}", 
+                    default=st.session_state.all_empresas
+                )
+                
+                filtered_sedes, _ = get_filtered_options(selected_empresas)
+                
+                selected_sedes = st.multiselect(
+                    f"Select Sede(s) for File {i+1}", 
+                    options=filtered_sedes, 
+                    key=f"sede_{i}_{st.session_state.num_files}", 
+                    default=filtered_sedes
+                )
+                
+            with col2:
+                selected_ubicaciones = st.multiselect(
+                    f"Select Ubicación(s) for File {i+1}", 
+                    options=st.session_state.all_ubicaciones, 
+                    key=f"ubicacion_{i}_{st.session_state.num_files}", 
+                    default=st.session_state.all_ubicaciones
+                )
+                
+                _, filtered_unidades = get_filtered_options(selected_empresas, selected_sedes)
+                
+                selected_unidades = st.multiselect(
+                    f"Select Unidad Funcional(es) for File {i+1}", 
+                    options=filtered_unidades, 
+                    key=f"unidad_{i}_{st.session_state.num_files}", 
+                    default=filtered_unidades
+                )
+
+            if pd.notna(st.session_state.min_date) and pd.notna(st.session_state.max_date):
+                default_start_date = st.session_state.min_date.date()
+                default_end_date = st.session_state.max_date.date()
+            else:
+                default_start_date = datetime(2025, 10, 15).date()
+                default_end_date = datetime(2025, 10, 16).date()
+
+            start_date = st.date_input(
+                f"Select Start Date for File {i+1}", 
+                key=f"start_date_{i}_{st.session_state.num_files}", 
+                value=default_start_date
             )
-            
-            # Obtener las opciones filtradas basadas en las empresas seleccionadas
-            filtered_sedes, _ = get_filtered_options(selected_empresas)
-            
-            selected_sedes = st.multiselect(
-                f"Select Sede(s) for File {i+1}", 
-                options=filtered_sedes, 
-                key=f"sede_{i}", 
-                default=filtered_sedes
-            )
-            
-        with col2:
-            selected_ubicaciones = st.multiselect(
-                f"Select Ubicación(s) for File {i+1}", 
-                options=all_ubicaciones, 
-                key=f"ubicacion_{i}", 
-                default=all_ubicaciones
-            )
-            
-            # Obtener las unidades funcionales filtradas basadas en empresas Y sedes seleccionadas
-            _, filtered_unidades = get_filtered_options(selected_empresas, selected_sedes)
-            
-            selected_unidades = st.multiselect(
-                f"Select Unidad Funcional(es) for File {i+1}", 
-                options=filtered_unidades, 
-                key=f"unidad_{i}", 
-                default=filtered_unidades
+            end_date = st.date_input(
+                f"Select End Date for File {i+1}", 
+                key=f"end_date_{i}_{st.session_state.num_files}", 
+                value=default_end_date
             )
 
-        if pd.notna(min_date) and pd.notna(max_date):
-            default_start_date = min_date.date()
-            default_end_date = max_date.date()
-        else:
-            default_start_date = datetime(2025, 10, 15).date()
-            default_end_date = datetime(2025, 10, 16).date()
+            st.session_state.filters.append({
+                'empresas': selected_empresas,
+                'ubicaciones': selected_ubicaciones,
+                'sedes': selected_sedes,
+                'unidades_funcionales': selected_unidades,
+                'start_date': start_date,
+                'end_date': end_date
+            })
 
-        start_date = st.date_input(f"Select Start Date for File {i+1}", key=f"start_date_{i}", value=default_start_date)
-        end_date = st.date_input(f"Select End Date for File {i+1}", key=f"end_date_{i}", value=default_end_date)
-
-        filters.append({
-            'empresas': selected_empresas,
-            'ubicaciones': selected_ubicaciones,
-            'sedes': selected_sedes,
-            'unidades_funcionales': selected_unidades,
-            'start_date': start_date,
-            'end_date': end_date
-        })
-
-    if st.button("Generate and Download Files"):
+    # Botón para generar archivos
+    if st.button("Generate and Download Files", key="generate_button"):
         progress_bar = st.progress(0)
         status_text = st.empty()
         
         filtered_dfs = []
-        for i, file_filters in enumerate(filters):
-            status_text.text(f"Procesando archivo {i+1} de {len(filters)}...")
+        for i, file_filters in enumerate(st.session_state.filters):
+            status_text.text(f"Procesando archivo {i+1} de {len(st.session_state.filters)}...")
             
             filtered_df = df.copy()
             
@@ -494,7 +454,6 @@ if uploaded_file is not None:
                 ubicacion_mask = filtered_df['Ubicación'].isin(file_filters['ubicaciones'])
                 mask = mask & ubicacion_mask
             
-            # Aplicar filtros por sede y unidad funcional
             if file_filters['sedes']:
                 sede_mask = filtered_df['Sede'].isin(file_filters['sedes'])
                 mask = mask & sede_mask
@@ -512,14 +471,13 @@ if uploaded_file is not None:
             
             st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
             
-            # CORRECCIÓN CRÍTICA: Aplicar filtro de primer servicio después del filtrado normal
             filtered_df = identificar_primer_servicio(filtered_df)
             
             if 'Fecha Programación_dt' in filtered_df.columns:
                 filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
             
             filtered_dfs.append((filtered_df, file_filters))
-            progress_bar.progress((i + 1) / len(filters))
+            progress_bar.progress((i + 1) / len(st.session_state.filters))
         
         status_text.text("✅ Procesamiento completado")
 
@@ -531,7 +489,6 @@ if uploaded_file is not None:
             buffer = io.BytesIO()
 
             base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
-            # MODIFICACIÓN: Usar la columna formateada en lugar de la original
             pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación Formateada', 'Hora Cita Formatted', 'Actividad Médica']
 
             if 'Nombre completo' not in filtered_df.columns:
@@ -548,7 +505,6 @@ if uploaded_file is not None:
                     pacientes_df = filtered_df[pacientes_cols_existing].copy()
                     if 'Hora Cita Formatted' in pacientes_df.columns:
                         pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
-                    # MODIFICACIÓN: Renombrar la columna formateada para que tenga el nombre esperado
                     if 'Fecha Programación Formateada' in pacientes_df.columns:
                         pacientes_df = pacientes_df.rename(columns={'Fecha Programación Formateada': 'Fecha Programación'})
                     pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
@@ -556,8 +512,6 @@ if uploaded_file is not None:
             empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
             ubicaciones_str = "_".join(file_filters['ubicaciones']) if file_filters['ubicaciones'] else "All_Ubicaciones"
             
-            # NOTA: Los filtros de sede y unidad funcional se aplican al contenido pero NO al nombre del archivo
-            # para mantener la estructura de nombre existente
             filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{file_filters['start_date'].day}_al_{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%B')}_{file_filters['start_date'].year}.xlsx"
 
             st.download_button(
@@ -565,7 +519,7 @@ if uploaded_file is not None:
                 data=buffer.getvalue(),
                 file_name=filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheet.sheet",
-                key=f"download_{i}"
+                key=f"download_{i}_{datetime.now().timestamp()}"  # Clave única con timestamp
             )
 
             buffer.close()
