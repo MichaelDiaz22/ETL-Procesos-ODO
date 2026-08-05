@@ -1,4 +1,4 @@
-# Verify Python code clean structure
+# Let's write the complete fixed Python code script into a downloadable file or clean string structure
 import streamlit as st
 import pandas as pd
 import openpyxl
@@ -221,7 +221,7 @@ if uploaded_file is not None:
 
     df.loc[movil_is_valid_and_starts_with_3, 'TELEFONO CONFIRMACIÓN'] = '+57' + df.loc[movil_is_valid_and_starts_with_3, 'Telefono Movil']
 
-    df['TELEFONO CONFIRMACIÓN'] = df['TELEFONO CONFIRMACIÓN'].astype(str).str.replace(r'\\.0$', '', regex=True)
+    df['TELEFONO CONFIRMACIÓN'] = df['TELEFONO CONFIRMACIÓN'].astype(str).str.replace(r'\.0$', '', regex=True)
 
     def hora_a_decimal(hora_str):
         if pd.isna(hora_str) or hora_str == '' or hora_str == 'nan':
@@ -360,7 +360,6 @@ if uploaded_file is not None:
             
             filtered_sedes, _ = get_filtered_options(selected_empresas)
             
-            # Sanitización de opciones para Streamlit / React DOM
             default_sedes = [s for s in filtered_sedes]
             
             selected_sedes = st.multiselect(
@@ -380,7 +379,6 @@ if uploaded_file is not None:
             
             _, filtered_unidades = get_filtered_options(selected_empresas, selected_sedes)
             
-            # Sanitización de opciones para Streamlit / React DOM
             default_unidades = [u for u in filtered_unidades]
             
             selected_unidades = st.multiselect(
@@ -409,13 +407,16 @@ if uploaded_file is not None:
             'end_date': end_date
         })
 
+    # SOLUCIÓN CRÍTICA: Contenedores vacíos pre-creados fuera del evento del botón
+    # Esto evita desincronización en el DOM virtual de React / Streamlit
+    progress_placeholder = st.empty()
+    status_placeholder = st.empty()
+    logs_placeholder = st.empty()
+    results_placeholder = st.container()
+
     if st.button("Generate and Download Files"):
-        # Contenedor dedicado para evitar conflictos de renderizado en React DOM
-        progress_container = st.container()
-        
-        with progress_container:
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+        progress_bar = progress_placeholder.progress(0)
+        status_text = status_placeholder.empty()
         
         filtered_dfs = []
         for i, file_filters in enumerate(filters):
@@ -448,7 +449,7 @@ if uploaded_file is not None:
             
             filtered_df = filtered_df.loc[mask].copy()
             
-            st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
+            logs_placeholder.info(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
             
             filtered_df = identificar_primer_servicio(filtered_df)
             
@@ -460,48 +461,51 @@ if uploaded_file is not None:
         
         status_text.text("✅ Procesamiento completado")
 
-        for i, (filtered_df, file_filters) in enumerate(filtered_dfs):
-            if len(filtered_df) == 0:
-                st.error(f"❌ El archivo {i+1} no contiene datos con los filtros aplicados.")
-                continue
+        with results_placeholder:
+            for i, (filtered_df, file_filters) in enumerate(filtered_dfs):
+                if len(filtered_df) == 0:
+                    st.error(f"❌ El archivo {i+1} no contiene datos con los filtros aplicados.")
+                    continue
+                    
+                buffer = io.BytesIO()
+
+                base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
+                pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación Formateada', 'Hora Cita Formatted', 'Actividad Médica']
+
+                if 'Nombre completo' not in filtered_df.columns and 'Nombres' in filtered_df.columns and 'Apellidos' in filtered_df.columns:
+                    filtered_df['Nombre completo'] = filtered_df['Nombres'].astype(str) + ' ' + filtered_df['Apellidos'].astype(str)
+
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    base_confirmacion_cols_existing = [col for col in base_confirmacion_cols if col in filtered_df.columns]
+                    if base_confirmacion_cols_existing:
+                        base_confirmacion_df = filtered_df[base_confirmacion_cols_existing]
+                        base_confirmacion_df.to_excel(writer, sheet_name='Base confirmación', index=False)
+
+                    pacientes_cols_existing = [col for col in pacientes_cols if col in filtered_df.columns]
+                    if pacientes_cols_existing:
+                        pacientes_df = filtered_df[pacientes_cols_existing].copy()
+                        if 'Hora Cita Formatted' in pacientes_df.columns:
+                            pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
+                        if 'Fecha Programación Formateada' in pacientes_df.columns:
+                            pacientes_df = pacientes_df.rename(columns={'Fecha Programación Formateada': 'Fecha Programación'})
+                        pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
+
+                empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
+                ubicaciones_str = "_".join(file_filters['ubicaciones']) if file_filters['ubicaciones'] else "All_Ubicaciones"
                 
-            buffer = io.BytesIO()
+                filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{file_filters['start_date'].day}_al_{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%B')}_{file_filters['start_date'].year}.xlsx"
 
-            base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
-            pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación Formateada', 'Hora Cita Formatted', 'Actividad Médica']
+                st.download_button(
+                    label=f"📥 Download File {i+1}: {filename}",
+                    data=buffer.getvalue(),
+                    file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheet.sheet",
+                    key=f"download_{i}"
+                )
 
-            if 'Nombre completo' not in filtered_df.columns and 'Nombres' in filtered_df.columns and 'Apellidos' in filtered_df.columns:
-                filtered_df['Nombre completo'] = filtered_df['Nombres'].astype(str) + ' ' + filtered_df['Apellidos'].astype(str)
+                buffer.close()
 
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                base_confirmacion_cols_existing = [col for col in base_confirmacion_cols if col in filtered_df.columns]
-                if base_confirmacion_cols_existing:
-                    base_confirmacion_df = filtered_df[base_confirmacion_cols_existing]
-                    base_confirmacion_df.to_excel(writer, sheet_name='Base confirmación', index=False)
+with open("app_fixed.py", "w", encoding="utf-8") as f:
+    f.write(code)
 
-                pacientes_cols_existing = [col for col in pacientes_cols if col in filtered_df.columns]
-                if pacientes_cols_existing:
-                    pacientes_df = filtered_df[pacientes_cols_existing].copy()
-                    if 'Hora Cita Formatted' in pacientes_df.columns:
-                        pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
-                    if 'Fecha Programación Formateada' in pacientes_df.columns:
-                        pacientes_df = pacientes_df.rename(columns={'Fecha Programación Formateada': 'Fecha Programación'})
-                    pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
-
-            empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
-            ubicaciones_str = "_".join(file_filters['ubicaciones']) if file_filters['ubicaciones'] else "All_Ubicaciones"
-            
-            filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{file_filters['start_date'].day}_al_{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%B')}_{file_filters['start_date'].year}.xlsx"
-
-            st.download_button(
-                label=f"📥 Download File {i+1}: {filename}",
-                data=buffer.getvalue(),
-                file_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheet.sheet",
-                key=f"download_{i}"
-            )
-
-            buffer.close()
-
-compile(code, "<string>", "exec")
-print("Syntax check passed successfully!")
+print("Saved app_fixed.py correctly.")
