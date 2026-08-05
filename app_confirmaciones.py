@@ -28,8 +28,12 @@ if 'max_date' not in st.session_state:
     st.session_state.max_date = None
 if 'num_files' not in st.session_state:
     st.session_state.num_files = 1
-if 'filters_initialized' not in st.session_state:
-    st.session_state.filters_initialized = False
+if 'filters_data' not in st.session_state:
+    st.session_state.filters_data = []
+if 'processing_complete' not in st.session_state:
+    st.session_state.processing_complete = False
+if 'generated_files' not in st.session_state:
+    st.session_state.generated_files = []
 
 uploaded_file = st.file_uploader("Upload your Excel file", type=".xlsx")
 
@@ -230,7 +234,8 @@ if uploaded_file is not None:
     
     st.session_state.min_date = df_processed['Fecha Programación_dt'].min()
     st.session_state.max_date = df_processed['Fecha Programación_dt'].max()
-    st.session_state.filters_initialized = False
+    st.session_state.processing_complete = False
+    st.session_state.generated_files = []
     
     if pd.notna(st.session_state.min_date) and pd.notna(st.session_state.max_date):
         st.info(f"📅 Rango de fechas en los datos: {st.session_state.min_date.date()} a {st.session_state.max_date.date()}")
@@ -292,213 +297,167 @@ def identificar_primer_servicio(df_filtrado):
     df_temp.loc[~mascara_fecha_valida, 'clave_duplicado'] = df_temp.loc[~mascara_fecha_valida].index.astype(str) + '_sin_fecha'
     df_final = df_temp.drop_duplicates(subset=['clave_duplicado'], keep='first')
     df_final = df_final.drop(columns=['clave_duplicado', 'Fecha_Solo', 'Hora_para_orden'])
-    st.success(f"✅ Después de filtrar citas duplicadas: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
     return df_final
 
 # Mostrar filtros solo si hay datos
 if st.session_state.df_processed is not None:
     df = st.session_state.df_processed
     
-    # SOLUCIÓN: Usar un formulario para evitar problemas de estado
-    with st.form(key="filters_form"):
-        # Número de archivos - usar un slider o selectbox en lugar de number_input
-        num_files = st.selectbox(
-            "Number of output files to generate",
-            options=list(range(1, 11)),
-            index=st.session_state.num_files - 1,
-            key="num_files_select"
-        )
-        st.session_state.num_files = num_files
-        
-        # Función para obtener opciones filtradas
-        def get_filtered_options(selected_empresas, selected_sedes=None):
-            df_filter = st.session_state.df_processed
-            if not selected_empresas:
-                filtered_sedes = st.session_state.all_sedes
-                if selected_sedes:
-                    filtered_df = df_filter[df_filter['Sede'].isin(selected_sedes)]
-                    if 'Unidad Funcional' in filtered_df.columns:
-                        filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
-                    else:
-                        filtered_unidades = []
-                else:
-                    filtered_unidades = st.session_state.all_unidades_funcionales
-            else:
-                filtered_df = df_filter[df_filter['EMPRESA'].isin(selected_empresas)]
-                filtered_sedes = filtered_df['Sede'].unique().tolist()
-                if selected_sedes:
-                    valid_sedes = [sede for sede in selected_sedes if sede in filtered_sedes]
-                    if valid_sedes:
-                        filtered_df = filtered_df[filtered_df['Sede'].isin(valid_sedes)]
-                    if 'Unidad Funcional' in filtered_df.columns:
-                        filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
-                    else:
-                        filtered_unidades = []
-                else:
-                    if 'Unidad Funcional' in filtered_df.columns:
-                        filtered_unidades = filtered_df['Unidad Funcional'].unique().tolist()
-                    else:
-                        filtered_unidades = []
-            return filtered_sedes, filtered_unidades
-        
-        # Generar filtros dinámicamente
-        filters_data = []
-        for i in range(num_files):
-            st.markdown(f"---")
-            st.subheader(f"📋 Filters for Output File {i+1}")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                selected_empresas = st.multiselect(
-                    f"Select Empresa(s) for File {i+1}", 
-                    options=st.session_state.all_empresas, 
-                    key=f"empresa_{i}",
-                    default=st.session_state.all_empresas
-                )
-                
-                filtered_sedes, _ = get_filtered_options(selected_empresas)
-                
-                selected_sedes = st.multiselect(
-                    f"Select Sede(s) for File {i+1}", 
-                    options=filtered_sedes, 
-                    key=f"sede_{i}",
-                    default=filtered_sedes
-                )
-                
-            with col2:
-                selected_ubicaciones = st.multiselect(
-                    f"Select Ubicación(s) for File {i+1}", 
-                    options=st.session_state.all_ubicaciones, 
-                    key=f"ubicacion_{i}",
-                    default=st.session_state.all_ubicaciones
-                )
-                
-                _, filtered_unidades = get_filtered_options(selected_empresas, selected_sedes)
-                
-                selected_unidades = st.multiselect(
-                    f"Select Unidad Funcional(es) for File {i+1}", 
-                    options=filtered_unidades, 
-                    key=f"unidad_{i}",
-                    default=filtered_unidades
-                )
-            
-            if pd.notna(st.session_state.min_date) and pd.notna(st.session_state.max_date):
-                default_start_date = st.session_state.min_date.date()
-                default_end_date = st.session_state.max_date.date()
-            else:
-                default_start_date = datetime(2025, 10, 15).date()
-                default_end_date = datetime(2025, 10, 16).date()
-            
-            start_date = st.date_input(
-                f"Select Start Date for File {i+1}", 
-                key=f"start_date_{i}",
-                value=default_start_date
-            )
-            end_date = st.date_input(
-                f"Select End Date for File {i+1}", 
-                key=f"end_date_{i}",
-                value=default_end_date
-            )
-            
-            filters_data.append({
-                'empresas': selected_empresas,
-                'ubicaciones': selected_ubicaciones,
-                'sedes': selected_sedes,
-                'unidades_funcionales': selected_unidades,
-                'start_date': start_date,
-                'end_date': end_date
-            })
-        
-        # Botón de generación dentro del formulario
-        submitted = st.form_submit_button("🚀 Generate and Download Files", use_container_width=True)
+    # SOLUCIÓN DEFINITIVA: Usar un solo conjunto de filtros y aplicar a todos los archivos
+    st.subheader("📋 Configuración de Filtros")
     
-    # Procesar fuera del formulario
-    if submitted:
+    # Número de archivos
+    num_files = st.selectbox(
+        "Number of output files to generate",
+        options=list(range(1, 11)),
+        index=st.session_state.num_files - 1,
+        key="num_files_select"
+    )
+    st.session_state.num_files = num_files
+    
+    # Filtros comunes
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        selected_empresas = st.multiselect(
+            "Select Empresa(s)", 
+            options=st.session_state.all_empresas,
+            default=st.session_state.all_empresas,
+            key="global_empresas"
+        )
+    
+    with col2:
+        selected_ubicaciones = st.multiselect(
+            "Select Ubicación(s)", 
+            options=st.session_state.all_ubicaciones,
+            default=st.session_state.all_ubicaciones,
+            key="global_ubicaciones"
+        )
+    
+    # Filtros de fecha
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        if pd.notna(st.session_state.min_date) and pd.notna(st.session_state.max_date):
+            default_start_date = st.session_state.min_date.date()
+            default_end_date = st.session_state.max_date.date()
+        else:
+            default_start_date = datetime(2025, 10, 15).date()
+            default_end_date = datetime(2025, 10, 16).date()
+        
+        start_date = st.date_input(
+            "Select Start Date",
+            value=default_start_date,
+            key="global_start_date"
+        )
+    
+    with col4:
+        end_date = st.date_input(
+            "Select End Date",
+            value=default_end_date,
+            key="global_end_date"
+        )
+    
+    # Botón para generar archivos
+    if st.button("🚀 Generate Files", key="generate_files_btn", use_container_width=True):
+        st.session_state.processing_complete = False
+        st.session_state.generated_files = []
+        
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        filtered_dfs = []
-        for i, file_filters in enumerate(filters_data):
-            status_text.text(f"Procesando archivo {i+1} de {len(filters_data)}...")
+        # Aplicar filtros para cada archivo
+        for i in range(num_files):
+            status_text.text(f"Procesando archivo {i+1} de {num_files}...")
             
             filtered_df = df.copy()
             mask = pd.Series(True, index=filtered_df.index)
             
-            if file_filters['empresas']:
-                empresa_mask = filtered_df['EMPRESA'].isin(file_filters['empresas'])
+            if selected_empresas:
+                empresa_mask = filtered_df['EMPRESA'].isin(selected_empresas)
                 mask = mask & empresa_mask
             
-            if file_filters['ubicaciones']:
-                ubicacion_mask = filtered_df['Ubicación'].isin(file_filters['ubicaciones'])
+            if selected_ubicaciones:
+                ubicacion_mask = filtered_df['Ubicación'].isin(selected_ubicaciones)
                 mask = mask & ubicacion_mask
             
-            if file_filters['sedes']:
-                sede_mask = filtered_df['Sede'].isin(file_filters['sedes'])
-                mask = mask & sede_mask
-            
-            if file_filters['unidades_funcionales'] and 'Unidad Funcional' in filtered_df.columns:
-                unidad_mask = filtered_df['Unidad Funcional'].isin(file_filters['unidades_funcionales'])
-                mask = mask & unidad_mask
-            
-            start_date_ts = pd.Timestamp(file_filters['start_date'])
-            end_date_ts = pd.Timestamp(file_filters['end_date'])
+            start_date_ts = pd.Timestamp(start_date)
+            end_date_ts = pd.Timestamp(end_date)
             date_mask = (filtered_df['Fecha Programación_dt'] >= start_date_ts) & (filtered_df['Fecha Programación_dt'] <= end_date_ts)
             mask = mask & date_mask
             
             filtered_df = filtered_df.loc[mask].copy()
             
-            st.success(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
-            
+            # Aplicar filtro de primer servicio
             filtered_df = identificar_primer_servicio(filtered_df)
             
             if 'Fecha Programación_dt' in filtered_df.columns:
                 filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
             
-            filtered_dfs.append((filtered_df, file_filters))
-            progress_bar.progress((i + 1) / len(filters_data))
-        
-        status_text.text("✅ Procesamiento completado")
-        
-        # Mostrar botones de descarga
-        for i, (filtered_df, file_filters) in enumerate(filtered_dfs):
-            if len(filtered_df) == 0:
-                st.error(f"❌ El archivo {i+1} no contiene datos con los filtros aplicados.")
-                continue
+            # Generar Excel
+            if len(filtered_df) > 0:
+                buffer = io.BytesIO()
                 
-            buffer = io.BytesIO()
-            
-            base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
-            pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 'Fecha Programación Formateada', 'Hora Cita Formatted', 'Actividad Médica']
-            
-            if 'Nombre completo' not in filtered_df.columns:
-                filtered_df['Nombre completo'] = filtered_df['Nombres'].astype(str) + ' ' + filtered_df['Apellidos'].astype(str)
-            
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                base_confirmacion_cols_existing = [col for col in base_confirmacion_cols if col in filtered_df.columns]
-                if base_confirmacion_cols_existing:
-                    base_confirmacion_df = filtered_df[base_confirmacion_cols_existing]
-                    base_confirmacion_df.to_excel(writer, sheet_name='Base confirmación', index=False)
+                base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
+                pacientes_cols = ['TELEFONO CONFIRMACIÓN', 'Numero de Identificación', 'Nombre completo', 
+                                'Especialista', 'Especialidad Cita', 'Sede', 'Direccion Final', 
+                                'Fecha Programación Formateada', 'Hora Cita Formatted', 'Actividad Médica']
                 
-                pacientes_cols_existing = [col for col in pacientes_cols if col in filtered_df.columns]
-                if pacientes_cols_existing:
-                    pacientes_df = filtered_df[pacientes_cols_existing].copy()
-                    if 'Hora Cita Formatted' in pacientes_df.columns:
-                        pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
-                    if 'Fecha Programación Formateada' in pacientes_df.columns:
-                        pacientes_df = pacientes_df.rename(columns={'Fecha Programación Formateada': 'Fecha Programación'})
-                    pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
-            
-            empresas_str = "_".join(file_filters['empresas']) if file_filters['empresas'] else "All_Empresas"
-            ubicaciones_str = "_".join(file_filters['ubicaciones']) if file_filters['ubicaciones'] else "All_Ubicaciones"
-            
-            filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{file_filters['start_date'].day}_al_{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%B')}_{file_filters['start_date'].year}.xlsx"
-            
-            st.download_button(
-                label=f"📥 Download File {i+1}: {filename}",
-                data=buffer.getvalue(),
-                file_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheet.sheet",
-                key=f"download_{i}_{datetime.now().timestamp()}"
-            )
+                if 'Nombre completo' not in filtered_df.columns:
+                    filtered_df['Nombre completo'] = filtered_df['Nombres'].astype(str) + ' ' + filtered_df['Apellidos'].astype(str)
+                
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    base_confirmacion_cols_existing = [col for col in base_confirmacion_cols if col in filtered_df.columns]
+                    if base_confirmacion_cols_existing:
+                        base_confirmacion_df = filtered_df[base_confirmacion_cols_existing]
+                        base_confirmacion_df.to_excel(writer, sheet_name='Base confirmación', index=False)
+                    
+                    pacientes_cols_existing = [col for col in pacientes_cols if col in filtered_df.columns]
+                    if pacientes_cols_existing:
+                        pacientes_df = filtered_df[pacientes_cols_existing].copy()
+                        if 'Hora Cita Formatted' in pacientes_df.columns:
+                            pacientes_df = pacientes_df.rename(columns={'Hora Cita Formatted': 'Hora Cita'})
+                        if 'Fecha Programación Formateada' in pacientes_df.columns:
+                            pacientes_df = pacientes_df.rename(columns={'Fecha Programación Formateada': 'Fecha Programación'})
+                        pacientes_df.to_excel(writer, sheet_name='Pacientes', index=False)
+                
+                empresas_str = "_".join(selected_empresas) if selected_empresas else "All_Empresas"
+                ubicaciones_str = "_".join(selected_ubicaciones) if selected_ubicaciones else "All_Ubicaciones"
+                
+                filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{start_date.day}_al_{end_date.day}_{start_date.strftime('%B')}_{start_date.year}.xlsx"
+                
+                st.session_state.generated_files.append({
+                    'data': buffer.getvalue(),
+                    'filename': filename,
+                    'rows': len(filtered_df)
+                })
+            else:
+                st.session_state.generated_files.append({
+                    'data': None,
+                    'filename': f"File_{i+1}_empty.xlsx",
+                    'rows': 0
+                })
             
             buffer.close()
+            progress_bar.progress((i + 1) / num_files)
+        
+        status_text.text("✅ Procesamiento completado")
+        st.session_state.processing_complete = True
+        st.rerun()
+    
+    # Mostrar archivos generados
+    if st.session_state.processing_complete and st.session_state.generated_files:
+        st.subheader("📥 Archivos Generados")
+        
+        for i, file_info in enumerate(st.session_state.generated_files):
+            if file_info['rows'] > 0:
+                st.success(f"✅ Archivo {i+1}: {file_info['rows']} filas - {file_info['filename']}")
+                st.download_button(
+                    label=f"📥 Download File {i+1}",
+                    data=file_info['data'],
+                    file_name=file_info['filename'],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheet.sheet",
+                    key=f"download_final_{i}"
+                )
+            else:
+                st.warning(f"⚠️ Archivo {i+1}: Sin datos")
