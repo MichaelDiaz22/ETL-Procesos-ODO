@@ -1,4 +1,3 @@
-# Let's write the complete fixed Python code script into a downloadable file or clean string structure
 import streamlit as st
 import pandas as pd
 import openpyxl
@@ -505,7 +504,7 @@ if uploaded_file is not None:
 
                 buffer.close()
 
-with open("app_fixed.py", "w", encoding="utf-8") as f:
-    f.write(code)
-
-print("Saved app_fixed.py correctly.")
+# Eliminar estas líneas que causan el error:
+# with open("app_fixed.py", "w", encoding="utf-8") as f:
+#     f.write(code)
+# print("Saved app_fixed.py correctly.")
