@@ -34,37 +34,49 @@ with st.sidebar:
     if archivo is not None:
         try:
             # Leer el archivo Excel saltando la primera fila (título)
-            # La fila 0 es el título, los datos comienzan en la fila 1
-            df = pd.read_excel(archivo, header=0)  # header=0 usa la primera fila como encabezados
+            # La fila 0 es el título, los encabezados están en la fila 1
+            df = pd.read_excel(archivo, header=1)  # header=1 usa la segunda fila como encabezados
             
-            # Guardar el nombre de las columnas originales
-            columnas_originales = df.columns.tolist()
-            st.session_state.header_row = columnas_originales
+            # Eliminar columnas sin nombre (Unnamed)
+            df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
             
-            # Verificar que las columnas necesarias existan
+            # Guardar el nombre de las columnas
+            st.session_state.header_row = df.columns.tolist()
+            
+            # Verificar que las columnas necesarias existan (ignorando mayúsculas/minúsculas y espacios)
             columnas_requeridas = ['Tag', 'Solicitado', 'Auditado', 'Sede', 'Doc.', 'Paciente', 
                                    'Edad', 'Genero', 'Diag.', 'Entidad', 'Grupo Atención', 
                                    'Servicio', 'Cups', 'Radicación', 'Radicado', 'Autorizado', 
                                    'Autorización', 'Vence', 'Entregado', 'Servicio2', 'Programado', 
                                    'Responsable', 'Estado', 'Observación', 'Prioridad', 'idOrden', 'idIndigo']
             
-            columnas_faltantes = [col for col in columnas_requeridas if col not in df.columns]
+            # Normalizar nombres de columnas para comparación
+            columnas_df = [col.strip() for col in df.columns]
+            columnas_requeridas_norm = [col.strip() for col in columnas_requeridas]
+            
+            columnas_faltantes = []
+            for col in columnas_requeridas_norm:
+                if col not in columnas_df:
+                    columnas_faltantes.append(col)
+            
             if columnas_faltantes:
                 st.error(f"⚠️ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}")
+                st.info(f"📋 Columnas encontradas: {', '.join(df.columns.tolist())}")
                 st.session_state.df = None
             else:
-                # Si hay columnas adicionales (como 'Unnamed'), intentar limpiar
-                # Verificar si hay columnas vacías o sin nombre
-                df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
-                
                 # Convertir la columna 'Solicitado' a datetime
                 try:
+                    # Limpiar datos vacíos
+                    df = df.dropna(how='all')
+                    
+                    # Convertir 'Solicitado' a datetime
                     df['Solicitado'] = pd.to_datetime(df['Solicitado'])
                     st.session_state.df = df
                     st.success(f"✅ Archivo cargado correctamente. {len(df)} registros encontrados.")
                     
                     # Mostrar información del archivo
-                    st.info(f"📊 Rango de fechas: {df['Solicitado'].min().strftime('%Y-%m-%d')} - {df['Solicitado'].max().strftime('%Y-%m-%d')}")
+                    if len(df) > 0:
+                        st.info(f"📊 Rango de fechas: {df['Solicitado'].min().strftime('%Y-%m-%d')} - {df['Solicitado'].max().strftime('%Y-%m-%d')}")
                     
                     # Mostrar vista previa de las primeras filas
                     with st.expander("📋 Vista previa de los datos"):
@@ -177,7 +189,10 @@ if st.session_state.df is not None:
             # Buscar en todas las columnas de tipo string
             mask = pd.Series(False, index=df_filtrado.index)
             for col in df_filtrado.select_dtypes(include=['object', 'string']).columns:
-                mask |= df_filtrado[col].astype(str).str.contains(search_term, case=False, na=False)
+                try:
+                    mask |= df_filtrado[col].astype(str).str.contains(search_term, case=False, na=False)
+                except:
+                    pass
             df_filtrado = df_filtrado[mask]
             st.info(f"🔍 Encontrados {len(df_filtrado)} registros que coinciden con '{search_term}'")
         
@@ -300,7 +315,6 @@ if st.session_state.df is not None:
             # Distribución de edades (si hay datos de edad)
             if 'Edad' in df_filtrado.columns and df_filtrado['Edad'].notna().any():
                 st.subheader("📊 Distribución de Edades")
-                # Crear rangos de edad
                 df_edad = df_filtrado['Edad'].dropna()
                 if len(df_edad) > 0:
                     # Histograma de edades usando bar_chart con bins
