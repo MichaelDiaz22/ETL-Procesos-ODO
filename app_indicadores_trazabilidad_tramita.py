@@ -17,6 +17,8 @@ if 'df' not in st.session_state:
     st.session_state.df = None
 if 'df_filtrado' not in st.session_state:
     st.session_state.df_filtrado = None
+if 'header_row' not in st.session_state:
+    st.session_state.header_row = None
 
 # Sidebar para la carga del archivo
 with st.sidebar:
@@ -31,9 +33,13 @@ with st.sidebar:
     
     if archivo is not None:
         try:
-            # Leer el archivo Excel
-            df = pd.read_excel(archivo)
-            st.session_state.df = df
+            # Leer el archivo Excel saltando la primera fila (título)
+            # La fila 0 es el título, los datos comienzan en la fila 1
+            df = pd.read_excel(archivo, header=0)  # header=0 usa la primera fila como encabezados
+            
+            # Guardar el nombre de las columnas originales
+            columnas_originales = df.columns.tolist()
+            st.session_state.header_row = columnas_originales
             
             # Verificar que las columnas necesarias existan
             columnas_requeridas = ['Tag', 'Solicitado', 'Auditado', 'Sede', 'Doc.', 'Paciente', 
@@ -47,13 +53,24 @@ with st.sidebar:
                 st.error(f"⚠️ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}")
                 st.session_state.df = None
             else:
+                # Si hay columnas adicionales (como 'Unnamed'), intentar limpiar
+                # Verificar si hay columnas vacías o sin nombre
+                df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+                
                 # Convertir la columna 'Solicitado' a datetime
                 try:
                     df['Solicitado'] = pd.to_datetime(df['Solicitado'])
+                    st.session_state.df = df
                     st.success(f"✅ Archivo cargado correctamente. {len(df)} registros encontrados.")
                     
                     # Mostrar información del archivo
                     st.info(f"📊 Rango de fechas: {df['Solicitado'].min().strftime('%Y-%m-%d')} - {df['Solicitado'].max().strftime('%Y-%m-%d')}")
+                    
+                    # Mostrar vista previa de las primeras filas
+                    with st.expander("📋 Vista previa de los datos"):
+                        st.dataframe(df.head(10))
+                        st.caption(f"Mostrando 10 de {len(df)} registros")
+                    
                 except Exception as e:
                     st.error(f"⚠️ Error al procesar la columna 'Solicitado': {e}")
                     st.session_state.df = None
@@ -66,11 +83,20 @@ with st.sidebar:
 
 # Contenido principal
 if st.session_state.df is not None:
-    df = st.session_state.df
+    df = st.session_state.df.copy()
     
     # Verificar que la columna 'Solicitado' sea datetime
     if not pd.api.types.is_datetime64_any_dtype(df['Solicitado']):
-        df['Solicitado'] = pd.to_datetime(df['Solicitado'])
+        try:
+            df['Solicitado'] = pd.to_datetime(df['Solicitado'])
+        except:
+            st.error("⚠️ No se pudo convertir la columna 'Solicitado' a formato de fecha")
+            st.stop()
+    
+    # Verificar que hay datos
+    if len(df) == 0:
+        st.warning("⚠️ El archivo no contiene datos después de la fila de título")
+        st.stop()
     
     # Crear pestañas
     tab1, tab2 = st.tabs(["📊 Portafolio", "📈 Estadísticas"])
@@ -145,6 +171,16 @@ if st.session_state.df is not None:
         
         st.divider()
         
+        # Buscador de texto
+        search_term = st.text_input("🔍 Buscar en todos los campos", placeholder="Escribe el texto a buscar...")
+        if search_term:
+            # Buscar en todas las columnas de tipo string
+            mask = pd.Series(False, index=df_filtrado.index)
+            for col in df_filtrado.select_dtypes(include=['object', 'string']).columns:
+                mask |= df_filtrado[col].astype(str).str.contains(search_term, case=False, na=False)
+            df_filtrado = df_filtrado[mask]
+            st.info(f"🔍 Encontrados {len(df_filtrado)} registros que coinciden con '{search_term}'")
+        
         # Mostrar la tabla
         st.dataframe(
             df_filtrado,
@@ -208,6 +244,10 @@ if st.session_state.df is not None:
                 csv_data = df_filtrado.to_csv(index=False)
                 st.code(csv_data, language="csv", line_numbers=False)
                 st.info("💡 Selecciona el texto y presiona Ctrl+C para copiar")
+        
+        with col_exp3:
+            # Mostrar número de filas seleccionadas
+            st.metric("📊 Registros mostrados", f"{len(df_filtrado):,}")
     
     with tab2:
         st.header("📈 Estadísticas del Portafolio")
@@ -256,6 +296,20 @@ if st.session_state.df is not None:
             solicitudes_por_dia = df_filtrado.groupby(df_filtrado['Solicitado'].dt.date).size().reset_index()
             solicitudes_por_dia.columns = ['Fecha', 'Cantidad']
             st.line_chart(solicitudes_por_dia.set_index('Fecha'))
+            
+            # Distribución de edades (si hay datos de edad)
+            if 'Edad' in df_filtrado.columns and df_filtrado['Edad'].notna().any():
+                st.subheader("📊 Distribución de Edades")
+                # Crear rangos de edad
+                df_edad = df_filtrado['Edad'].dropna()
+                if len(df_edad) > 0:
+                    # Histograma de edades usando bar_chart con bins
+                    bins = range(0, 101, 10)
+                    edad_bins = pd.cut(df_edad, bins=bins)
+                    edad_counts = edad_bins.value_counts().sort_index().reset_index()
+                    edad_counts.columns = ['Rango de Edad', 'Cantidad']
+                    edad_counts['Rango de Edad'] = edad_counts['Rango de Edad'].astype(str)
+                    st.bar_chart(edad_counts.set_index('Rango de Edad'))
 
 # Mensaje inicial si no hay archivo cargado
 else:
