@@ -45,6 +45,14 @@ PORTAFOLIO_BASE = [
     ("423304", "423304", "INYECCIÓN (ESCLEROSIS) DE VÁRICES ESOFÁGICAS VÍA ENDOSCÓPICA", "235_CIRUGÍA GASTROINTESTINAL", True, "CARDIOLOGIA NO INVASIVA", "39"),
     ("434101", "434101", "LIGADURA ENDOSCÓPICA DE VÁRICES GÁSTRICAS", "235_CIRUGÍA GASTROINTESTINAL", True, "CARDIOLOGIA NO INVASIVA", "39"),
     ("441201", "441201", "GASTROSCOPIA A TRAVÉS DE ESTOMA ARTIFICIAL", "235_CIRUGÍA GASTROINTESTINAL", True, "CARDIOLOGIA NO INVASIVA", "39"),
+    # Agregar algunos registros de la segunda parte del archivo para tener más variedad
+    ("010201", "010201", "PUNCIÓN (ASPIRACIÓN DE LÍQUIDO) VENTRICULAR A TRAVÉS DE CATÉTER PREVIAMENTE IMPLANTADO", "245_NEUROCIRUGÍA", True, "CIRUGIA", "36"),
+    ("010202", "010202", "PUNCIÓN (ASPIRACIÓN DE LÍQUIDO) VENTRICULAR POR TREPANACIÓN (SIN CATÉTER)", "245_NEUROCIRUGÍA", True, "CIRUGIA", "36"),
+    ("010203", "010203", "PUNCIÓN (ASPIRACIÓN DE LÍQUIDO) VENTRICULAR A TRAVÉS DE UN RESERVORIO", "245_NEUROCIRUGÍA", True, "CIRUGIA", "36"),
+    ("010204", "010204", "PUNCIÓN (ASPIRACIÓN DE LÍQUIDO) VENTRICULAR, VÍA TRANSFONTANELAR", "245_NEUROCIRUGÍA", True, "CIRUGIA", "36"),
+    ("010205", "010205", "PUNCIÓN (ASPIRACIÓN DE LÍQUIDO) VENTRICULAR", "245_NEUROCIRUGÍA", True, "CIRUGIA", "36"),
+    ("010901", "010901", "PUNCIÓN SUBDURAL", "245_NEUROCIRUGÍA", True, "CIRUGIA", "36"),
+    ("010902", "010902", "OTRA PUNCIÓN CRANEAL", "245_NEUROCIRUGÍA", True, "CIRUGIA", "36"),
 ]
 
 # Crear DataFrame del portafolio base
@@ -60,7 +68,7 @@ if 'fecha_inicio' not in st.session_state:
 if 'fecha_fin' not in st.session_state:
     st.session_state.fecha_fin = None
 
-# Sección de carga de archivo - unificada en la pantalla principal
+# Sección de carga de archivo
 with st.container():
     st.subheader("📂 Cargar Archivo de Solicitudes")
     archivo = st.file_uploader(
@@ -141,65 +149,66 @@ with st.container():
     else:
         st.info("📌 Carga un archivo Excel para comenzar a trabajar")
 
-# Crear pestañas - Primero Portafolio Base, luego Estadística, luego Portafolio
+# Crear pestañas - Portafolio (siempre visible), Solicitudes (solo si hay archivo), Estadísticas (solo si hay archivo)
 if st.session_state.df is not None:
-    tab1, tab2, tab3 = st.tabs(["📚 Portafolio Base", "📈 Estadísticas", "📊 Portafolio"])
+    tab1, tab2, tab3 = st.tabs(["📚 Portafolio", "📊 Solicitudes", "📈 Estadísticas"])
 else:
-    tab1, tab2, tab3 = st.tabs(["📚 Portafolio Base", "📈 Estadísticas (carga archivo)", "📊 Portafolio (carga archivo)"])
+    tab1, tab2, tab3 = st.tabs(["📚 Portafolio", "📊 Solicitudes (carga archivo)", "📈 Estadísticas (carga archivo)"])
 
+# ======================== TAB 1: PORTAFOLIO ========================
 with tab1:
-    st.header("📚 Portafolio Base de Servicios")
-    st.caption("Esta tabla muestra los datos estáticos del portafolio para referencia y pruebas")
+    st.header("📚 Portafolio de Servicios")
+    st.caption("Esta tabla muestra los servicios disponibles en el portafolio")
     
-    # Filtros para el portafolio base
+    # Filtros para el portafolio
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
     
     with col_f1:
         unidades = ["Todas"] + sorted(df_portafolio_base['UNIDAD EJECUTORA'].unique().tolist())
-        unidad_seleccionada = st.selectbox("Unidad Ejecutora", unidades, key="base_unidad")
+        unidad_seleccionada = st.selectbox("🏢 Unidad Ejecutora", unidades, key="portafolio_unidad")
     
     with col_f2:
         codigos = ["Todos"] + sorted(df_portafolio_base['codREPS'].unique().tolist())
-        codigo_seleccionado = st.selectbox("Código REPS", codigos, key="base_codigo")
+        codigo_seleccionado = st.selectbox("📋 Código REPS", codigos, key="portafolio_codigo")
     
     with col_f3:
-        busqueda_base = st.text_input("Buscar por descripción", placeholder="Escribe texto...", key="base_busqueda")
+        busqueda_portafolio = st.text_input("🔍 Buscar por descripción", placeholder="Escribe texto...", key="portafolio_busqueda")
     
     with col_f4:
-        mostrar_solo_activos_base = st.checkbox("Mostrar solo Activos (A=True)", value=False, key="base_activos")
+        mostrar_solo_activos = st.checkbox("✅ Mostrar solo Activos (A=True)", value=False, key="portafolio_activos")
     
-    # Aplicar filtros al portafolio base
-    df_base_filtrado = df_portafolio_base.copy()
+    # Aplicar filtros al portafolio
+    df_portafolio_filtrado = df_portafolio_base.copy()
     
     if unidad_seleccionada != "Todas":
-        df_base_filtrado = df_base_filtrado[df_base_filtrado['UNIDAD EJECUTORA'] == unidad_seleccionada]
+        df_portafolio_filtrado = df_portafolio_filtrado[df_portafolio_filtrado['UNIDAD EJECUTORA'] == unidad_seleccionada]
     
     if codigo_seleccionado != "Todos":
-        df_base_filtrado = df_base_filtrado[df_base_filtrado['codREPS'] == codigo_seleccionado]
+        df_portafolio_filtrado = df_portafolio_filtrado[df_portafolio_filtrado['codREPS'] == codigo_seleccionado]
     
-    if busqueda_base:
-        df_base_filtrado = df_base_filtrado[df_base_filtrado['descrCodIPS'].str.contains(busqueda_base, case=False, na=False)]
+    if busqueda_portafolio:
+        df_portafolio_filtrado = df_portafolio_filtrado[df_portafolio_filtrado['descrCodIPS'].str.contains(busqueda_portafolio, case=False, na=False)]
     
-    if mostrar_solo_activos_base:
-        df_base_filtrado = df_base_filtrado[df_base_filtrado['A'] == True]
+    if mostrar_solo_activos:
+        df_portafolio_filtrado = df_portafolio_filtrado[df_portafolio_filtrado['A'] == True]
     
-    # Mostrar información
+    # Mostrar información del portafolio
     col_info1, col_info2, col_info3, col_info4 = st.columns(4)
     with col_info1:
-        st.metric("Total Registros", f"{len(df_base_filtrado):,}")
+        st.metric("📊 Total Registros", f"{len(df_portafolio_filtrado):,}")
     with col_info2:
-        st.metric("Unidades Ejecutoras", df_base_filtrado['UNIDAD EJECUTORA'].nunique())
+        st.metric("🏢 Unidades Ejecutoras", df_portafolio_filtrado['UNIDAD EJECUTORA'].nunique())
     with col_info3:
-        st.metric("Códigos REPS", df_base_filtrado['codREPS'].nunique())
+        st.metric("📋 Códigos REPS", df_portafolio_filtrado['codREPS'].nunique())
     with col_info4:
-        activos_base = df_base_filtrado[df_base_filtrado['A'] == True].shape[0]
-        st.metric("Activos (A=True)", f"{activos_base:,}")
+        activos = df_portafolio_filtrado[df_portafolio_filtrado['A'] == True].shape[0]
+        st.metric("✅ Activos (A=True)", f"{activos:,}")
     
     st.divider()
     
-    # Mostrar tabla del portafolio base
+    # Mostrar tabla del portafolio
     st.dataframe(
-        df_base_filtrado,
+        df_portafolio_filtrado,
         use_container_width=True,
         height=500,
         column_config={
@@ -213,48 +222,151 @@ with tab1:
         }
     )
     
-    # Exportar portafolio base
+    # Exportar portafolio
+    st.divider()
     col_exp1, col_exp2 = st.columns(2)
     with col_exp1:
-        if st.button("📥 Exportar Portafolio Base a Excel", use_container_width=True):
+        if st.button("📥 Exportar Portafolio a Excel", use_container_width=True):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_base_filtrado.to_excel(writer, sheet_name='PortafolioBase', index=False)
+                df_portafolio_filtrado.to_excel(writer, sheet_name='Portafolio', index=False)
             output.seek(0)
             
             st.download_button(
                 label="⬇️ Descargar Excel",
                 data=output,
-                file_name=f"PortafolioBase_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                file_name=f"Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_base_excel"
+                key="download_portafolio_excel"
             )
     
     with col_exp2:
-        if st.button("📋 Ver CSV del Portafolio Base", use_container_width=True):
-            csv_data = df_base_filtrado.to_csv(index=False)
+        if st.button("📋 Ver CSV del Portafolio", use_container_width=True):
+            csv_data = df_portafolio_filtrado.to_csv(index=False)
             st.code(csv_data, language="csv", line_numbers=False)
             st.info("💡 Selecciona el texto y presiona Ctrl+C para copiar")
 
-# Contenido principal (Estadísticas y Portafolio) - solo si hay archivo cargado
+# ======================== TAB 2: SOLICITUDES ========================
 if st.session_state.df is not None:
-    df = st.session_state.df.copy()
-    
-    # Verificar que la columna 'Solicitado' sea datetime
-    if not pd.api.types.is_datetime64_any_dtype(df['Solicitado']):
-        try:
-            df['Solicitado'] = pd.to_datetime(df['Solicitado'])
-        except:
-            st.error("⚠️ No se pudo convertir la columna 'Solicitado' a formato de fecha")
-            st.stop()
-    
-    # Verificar que hay datos
-    if len(df) == 0:
-        st.warning("⚠️ El archivo no contiene datos después de la fila de título")
-        st.stop()
-    
     with tab2:
+        st.header("📊 Solicitudes Cargadas")
+        
+        df = st.session_state.df.copy()
+        
+        # Mostrar la tabla con los datos
+        if st.session_state.df_filtrado is not None:
+            df_tabla = st.session_state.df_filtrado
+        else:
+            df_tabla = df
+        
+        # Buscador de texto
+        search_term = st.text_input("🔍 Buscar en todos los campos", placeholder="Escribe el texto a buscar...", key="solicitudes_busqueda")
+        if search_term:
+            mask = pd.Series(False, index=df_tabla.index)
+            for col in df_tabla.select_dtypes(include=['object', 'string']).columns:
+                try:
+                    mask |= df_tabla[col].astype(str).str.contains(search_term, case=False, na=False)
+                except:
+                    pass
+            df_tabla = df_tabla[mask]
+            st.info(f"🔍 Encontrados {len(df_tabla)} registros que coinciden con '{search_term}'")
+        
+        # Mostrar información del filtro
+        col_info1, col_info2, col_info3 = st.columns(3)
+        with col_info1:
+            st.metric("📊 Total de registros", f"{len(df_tabla):,}")
+        with col_info2:
+            if len(df_tabla) > 0:
+                st.metric("📅 Rango de fechas", f"{df_tabla['Solicitado'].min().strftime('%Y-%m-%d')} - {df_tabla['Solicitado'].max().strftime('%Y-%m-%d')}")
+        with col_info3:
+            st.metric("🏷️ Columnas", f"{len(df_tabla.columns)}")
+        
+        st.divider()
+        
+        # Mostrar la tabla
+        st.dataframe(
+            df_tabla,
+            use_container_width=True,
+            height=500,
+            column_config={
+                "Solicitado": st.column_config.DatetimeColumn(
+                    "Solicitado",
+                    format="YYYY-MM-DD HH:mm",
+                ),
+                "Auditado": st.column_config.DatetimeColumn(
+                    "Auditado",
+                    format="YYYY-MM-DD HH:mm",
+                ),
+                "Autorización": st.column_config.DatetimeColumn(
+                    "Autorización",
+                    format="YYYY-MM-DD HH:mm",
+                ),
+                "Vence": st.column_config.DatetimeColumn(
+                    "Vence",
+                    format="YYYY-MM-DD HH:mm",
+                ),
+                "Entregado": st.column_config.DatetimeColumn(
+                    "Entregado",
+                    format="YYYY-MM-DD HH:mm",
+                ),
+                "Programado": st.column_config.DatetimeColumn(
+                    "Programado",
+                    format="YYYY-MM-DD HH:mm",
+                ),
+                "Edad": st.column_config.NumberColumn(
+                    "Edad",
+                    format="%d",
+                ),
+            }
+        )
+        
+        # Opciones de exportación
+        st.divider()
+        col_exp1, col_exp2 = st.columns(2)
+        with col_exp1:
+            if st.button("📥 Exportar Solicitudes a Excel", use_container_width=True):
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_tabla.to_excel(writer, sheet_name='Solicitudes', index=False)
+                output.seek(0)
+                
+                st.download_button(
+                    label="⬇️ Descargar Excel",
+                    data=output,
+                    file_name=f"Solicitudes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="download_solicitudes_excel"
+                )
+        
+        with col_exp2:
+            if st.button("📋 Copiar al portapapeles", use_container_width=True):
+                csv_data = df_tabla.to_csv(index=False)
+                st.code(csv_data, language="csv", line_numbers=False)
+                st.info("💡 Selecciona el texto y presiona Ctrl+C para copiar")
+else:
+    with tab2:
+        st.info("📌 Carga un archivo Excel para ver las solicitudes")
+        st.info("El archivo debe contener las columnas: Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Cups, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio proceso tramita, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo")
+
+# ======================== TAB 3: ESTADÍSTICAS ========================
+if st.session_state.df is not None:
+    with tab3:
         st.header("📈 Estadísticas del Portafolio")
+        
+        df = st.session_state.df.copy()
+        
+        # Verificar que la columna 'Solicitado' sea datetime
+        if not pd.api.types.is_datetime64_any_dtype(df['Solicitado']):
+            try:
+                df['Solicitado'] = pd.to_datetime(df['Solicitado'])
+            except:
+                st.error("⚠️ No se pudo convertir la columna 'Solicitado' a formato de fecha")
+                st.stop()
+        
+        # Verificar que hay datos
+        if len(df) == 0:
+            st.warning("⚠️ El archivo no contiene datos después de la fila de título")
+            st.stop()
         
         # Filtros de fecha dentro de Estadísticas
         col_f1, col_f2, col_f3 = st.columns([2, 2, 1])
@@ -268,7 +380,7 @@ if st.session_state.df is not None:
                 value=fecha_min,
                 min_value=fecha_min,
                 max_value=fecha_max,
-                key="fecha_inicio_tab1"
+                key="fecha_inicio_estadisticas"
             )
         
         with col_f2:
@@ -277,16 +389,16 @@ if st.session_state.df is not None:
                 value=fecha_max,
                 min_value=fecha_min,
                 max_value=fecha_max,
-                key="fecha_fin_tab1"
+                key="fecha_fin_estadisticas"
             )
         
         with col_f3:
             st.write("")
             st.write("")
-            aplicar_filtro = st.button("🔍 Aplicar Filtro", use_container_width=True, key="filtro_tab1")
+            aplicar_filtro = st.button("🔍 Aplicar Filtro", use_container_width=True, key="filtro_estadisticas")
         
         # Botón para limpiar filtros
-        if st.button("🔄 Limpiar Filtros", key="limpiar_tab1"):
+        if st.button("🔄 Limpiar Filtros", key="limpiar_estadisticas"):
             st.session_state.df_filtrado = None
             st.rerun()
         
@@ -363,102 +475,10 @@ if st.session_state.df is not None:
                     edad_counts.columns = ['Rango de Edad', 'Cantidad']
                     edad_counts['Rango de Edad'] = edad_counts['Rango de Edad'].astype(str)
                     st.bar_chart(edad_counts.set_index('Rango de Edad'))
-    
-    with tab3:
-        st.header("📊 Portafolio de Solicitudes")
-        
-        # Mostrar solo la tabla con los datos
-        # Usar el mismo filtro que en Estadísticas
-        if st.session_state.df_filtrado is not None:
-            df_tabla = st.session_state.df_filtrado
-        else:
-            df_tabla = df
-        
-        # Buscador de texto
-        search_term = st.text_input("🔍 Buscar en todos los campos", placeholder="Escribe el texto a buscar...")
-        if search_term:
-            mask = pd.Series(False, index=df_tabla.index)
-            for col in df_tabla.select_dtypes(include=['object', 'string']).columns:
-                try:
-                    mask |= df_tabla[col].astype(str).str.contains(search_term, case=False, na=False)
-                except:
-                    pass
-            df_tabla = df_tabla[mask]
-            st.info(f"🔍 Encontrados {len(df_tabla)} registros que coinciden con '{search_term}'")
-        
-        # Mostrar información del filtro
-        col_info1, col_info2, col_info3 = st.columns(3)
-        with col_info1:
-            st.metric("📊 Total de registros", f"{len(df_tabla):,}")
-        with col_info2:
-            if len(df_tabla) > 0:
-                st.metric("📅 Rango de fechas", f"{df_tabla['Solicitado'].min().strftime('%Y-%m-%d')} - {df_tabla['Solicitado'].max().strftime('%Y-%m-%d')}")
-        with col_info3:
-            st.metric("🏷️ Columnas", f"{len(df_tabla.columns)}")
-        
-        st.divider()
-        
-        # Mostrar la tabla
-        st.dataframe(
-            df_tabla,
-            use_container_width=True,
-            height=500,
-            column_config={
-                "Solicitado": st.column_config.DatetimeColumn(
-                    "Solicitado",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Auditado": st.column_config.DatetimeColumn(
-                    "Auditado",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Autorización": st.column_config.DatetimeColumn(
-                    "Autorización",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Vence": st.column_config.DatetimeColumn(
-                    "Vence",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Entregado": st.column_config.DatetimeColumn(
-                    "Entregado",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Programado": st.column_config.DatetimeColumn(
-                    "Programado",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Edad": st.column_config.NumberColumn(
-                    "Edad",
-                    format="%d",
-                ),
-            }
-        )
-        
-        # Opciones de exportación
-        st.divider()
-        col_exp1, col_exp2 = st.columns(2)
-        with col_exp1:
-            if st.button("📥 Exportar a Excel", use_container_width=True):
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_tabla.to_excel(writer, sheet_name='Portafolio', index=False)
-                output.seek(0)
-                
-                st.download_button(
-                    label="⬇️ Descargar Excel",
-                    data=output,
-                    file_name=f"Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="download_excel"
-                )
-        
-        with col_exp2:
-            if st.button("📋 Copiar al portapapeles", use_container_width=True):
-                csv_data = df_tabla.to_csv(index=False)
-                st.code(csv_data, language="csv", line_numbers=False)
-                st.info("💡 Selecciona el texto y presiona Ctrl+C para copiar")
-
-# Mensaje inicial si no hay archivo cargado
 else:
-    st.info("👈 Carga un archivo Excel para comenzar a trabajar con las solicitudes")
+    with tab3:
+        st.info("📌 Carga un archivo Excel para ver las estadísticas")
+
+# Mensaje de pie de página
+st.divider()
+st.caption("💡 Gestor de Portafolio - Los datos del portafolio base son estáticos y siempre están disponibles")
