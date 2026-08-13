@@ -368,8 +368,8 @@ if st.session_state.df is not None:
             st.warning("⚠️ El archivo no contiene datos después de la fila de título")
             st.stop()
         
-        # Filtros de fecha dentro de Estadísticas
-        col_f1, col_f2, col_f3 = st.columns([2, 2, 1])
+        # Filtros de fecha
+        col_f1, col_f2 = st.columns([2, 2])
         
         with col_f1:
             fecha_min = df['Solicitado'].min().date()
@@ -392,34 +392,75 @@ if st.session_state.df is not None:
                 key="fecha_fin_estadisticas"
             )
         
+        # Filtros de Estado y Entidad (selección múltiple)
+        st.divider()
+        st.subheader("🔍 Filtros Adicionales")
+        
+        col_f3, col_f4 = st.columns(2)
+        
         with col_f3:
-            st.write("")
-            st.write("")
-            aplicar_filtro = st.button("🔍 Aplicar Filtro", use_container_width=True, key="filtro_estadisticas")
+            # Obtener valores únicos de Estado
+            estados_disponibles = sorted(df['Estado'].dropna().unique().tolist())
+            # Selección múltiple con todos seleccionados por defecto
+            estados_seleccionados = st.multiselect(
+                "📌 Estado",
+                options=estados_disponibles,
+                default=estados_disponibles,
+                key="estados_filtro"
+            )
+        
+        with col_f4:
+            # Obtener valores únicos de Entidad
+            entidades_disponibles = sorted(df['Entidad'].dropna().unique().tolist())
+            # Selección múltiple con todos seleccionados por defecto
+            entidades_seleccionadas = st.multiselect(
+                "🏥 Entidad",
+                options=entidades_disponibles,
+                default=entidades_disponibles,
+                key="entidades_filtro"
+            )
+        
+        # Botón para aplicar filtros
+        col_btn1, col_btn2 = st.columns([1, 5])
+        with col_btn1:
+            aplicar_filtro = st.button("🔍 Aplicar Filtros", use_container_width=True, key="filtro_estadisticas")
         
         # Botón para limpiar filtros
-        if st.button("🔄 Limpiar Filtros", key="limpiar_estadisticas"):
-            st.session_state.df_filtrado = None
-            st.rerun()
+        with col_btn2:
+            if st.button("🔄 Restablecer Filtros", use_container_width=True, key="reset_estadisticas"):
+                st.session_state.df_filtrado = None
+                st.rerun()
         
-        # Aplicar filtro de fechas
+        # Aplicar todos los filtros
         if aplicar_filtro or st.session_state.df_filtrado is None:
+            # Iniciar con el DataFrame completo
+            df_filtrado = df.copy()
+            
+            # Aplicar filtro de fechas
             if fecha_inicio and fecha_fin:
-                if fecha_inicio > fecha_fin:
-                    st.warning("⚠️ La fecha de inicio debe ser menor o igual a la fecha de fin")
-                    df_filtrado = df
-                else:
+                if fecha_inicio <= fecha_fin:
                     fecha_inicio_dt = pd.Timestamp(fecha_inicio)
                     fecha_fin_dt = pd.Timestamp(fecha_fin) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-                    df_filtrado = df[(df['Solicitado'] >= fecha_inicio_dt) & (df['Solicitado'] <= fecha_fin_dt)]
-                    st.session_state.df_filtrado = df_filtrado
-            else:
-                df_filtrado = df
-                st.session_state.df_filtrado = df_filtrado
+                    df_filtrado = df_filtrado[(df_filtrado['Solicitado'] >= fecha_inicio_dt) & (df_filtrado['Solicitado'] <= fecha_fin_dt)]
+                else:
+                    st.warning("⚠️ La fecha de inicio debe ser menor o igual a la fecha de fin")
+            
+            # Aplicar filtro de Estado (si hay selecciones)
+            if estados_seleccionados:
+                df_filtrado = df_filtrado[df_filtrado['Estado'].isin(estados_seleccionados)]
+            
+            # Aplicar filtro de Entidad (si hay selecciones)
+            if entidades_seleccionadas:
+                df_filtrado = df_filtrado[df_filtrado['Entidad'].isin(entidades_seleccionadas)]
+            
+            st.session_state.df_filtrado = df_filtrado
         else:
             df_filtrado = st.session_state.df_filtrado if st.session_state.df_filtrado is not None else df
         
-        # Estadísticas generales
+        # Mostrar estadísticas generales
+        st.divider()
+        st.subheader("📊 Resumen")
+        
         col_stats1, col_stats2, col_stats3, col_stats4 = st.columns(4)
         with col_stats1:
             st.metric("📊 Total Registros", f"{len(df_filtrado):,}")
@@ -430,51 +471,57 @@ if st.session_state.df is not None:
         with col_stats4:
             st.metric("📋 Servicios", f"{df_filtrado['Servicio'].nunique():,}")
         
-        st.divider()
-        
-        # Gráficos (si hay datos)
+        # Mostrar tabla de resumen de estados
         if len(df_filtrado) > 0:
-            # Distribución por estado
+            st.divider()
             st.subheader("📊 Distribución por Estado")
+            
+            # Tabla de conteo por estado
             estado_counts = df_filtrado['Estado'].value_counts().reset_index()
             estado_counts.columns = ['Estado', 'Cantidad']
-            st.bar_chart(estado_counts.set_index('Estado'))
             
-            # Distribución por entidad (top 10)
+            # Calcular porcentajes
+            total = estado_counts['Cantidad'].sum()
+            estado_counts['Porcentaje'] = (estado_counts['Cantidad'] / total * 100).round(2)
+            estado_counts['Porcentaje'] = estado_counts['Porcentaje'].astype(str) + '%'
+            
+            st.dataframe(
+                estado_counts,
+                use_container_width=True,
+                column_config={
+                    "Estado": "Estado",
+                    "Cantidad": "Cantidad",
+                    "Porcentaje": "% del Total"
+                }
+            )
+            
+            # Tabla de conteo por entidad (top 10)
+            st.divider()
             st.subheader("🏥 Top 10 Entidades")
+            
             entidad_counts = df_filtrado['Entidad'].value_counts().head(10).reset_index()
             entidad_counts.columns = ['Entidad', 'Cantidad']
-            st.bar_chart(entidad_counts.set_index('Entidad'))
             
-            # Distribución por servicio (top 10)
-            st.subheader("📋 Top 10 Servicios")
-            servicio_counts = df_filtrado['Servicio'].value_counts().head(10).reset_index()
-            servicio_counts.columns = ['Servicio', 'Cantidad']
-            st.bar_chart(servicio_counts.set_index('Servicio'))
+            # Calcular porcentajes
+            total_entidades = entidad_counts['Cantidad'].sum()
+            entidad_counts['Porcentaje'] = (entidad_counts['Cantidad'] / total_entidades * 100).round(2)
+            entidad_counts['Porcentaje'] = entidad_counts['Porcentaje'].astype(str) + '%'
             
-            # Distribución por género
-            st.subheader("👤 Distribución por Género")
-            genero_counts = df_filtrado['Genero'].value_counts().reset_index()
-            genero_counts.columns = ['Género', 'Cantidad']
-            st.bar_chart(genero_counts.set_index('Género'))
+            st.dataframe(
+                entidad_counts,
+                use_container_width=True,
+                column_config={
+                    "Entidad": "Entidad",
+                    "Cantidad": "Cantidad",
+                    "Porcentaje": "% del Total"
+                }
+            )
             
-            # Series temporales
-            st.subheader("📈 Solicitudes por Día")
-            solicitudes_por_dia = df_filtrado.groupby(df_filtrado['Solicitado'].dt.date).size().reset_index()
-            solicitudes_por_dia.columns = ['Fecha', 'Cantidad']
-            st.line_chart(solicitudes_por_dia.set_index('Fecha'))
+            # Mostrar información de filtros aplicados
+            st.divider()
+            st.caption(f"🔍 Filtros aplicados: {len(estados_seleccionados)} estados, {len(entidades_seleccionadas)} entidades")
+            st.caption(f"📅 Rango de fechas: {fecha_inicio} - {fecha_fin}")
             
-            # Distribución de edades (si hay datos de edad)
-            if 'Edad' in df_filtrado.columns and df_filtrado['Edad'].notna().any():
-                st.subheader("📊 Distribución de Edades")
-                df_edad = df_filtrado['Edad'].dropna()
-                if len(df_edad) > 0:
-                    bins = range(0, 101, 10)
-                    edad_bins = pd.cut(df_edad, bins=bins)
-                    edad_counts = edad_bins.value_counts().sort_index().reset_index()
-                    edad_counts.columns = ['Rango de Edad', 'Cantidad']
-                    edad_counts['Rango de Edad'] = edad_counts['Rango de Edad'].astype(str)
-                    st.bar_chart(edad_counts.set_index('Rango de Edad'))
 else:
     with tab3:
         st.info("📌 Carga un archivo Excel para ver las estadísticas")
