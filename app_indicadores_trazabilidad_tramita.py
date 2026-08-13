@@ -28,36 +28,61 @@ with st.sidebar:
     archivo = st.file_uploader(
         "Selecciona un archivo Excel",
         type=['xlsx', 'xls'],
-        help="El archivo debe contener los campos: Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Cups, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio2, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo"
+        help="El archivo debe contener los campos: Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Cups, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo"
     )
     
     if archivo is not None:
         try:
             # Leer el archivo Excel saltando la primera fila (título)
             # La fila 0 es el título, los encabezados están en la fila 1
-            df = pd.read_excel(archivo, header=1)  # header=1 usa la segunda fila como encabezados
+            df = pd.read_excel(archivo, header=1)
             
             # Eliminar columnas sin nombre (Unnamed)
             df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
             
+            # Renombrar la segunda columna 'Servicio' a 'Servicio proceso tramita'
+            # Si hay columnas duplicadas con el nombre 'Servicio'
+            cols = df.columns.tolist()
+            servicio_count = 0
+            for i, col in enumerate(cols):
+                if col == 'Servicio':
+                    servicio_count += 1
+                    if servicio_count == 2:
+                        cols[i] = 'Servicio proceso tramita'
+            df.columns = cols
+            
             # Guardar el nombre de las columnas
             st.session_state.header_row = df.columns.tolist()
             
-            # Verificar que las columnas necesarias existan (ignorando mayúsculas/minúsculas y espacios)
+            # Verificar que las columnas necesarias existan
             columnas_requeridas = ['Tag', 'Solicitado', 'Auditado', 'Sede', 'Doc.', 'Paciente', 
                                    'Edad', 'Genero', 'Diag.', 'Entidad', 'Grupo Atención', 
                                    'Servicio', 'Cups', 'Radicación', 'Radicado', 'Autorizado', 
-                                   'Autorización', 'Vence', 'Entregado', 'Servicio2', 'Programado', 
-                                   'Responsable', 'Estado', 'Observación', 'Prioridad', 'idOrden', 'idIndigo']
+                                   'Autorización', 'Vence', 'Entregado', 'Servicio proceso tramita', 
+                                   'Programado', 'Responsable', 'Estado', 'Observación', 'Prioridad', 
+                                   'idOrden', 'idIndigo']
             
             # Normalizar nombres de columnas para comparación
             columnas_df = [col.strip() for col in df.columns]
             columnas_requeridas_norm = [col.strip() for col in columnas_requeridas]
             
+            # Verificar columnas faltantes (ignorando 'Servicio proceso tramita' si no existe)
             columnas_faltantes = []
-            for col in columnas_requeridas_norm:
+            for i, col in enumerate(columnas_requeridas_norm):
                 if col not in columnas_df:
-                    columnas_faltantes.append(col)
+                    # Si es la columna 'Servicio proceso tramita' y no existe, no la consideramos faltante
+                    # porque puede que el archivo solo tenga una columna 'Servicio'
+                    if col == 'Servicio proceso tramita':
+                        continue
+                    columnas_faltantes.append(columnas_requeridas[i])
+            
+            # Si solo falta 'Servicio proceso tramita' pero hay una columna 'Servicio' extra, está bien
+            if 'Servicio proceso tramita' in columnas_requeridas_norm:
+                # Contar cuántas columnas 'Servicio' hay en el DataFrame
+                servicio_count_df = sum(1 for col in columnas_df if col == 'Servicio')
+                if servicio_count_df == 1 and 'Servicio proceso tramita' in columnas_faltantes:
+                    # Solo hay un Servicio, está bien
+                    columnas_faltantes.remove('Servicio proceso tramita')
             
             if columnas_faltantes:
                 st.error(f"⚠️ El archivo no contiene las siguientes columnas requeridas: {', '.join(columnas_faltantes)}")
