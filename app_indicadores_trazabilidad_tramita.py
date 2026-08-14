@@ -4679,6 +4679,3 @@ else:
             }
         )
 
-# Mensaje de pie de página
-st.divider()
-st.caption("💡 Dashboard de Gestión de Portafolio - Datos actualizados en tiempo real")
