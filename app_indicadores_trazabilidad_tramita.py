@@ -3988,7 +3988,7 @@ if 'filtros_aplicados' not in st.session_state:
     st.session_state.filtros_aplicados = False
 
 # Título principal
-st.title("📊 Tablero resumen de gestión de Autorizaciones y Programación en Tramita")
+st.title("📊 Dashboard de Gestión de Portafolio")
 
 # ======================== SECCIÓN DE CARGA (COLAPSABLE) ========================
 with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
@@ -4348,6 +4348,9 @@ if st.session_state.df is not None:
         # Paleta de colores morados
         purple_palette = ['#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#5b21b6', '#4c1d95', '#9b59b6']
         
+        # Diccionario para almacenar figuras para exportación
+        figuras_export = {}
+        
         # ======================== GRÁFICO 1: Órdenes generadas vs gestionadas ========================
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         st.subheader("📊 Ordenes Generadas vs Gestionadas")
@@ -4409,7 +4412,9 @@ if st.session_state.df is not None:
         
         plt.tight_layout()
         st.pyplot(fig1)
-        plt.close()
+        
+        # Guardar figura para exportación
+        figuras_export['grafico1'] = fig1
         
         # Interpretación del gráfico 1
         total_generadas = df_graf1['Generadas'].sum()
@@ -4478,7 +4483,9 @@ if st.session_state.df is not None:
             ax2.set_title('Gestión de autorizaciones y ordenes disponibles para programación', fontsize=14, fontweight='bold', pad=20)
             plt.tight_layout()
             st.pyplot(fig2)
-            plt.close()
+            
+            # Guardar figura para exportación
+            figuras_export['grafico2'] = fig2
             
             # Interpretación del gráfico 2
             total_estados = estado_gestion_counts['Cantidad'].sum()
@@ -4550,7 +4557,9 @@ if st.session_state.df is not None:
                 ax3.set_title('Pendientes de Gestión por Área', fontsize=14, fontweight='bold', pad=20)
                 plt.tight_layout()
                 st.pyplot(fig3)
-                plt.close()
+                
+                # Guardar figura para exportación
+                figuras_export['grafico3'] = fig3
                 
                 # Interpretación del gráfico 3
                 total_pendientes = pendientes_por_area['Cantidad'].sum()
@@ -4598,7 +4607,9 @@ if st.session_state.df is not None:
             
             plt.tight_layout()
             st.pyplot(fig4)
-            plt.close()
+            
+            # Guardar figura para exportación
+            figuras_export['grafico4'] = fig4
             
             # Interpretación del gráfico 4
             total_ordenes = ordenes_por_area['Cantidad'].sum()
@@ -4642,7 +4653,9 @@ if st.session_state.df is not None:
             
             plt.tight_layout()
             st.pyplot(fig5)
-            plt.close()
+            
+            # Guardar figura para exportación
+            figuras_export['grafico5'] = fig5
             
             # Interpretación del gráfico 5
             total_estados_serv = estados_counts['Cantidad'].sum()
@@ -4685,7 +4698,9 @@ if st.session_state.df is not None:
         
         plt.tight_layout()
         st.pyplot(fig6)
-        plt.close()
+        
+        # Guardar figura para exportación
+        figuras_export['grafico6'] = fig6
         
         # Interpretación del gráfico 6
         total_entidad = entidad_counts['Cantidad'].sum()
@@ -4709,11 +4724,8 @@ if st.session_state.df is not None:
         st.divider()
         st.markdown("### 📥 Exportar Reporte Completo")
         
-        # Guardar figuras en el estado para exportación
-        st.session_state.figuras_export = figuras_export
-        
         # Función para preparar datos de gráficos e interpretaciones
-        def preparar_datos_exportacion(df_export):
+        def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, ordenes_area_data, estados_serv_data, entidad_data):
             # Hoja 1: Datos detallados
             datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
             datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
@@ -4722,46 +4734,51 @@ if st.session_state.df is not None:
             resumen_data = []
             
             # Gráfico 1
-            total_generadas = df_graf1['Generadas'].sum()
-            total_gestionadas = df_graf1['Gestionadas'].sum()
+            total_generadas = df_graf1_data['Generadas'].sum()
+            total_gestionadas = df_graf1_data['Gestionadas'].sum()
             pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
             resumen_data.append(['Gráfico 1', 'Órdenes Generadas vs Gestionadas', f'Total generadas: {int(total_generadas)}', ''])
             resumen_data.append(['', '', f'Total gestionadas: {int(total_gestionadas)} ({pct_gestionadas:.1f}%)', ''])
             resumen_data.append(['', '', f'Pendientes: {int(total_generadas - total_gestionadas)} ({100-pct_gestionadas:.1f}%)', ''])
-            resumen_data.append(['', '', f'Día pico: {df_graf1.loc[df_graf1["Generadas"].idxmax(), "Fecha"]} ({int(df_graf1["Generadas"].max())} órdenes)', ''])
+            if len(df_graf1_data) > 0:
+                resumen_data.append(['', '', f'Día pico: {df_graf1_data.loc[df_graf1_data["Generadas"].idxmax(), "Fecha"]} ({int(df_graf1_data["Generadas"].max())} órdenes)', ''])
             resumen_data.append(['', '', '', ''])
             
             # Gráfico 2
-            total_estados = estado_gestion_counts['Cantidad'].sum()
-            for _, row in estado_gestion_counts.iterrows():
-                resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
+            if len(estado_gestion_data) > 0:
+                total_estados = estado_gestion_data['Cantidad'].sum()
+                for _, row in estado_gestion_data.iterrows():
+                    resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
             resumen_data.append(['', '', '', ''])
             
             # Gráfico 3
-            if len(pendientes_por_area) > 0:
-                total_pend = pendientes_por_area['Cantidad'].sum()
-                for _, row in pendientes_por_area.iterrows():
+            if len(pendientes_data) > 0:
+                total_pend = pendientes_data['Cantidad'].sum()
+                for _, row in pendientes_data.iterrows():
                     resumen_data.append(['Gráfico 3', 'Pendientes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_pend*100:.1f}%)', ''])
             else:
                 resumen_data.append(['Gráfico 3', 'Pendientes por Área', 'No hay datos', ''])
             resumen_data.append(['', '', '', ''])
             
             # Gráfico 4
-            total_ord = ordenes_por_area['Cantidad'].sum()
-            for _, row in ordenes_por_area.iterrows():
-                resumen_data.append(['Gráfico 4', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
+            if len(ordenes_area_data) > 0:
+                total_ord = ordenes_area_data['Cantidad'].sum()
+                for _, row in ordenes_area_data.iterrows():
+                    resumen_data.append(['Gráfico 4', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
             resumen_data.append(['', '', '', ''])
             
             # Gráfico 5
-            total_est = estados_counts['Cantidad'].sum()
-            for _, row in estados_counts.iterrows():
-                resumen_data.append(['Gráfico 5', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
+            if len(estados_serv_data) > 0:
+                total_est = estados_serv_data['Cantidad'].sum()
+                for _, row in estados_serv_data.iterrows():
+                    resumen_data.append(['Gráfico 5', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
             resumen_data.append(['', '', '', ''])
             
             # Gráfico 6
-            total_ent = entidad_counts['Cantidad'].sum()
-            for _, row in entidad_counts.iterrows():
-                resumen_data.append(['Gráfico 6', 'Distribución por Entidad', f'{row["Entidad"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ent*100:.1f}%)', ''])
+            if len(entidad_data) > 0:
+                total_ent = entidad_data['Cantidad'].sum()
+                for _, row in entidad_data.iterrows():
+                    resumen_data.append(['Gráfico 6', 'Distribución por Entidad', f'{row["Entidad"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ent*100:.1f}%)', ''])
             
             resumen_df = pd.DataFrame(resumen_data, columns=['Gráfico', 'Categoría', 'Detalle', 'Observación'])
             
@@ -4769,87 +4786,109 @@ if st.session_state.df is not None:
         
         # Botón de exportación
         if st.button("📥 Exportar a Excel con Gráficos", use_container_width=True, type="primary"):
-            # Preparar datos para exportación
-            df_export = df_filtrado.copy()
-            
-            datos_detalle, resumen_graficos = preparar_datos_exportacion(df_export)
-            
-            # Crear archivo Excel con imágenes
-            output = BytesIO()
-            
-            # Crear workbook
-            wb = Workbook()
-            
-            # --- Hoja 1: Datos Detallados ---
-            ws1 = wb.active
-            ws1.title = "Datos Detallados"
-            
-            # Escribir datos
-            for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
-                for c_idx, value in enumerate(row, 1):
-                    ws1.cell(row=r_idx, column=c_idx, value=value)
-            
-            # --- Hoja 2: Resumen Gráficos ---
-            ws2 = wb.create_sheet("Resumen Gráficos")
-            for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
-                for c_idx, value in enumerate(row, 1):
-                    ws2.cell(row=r_idx, column=c_idx, value=value)
-            
-            # --- Hoja 3: Imágenes de Gráficos ---
-            ws_img = wb.create_sheet("Gráficos")
-            
-            # Configurar anchos de columna para imágenes
-            ws_img.column_dimensions['A'].width = 5
-            ws_img.column_dimensions['B'].width = 80
-            
-            # Títulos de los gráficos
-            titulos = [
-                "Gráfico 1: Órdenes Generadas vs Gestionadas",
-                "Gráfico 2: Gestión de autorizaciones y ordenes disponibles",
-                "Gráfico 3: Pendientes de Gestión por Área",
-                "Gráfico 4: Órdenes Generadas por Área",
-                "Gráfico 5: Estados de Servicios",
-                "Gráfico 6: Ordenamientos Distribuidos por Entidad"
-            ]
-            
-            # Guardar figuras como imágenes temporales y agregarlas al Excel
-            figuras = list(st.session_state.figuras_export.values())
-            
-            for idx, fig in enumerate(figuras):
-                if idx < len(titulos):
-                    # Crear archivo temporal para la imagen
-                    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
-                        fig.savefig(tmpfile.name, dpi=150, bbox_inches='tight')
-                        tmpfile_path = tmpfile.name
-                    
-                    # Agregar título
-                    ws_img.cell(row=idx*20 + 1, column=2, value=titulos[idx])
-                    ws_img.cell(row=idx*20 + 1, column=2).font = openpyxl.styles.Font(bold=True, size=12)
-                    
-                    # Agregar imagen
-                    img = Image(tmpfile_path)
-                    # Ajustar tamaño para que quepa bien
-                    img.width = 700
-                    img.height = int(img.height * (700 / img.width))
-                    
-                    # Posicionar imagen
-                    ws_img.add_image(img, f'B{idx*20 + 2}')
-                    
-                    # Eliminar archivo temporal
-                    os.unlink(tmpfile_path)
-            
-            # Guardar workbook en BytesIO
-            wb.save(output)
-            output.seek(0)
-            
-            # Descargar archivo
-            st.download_button(
-                label="⬇️ Descargar Excel con Gráficos",
-                data=output,
-                file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
+            try:
+                # Preparar datos para exportación
+                df_export = df_filtrado.copy()
+                
+                # Obtener datos de los DataFrames de gráficos
+                # df_graf1 ya existe del gráfico 1
+                estado_gestion_data = estado_gestion_counts.copy()
+                pendientes_data = pendientes_por_area.copy() if len(df_pendientes) > 0 else pd.DataFrame()
+                ordenes_area_data = ordenes_por_area.copy()
+                estados_serv_data = estados_counts.copy()
+                entidad_data = entidad_counts.copy()
+                
+                datos_detalle, resumen_graficos = preparar_datos_exportacion(
+                    df_export, df_graf1, estado_gestion_data, pendientes_data, 
+                    ordenes_area_data, estados_serv_data, entidad_data
+                )
+                
+                # Crear archivo Excel con imágenes
+                output = BytesIO()
+                
+                # Crear workbook
+                wb = Workbook()
+                
+                # --- Hoja 1: Datos Detallados ---
+                ws1 = wb.active
+                ws1.title = "Datos Detallados"
+                
+                # Escribir datos
+                for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
+                    for c_idx, value in enumerate(row, 1):
+                        ws1.cell(row=r_idx, column=c_idx, value=value)
+                
+                # --- Hoja 2: Resumen Gráficos ---
+                ws2 = wb.create_sheet("Resumen Gráficos")
+                for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
+                    for c_idx, value in enumerate(row, 1):
+                        ws2.cell(row=r_idx, column=c_idx, value=value)
+                
+                # --- Hoja 3: Imágenes de Gráficos ---
+                ws_img = wb.create_sheet("Gráficos")
+                
+                # Configurar anchos de columna para imágenes
+                ws_img.column_dimensions['A'].width = 5
+                ws_img.column_dimensions['B'].width = 80
+                
+                # Títulos de los gráficos
+                titulos = [
+                    "Gráfico 1: Órdenes Generadas vs Gestionadas",
+                    "Gráfico 2: Gestión de autorizaciones y ordenes disponibles",
+                    "Gráfico 3: Pendientes de Gestión por Área",
+                    "Gráfico 4: Órdenes Generadas por Área",
+                    "Gráfico 5: Estados de Servicios",
+                    "Gráfico 6: Ordenamientos Distribuidos por Entidad"
+                ]
+                
+                # Obtener figuras del diccionario
+                figuras = [figuras_export.get(f'grafico{i}', None) for i in range(1, 7)]
+                figuras = [f for f in figuras if f is not None]
+                
+                for idx, fig in enumerate(figuras):
+                    if idx < len(titulos):
+                        try:
+                            # Crear archivo temporal para la imagen
+                            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
+                                fig.savefig(tmpfile.name, dpi=150, bbox_inches='tight')
+                                tmpfile_path = tmpfile.name
+                            
+                            # Agregar título
+                            ws_img.cell(row=idx*20 + 1, column=2, value=titulos[idx])
+                            from openpyxl.styles import Font
+                            ws_img.cell(row=idx*20 + 1, column=2).font = Font(bold=True, size=12)
+                            
+                            # Agregar imagen
+                            img = Image(tmpfile_path)
+                            # Ajustar tamaño para que quepa bien
+                            img.width = 700
+                            img.height = int(img.height * (700 / img.width))
+                            
+                            # Posicionar imagen
+                            ws_img.add_image(img, f'B{idx*20 + 2}')
+                            
+                            # Eliminar archivo temporal
+                            os.unlink(tmpfile_path)
+                        except Exception as e:
+                            st.warning(f"No se pudo agregar la imagen del gráfico {idx+1}: {e}")
+                
+                # Guardar workbook en BytesIO
+                wb.save(output)
+                output.seek(0)
+                
+                # Descargar archivo
+                st.download_button(
+                    label="⬇️ Descargar Excel con Gráficos",
+                    data=output,
+                    file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+                
+                st.success("✅ Reporte exportado correctamente")
+                
+            except Exception as e:
+                st.error(f"❌ Error al exportar: {e}")
         
         # ======================== INFORMACIÓN DE FILTROS ========================
         st.divider()
