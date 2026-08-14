@@ -6,7 +6,7 @@ from io import BytesIO
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Dashboard de Portafolio",
+    page_title="Tablero resumen de gestión de Autorizaciones y Programación en Tramita",
     page_icon="📊",
     layout="wide"
 )
@@ -186,10 +186,16 @@ if st.session_state.df is not None:
         st.warning("⚠️ El archivo no contiene datos después de la fila de título")
         st.stop()
     
-    # Crear columna de Área
+    # ======================== CRUCE CON PORTAFOLIO PARA OBTENER ÁREA ========================
+    # Crear columna de Área cruzando Cups con el portafolio
+    # Usar los primeros 6 caracteres del CUPS para hacer la búsqueda
     df['Cups_str'] = df['Cups'].astype(str).str[:6]
     df_portafolio_base['CUPS_str'] = df_portafolio_base['CUPS'].astype(str).str[:6]
-    dict_cups_area = dict(zip(df_portafolio_base['CUPS_str'], df_portafolio_base['codREPS']))
+    
+    # Crear diccionario de mapeo: CUPS -> UNIDAD EJECUTORA (Área)
+    dict_cups_area = dict(zip(df_portafolio_base['CUPS_str'], df_portafolio_base['UNIDAD EJECUTORA']))
+    
+    # Mapear el área para cada registro
     df['Area'] = df['Cups_str'].map(dict_cups_area)
     df['Area'] = df['Area'].fillna('Sin Área')
     
