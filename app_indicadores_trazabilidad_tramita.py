@@ -15,7 +15,6 @@ st.title("📋 Gestor de Portafolio")
 
 # Datos estáticos del portafolio base (para referencia)
 PORTAFOLIO_BASE = [
-    # CUPS, codIPS, descrCodIPS, codREPS, A, UNIDAD EJECUTORA, Codigo unidad
     ("221401", "221401", "NASOSINUSCOPIA", "209_CIRUGÍA OTORRINOLARINGOLOGÍA", True, "CARDIOLOGIA NO INVASIVA", "39"),
     ("311401", "311401", "PUNCIÓN (ASPIRACIÓN) TRANSTRÁQUEAL VÍA PERCUTÁNEA", "203_CIRUGÍA GENERAL", True, "CARDIOLOGIA NO INVASIVA", "39"),
     ("311402", "311402", "PUNCIÓN (ASPIRACIÓN) TRANSTRÁQUEAL VÍA ENDOSCÓPICA", "203_CIRUGÍA GENERAL", True, "CARDIOLOGIA NO INVASIVA", "39"),
@@ -57,7 +56,7 @@ PORTAFOLIO_BASE = [
 # Crear DataFrame del portafolio base
 df_portafolio_base = pd.DataFrame(PORTAFOLIO_BASE, columns=['CUPS', 'codIPS', 'descrCodIPS', 'codREPS', 'A', 'UNIDAD EJECUTORA', 'Codigo unidad'])
 
-# Inicializar el estado de la sesión para el DataFrame
+# Inicializar el estado de la sesión
 if 'df' not in st.session_state:
     st.session_state.df = None
 if 'df_filtrado' not in st.session_state:
@@ -78,13 +77,9 @@ with st.container():
     
     if archivo is not None:
         try:
-            # Leer el archivo Excel saltando la primera fila (título)
             df = pd.read_excel(archivo, header=1)
-            
-            # Eliminar columnas sin nombre (Unnamed)
             df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
             
-            # Renombrar la segunda columna 'Servicio' a 'Servicio proceso tramita'
             cols = df.columns.tolist()
             servicio_count = 0
             for i, col in enumerate(cols):
@@ -94,10 +89,8 @@ with st.container():
                         cols[i] = 'Servicio proceso tramita'
             df.columns = cols
             
-            # Guardar el nombre de las columnas
             st.session_state.header_row = df.columns.tolist()
             
-            # Verificar que las columnas necesarias existan
             columnas_requeridas = ['Tag', 'Solicitado', 'Auditado', 'Sede', 'Doc.', 'Paciente', 
                                    'Edad', 'Genero', 'Diag.', 'Entidad', 'Grupo Atención', 
                                    'Servicio', 'Cups', 'Radicación', 'Radicado', 'Autorizado', 
@@ -105,11 +98,9 @@ with st.container():
                                    'Programado', 'Responsable', 'Estado', 'Observación', 'Prioridad', 
                                    'idOrden', 'idIndigo']
             
-            # Normalizar nombres de columnas para comparación
             columnas_df = [col.strip() for col in df.columns]
             columnas_requeridas_norm = [col.strip() for col in columnas_requeridas]
             
-            # Verificar columnas faltantes
             columnas_faltantes = []
             for i, col in enumerate(columnas_requeridas_norm):
                 if col not in columnas_df:
@@ -127,19 +118,13 @@ with st.container():
                 st.info(f"📋 Columnas encontradas: {', '.join(df.columns.tolist())}")
                 st.session_state.df = None
             else:
-                # Limpiar datos vacíos
                 df = df.dropna(how='all')
-                
-                # Convertir 'Solicitado' a datetime
                 df['Solicitado'] = pd.to_datetime(df['Solicitado'])
-                
-                # Convertir 'Entregado' a datetime si existe
                 if 'Entregado' in df.columns:
                     df['Entregado'] = pd.to_datetime(df['Entregado'])
                 
                 st.session_state.df = df
                 
-                # Actualizar fechas en el estado
                 if len(df) > 0:
                     st.session_state.fecha_inicio = df['Solicitado'].min().date()
                     st.session_state.fecha_fin = df['Solicitado'].max().date()
@@ -164,7 +149,6 @@ with tab1:
     st.header("📚 Portafolio de Servicios")
     st.caption("Esta tabla muestra los servicios disponibles en el portafolio")
     
-    # Filtros para el portafolio
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
     
     with col_f1:
@@ -181,7 +165,6 @@ with tab1:
     with col_f4:
         mostrar_solo_activos = st.checkbox("✅ Mostrar solo Activos (A=True)", value=False, key="portafolio_activos")
     
-    # Aplicar filtros al portafolio
     df_portafolio_filtrado = df_portafolio_base.copy()
     
     if unidad_seleccionada != "Todas":
@@ -196,7 +179,6 @@ with tab1:
     if mostrar_solo_activos:
         df_portafolio_filtrado = df_portafolio_filtrado[df_portafolio_filtrado['A'] == True]
     
-    # Mostrar información del portafolio
     col_info1, col_info2, col_info3, col_info4 = st.columns(4)
     with col_info1:
         st.metric("📊 Total Registros", f"{len(df_portafolio_filtrado):,}")
@@ -210,7 +192,6 @@ with tab1:
     
     st.divider()
     
-    # Mostrar tabla del portafolio
     st.dataframe(
         df_portafolio_filtrado,
         use_container_width=True,
@@ -226,7 +207,6 @@ with tab1:
         }
     )
     
-    # Exportar portafolio
     st.divider()
     col_exp1, col_exp2 = st.columns(2)
     with col_exp1:
@@ -257,13 +237,11 @@ if st.session_state.df is not None:
         
         df = st.session_state.df.copy()
         
-        # Mostrar la tabla con los datos
         if st.session_state.df_filtrado is not None:
             df_tabla = st.session_state.df_filtrado
         else:
             df_tabla = df
         
-        # Buscador de texto
         search_term = st.text_input("🔍 Buscar en todos los campos", placeholder="Escribe el texto a buscar...", key="solicitudes_busqueda")
         if search_term:
             mask = pd.Series(False, index=df_tabla.index)
@@ -275,7 +253,6 @@ if st.session_state.df is not None:
             df_tabla = df_tabla[mask]
             st.info(f"🔍 Encontrados {len(df_tabla)} registros que coinciden con '{search_term}'")
         
-        # Mostrar información del filtro
         col_info1, col_info2, col_info3 = st.columns(3)
         with col_info1:
             st.metric("📊 Total de registros", f"{len(df_tabla):,}")
@@ -287,44 +264,21 @@ if st.session_state.df is not None:
         
         st.divider()
         
-        # Mostrar la tabla
         st.dataframe(
             df_tabla,
             use_container_width=True,
             height=500,
             column_config={
-                "Solicitado": st.column_config.DatetimeColumn(
-                    "Solicitado",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Auditado": st.column_config.DatetimeColumn(
-                    "Auditado",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Autorización": st.column_config.DatetimeColumn(
-                    "Autorización",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Vence": st.column_config.DatetimeColumn(
-                    "Vence",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Entregado": st.column_config.DatetimeColumn(
-                    "Entregado",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Programado": st.column_config.DatetimeColumn(
-                    "Programado",
-                    format="YYYY-MM-DD HH:mm",
-                ),
-                "Edad": st.column_config.NumberColumn(
-                    "Edad",
-                    format="%d",
-                ),
+                "Solicitado": st.column_config.DatetimeColumn("Solicitado", format="YYYY-MM-DD HH:mm"),
+                "Auditado": st.column_config.DatetimeColumn("Auditado", format="YYYY-MM-DD HH:mm"),
+                "Autorización": st.column_config.DatetimeColumn("Autorización", format="YYYY-MM-DD HH:mm"),
+                "Vence": st.column_config.DatetimeColumn("Vence", format="YYYY-MM-DD HH:mm"),
+                "Entregado": st.column_config.DatetimeColumn("Entregado", format="YYYY-MM-DD HH:mm"),
+                "Programado": st.column_config.DatetimeColumn("Programado", format="YYYY-MM-DD HH:mm"),
+                "Edad": st.column_config.NumberColumn("Edad", format="%d"),
             }
         )
         
-        # Opciones de exportación
         st.divider()
         col_exp1, col_exp2 = st.columns(2)
         with col_exp1:
@@ -350,7 +304,6 @@ if st.session_state.df is not None:
 else:
     with tab2:
         st.info("📌 Carga un archivo Excel para ver las solicitudes")
-        st.info("El archivo debe contener las columnas: Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Cups, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio proceso tramita, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo")
 
 # ======================== TAB 3: ESTADÍSTICAS ========================
 if st.session_state.df is not None:
@@ -359,7 +312,7 @@ if st.session_state.df is not None:
         
         df = st.session_state.df.copy()
         
-        # Verificar que la columna 'Solicitado' sea datetime
+        # Verificar columnas datetime
         if not pd.api.types.is_datetime64_any_dtype(df['Solicitado']):
             try:
                 df['Solicitado'] = pd.to_datetime(df['Solicitado'])
@@ -367,19 +320,17 @@ if st.session_state.df is not None:
                 st.error("⚠️ No se pudo convertir la columna 'Solicitado' a formato de fecha")
                 st.stop()
         
-        # Verificar que la columna 'Entregado' sea datetime
         if 'Entregado' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['Entregado']):
             try:
                 df['Entregado'] = pd.to_datetime(df['Entregado'])
             except:
                 pass
         
-        # Verificar que hay datos
         if len(df) == 0:
             st.warning("⚠️ El archivo no contiene datos después de la fila de título")
             st.stop()
         
-        # Crear columna de Área cruzando Cups con el portafolio
+        # Crear columna de Área
         df['Cups_str'] = df['Cups'].astype(str).str[:6]
         df_portafolio_base['CUPS_str'] = df_portafolio_base['CUPS'].astype(str).str[:6]
         dict_cups_area = dict(zip(df_portafolio_base['CUPS_str'], df_portafolio_base['codREPS']))
@@ -453,7 +404,6 @@ if st.session_state.df is not None:
                 key="sedes_filtro"
             )
         
-        # Botón para aplicar filtros
         col_btn1, col_btn2 = st.columns([1, 5])
         with col_btn1:
             aplicar_filtro = st.button("🔍 Aplicar Filtros", use_container_width=True, key="filtro_estadisticas")
@@ -463,7 +413,7 @@ if st.session_state.df is not None:
                 st.session_state.df_filtrado = None
                 st.rerun()
         
-        # Aplicar todos los filtros
+        # Aplicar filtros
         if aplicar_filtro or st.session_state.df_filtrado is None:
             df_filtrado = df.copy()
             
@@ -488,7 +438,7 @@ if st.session_state.df is not None:
         else:
             df_filtrado = st.session_state.df_filtrado if st.session_state.df_filtrado is not None else df
         
-        # Mostrar estadísticas generales
+        # ======================== RESUMEN ========================
         st.divider()
         st.subheader("📊 Resumen")
         
@@ -497,7 +447,6 @@ if st.session_state.df is not None:
         total_pacientes = df_filtrado['Paciente'].nunique()
         total_servicios = df_filtrado['Servicio'].nunique()
         
-        # Días promedio entre fecha de ordenamiento y fecha de entrega
         if 'Entregado' in df_filtrado.columns and len(df_filtrado) > 0:
             df_filtrado['dias_entrega'] = (df_filtrado['Entregado'] - df_filtrado['Solicitado']).dt.total_seconds() / (24 * 3600)
             dias_entrega_validos = df_filtrado['dias_entrega'].dropna()
@@ -506,21 +455,18 @@ if st.session_state.df is not None:
         else:
             promedio_dias_entrega_str = "N/A"
         
-        # Promedio de ordenamientos generados por día en la sede
         if len(df_filtrado) > 0 and 'Sede' in df_filtrado.columns:
             ordenamientos_por_dia_sede = df_filtrado.groupby([df_filtrado['Solicitado'].dt.date, 'Sede']).size()
             promedio_ordenamientos_dia_sede_str = f"{ordenamientos_por_dia_sede.mean():.1f}" if len(ordenamientos_por_dia_sede) > 0 else "N/A"
         else:
             promedio_ordenamientos_dia_sede_str = "N/A"
         
-        # Promedio de ordenamientos generados al día por paciente
         if len(df_filtrado) > 0 and 'Doc.' in df_filtrado.columns:
             ordenamientos_por_paciente_dia = df_filtrado.groupby(['Doc.', df_filtrado['Solicitado'].dt.date]).size()
             promedio_ordenamientos_paciente_dia_str = f"{ordenamientos_por_paciente_dia.mean():.1f}" if len(ordenamientos_por_paciente_dia) > 0 else "N/A"
         else:
             promedio_ordenamientos_paciente_dia_str = "N/A"
         
-        # Mostrar métricas
         col_metric1, col_metric2, col_metric3, col_metric4 = st.columns(4)
         with col_metric1:
             st.metric("📊 Total Registros", f"{total_registros:,}")
@@ -557,55 +503,98 @@ if st.session_state.df is not None:
             
             df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
             
-            # 1. Ordenes generadas vs. Ordenes gestionadas por día
+            # ======================== GRÁFICO 1: Órdenes generadas vs gestionadas ========================
             st.subheader("📊 Ordenes generadas vs. Ordenes gestionadas por día")
             
-            ordenes_generadas = df_filtrado.groupby(df_filtrado['Solicitado'].dt.date).size().reset_index()
+            # Selector de agrupación
+            agrupacion = st.radio(
+                "Agrupar por:",
+                options=["Día", "Semana", "Quincena", "Mes"],
+                horizontal=True,
+                key="agrupacion_grafico1"
+            )
+            
+            # Crear columna de agrupación
+            df_temp = df_filtrado.copy()
+            
+            if agrupacion == "Día":
+                df_temp['Fecha_Agrupada'] = df_temp['Solicitado'].dt.date
+            elif agrupacion == "Semana":
+                df_temp['Fecha_Agrupada'] = df_temp['Solicitado'].dt.to_period('W').dt.start_time
+            elif agrupacion == "Quincena":
+                # Crear quincenas: días 1-15 y 16-fin de mes
+                df_temp['Dia'] = df_temp['Solicitado'].dt.day
+                df_temp['Quincena'] = df_temp['Dia'].apply(lambda x: 1 if x <= 15 else 2)
+                df_temp['Fecha_Agrupada'] = df_temp['Solicitado'].dt.to_period('M').dt.start_time
+                # Ajustar para mostrar la quincena
+                df_temp['Fecha_Agrupada'] = df_temp.apply(
+                    lambda row: row['Fecha_Agrupada'] + pd.Timedelta(days=(row['Quincena']-1)*15), 
+                    axis=1
+                )
+            elif agrupacion == "Mes":
+                df_temp['Fecha_Agrupada'] = df_temp['Solicitado'].dt.to_period('M').dt.start_time
+            
+            # Ordenes generadas por período
+            ordenes_generadas = df_temp.groupby('Fecha_Agrupada').size().reset_index()
             ordenes_generadas.columns = ['Fecha', 'Generadas']
             
-            df_gestionadas = df_filtrado[df_filtrado['Estado'] != "RADICAR"]
-            ordenes_gestionadas = df_gestionadas.groupby(df_gestionadas['Solicitado'].dt.date).size().reset_index()
+            # Ordenes gestionadas (Estado != "RADICAR")
+            df_gestionadas = df_temp[df_temp['Estado'] != "RADICAR"]
+            ordenes_gestionadas = df_gestionadas.groupby('Fecha_Agrupada').size().reset_index()
             ordenes_gestionadas.columns = ['Fecha', 'Gestionadas']
             
+            # Combinar DataFrames
             df_graf1 = pd.merge(ordenes_generadas, ordenes_gestionadas, on='Fecha', how='outer').fillna(0)
+            df_graf1['Fecha'] = df_graf1['Fecha'].astype(str)
             df_graf1 = df_graf1.set_index('Fecha')
+            
             st.bar_chart(df_graf1)
             
-            # 2. Gestión de autorizaciones y ordenes disponibles para programación
+            # ======================== GRÁFICO 2: Gestión de autorizaciones ========================
             st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
             estado_gestion_counts = df_filtrado['Estado_Gestion'].value_counts().reset_index()
             estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
+            # Ordenar de mayor a menor
+            estado_gestion_counts = estado_gestion_counts.sort_values('Cantidad', ascending=False)
             st.bar_chart(estado_gestion_counts.set_index('Estado de Gestión'))
             
-            # 3. Ordenamientos disponibles para programación, pendientes de gestión
+            # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión ========================
             st.subheader("📊 Ordenamientos disponibles para programación, pendientes de gestión")
             df_pendientes = df_filtrado[df_filtrado['Estado_Gestion'] == "Pendiente gestión desde programación"]
             if len(df_pendientes) > 0:
                 pendientes_por_area = df_pendientes['Area'].value_counts().reset_index()
                 pendientes_por_area.columns = ['Área', 'Cantidad']
+                # Ordenar de mayor a menor
+                pendientes_por_area = pendientes_por_area.sort_values('Cantidad', ascending=False)
                 st.bar_chart(pendientes_por_area.set_index('Área'))
             else:
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
             
-            # 4. Ordenes generadas por servicio
+            # ======================== GRÁFICO 4: Ordenes generadas por servicio ========================
             st.subheader("📊 Ordenes generadas por servicio")
             ordenes_por_area = df_filtrado['Area'].value_counts().reset_index()
             ordenes_por_area.columns = ['Área', 'Cantidad']
+            # Ordenar de mayor a menor
+            ordenes_por_area = ordenes_por_area.sort_values('Cantidad', ascending=False)
             st.bar_chart(ordenes_por_area.set_index('Área'))
             
-            # 5. Estados de servicios gestionados
+            # ======================== GRÁFICO 5: Estados de servicios gestionados ========================
             st.subheader("📊 Estados de servicios gestionados")
             estados_counts = df_filtrado['Estado'].value_counts().reset_index()
             estados_counts.columns = ['Estado', 'Cantidad']
+            # Ordenar de mayor a menor
+            estados_counts = estados_counts.sort_values('Cantidad', ascending=False)
             st.bar_chart(estados_counts.set_index('Estado'))
             
-            # 6. Ordenamientos distribuidos por entidad
+            # ======================== GRÁFICO 6: Ordenamientos distribuidos por entidad ========================
             st.subheader("📊 Ordenamientos distribuidos por entidad")
             entidad_counts = df_filtrado['Entidad'].value_counts().reset_index()
             entidad_counts.columns = ['Entidad', 'Cantidad']
+            # Ordenar de mayor a menor
+            entidad_counts = entidad_counts.sort_values('Cantidad', ascending=False)
             st.bar_chart(entidad_counts.set_index('Entidad'))
         
-        # Mostrar información de filtros
+        # Información de filtros
         st.divider()
         st.caption(f"🔍 Filtros aplicados: {len(estados_seleccionados)} estados, {len(entidades_seleccionadas)} entidades, {len(areas_seleccionadas)} áreas, {len(sedes_seleccionadas)} sedes")
         st.caption(f"📅 Rango de fechas: {fecha_inicio} - {fecha_fin}")
