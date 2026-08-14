@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 from datetime import datetime
 from io import BytesIO
 
@@ -34,13 +35,6 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         margin-bottom: 20px;
         border: 1px solid #f0f0f0;
-    }
-    .section-title {
-        color: #5b21b6;
-        font-weight: 600;
-        margin-bottom: 15px;
-        padding-bottom: 10px;
-        border-bottom: 3px solid #8b5cf6;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -279,11 +273,9 @@ if st.session_state.df is not None:
             st.rerun()
     
     # ======================== APLICAR FILTROS ========================
-    # Siempre aplicar filtros cuando se carga el archivo o cuando se presiona el botón
     if st.session_state.df_filtrado is None or aplicar_filtros:
         df_filtrado = df.copy()
         
-        # Aplicar filtro de fechas
         if fecha_inicio and fecha_fin:
             if fecha_inicio <= fecha_fin:
                 fecha_inicio_dt = pd.Timestamp(fecha_inicio)
@@ -292,7 +284,6 @@ if st.session_state.df is not None:
             else:
                 st.warning("⚠️ La fecha de inicio debe ser menor o igual a la fecha de fin")
         
-        # Aplicar filtros de selección
         if estados_seleccionados:
             df_filtrado = df_filtrado[df_filtrado['Estado'].isin(estados_seleccionados)]
         if entidades_seleccionadas:
@@ -305,25 +296,21 @@ if st.session_state.df is not None:
         st.session_state.df_filtrado = df_filtrado
         st.session_state.filtros_aplicados = True
         
-        # Mostrar mensaje de confirmación
         if len(df_filtrado) > 0:
             st.success(f"✅ Filtros aplicados: {len(df_filtrado)} registros encontrados")
         else:
             st.warning("⚠️ No hay datos con los filtros seleccionados")
     
-    # Usar el DataFrame filtrado
     df_filtrado = st.session_state.df_filtrado.copy()
     
     # ======================== KPI CARDS ========================
     st.markdown("### 📊 Indicadores Clave")
     
-    # Calcular métricas
     total_registros = len(df_filtrado)
     total_entidades = df_filtrado['Entidad'].nunique() if len(df_filtrado) > 0 else 0
     total_pacientes = df_filtrado['Paciente'].nunique() if len(df_filtrado) > 0 else 0
     total_servicios = df_filtrado['Servicio'].nunique() if len(df_filtrado) > 0 else 0
     
-    # Días promedio de entrega
     if 'Entregado' in df_filtrado.columns and len(df_filtrado) > 0:
         df_filtrado['dias_entrega'] = (df_filtrado['Entregado'] - df_filtrado['Solicitado']).dt.total_seconds() / (24 * 3600)
         dias_entrega_validos = df_filtrado['dias_entrega'].dropna()
@@ -332,21 +319,18 @@ if st.session_state.df is not None:
     else:
         promedio_dias_entrega = "N/A"
     
-    # Ordenamientos por día por sede
     if len(df_filtrado) > 0 and 'Sede' in df_filtrado.columns:
         ordenamientos_por_dia_sede = df_filtrado.groupby([df_filtrado['Solicitado'].dt.date, 'Sede']).size()
         promedio_dia_sede = f"{ordenamientos_por_dia_sede.mean():.1f}" if len(ordenamientos_por_dia_sede) > 0 else "N/A"
     else:
         promedio_dia_sede = "N/A"
     
-    # Ordenamientos por día por paciente
     if len(df_filtrado) > 0 and 'Doc.' in df_filtrado.columns:
         ordenamientos_por_paciente_dia = df_filtrado.groupby(['Doc.', df_filtrado['Solicitado'].dt.date]).size()
         promedio_paciente_dia = f"{ordenamientos_por_paciente_dia.mean():.1f}" if len(ordenamientos_por_paciente_dia) > 0 else "N/A"
     else:
         promedio_paciente_dia = "N/A"
     
-    # Mostrar KPI Cards
     if len(df_filtrado) > 0:
         col_k1, col_k2, col_k3, col_k4 = st.columns(4)
         
@@ -382,7 +366,6 @@ if st.session_state.df is not None:
                 </div>
             """, unsafe_allow_html=True)
         
-        # Segunda fila de KPI
         col_k5, col_k6, col_k7 = st.columns(3)
         
         with col_k5:
@@ -426,7 +409,10 @@ if st.session_state.df is not None:
         
         df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
         
-        # ======================== GRÁFICO 1: Órdenes generadas vs gestionadas (FULL WIDTH) ========================
+        # Paleta de colores morados
+        purple_palette = ['#7c3aed', '#8b5cf6', '#a78bfa', '#6d28d9', '#5b21b6', '#9b59b6']
+        
+        # ======================== GRÁFICO 1: Órdenes generadas vs gestionadas ========================
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         st.subheader("📊 Ordenes Generadas vs Gestionadas")
         
@@ -462,11 +448,25 @@ if st.session_state.df is not None:
         ordenes_gestionadas.columns = ['Fecha', 'Gestionadas']
         
         df_graf1 = pd.merge(ordenes_generadas, ordenes_gestionadas, on='Fecha', how='outer').fillna(0)
-        df_graf1['Fecha'] = df_graf1['Fecha'].astype(str)
-        df_graf1 = df_graf1.set_index('Fecha')
         
-        # Colores morados para el gráfico
-        st.bar_chart(df_graf1, color=["#7c3aed", "#a78bfa"])
+        # Convertir Fecha a string para mejor visualización
+        df_graf1['Fecha'] = df_graf1['Fecha'].astype(str)
+        
+        # Gráfico con Altair
+        df_graf1_melted = df_graf1.melt(id_vars=['Fecha'], var_name='Tipo', value_name='Cantidad')
+        
+        chart1 = alt.Chart(df_graf1_melted).mark_bar().encode(
+            x=alt.X('Fecha:N', title='Fecha', axis=alt.Axis(labelAngle=-45, labelFontSize=10)),
+            y=alt.Y('Cantidad:Q', title='Cantidad'),
+            color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Generadas', 'Gestionadas'], range=['#7c3aed', '#a78bfa'])),
+            tooltip=['Fecha', 'Tipo', 'Cantidad']
+        ).properties(
+            height=400
+        ).configure_legend(
+            orient='top'
+        )
+        
+        st.altair_chart(chart1, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICOS EN DOS COLUMNAS ========================
@@ -481,7 +481,15 @@ if st.session_state.df is not None:
             estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
             estado_gestion_counts = estado_gestion_counts.sort_values('Cantidad', ascending=False)
             
-            st.bar_chart(estado_gestion_counts.set_index('Estado de Gestión'), color="#7c3aed")
+            chart2 = alt.Chart(estado_gestion_counts).mark_bar(color='#8b5cf6').encode(
+                x=alt.X('Estado de Gestión:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
+                y=alt.Y('Cantidad:Q', title='Cantidad'),
+                tooltip=['Estado de Gestión', 'Cantidad']
+            ).properties(
+                height=350
+            )
+            
+            st.altair_chart(chart2, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión ========================
@@ -494,7 +502,16 @@ if st.session_state.df is not None:
                 pendientes_por_area = df_pendientes['Area'].value_counts().reset_index()
                 pendientes_por_area.columns = ['Área', 'Cantidad']
                 pendientes_por_area = pendientes_por_area.sort_values('Cantidad', ascending=False)
-                st.bar_chart(pendientes_por_area.set_index('Área'), color="#8b5cf6")
+                
+                chart3 = alt.Chart(pendientes_por_area).mark_bar(color='#6d28d9').encode(
+                    x=alt.X('Área:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
+                    y=alt.Y('Cantidad:Q', title='Cantidad'),
+                    tooltip=['Área', 'Cantidad']
+                ).properties(
+                    height=350
+                )
+                
+                st.altair_chart(chart3, use_container_width=True)
             else:
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -511,7 +528,15 @@ if st.session_state.df is not None:
             ordenes_por_area.columns = ['Área', 'Cantidad']
             ordenes_por_area = ordenes_por_area.sort_values('Cantidad', ascending=False)
             
-            st.bar_chart(ordenes_por_area.set_index('Área'), color="#6d28d9")
+            chart4 = alt.Chart(ordenes_por_area).mark_bar(color='#5b21b6').encode(
+                x=alt.X('Área:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
+                y=alt.Y('Cantidad:Q', title='Cantidad'),
+                tooltip=['Área', 'Cantidad']
+            ).properties(
+                height=350
+            )
+            
+            st.altair_chart(chart4, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 5: Estados de servicios ========================
@@ -523,10 +548,18 @@ if st.session_state.df is not None:
             estados_counts.columns = ['Estado', 'Cantidad']
             estados_counts = estados_counts.sort_values('Cantidad', ascending=False)
             
-            st.bar_chart(estados_counts.set_index('Estado'), color="#a78bfa")
+            chart5 = alt.Chart(estados_counts).mark_bar(color='#9b59b6').encode(
+                x=alt.X('Estado:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
+                y=alt.Y('Cantidad:Q', title='Cantidad'),
+                tooltip=['Estado', 'Cantidad']
+            ).properties(
+                height=350
+            )
+            
+            st.altair_chart(chart5, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 6: Distribución por entidad (FULL WIDTH) ========================
+        # ======================== GRÁFICO 6: Distribución por entidad ========================
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         st.subheader("📊 Ordenamientos Distribuidos por Entidad")
         
@@ -534,7 +567,15 @@ if st.session_state.df is not None:
         entidad_counts.columns = ['Entidad', 'Cantidad']
         entidad_counts = entidad_counts.sort_values('Cantidad', ascending=False)
         
-        st.bar_chart(entidad_counts.set_index('Entidad'), color="#5b21b6")
+        chart6 = alt.Chart(entidad_counts).mark_bar(color='#7c3aed').encode(
+            x=alt.X('Entidad:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
+            y=alt.Y('Cantidad:Q', title='Cantidad'),
+            tooltip=['Entidad', 'Cantidad']
+        ).properties(
+            height=400
+        )
+        
+        st.altair_chart(chart6, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== INFORMACIÓN DE FILTROS ========================
@@ -546,7 +587,6 @@ else:
     # Mensaje cuando no hay archivo cargado
     st.info("👈 Carga un archivo Excel para comenzar a visualizar el dashboard")
     
-    # Mostrar el portafolio base como referencia
     with st.expander("📚 Ver Portafolio Base", expanded=False):
         st.dataframe(
             df_portafolio_base,
