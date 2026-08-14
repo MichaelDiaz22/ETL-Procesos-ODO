@@ -3959,7 +3959,7 @@ if 'filtros_aplicados' not in st.session_state:
     st.session_state.filtros_aplicados = False
 
 # Título principal
-st.title("📊 Dashboard de Gestión de Portafolio")
+st.title("📊 Tablero resumen de gestión de Autorizaciones y Programación en Tramita")
 
 # ======================== SECCIÓN DE CARGA (COLAPSABLE) ========================
 with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
