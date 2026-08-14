@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from datetime import datetime
 from io import BytesIO
 
@@ -46,7 +45,6 @@ PORTAFOLIO_BASE = [
     ("423304", "423304", "INYECCIÓN (ESCLEROSIS) DE VÁRICES ESOFÁGICAS VÍA ENDOSCÓPICA", "235_CIRUGÍA GASTROINTESTINAL", True, "CARDIOLOGIA NO INVASIVA", "39"),
     ("434101", "434101", "LIGADURA ENDOSCÓPICA DE VÁRICES GÁSTRICAS", "235_CIRUGÍA GASTROINTESTINAL", True, "CARDIOLOGIA NO INVASIVA", "39"),
     ("441201", "441201", "GASTROSCOPIA A TRAVÉS DE ESTOMA ARTIFICIAL", "235_CIRUGÍA GASTROINTESTINAL", True, "CARDIOLOGIA NO INVASIVA", "39"),
-    # Agregar algunos registros de la segunda parte del archivo para tener más variedad
     ("010201", "010201", "PUNCIÓN (ASPIRACIÓN DE LÍQUIDO) VENTRICULAR A TRAVÉS DE CATÉTER PREVIAMENTE IMPLANTADO", "245_NEUROCIRUGÍA", True, "CIRUGIA", "36"),
     ("010202", "010202", "PUNCIÓN (ASPIRACIÓN DE LÍQUIDO) VENTRICULAR POR TREPANACIÓN (SIN CATÉTER)", "245_NEUROCIRUGÍA", True, "CIRUGIA", "36"),
     ("010203", "010203", "PUNCIÓN (ASPIRACIÓN DE LÍQUIDO) VENTRICULAR A TRAVÉS DE UN RESERVORIO", "245_NEUROCIRUGÍA", True, "CIRUGIA", "36"),
@@ -155,7 +153,7 @@ with st.container():
     else:
         st.info("📌 Carga un archivo Excel para comenzar a trabajar")
 
-# Crear pestañas - Portafolio (siempre visible), Solicitudes (solo si hay archivo), Estadísticas (solo si hay archivo)
+# Crear pestañas
 if st.session_state.df is not None:
     tab1, tab2, tab3 = st.tabs(["📚 Portafolio", "📊 Solicitudes", "📈 Estadísticas"])
 else:
@@ -382,14 +380,9 @@ if st.session_state.df is not None:
             st.stop()
         
         # Crear columna de Área cruzando Cups con el portafolio
-        # Usar los primeros 6 caracteres del CUPS para hacer la búsqueda
         df['Cups_str'] = df['Cups'].astype(str).str[:6]
-        
-        # Crear diccionario de mapeo de CUPS (primeros 6 dígitos) a Área
         df_portafolio_base['CUPS_str'] = df_portafolio_base['CUPS'].astype(str).str[:6]
         dict_cups_area = dict(zip(df_portafolio_base['CUPS_str'], df_portafolio_base['codREPS']))
-        
-        # Mapear el área para cada registro
         df['Area'] = df['Cups_str'].map(dict_cups_area)
         df['Area'] = df['Area'].fillna('Sin Área')
         
@@ -399,7 +392,6 @@ if st.session_state.df is not None:
         with col_f1:
             fecha_min = df['Solicitado'].min().date()
             fecha_max = df['Solicitado'].max().date()
-            
             fecha_inicio = st.date_input(
                 "📅 Fecha Inicio",
                 value=fecha_min,
@@ -424,9 +416,7 @@ if st.session_state.df is not None:
         col_f3, col_f4, col_f5 = st.columns(3)
         
         with col_f3:
-            # Obtener valores únicos de Estado
             estados_disponibles = sorted(df['Estado'].dropna().unique().tolist())
-            # Selección múltiple con todos seleccionados por defecto
             estados_seleccionados = st.multiselect(
                 "📌 Estado",
                 options=estados_disponibles,
@@ -435,9 +425,7 @@ if st.session_state.df is not None:
             )
         
         with col_f4:
-            # Obtener valores únicos de Entidad
             entidades_disponibles = sorted(df['Entidad'].dropna().unique().tolist())
-            # Selección múltiple con todos seleccionados por defecto
             entidades_seleccionadas = st.multiselect(
                 "🏥 Entidad",
                 options=entidades_disponibles,
@@ -446,9 +434,7 @@ if st.session_state.df is not None:
             )
         
         with col_f5:
-            # Obtener valores únicos de Área (codREPS)
             areas_disponibles = sorted(df['Area'].dropna().unique().tolist())
-            # Selección múltiple con todos seleccionados por defecto
             areas_seleccionadas = st.multiselect(
                 "📂 Área",
                 options=areas_disponibles,
@@ -459,9 +445,7 @@ if st.session_state.df is not None:
         # Filtro por Sede
         col_f6 = st.columns([1])[0]
         with col_f6:
-            # Obtener valores únicos de Sede
             sedes_disponibles = sorted(df['Sede'].dropna().unique().tolist())
-            # Selección múltiple con todos seleccionados por defecto
             sedes_seleccionadas = st.multiselect(
                 "📍 Sede",
                 options=sedes_disponibles,
@@ -474,7 +458,6 @@ if st.session_state.df is not None:
         with col_btn1:
             aplicar_filtro = st.button("🔍 Aplicar Filtros", use_container_width=True, key="filtro_estadisticas")
         
-        # Botón para limpiar filtros
         with col_btn2:
             if st.button("🔄 Restablecer Filtros", use_container_width=True, key="reset_estadisticas"):
                 st.session_state.df_filtrado = None
@@ -482,10 +465,8 @@ if st.session_state.df is not None:
         
         # Aplicar todos los filtros
         if aplicar_filtro or st.session_state.df_filtrado is None:
-            # Iniciar con el DataFrame completo
             df_filtrado = df.copy()
             
-            # Aplicar filtro de fechas
             if fecha_inicio and fecha_fin:
                 if fecha_inicio <= fecha_fin:
                     fecha_inicio_dt = pd.Timestamp(fecha_inicio)
@@ -494,19 +475,12 @@ if st.session_state.df is not None:
                 else:
                     st.warning("⚠️ La fecha de inicio debe ser menor o igual a la fecha de fin")
             
-            # Aplicar filtro de Estado (si hay selecciones)
             if estados_seleccionados:
                 df_filtrado = df_filtrado[df_filtrado['Estado'].isin(estados_seleccionados)]
-            
-            # Aplicar filtro de Entidad (si hay selecciones)
             if entidades_seleccionadas:
                 df_filtrado = df_filtrado[df_filtrado['Entidad'].isin(entidades_seleccionadas)]
-            
-            # Aplicar filtro de Área (si hay selecciones)
             if areas_seleccionadas:
                 df_filtrado = df_filtrado[df_filtrado['Area'].isin(areas_seleccionadas)]
-            
-            # Aplicar filtro de Sede (si hay selecciones)
             if sedes_seleccionadas:
                 df_filtrado = df_filtrado[df_filtrado['Sede'].isin(sedes_seleccionadas)]
             
@@ -518,133 +492,59 @@ if st.session_state.df is not None:
         st.divider()
         st.subheader("📊 Resumen")
         
-        # Calcular métricas
         total_registros = len(df_filtrado)
         total_entidades = df_filtrado['Entidad'].nunique()
         total_pacientes = df_filtrado['Paciente'].nunique()
         total_servicios = df_filtrado['Servicio'].nunique()
         
-        # 1. Días promedio entre fecha de ordenamiento y fecha de entrega a programación
+        # Días promedio entre fecha de ordenamiento y fecha de entrega
         if 'Entregado' in df_filtrado.columns and len(df_filtrado) > 0:
-            # Calcular diferencia en días
             df_filtrado['dias_entrega'] = (df_filtrado['Entregado'] - df_filtrado['Solicitado']).dt.total_seconds() / (24 * 3600)
-            # Filtrar valores negativos o nulos
             dias_entrega_validos = df_filtrado['dias_entrega'].dropna()
             dias_entrega_validos = dias_entrega_validos[dias_entrega_validos >= 0]
-            
-            if len(dias_entrega_validos) > 0:
-                promedio_dias_entrega = dias_entrega_validos.mean()
-                promedio_dias_entrega_str = f"{promedio_dias_entrega:.1f}"
-            else:
-                promedio_dias_entrega_str = "N/A"
+            promedio_dias_entrega_str = f"{dias_entrega_validos.mean():.1f}" if len(dias_entrega_validos) > 0 else "N/A"
         else:
             promedio_dias_entrega_str = "N/A"
         
-        # 2. Promedio de ordenamientos generados por día en la sede
+        # Promedio de ordenamientos generados por día en la sede
         if len(df_filtrado) > 0 and 'Sede' in df_filtrado.columns:
-            # Agrupar por fecha y sede
             ordenamientos_por_dia_sede = df_filtrado.groupby([df_filtrado['Solicitado'].dt.date, 'Sede']).size()
-            if len(ordenamientos_por_dia_sede) > 0:
-                promedio_ordenamientos_dia_sede = ordenamientos_por_dia_sede.mean()
-                promedio_ordenamientos_dia_sede_str = f"{promedio_ordenamientos_dia_sede:.1f}"
-            else:
-                promedio_ordenamientos_dia_sede_str = "N/A"
+            promedio_ordenamientos_dia_sede_str = f"{ordenamientos_por_dia_sede.mean():.1f}" if len(ordenamientos_por_dia_sede) > 0 else "N/A"
         else:
             promedio_ordenamientos_dia_sede_str = "N/A"
         
-        # 3. Promedio de ordenamientos generados al día por paciente
+        # Promedio de ordenamientos generados al día por paciente
         if len(df_filtrado) > 0 and 'Doc.' in df_filtrado.columns:
-            # Agrupar por paciente y fecha
             ordenamientos_por_paciente_dia = df_filtrado.groupby(['Doc.', df_filtrado['Solicitado'].dt.date]).size()
-            if len(ordenamientos_por_paciente_dia) > 0:
-                promedio_ordenamientos_paciente_dia = ordenamientos_por_paciente_dia.mean()
-                promedio_ordenamientos_paciente_dia_str = f"{promedio_ordenamientos_paciente_dia:.1f}"
-            else:
-                promedio_ordenamientos_paciente_dia_str = "N/A"
+            promedio_ordenamientos_paciente_dia_str = f"{ordenamientos_por_paciente_dia.mean():.1f}" if len(ordenamientos_por_paciente_dia) > 0 else "N/A"
         else:
             promedio_ordenamientos_paciente_dia_str = "N/A"
         
-        # Mostrar métricas en 4 columnas
+        # Mostrar métricas
         col_metric1, col_metric2, col_metric3, col_metric4 = st.columns(4)
-        
         with col_metric1:
             st.metric("📊 Total Registros", f"{total_registros:,}")
-        
         with col_metric2:
             st.metric("🏥 Entidades", f"{total_entidades:,}")
-        
         with col_metric3:
             st.metric("👥 Pacientes", f"{total_pacientes:,}")
-        
         with col_metric4:
             st.metric("📋 Servicios", f"{total_servicios:,}")
         
-        # Segunda fila de métricas
         col_metric5, col_metric6, col_metric7 = st.columns(3)
-        
         with col_metric5:
-            st.metric(
-                "⏱️ Días promedio entre ordenamiento y entrega",
-                promedio_dias_entrega_str,
-                help="Promedio de días entre la fecha de Solicitud y la fecha de Entregado"
-            )
-        
+            st.metric("⏱️ Días promedio entre ordenamiento y entrega", promedio_dias_entrega_str)
         with col_metric6:
-            st.metric(
-                "📅 Promedio ordenamientos/día por sede",
-                promedio_ordenamientos_dia_sede_str,
-                help="Promedio de ordenamientos generados por día en cada sede"
-            )
-        
+            st.metric("📅 Promedio ordenamientos/día por sede", promedio_ordenamientos_dia_sede_str)
         with col_metric7:
-            st.metric(
-                "👤 Promedio ordenamientos/día por paciente",
-                promedio_ordenamientos_paciente_dia_str,
-                help="Promedio de ordenamientos generados por día por paciente"
-            )
+            st.metric("👤 Promedio ordenamientos/día por paciente", promedio_ordenamientos_paciente_dia_str)
         
         # ======================== GRÁFICOS ========================
         st.divider()
         st.subheader("📊 Gráficos")
         
-        # 1. Ordenes generadas vs. Ordenes gestionadas por semana
         if len(df_filtrado) > 0:
-            st.subheader("📊 Ordenes generadas vs. Ordenes gestionadas por semana")
-            
-            # Ordenes generadas por día (todas)
-            ordenes_generadas = df_filtrado.groupby(df_filtrado['Solicitado'].dt.date).size().reset_index()
-            ordenes_generadas.columns = ['Fecha', 'Generadas']
-            
-            # Ordenes gestionadas por día (Estado != "RADICAR")
-            df_gestionadas = df_filtrado[df_filtrado['Estado'] != "RADICAR"]
-            ordenes_gestionadas = df_gestionadas.groupby(df_gestionadas['Solicitado'].dt.date).size().reset_index()
-            ordenes_gestionadas.columns = ['Fecha', 'Gestionadas']
-            
-            # Combinar ambos DataFrames
-            df_graf1 = pd.merge(ordenes_generadas, ordenes_gestionadas, on='Fecha', how='outer').fillna(0)
-            
-            # Crear gráfico con Plotly
-            fig1 = px.bar(
-                df_graf1,
-                x='Fecha',
-                y=['Generadas', 'Gestionadas'],
-                title='Órdenes Generadas vs Gestionadas por Día',
-                labels={'value': 'Cantidad', 'Fecha': 'Fecha', 'variable': 'Tipo'},
-                barmode='group',
-                color_discrete_map={'Generadas': '#1f77b4', 'Gestionadas': '#2ca02c'}
-            )
-            fig1.update_layout(
-                xaxis_title='Fecha',
-                yaxis_title='Cantidad',
-                legend_title='Tipo',
-                height=400
-            )
-            st.plotly_chart(fig1, use_container_width=True)
-        
-        # 2. Gestión de autorizaciones y ordenes disponibles para programación
-        if len(df_filtrado) > 0:
-            st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
-            
+            # Función para clasificar estado de gestión
             def clasificar_estado_gestion(estado):
                 if estado == "PROGRAMAR":
                     return "Pendiente gestión desde programación"
@@ -657,129 +557,55 @@ if st.session_state.df is not None:
             
             df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
             
+            # 1. Ordenes generadas vs. Ordenes gestionadas por día
+            st.subheader("📊 Ordenes generadas vs. Ordenes gestionadas por día")
+            
+            ordenes_generadas = df_filtrado.groupby(df_filtrado['Solicitado'].dt.date).size().reset_index()
+            ordenes_generadas.columns = ['Fecha', 'Generadas']
+            
+            df_gestionadas = df_filtrado[df_filtrado['Estado'] != "RADICAR"]
+            ordenes_gestionadas = df_gestionadas.groupby(df_gestionadas['Solicitado'].dt.date).size().reset_index()
+            ordenes_gestionadas.columns = ['Fecha', 'Gestionadas']
+            
+            df_graf1 = pd.merge(ordenes_generadas, ordenes_gestionadas, on='Fecha', how='outer').fillna(0)
+            df_graf1 = df_graf1.set_index('Fecha')
+            st.bar_chart(df_graf1)
+            
+            # 2. Gestión de autorizaciones y ordenes disponibles para programación
+            st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
             estado_gestion_counts = df_filtrado['Estado_Gestion'].value_counts().reset_index()
             estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
+            st.bar_chart(estado_gestion_counts.set_index('Estado de Gestión'))
             
-            fig2 = px.bar(
-                estado_gestion_counts,
-                x='Estado de Gestión',
-                y='Cantidad',
-                title='Distribución por Estado de Gestión',
-                labels={'Cantidad': 'Cantidad', 'Estado de Gestión': 'Estado de Gestión'},
-                color='Estado de Gestión',
-                color_discrete_sequence=px.colors.qualitative.Set2
-            )
-            fig2.update_layout(
-                xaxis_title='Estado de Gestión',
-                yaxis_title='Cantidad',
-                height=400,
-                showlegend=False
-            )
-            st.plotly_chart(fig2, use_container_width=True)
-        
-        # 3. Ordenamientos disponibles para programación, pendientes de gestión
-        if len(df_filtrado) > 0:
+            # 3. Ordenamientos disponibles para programación, pendientes de gestión
             st.subheader("📊 Ordenamientos disponibles para programación, pendientes de gestión")
-            
-            # Filtrar solo los que están en "Pendiente gestión desde programación"
-            df_pendientes_programacion = df_filtrado[df_filtrado['Estado_Gestion'] == "Pendiente gestión desde programación"]
-            
-            if len(df_pendientes_programacion) > 0:
-                pendientes_por_area = df_pendientes_programacion['Area'].value_counts().reset_index()
+            df_pendientes = df_filtrado[df_filtrado['Estado_Gestion'] == "Pendiente gestión desde programación"]
+            if len(df_pendientes) > 0:
+                pendientes_por_area = df_pendientes['Area'].value_counts().reset_index()
                 pendientes_por_area.columns = ['Área', 'Cantidad']
-                
-                fig3 = px.bar(
-                    pendientes_por_area,
-                    x='Área',
-                    y='Cantidad',
-                    title='Ordenamientos Pendientes de Gestión por Área',
-                    labels={'Cantidad': 'Cantidad', 'Área': 'Área'},
-                    color='Área',
-                    color_discrete_sequence=px.colors.qualitative.Set3
-                )
-                fig3.update_layout(
-                    xaxis_title='Área',
-                    yaxis_title='Cantidad',
-                    height=400,
-                    showlegend=False
-                )
-                st.plotly_chart(fig3, use_container_width=True)
+                st.bar_chart(pendientes_por_area.set_index('Área'))
             else:
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
-        
-        # 4. Ordenes generadas por servicio
-        if len(df_filtrado) > 0:
-            st.subheader("📊 Ordenes generadas por servicio")
             
+            # 4. Ordenes generadas por servicio
+            st.subheader("📊 Ordenes generadas por servicio")
             ordenes_por_area = df_filtrado['Area'].value_counts().reset_index()
             ordenes_por_area.columns = ['Área', 'Cantidad']
+            st.bar_chart(ordenes_por_area.set_index('Área'))
             
-            fig4 = px.bar(
-                ordenes_por_area,
-                x='Área',
-                y='Cantidad',
-                title='Órdenes Generadas por Área de Servicio',
-                labels={'Cantidad': 'Cantidad', 'Área': 'Área'},
-                color='Área',
-                color_discrete_sequence=px.colors.qualitative.Pastel
-            )
-            fig4.update_layout(
-                xaxis_title='Área',
-                yaxis_title='Cantidad',
-                height=400,
-                showlegend=False
-            )
-            st.plotly_chart(fig4, use_container_width=True)
-        
-        # 5. Estados de servicios gestionados
-        if len(df_filtrado) > 0:
+            # 5. Estados de servicios gestionados
             st.subheader("📊 Estados de servicios gestionados")
-            
             estados_counts = df_filtrado['Estado'].value_counts().reset_index()
             estados_counts.columns = ['Estado', 'Cantidad']
+            st.bar_chart(estados_counts.set_index('Estado'))
             
-            fig5 = px.bar(
-                estados_counts,
-                x='Estado',
-                y='Cantidad',
-                title='Distribución por Estado',
-                labels={'Cantidad': 'Cantidad', 'Estado': 'Estado'},
-                color='Estado',
-                color_discrete_sequence=px.colors.qualitative.Set1
-            )
-            fig5.update_layout(
-                xaxis_title='Estado',
-                yaxis_title='Cantidad',
-                height=400,
-                showlegend=False
-            )
-            st.plotly_chart(fig5, use_container_width=True)
-        
-        # 6. Ordenamientos distribuidos por entidad
-        if len(df_filtrado) > 0:
+            # 6. Ordenamientos distribuidos por entidad
             st.subheader("📊 Ordenamientos distribuidos por entidad")
-            
             entidad_counts = df_filtrado['Entidad'].value_counts().reset_index()
             entidad_counts.columns = ['Entidad', 'Cantidad']
-            
-            fig6 = px.bar(
-                entidad_counts,
-                x='Entidad',
-                y='Cantidad',
-                title='Distribución por Entidad',
-                labels={'Cantidad': 'Cantidad', 'Entidad': 'Entidad'},
-                color='Entidad',
-                color_discrete_sequence=px.colors.qualitative.Paired
-            )
-            fig6.update_layout(
-                xaxis_title='Entidad',
-                yaxis_title='Cantidad',
-                height=400,
-                showlegend=False
-            )
-            st.plotly_chart(fig6, use_container_width=True)
+            st.bar_chart(entidad_counts.set_index('Entidad'))
         
-        # Mostrar información de filtros aplicados
+        # Mostrar información de filtros
         st.divider()
         st.caption(f"🔍 Filtros aplicados: {len(estados_seleccionados)} estados, {len(entidades_seleccionadas)} entidades, {len(areas_seleccionadas)} áreas, {len(sedes_seleccionadas)} sedes")
         st.caption(f"📅 Rango de fechas: {fecha_inicio} - {fecha_fin}")
