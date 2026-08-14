@@ -21,12 +21,32 @@ st.markdown("""
         color: white;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
+    .metric-card .metric-value {
+        font-size: 32px !important;
+        font-weight: bold;
+        margin: 5px 0 0 0;
+    }
+    .metric-card .metric-label {
+        font-size: 14px;
+        opacity: 0.9;
+        margin: 0;
+    }
     .metric-card-small {
         background: linear-gradient(135deg, #8b5cf6, #7c3aed);
         padding: 15px;
         border-radius: 10px;
         color: white;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .metric-card-small .metric-value {
+        font-size: 26px !important;
+        font-weight: bold;
+        margin: 5px 0 0 0;
+    }
+    .metric-card-small .metric-label {
+        font-size: 12px;
+        opacity: 0.9;
+        margin: 0;
     }
     .chart-container {
         background: white;
@@ -306,7 +326,6 @@ if st.session_state.df is not None:
     total_registros = len(df_filtrado)
     total_entidades = df_filtrado['Entidad'].nunique() if len(df_filtrado) > 0 else 0
     total_pacientes = df_filtrado['Paciente'].nunique() if len(df_filtrado) > 0 else 0
-    total_servicios = df_filtrado['Servicio'].nunique() if len(df_filtrado) > 0 else 0
     
     if 'Entregado' in df_filtrado.columns and len(df_filtrado) > 0:
         df_filtrado['dias_entrega'] = (df_filtrado['Entregado'] - df_filtrado['Solicitado']).dt.total_seconds() / (24 * 3600)
@@ -329,63 +348,56 @@ if st.session_state.df is not None:
         promedio_paciente_dia = "N/A"
     
     if len(df_filtrado) > 0:
-        col_k1, col_k2, col_k3, col_k4 = st.columns(4)
+        col_k1, col_k2, col_k3 = st.columns(3)
         
         with col_k1:
             st.markdown(f"""
                 <div class="metric-card">
-                    <h4 style="margin:0; font-size:14px; opacity:0.9;">📊 Total Registros</h4>
-                    <h2 style="margin:5px 0 0 0; font-size:28px;">{total_registros:,}</h2>
+                    <p class="metric-label">📊 Total Registros</p>
+                    <p class="metric-value">{total_registros:,}</p>
                 </div>
             """, unsafe_allow_html=True)
         
         with col_k2:
             st.markdown(f"""
                 <div class="metric-card">
-                    <h4 style="margin:0; font-size:14px; opacity:0.9;">🏥 Entidades</h4>
-                    <h2 style="margin:5px 0 0 0; font-size:28px;">{total_entidades:,}</h2>
+                    <p class="metric-label">🏥 Entidades</p>
+                    <p class="metric-value">{total_entidades:,}</p>
                 </div>
             """, unsafe_allow_html=True)
         
         with col_k3:
             st.markdown(f"""
                 <div class="metric-card">
-                    <h4 style="margin:0; font-size:14px; opacity:0.9;">👥 Pacientes</h4>
-                    <h2 style="margin:5px 0 0 0; font-size:28px;">{total_pacientes:,}</h2>
+                    <p class="metric-label">👥 Pacientes</p>
+                    <p class="metric-value">{total_pacientes:,}</p>
                 </div>
             """, unsafe_allow_html=True)
+        
+        # Segunda fila de KPI
+        col_k4, col_k5, col_k6 = st.columns(3)
         
         with col_k4:
             st.markdown(f"""
-                <div class="metric-card">
-                    <h4 style="margin:0; font-size:14px; opacity:0.9;">📋 Servicios</h4>
-                    <h2 style="margin:5px 0 0 0; font-size:28px;">{total_servicios:,}</h2>
+                <div class="metric-card-small">
+                    <p class="metric-label">⏱️ Días promedio entrega</p>
+                    <p class="metric-value">{promedio_dias_entrega}</p>
                 </div>
             """, unsafe_allow_html=True)
-        
-        col_k5, col_k6, col_k7 = st.columns(3)
         
         with col_k5:
             st.markdown(f"""
                 <div class="metric-card-small">
-                    <h4 style="margin:0; font-size:12px; opacity:0.9;">⏱️ Días promedio entrega</h4>
-                    <h3 style="margin:5px 0 0 0; font-size:22px;">{promedio_dias_entrega}</h3>
+                    <p class="metric-label">📅 Ordenamientos/día por sede</p>
+                    <p class="metric-value">{promedio_dia_sede}</p>
                 </div>
             """, unsafe_allow_html=True)
         
         with col_k6:
             st.markdown(f"""
                 <div class="metric-card-small">
-                    <h4 style="margin:0; font-size:12px; opacity:0.9;">📅 Ordenamientos/día por sede</h4>
-                    <h3 style="margin:5px 0 0 0; font-size:22px;">{promedio_dia_sede}</h3>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with col_k7:
-            st.markdown(f"""
-                <div class="metric-card-small">
-                    <h4 style="margin:0; font-size:12px; opacity:0.9;">👤 Ordenamientos/día por paciente</h4>
-                    <h3 style="margin:5px 0 0 0; font-size:22px;">{promedio_paciente_dia}</h3>
+                    <p class="metric-label">👤 Ordenamientos/día por paciente</p>
+                    <p class="metric-value">{promedio_paciente_dia}</p>
                 </div>
             """, unsafe_allow_html=True)
     
@@ -470,9 +482,9 @@ if st.session_state.df is not None:
             align='center',
             baseline='bottom',
             dy=-5,
-            fontSize=14,
+            fontSize=13,
             fontWeight='bold',
-            color='#1a202c'
+            color='#000000'
         ).encode(
             x='Fecha:N',
             y='Cantidad:Q',
@@ -505,7 +517,7 @@ if st.session_state.df is not None:
             total = estado_gestion_counts['Cantidad'].sum()
             estado_gestion_counts['Porcentaje'] = (estado_gestion_counts['Cantidad'] / total * 100).round(1)
             estado_gestion_counts['Etiqueta'] = estado_gestion_counts.apply(
-                lambda row: f"{row['Cantidad']} ({row['Porcentaje']}%)", axis=1
+                lambda row: f"{row['Estado de Gestión']}: {row['Cantidad']} ({row['Porcentaje']}%)", axis=1
             )
             
             # Gráfico de anillo
@@ -534,18 +546,19 @@ if st.session_state.df is not None:
                 height=400
             )
             
-            # Etiquetas DENTRO del gráfico de anillo
+            # Etiquetas FUERA del gráfico de anillo
             text_labels2 = alt.Chart(estado_gestion_counts).mark_text(
-                fontSize=12,
+                fontSize=11,
                 fontWeight='bold',
-                color='white',
-                stroke='white',
-                strokeWidth=0.5
+                color='#000000',
+                align='left',
+                baseline='middle',
+                dx=5
             ).encode(
                 theta=alt.Theta(field="Cantidad", type="quantitative"),
                 text=alt.Text('Etiqueta:N'),
-                color=alt.value('white'),
-                radius=alt.value(65)  # Posicionamiento dentro del anillo
+                radius=alt.value(110),
+                angle=alt.value(0)
             )
             
             chart2 = alt.LayerChart(layer=[pie_chart2, text_labels2], height=400)
@@ -567,7 +580,7 @@ if st.session_state.df is not None:
                 total_area = pendientes_por_area['Cantidad'].sum()
                 pendientes_por_area['Porcentaje'] = (pendientes_por_area['Cantidad'] / total_area * 100).round(1)
                 pendientes_por_area['Etiqueta'] = pendientes_por_area.apply(
-                    lambda row: f"{row['Cantidad']} ({row['Porcentaje']}%)", axis=1
+                    lambda row: f"{row['Área']}: {row['Cantidad']} ({row['Porcentaje']}%)", axis=1
                 )
                 
                 # Gráfico de anillo
@@ -596,18 +609,19 @@ if st.session_state.df is not None:
                     height=400
                 )
                 
-                # Etiquetas DENTRO del gráfico de anillo
+                # Etiquetas FUERA del gráfico de anillo
                 text_labels3 = alt.Chart(pendientes_por_area).mark_text(
-                    fontSize=11,
+                    fontSize=10,
                     fontWeight='bold',
-                    color='white',
-                    stroke='white',
-                    strokeWidth=0.5
+                    color='#000000',
+                    align='left',
+                    baseline='middle',
+                    dx=5
                 ).encode(
                     theta=alt.Theta(field="Cantidad", type="quantitative"),
                     text=alt.Text('Etiqueta:N'),
-                    color=alt.value('white'),
-                    radius=alt.value(65)  # Posicionamiento dentro del anillo
+                    radius=alt.value(110),
+                    angle=alt.value(0)
                 )
                 
                 chart3 = alt.LayerChart(layer=[pie_chart3, text_labels3], height=400)
@@ -638,9 +652,9 @@ if st.session_state.df is not None:
                 align='center',
                 baseline='bottom',
                 dy=-5,
-                fontSize=14,
+                fontSize=13,
                 fontWeight='bold',
-                color='#1a202c'
+                color='#000000'
             ).encode(
                 x='Área:N',
                 y='Cantidad:Q',
@@ -670,9 +684,9 @@ if st.session_state.df is not None:
                 align='center',
                 baseline='bottom',
                 dy=-5,
-                fontSize=14,
+                fontSize=13,
                 fontWeight='bold',
-                color='#1a202c'
+                color='#000000'
             ).encode(
                 x='Estado:N',
                 y='Cantidad:Q',
@@ -701,9 +715,9 @@ if st.session_state.df is not None:
             align='center',
             baseline='bottom',
             dy=-5,
-            fontSize=14,
+            fontSize=13,
             fontWeight='bold',
-            color='#1a202c'
+            color='#000000'
         ).encode(
             x='Entidad:N',
             y='Cantidad:Q',
