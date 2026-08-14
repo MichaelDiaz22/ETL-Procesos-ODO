@@ -4791,7 +4791,6 @@ if st.session_state.df is not None:
                 df_export = df_filtrado.copy()
                 
                 # Obtener datos de los DataFrames de gráficos
-                # df_graf1 ya existe del gráfico 1
                 estado_gestion_data = estado_gestion_counts.copy()
                 pendientes_data = pendientes_por_area.copy() if len(df_pendientes) > 0 else pd.DataFrame()
                 ordenes_area_data = ordenes_por_area.copy()
@@ -4855,7 +4854,6 @@ if st.session_state.df is not None:
                             
                             # Agregar título
                             ws_img.cell(row=idx*20 + 1, column=2, value=titulos[idx])
-                            from openpyxl.styles import Font
                             ws_img.cell(row=idx*20 + 1, column=2).font = Font(bold=True, size=12)
                             
                             # Agregar imagen
@@ -4889,6 +4887,8 @@ if st.session_state.df is not None:
                 
             except Exception as e:
                 st.error(f"❌ Error al exportar: {e}")
+                import traceback
+                st.error(traceback.format_exc())
         
         # ======================== INFORMACIÓN DE FILTROS ========================
         st.divider()
