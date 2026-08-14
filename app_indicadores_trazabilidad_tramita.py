@@ -4420,7 +4420,7 @@ if st.session_state.df is not None:
         # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO MEJORADO) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.subheader("📊 Pendientes de Gestión por Área")
+            st.subheader("📊 Ordenamientos disponibles para programación, pendientes de gestión")
             
             df_pendientes = df_filtrado[df_filtrado['Estado_Gestion'] == "Pendiente gestión desde programación"]
             if len(df_pendientes) > 0:
@@ -4464,7 +4464,7 @@ if st.session_state.df is not None:
                             color='black',
                             bbox=dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.8))
                 
-                ax3.set_title('Pendientes de Gestión por Área', fontsize=14, fontweight='bold', pad=20)
+                ax3.set_title('Ordenamientos disponibles para programación, pendientes de gestión', fontsize=14, fontweight='bold', pad=20)
                 plt.tight_layout()
                 st.pyplot(fig3)
                 plt.close()
