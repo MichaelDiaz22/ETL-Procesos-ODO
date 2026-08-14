@@ -447,7 +447,7 @@ if st.session_state.df is not None:
         
         # Crear el gráfico con etiquetas usando alt.LayerChart
         bars = alt.Chart(df_graf1_melted).mark_bar().encode(
-            x=alt.X('Fecha:N', title='Fecha', axis=alt.Axis(labelAngle=-45, labelFontSize=10)),
+            x=alt.X('Fecha:N', title='Fecha', axis=alt.Axis(labelAngle=-45, labelFontSize=11)),
             y=alt.Y('Cantidad:Q', title='Cantidad'),
             color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Generadas', 'Gestionadas'], range=['#7c3aed', '#a78bfa'])),
             tooltip=['Fecha', 'Tipo', 'Cantidad']
@@ -457,7 +457,7 @@ if st.session_state.df is not None:
             align='center',
             baseline='bottom',
             dy=-5,
-            fontSize=10,
+            fontSize=13,
             fontWeight='bold',
             color='#4a5568'
         ).encode(
@@ -471,17 +471,16 @@ if st.session_state.df is not None:
             layer=[bars, text_labels],
             height=400
         ).configure_legend(
-            orient='top'
+            orient='top',
+            labelFontSize=12,
+            titleFontSize=13
         )
         
         st.altair_chart(chart1, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICOS EN DOS COLUMNAS ========================
-        col_g1, col_g2 = st.columns(2)
-        
-        # ======================== GRÁFICO 2: Gestión de autorizaciones ========================
-        with col_g1:
+        # ======================== GRÁFICO 2: Gestión de autorizaciones (CIRCULAR) ========================
+        with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Gestión de Autorizaciones")
             
@@ -489,31 +488,52 @@ if st.session_state.df is not None:
             estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
             estado_gestion_counts = estado_gestion_counts.sort_values('Cantidad', ascending=False)
             
-            bars2 = alt.Chart(estado_gestion_counts).mark_bar(color='#8b5cf6').encode(
-                x=alt.X('Estado de Gestión:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
-                y=alt.Y('Cantidad:Q', title='Cantidad'),
-                tooltip=['Estado de Gestión', 'Cantidad']
-            )
-            
-            text2 = alt.Chart(estado_gestion_counts).mark_text(
-                align='center',
-                baseline='bottom',
-                dy=-5,
-                fontSize=10,
-                fontWeight='bold',
-                color='#4a5568'
+            # Gráfico circular con Altair
+            pie_chart2 = alt.Chart(estado_gestion_counts).mark_arc(
+                innerRadius=50,
+                stroke='#fff',
+                strokeWidth=2
             ).encode(
-                x='Estado de Gestión:N',
-                y='Cantidad:Q',
-                text=alt.Text('Cantidad:Q', format='.0f')
+                theta=alt.Theta(field="Cantidad", type="quantitative"),
+                color=alt.Color(
+                    field="Estado de Gestión", 
+                    type="nominal",
+                    scale=alt.Scale(
+                        domain=estado_gestion_counts['Estado de Gestión'].tolist(),
+                        range=['#7c3aed', '#8b5cf6', '#a78bfa', '#6d28d9', '#5b21b6']
+                    ),
+                    legend=alt.Legend(
+                        title="Estado de Gestión",
+                        orient='right',
+                        labelFontSize=11,
+                        titleFontSize=12
+                    )
+                ),
+                tooltip=['Estado de Gestión', 'Cantidad']
+            ).properties(
+                height=350
             )
             
-            chart2 = alt.LayerChart(layer=[bars2, text2], height=350)
+            # Etiquetas para el gráfico circular
+            text_labels2 = alt.Chart(estado_gestion_counts).mark_text(
+                fontSize=12,
+                fontWeight='bold',
+                color='white',
+                stroke='white',
+                strokeWidth=0.5
+            ).encode(
+                theta=alt.Theta(field="Cantidad", type="quantitative"),
+                text=alt.Text('Cantidad:Q', format='.0f'),
+                color=alt.value('white'),
+                radius=alt.value(70)
+            )
+            
+            chart2 = alt.LayerChart(layer=[pie_chart2, text_labels2], height=350)
             st.altair_chart(chart2, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión ========================
-        with col_g2:
+        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (CIRCULAR) ========================
+        with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Pendientes de Gestión por Área")
             
@@ -523,32 +543,53 @@ if st.session_state.df is not None:
                 pendientes_por_area.columns = ['Área', 'Cantidad']
                 pendientes_por_area = pendientes_por_area.sort_values('Cantidad', ascending=False)
                 
-                bars3 = alt.Chart(pendientes_por_area).mark_bar(color='#6d28d9').encode(
-                    x=alt.X('Área:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
-                    y=alt.Y('Cantidad:Q', title='Cantidad'),
-                    tooltip=['Área', 'Cantidad']
-                )
-                
-                text3 = alt.Chart(pendientes_por_area).mark_text(
-                    align='center',
-                    baseline='bottom',
-                    dy=-5,
-                    fontSize=10,
-                    fontWeight='bold',
-                    color='#4a5568'
+                # Gráfico circular con Altair
+                pie_chart3 = alt.Chart(pendientes_por_area).mark_arc(
+                    innerRadius=50,
+                    stroke='#fff',
+                    strokeWidth=2
                 ).encode(
-                    x='Área:N',
-                    y='Cantidad:Q',
-                    text=alt.Text('Cantidad:Q', format='.0f')
+                    theta=alt.Theta(field="Cantidad", type="quantitative"),
+                    color=alt.Color(
+                        field="Área", 
+                        type="nominal",
+                        scale=alt.Scale(
+                            domain=pendientes_por_area['Área'].tolist(),
+                            range=['#7c3aed', '#8b5cf6', '#a78bfa', '#6d28d9', '#5b21b6', '#9b59b6', '#b083f0']
+                        ),
+                        legend=alt.Legend(
+                            title="Área",
+                            orient='right',
+                            labelFontSize=11,
+                            titleFontSize=12
+                        )
+                    ),
+                    tooltip=['Área', 'Cantidad']
+                ).properties(
+                    height=350
                 )
                 
-                chart3 = alt.LayerChart(layer=[bars3, text3], height=350)
+                # Etiquetas para el gráfico circular
+                text_labels3 = alt.Chart(pendientes_por_area).mark_text(
+                    fontSize=12,
+                    fontWeight='bold',
+                    color='white',
+                    stroke='white',
+                    strokeWidth=0.5
+                ).encode(
+                    theta=alt.Theta(field="Cantidad", type="quantitative"),
+                    text=alt.Text('Cantidad:Q', format='.0f'),
+                    color=alt.value('white'),
+                    radius=alt.value(70)
+                )
+                
+                chart3 = alt.LayerChart(layer=[pie_chart3, text_labels3], height=350)
                 st.altair_chart(chart3, use_container_width=True)
             else:
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICOS EN DOS COLUMNAS (SEGUNDA FILA) ========================
+        # ======================== GRÁFICOS EN DOS COLUMNAS ========================
         col_g3, col_g4 = st.columns(2)
         
         # ======================== GRÁFICO 4: Ordenes generadas por servicio ========================
@@ -561,7 +602,7 @@ if st.session_state.df is not None:
             ordenes_por_area = ordenes_por_area.sort_values('Cantidad', ascending=False)
             
             bars4 = alt.Chart(ordenes_por_area).mark_bar(color='#5b21b6').encode(
-                x=alt.X('Área:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
+                x=alt.X('Área:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=10)),
                 y=alt.Y('Cantidad:Q', title='Cantidad'),
                 tooltip=['Área', 'Cantidad']
             )
@@ -570,7 +611,7 @@ if st.session_state.df is not None:
                 align='center',
                 baseline='bottom',
                 dy=-5,
-                fontSize=10,
+                fontSize=13,
                 fontWeight='bold',
                 color='#4a5568'
             ).encode(
@@ -593,7 +634,7 @@ if st.session_state.df is not None:
             estados_counts = estados_counts.sort_values('Cantidad', ascending=False)
             
             bars5 = alt.Chart(estados_counts).mark_bar(color='#9b59b6').encode(
-                x=alt.X('Estado:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
+                x=alt.X('Estado:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=10)),
                 y=alt.Y('Cantidad:Q', title='Cantidad'),
                 tooltip=['Estado', 'Cantidad']
             )
@@ -602,7 +643,7 @@ if st.session_state.df is not None:
                 align='center',
                 baseline='bottom',
                 dy=-5,
-                fontSize=10,
+                fontSize=13,
                 fontWeight='bold',
                 color='#4a5568'
             ).encode(
@@ -624,7 +665,7 @@ if st.session_state.df is not None:
         entidad_counts = entidad_counts.sort_values('Cantidad', ascending=False)
         
         bars6 = alt.Chart(entidad_counts).mark_bar(color='#7c3aed').encode(
-            x=alt.X('Entidad:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
+            x=alt.X('Entidad:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=10)),
             y=alt.Y('Cantidad:Q', title='Cantidad'),
             tooltip=['Entidad', 'Cantidad']
         )
@@ -633,7 +674,7 @@ if st.session_state.df is not None:
             align='center',
             baseline='bottom',
             dy=-5,
-            fontSize=10,
+            fontSize=13,
             fontWeight='bold',
             color='#4a5568'
         ).encode(
