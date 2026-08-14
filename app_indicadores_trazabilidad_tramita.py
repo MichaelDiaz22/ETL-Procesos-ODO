@@ -4349,7 +4349,7 @@ if st.session_state.df is not None:
         # ======================== GRÁFICO 2: Gestión de autorizaciones ========================
         with col_g1:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.subheader("📊 Gestión de Autorizaciones")
+            st.subheader("📊 Gestión de autorizaciones y oórdenes disponibles para programación")
             
             estado_gestion_counts = df_filtrado['Estado_Gestion'].value_counts().reset_index()
             estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
