@@ -4709,8 +4709,11 @@ if st.session_state.df is not None:
         st.divider()
         st.markdown("### 📥 Exportar Reporte Completo")
         
+        # Guardar figuras en el estado para exportación
+        st.session_state.figuras_export = figuras_export
+        
         # Función para preparar datos de gráficos e interpretaciones
-        def preparar_datos_exportacion(df_export, df_graf1, df_graf2, df_graf3, df_graf4, df_graf5, df_graf6):
+        def preparar_datos_exportacion(df_export):
             # Hoja 1: Datos detallados
             datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
             datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
@@ -4729,35 +4732,35 @@ if st.session_state.df is not None:
             resumen_data.append(['', '', '', ''])
             
             # Gráfico 2
-            total_estados = df_graf2['Cantidad'].sum()
-            for _, row in df_graf2.iterrows():
+            total_estados = estado_gestion_counts['Cantidad'].sum()
+            for _, row in estado_gestion_counts.iterrows():
                 resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
             resumen_data.append(['', '', '', ''])
             
             # Gráfico 3
-            if len(df_graf3) > 0:
-                total_pend = df_graf3['Cantidad'].sum()
-                for _, row in df_graf3.iterrows():
+            if len(pendientes_por_area) > 0:
+                total_pend = pendientes_por_area['Cantidad'].sum()
+                for _, row in pendientes_por_area.iterrows():
                     resumen_data.append(['Gráfico 3', 'Pendientes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_pend*100:.1f}%)', ''])
             else:
                 resumen_data.append(['Gráfico 3', 'Pendientes por Área', 'No hay datos', ''])
             resumen_data.append(['', '', '', ''])
             
             # Gráfico 4
-            total_ord = df_graf4['Cantidad'].sum()
-            for _, row in df_graf4.iterrows():
+            total_ord = ordenes_por_area['Cantidad'].sum()
+            for _, row in ordenes_por_area.iterrows():
                 resumen_data.append(['Gráfico 4', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
             resumen_data.append(['', '', '', ''])
             
             # Gráfico 5
-            total_est = df_graf5['Cantidad'].sum()
-            for _, row in df_graf5.iterrows():
+            total_est = estados_counts['Cantidad'].sum()
+            for _, row in estados_counts.iterrows():
                 resumen_data.append(['Gráfico 5', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
             resumen_data.append(['', '', '', ''])
             
             # Gráfico 6
-            total_ent = df_graf6['Cantidad'].sum()
-            for _, row in df_graf6.iterrows():
+            total_ent = entidad_counts['Cantidad'].sum()
+            for _, row in entidad_counts.iterrows():
                 resumen_data.append(['Gráfico 6', 'Distribución por Entidad', f'{row["Entidad"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ent*100:.1f}%)', ''])
             
             resumen_df = pd.DataFrame(resumen_data, columns=['Gráfico', 'Categoría', 'Detalle', 'Observación'])
@@ -4765,35 +4768,83 @@ if st.session_state.df is not None:
             return datos_detalle, resumen_df
         
         # Botón de exportación
-        if st.button("📥 Exportar a Excel", use_container_width=True, type="primary"):
+        if st.button("📥 Exportar a Excel con Gráficos", use_container_width=True, type="primary"):
             # Preparar datos para exportación
             df_export = df_filtrado.copy()
             
-            # Obtener datos de los gráficos
-            graf2_data = estado_gestion_counts
-            graf3_data = pendientes_por_area if len(df_pendientes) > 0 else pd.DataFrame()
-            graf4_data = ordenes_por_area
-            graf5_data = estados_counts
-            graf6_data = entidad_counts
+            datos_detalle, resumen_graficos = preparar_datos_exportacion(df_export)
             
-            datos_detalle, resumen_graficos = preparar_datos_exportacion(
-                df_export, df_graf1, graf2_data, graf3_data, graf4_data, graf5_data, graf6_data
-            )
-            
-            # Crear archivo Excel con dos hojas
+            # Crear archivo Excel con imágenes
             output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                # Hoja 1: Datos detallados
-                datos_detalle.to_excel(writer, sheet_name='Datos Detallados', index=False)
-                
-                # Hoja 2: Resumen de gráficos e interpretaciones
-                resumen_graficos.to_excel(writer, sheet_name='Resumen Gráficos', index=False)
             
+            # Crear workbook
+            wb = Workbook()
+            
+            # --- Hoja 1: Datos Detallados ---
+            ws1 = wb.active
+            ws1.title = "Datos Detallados"
+            
+            # Escribir datos
+            for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
+                for c_idx, value in enumerate(row, 1):
+                    ws1.cell(row=r_idx, column=c_idx, value=value)
+            
+            # --- Hoja 2: Resumen Gráficos ---
+            ws2 = wb.create_sheet("Resumen Gráficos")
+            for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
+                for c_idx, value in enumerate(row, 1):
+                    ws2.cell(row=r_idx, column=c_idx, value=value)
+            
+            # --- Hoja 3: Imágenes de Gráficos ---
+            ws_img = wb.create_sheet("Gráficos")
+            
+            # Configurar anchos de columna para imágenes
+            ws_img.column_dimensions['A'].width = 5
+            ws_img.column_dimensions['B'].width = 80
+            
+            # Títulos de los gráficos
+            titulos = [
+                "Gráfico 1: Órdenes Generadas vs Gestionadas",
+                "Gráfico 2: Gestión de autorizaciones y ordenes disponibles",
+                "Gráfico 3: Pendientes de Gestión por Área",
+                "Gráfico 4: Órdenes Generadas por Área",
+                "Gráfico 5: Estados de Servicios",
+                "Gráfico 6: Ordenamientos Distribuidos por Entidad"
+            ]
+            
+            # Guardar figuras como imágenes temporales y agregarlas al Excel
+            figuras = list(st.session_state.figuras_export.values())
+            
+            for idx, fig in enumerate(figuras):
+                if idx < len(titulos):
+                    # Crear archivo temporal para la imagen
+                    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
+                        fig.savefig(tmpfile.name, dpi=150, bbox_inches='tight')
+                        tmpfile_path = tmpfile.name
+                    
+                    # Agregar título
+                    ws_img.cell(row=idx*20 + 1, column=2, value=titulos[idx])
+                    ws_img.cell(row=idx*20 + 1, column=2).font = openpyxl.styles.Font(bold=True, size=12)
+                    
+                    # Agregar imagen
+                    img = Image(tmpfile_path)
+                    # Ajustar tamaño para que quepa bien
+                    img.width = 700
+                    img.height = int(img.height * (700 / img.width))
+                    
+                    # Posicionar imagen
+                    ws_img.add_image(img, f'B{idx*20 + 2}')
+                    
+                    # Eliminar archivo temporal
+                    os.unlink(tmpfile_path)
+            
+            # Guardar workbook en BytesIO
+            wb.save(output)
             output.seek(0)
             
             # Descargar archivo
             st.download_button(
-                label="⬇️ Descargar Excel",
+                label="⬇️ Descargar Excel con Gráficos",
                 data=output,
                 file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
