@@ -4278,6 +4278,57 @@ if st.session_state.df is not None:
                 </div>
             """, unsafe_allow_html=True)
     
+    # ======================== TABLA DE RESULTADOS (COLAPSABLE) ========================
+    with st.expander("📋 Ver Detalle de Resultados (Datos Filtrados)", expanded=False):
+        st.markdown("#### Detalle de órdenes con filtros aplicados")
+        
+        # Función para clasificar estado de gestión
+        def clasificar_estado_gestion(estado):
+            if estado == "PROGRAMAR":
+                return "Pendiente gestión desde programación"
+            elif estado == "RADICAR":
+                return "Pendiente gestión desde Autorizaciones"
+            elif estado in ["PROGRAMADO", "PENDIENTE PROGRAMAR"]:
+                return "Gestionado desde programación"
+            else:
+                return "Gestionado / En seguimiento desde Autorizaciones"
+        
+        # Crear columna de estado de gestión
+        df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
+        
+        # Seleccionar columnas para la tabla
+        columnas_tabla = ['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']
+        # Verificar que las columnas existan
+        columnas_existentes = [col for col in columnas_tabla if col in df_filtrado.columns]
+        
+        if columnas_existentes:
+            df_tabla = df_filtrado[columnas_existentes].copy()
+            
+            # Formatear fecha
+            if 'Solicitado' in df_tabla.columns:
+                df_tabla['Solicitado'] = df_tabla['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
+            
+            st.dataframe(
+                df_tabla,
+                use_container_width=True,
+                height=400,
+                column_config={
+                    "Estado": st.column_config.TextColumn("Estado", width="medium"),
+                    "Estado_Gestion": st.column_config.TextColumn("Estado de Gestión", width="large"),
+                    "Solicitado": st.column_config.TextColumn("Solicitado", width="medium"),
+                    "Doc.": st.column_config.TextColumn("Documento", width="small"),
+                    "Paciente": st.column_config.TextColumn("Paciente", width="large"),
+                    "Entidad": st.column_config.TextColumn("Entidad", width="large"),
+                    "Area": st.column_config.TextColumn("Área", width="large"),
+                    "Cups": st.column_config.TextColumn("CUPS", width="small"),
+                    "Servicio": st.column_config.TextColumn("Servicio", width="medium"),
+                    "Observación": st.column_config.TextColumn("Observación", width="large"),
+                }
+            )
+            st.caption(f"📊 Mostrando {len(df_tabla)} registros")
+        else:
+            st.warning("No se encontraron las columnas necesarias para mostrar la tabla")
+    
     # ======================== GRÁFICOS ========================
     if len(df_filtrado) > 0:
         st.markdown("### 📈 Análisis Visual")
@@ -4654,6 +4705,101 @@ if st.session_state.df is not None:
         
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # ======================== BOTÓN DE EXPORTACIÓN A EXCEL ========================
+        st.divider()
+        st.markdown("### 📥 Exportar Reporte Completo")
+        
+        # Función para preparar datos de gráficos e interpretaciones
+        def preparar_datos_exportacion(df_export, df_graf1, df_graf2, df_graf3, df_graf4, df_graf5, df_graf6):
+            # Hoja 1: Datos detallados
+            datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
+            datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
+            
+            # Hoja 2: Resumen de gráficos e interpretaciones
+            resumen_data = []
+            
+            # Gráfico 1
+            total_generadas = df_graf1['Generadas'].sum()
+            total_gestionadas = df_graf1['Gestionadas'].sum()
+            pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
+            resumen_data.append(['Gráfico 1', 'Órdenes Generadas vs Gestionadas', f'Total generadas: {int(total_generadas)}', ''])
+            resumen_data.append(['', '', f'Total gestionadas: {int(total_gestionadas)} ({pct_gestionadas:.1f}%)', ''])
+            resumen_data.append(['', '', f'Pendientes: {int(total_generadas - total_gestionadas)} ({100-pct_gestionadas:.1f}%)', ''])
+            resumen_data.append(['', '', f'Día pico: {df_graf1.loc[df_graf1["Generadas"].idxmax(), "Fecha"]} ({int(df_graf1["Generadas"].max())} órdenes)', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            # Gráfico 2
+            total_estados = df_graf2['Cantidad'].sum()
+            for _, row in df_graf2.iterrows():
+                resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            # Gráfico 3
+            if len(df_graf3) > 0:
+                total_pend = df_graf3['Cantidad'].sum()
+                for _, row in df_graf3.iterrows():
+                    resumen_data.append(['Gráfico 3', 'Pendientes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_pend*100:.1f}%)', ''])
+            else:
+                resumen_data.append(['Gráfico 3', 'Pendientes por Área', 'No hay datos', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            # Gráfico 4
+            total_ord = df_graf4['Cantidad'].sum()
+            for _, row in df_graf4.iterrows():
+                resumen_data.append(['Gráfico 4', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            # Gráfico 5
+            total_est = df_graf5['Cantidad'].sum()
+            for _, row in df_graf5.iterrows():
+                resumen_data.append(['Gráfico 5', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            # Gráfico 6
+            total_ent = df_graf6['Cantidad'].sum()
+            for _, row in df_graf6.iterrows():
+                resumen_data.append(['Gráfico 6', 'Distribución por Entidad', f'{row["Entidad"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ent*100:.1f}%)', ''])
+            
+            resumen_df = pd.DataFrame(resumen_data, columns=['Gráfico', 'Categoría', 'Detalle', 'Observación'])
+            
+            return datos_detalle, resumen_df
+        
+        # Botón de exportación
+        if st.button("📥 Exportar a Excel", use_container_width=True, type="primary"):
+            # Preparar datos para exportación
+            df_export = df_filtrado.copy()
+            
+            # Obtener datos de los gráficos
+            graf2_data = estado_gestion_counts
+            graf3_data = pendientes_por_area if len(df_pendientes) > 0 else pd.DataFrame()
+            graf4_data = ordenes_por_area
+            graf5_data = estados_counts
+            graf6_data = entidad_counts
+            
+            datos_detalle, resumen_graficos = preparar_datos_exportacion(
+                df_export, df_graf1, graf2_data, graf3_data, graf4_data, graf5_data, graf6_data
+            )
+            
+            # Crear archivo Excel con dos hojas
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                # Hoja 1: Datos detallados
+                datos_detalle.to_excel(writer, sheet_name='Datos Detallados', index=False)
+                
+                # Hoja 2: Resumen de gráficos e interpretaciones
+                resumen_graficos.to_excel(writer, sheet_name='Resumen Gráficos', index=False)
+            
+            output.seek(0)
+            
+            # Descargar archivo
+            st.download_button(
+                label="⬇️ Descargar Excel",
+                data=output,
+                file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        
         # ======================== INFORMACIÓN DE FILTROS ========================
         st.divider()
         st.caption(f"🔍 Filtros aplicados: {len(estados_seleccionados)} estados, {len(entidades_seleccionadas)} entidades, {len(areas_seleccionadas)} áreas, {len(sedes_seleccionadas)} sedes")
@@ -4678,4 +4824,3 @@ else:
                 "Codigo unidad": st.column_config.TextColumn("Código Unidad", width="small"),
             }
         )
-
