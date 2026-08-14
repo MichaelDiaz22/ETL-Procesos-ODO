@@ -512,22 +512,22 @@ if st.session_state.df is not None:
                 colors=colors[:len(estado_gestion_counts)],
                 startangle=90,
                 wedgeprops={'width': 0.4, 'edgecolor': 'white', 'linewidth': 2},
-                textprops={'fontsize': 11, 'fontweight': 'bold'}
+                textprops={'fontsize': 11, 'fontweight': 'bold', 'color': 'black'}
             )
             
-            # Ajustar etiquetas de porcentaje
+            # Ajustar etiquetas de porcentaje a color negro
             for autotext in autotexts:
-                autotext.set_color('white')
+                autotext.set_color('black')
                 autotext.set_fontsize(12)
                 autotext.set_fontweight('bold')
             
-            # Agregar cantidades fuera del gráfico
+            # Agregar cantidades fuera del gráfico en color negro
             for i, wedge in enumerate(wedges):
                 ang = (wedge.theta2 + wedge.theta1) / 2
                 x = 1.15 * np.cos(np.radians(ang))
                 y = 1.15 * np.sin(np.radians(ang))
                 ax2.text(x, y, f"{estado_gestion_counts['Cantidad'].iloc[i]}", 
-                        fontsize=11, fontweight='bold', ha='center', va='center')
+                        fontsize=11, fontweight='bold', ha='center', va='center', color='black')
             
             ax2.set_title('Gestión de autorizaciones y ordenes disponibles para programación', fontsize=13, fontweight='bold')
             plt.tight_layout()
@@ -555,20 +555,22 @@ if st.session_state.df is not None:
                     colors=colors_area,
                     startangle=90,
                     wedgeprops={'width': 0.4, 'edgecolor': 'white', 'linewidth': 2},
-                    textprops={'fontsize': 10, 'fontweight': 'bold'}
+                    textprops={'fontsize': 10, 'fontweight': 'bold', 'color': 'black'}
                 )
                 
+                # Ajustar etiquetas de porcentaje a color negro
                 for autotext in autotexts:
-                    autotext.set_color('white')
+                    autotext.set_color('black')
                     autotext.set_fontsize(11)
                     autotext.set_fontweight('bold')
                 
+                # Agregar cantidades fuera del gráfico en color negro
                 for i, wedge in enumerate(wedges):
                     ang = (wedge.theta2 + wedge.theta1) / 2
                     x = 1.15 * np.cos(np.radians(ang))
                     y = 1.15 * np.sin(np.radians(ang))
                     ax3.text(x, y, f"{pendientes_por_area['Cantidad'].iloc[i]}", 
-                            fontsize=10, fontweight='bold', ha='center', va='center')
+                            fontsize=10, fontweight='bold', ha='center', va='center', color='black')
                 
                 ax3.set_title('Pendientes de Gestión por Área', fontsize=13, fontweight='bold')
                 plt.tight_layout()
