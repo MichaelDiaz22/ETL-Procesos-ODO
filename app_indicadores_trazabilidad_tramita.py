@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import numpy as np
 from datetime import datetime
 from io import BytesIO
 
@@ -504,7 +505,7 @@ if st.session_state.df is not None:
         st.altair_chart(chart1, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 2: Gestión de autorizaciones (ANILLO) ========================
+        # ======================== GRÁFICO 2: Gestión de autorizaciones (ANILLO CON ETIQUETAS MEJORADAS) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
@@ -513,9 +514,20 @@ if st.session_state.df is not None:
             estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
             estado_gestion_counts = estado_gestion_counts.sort_values('Cantidad', ascending=False)
             
-            # Calcular porcentajes para mostrar en las etiquetas
+            # Calcular porcentajes
             total = estado_gestion_counts['Cantidad'].sum()
             estado_gestion_counts['Porcentaje'] = (estado_gestion_counts['Cantidad'] / total * 100).round(1)
+            
+            # Calcular ángulos para posicionar etiquetas
+            estado_gestion_counts['Angulo'] = estado_gestion_counts['Cantidad'] / total * 360
+            estado_gestion_counts['Angulo_Acumulado'] = estado_gestion_counts['Angulo'].cumsum() - estado_gestion_counts['Angulo'] / 2
+            estado_gestion_counts['Rad'] = np.radians(estado_gestion_counts['Angulo_Acumulado'])
+            
+            # Posiciones para etiquetas (radio externo)
+            radio_externo = 140
+            estado_gestion_counts['X'] = radio_externo * np.sin(estado_gestion_counts['Rad'])
+            estado_gestion_counts['Y'] = -radio_externo * np.cos(estado_gestion_counts['Rad'])
+            
             estado_gestion_counts['Etiqueta'] = estado_gestion_counts.apply(
                 lambda row: f"{row['Estado de Gestión']}: {row['Cantidad']} ({row['Porcentaje']}%)", axis=1
             )
@@ -543,29 +555,28 @@ if st.session_state.df is not None:
                 ),
                 tooltip=['Estado de Gestión', 'Cantidad', 'Porcentaje']
             ).properties(
-                height=400
+                height=450
             )
             
-            # Etiquetas FUERA del gráfico de anillo
+            # Etiquetas posicionadas correctamente alrededor del anillo
             text_labels2 = alt.Chart(estado_gestion_counts).mark_text(
                 fontSize=11,
                 fontWeight='bold',
                 color='#000000',
-                align='left',
-                baseline='middle',
-                dx=5
+                align='center',
+                baseline='middle'
             ).encode(
-                theta=alt.Theta(field="Cantidad", type="quantitative"),
-                text=alt.Text('Etiqueta:N'),
-                radius=alt.value(110),
-                angle=alt.value(0)
+                x='X:Q',
+                y='Y:Q',
+                text='Etiqueta:N',
+                tooltip=['Etiqueta']
             )
             
-            chart2 = alt.LayerChart(layer=[pie_chart2, text_labels2], height=400)
+            chart2 = alt.LayerChart(layer=[pie_chart2, text_labels2], height=450)
             st.altair_chart(chart2, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO) ========================
+        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO CON ETIQUETAS MEJORADAS) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Pendientes de Gestión por Área")
@@ -579,6 +590,17 @@ if st.session_state.df is not None:
                 # Calcular porcentajes
                 total_area = pendientes_por_area['Cantidad'].sum()
                 pendientes_por_area['Porcentaje'] = (pendientes_por_area['Cantidad'] / total_area * 100).round(1)
+                
+                # Calcular ángulos para posicionar etiquetas
+                pendientes_por_area['Angulo'] = pendientes_por_area['Cantidad'] / total_area * 360
+                pendientes_por_area['Angulo_Acumulado'] = pendientes_por_area['Angulo'].cumsum() - pendientes_por_area['Angulo'] / 2
+                pendientes_por_area['Rad'] = np.radians(pendientes_por_area['Angulo_Acumulado'])
+                
+                # Posiciones para etiquetas (radio externo)
+                radio_externo = 140
+                pendientes_por_area['X'] = radio_externo * np.sin(pendientes_por_area['Rad'])
+                pendientes_por_area['Y'] = -radio_externo * np.cos(pendientes_por_area['Rad'])
+                
                 pendientes_por_area['Etiqueta'] = pendientes_por_area.apply(
                     lambda row: f"{row['Área']}: {row['Cantidad']} ({row['Porcentaje']}%)", axis=1
                 )
@@ -606,25 +628,24 @@ if st.session_state.df is not None:
                     ),
                     tooltip=['Área', 'Cantidad', 'Porcentaje']
                 ).properties(
-                    height=400
+                    height=450
                 )
                 
-                # Etiquetas FUERA del gráfico de anillo
+                # Etiquetas posicionadas correctamente alrededor del anillo
                 text_labels3 = alt.Chart(pendientes_por_area).mark_text(
                     fontSize=10,
                     fontWeight='bold',
                     color='#000000',
-                    align='left',
-                    baseline='middle',
-                    dx=5
+                    align='center',
+                    baseline='middle'
                 ).encode(
-                    theta=alt.Theta(field="Cantidad", type="quantitative"),
-                    text=alt.Text('Etiqueta:N'),
-                    radius=alt.value(110),
-                    angle=alt.value(0)
+                    x='X:Q',
+                    y='Y:Q',
+                    text='Etiqueta:N',
+                    tooltip=['Etiqueta']
                 )
                 
-                chart3 = alt.LayerChart(layer=[pie_chart3, text_labels3], height=400)
+                chart3 = alt.LayerChart(layer=[pie_chart3, text_labels3], height=450)
                 st.altair_chart(chart3, use_container_width=True)
             else:
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
