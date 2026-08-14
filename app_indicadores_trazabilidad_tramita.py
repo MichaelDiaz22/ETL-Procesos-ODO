@@ -93,10 +93,8 @@ if 'df' not in st.session_state:
     st.session_state.df = None
 if 'df_filtrado' not in st.session_state:
     st.session_state.df_filtrado = None
-if 'fecha_inicio' not in st.session_state:
-    st.session_state.fecha_inicio = None
-if 'fecha_fin' not in st.session_state:
-    st.session_state.fecha_fin = None
+if 'filtros_aplicados' not in st.session_state:
+    st.session_state.filtros_aplicados = False
 
 # Título principal
 st.title("📊 Dashboard de Gestión de Portafolio")
@@ -156,6 +154,8 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                     df['Entregado'] = pd.to_datetime(df['Entregado'])
                 
                 st.session_state.df = df
+                st.session_state.filtros_aplicados = False
+                st.session_state.df_filtrado = None
                 
                 if len(df) > 0:
                     st.session_state.fecha_inicio = df['Solicitado'].min().date()
@@ -202,89 +202,95 @@ if st.session_state.df is not None:
     # ======================== BARRA DE FILTROS ========================
     st.markdown("### 🔍 Panel de Filtros")
     
-    col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns([2, 2, 2, 2, 1])
-    
-    with col_f1:
-        fecha_min = df['Solicitado'].min().date()
-        fecha_max = df['Solicitado'].max().date()
-        fecha_inicio = st.date_input(
-            "📅 Desde",
-            value=fecha_min,
-            min_value=fecha_min,
-            max_value=fecha_max,
-            key="fecha_inicio_dashboard"
-        )
-    
-    with col_f2:
-        fecha_fin = st.date_input(
-            "📅 Hasta",
-            value=fecha_max,
-            min_value=fecha_min,
-            max_value=fecha_max,
-            key="fecha_fin_dashboard"
-        )
-    
-    with col_f3:
-        estados_disponibles = sorted(df['Estado'].dropna().unique().tolist())
-        estados_seleccionados = st.multiselect(
-            "📌 Estado",
-            options=estados_disponibles,
-            default=estados_disponibles,
-            key="estados_dashboard"
-        )
-    
-    with col_f4:
-        entidades_disponibles = sorted(df['Entidad'].dropna().unique().tolist())
-        entidades_seleccionadas = st.multiselect(
-            "🏥 Entidad",
-            options=entidades_disponibles,
-            default=entidades_disponibles,
-            key="entidades_dashboard"
-        )
-    
-    with col_f5:
-        st.write("")
-        st.write("")
-        if st.button("🔄 Aplicar Filtros", use_container_width=True, key="apply_filters"):
-            st.rerun()
-    
-    # Filtros adicionales en segunda fila
-    col_f6, col_f7, col_f8 = st.columns([2, 2, 2])
-    
-    with col_f6:
-        areas_disponibles = sorted(df['Area'].dropna().unique().tolist())
-        areas_seleccionadas = st.multiselect(
-            "📂 Área",
-            options=areas_disponibles,
-            default=areas_disponibles,
-            key="areas_dashboard"
-        )
-    
-    with col_f7:
-        sedes_disponibles = sorted(df['Sede'].dropna().unique().tolist())
-        sedes_seleccionadas = st.multiselect(
-            "📍 Sede",
-            options=sedes_disponibles,
-            default=sedes_disponibles,
-            key="sedes_dashboard"
-        )
-    
-    with col_f8:
-        # Botón para resetear filtros
-        if st.button("🔄 Restablecer Filtros", use_container_width=True, key="reset_filters"):
+    # Usar un formulario para que los filtros se apliquen todos juntos
+    with st.form(key="filtros_form"):
+        col_f1, col_f2, col_f3, col_f4 = st.columns([2, 2, 2, 1])
+        
+        with col_f1:
+            fecha_min = df['Solicitado'].min().date()
+            fecha_max = df['Solicitado'].max().date()
+            fecha_inicio = st.date_input(
+                "📅 Desde",
+                value=fecha_min,
+                min_value=fecha_min,
+                max_value=fecha_max,
+                key="fecha_inicio_dashboard"
+            )
+        
+        with col_f2:
+            fecha_fin = st.date_input(
+                "📅 Hasta",
+                value=fecha_max,
+                min_value=fecha_min,
+                max_value=fecha_max,
+                key="fecha_fin_dashboard"
+            )
+        
+        with col_f3:
+            estados_disponibles = sorted(df['Estado'].dropna().unique().tolist())
+            estados_seleccionados = st.multiselect(
+                "📌 Estado",
+                options=estados_disponibles,
+                default=estados_disponibles,
+                key="estados_dashboard"
+            )
+        
+        with col_f4:
+            st.write("")
+            st.write("")
+            aplicar_filtros = st.form_submit_button("🔍 Aplicar Filtros", use_container_width=True)
+        
+        # Segunda fila de filtros
+        col_f5, col_f6, col_f7 = st.columns([2, 2, 2])
+        
+        with col_f5:
+            entidades_disponibles = sorted(df['Entidad'].dropna().unique().tolist())
+            entidades_seleccionadas = st.multiselect(
+                "🏥 Entidad",
+                options=entidades_disponibles,
+                default=entidades_disponibles,
+                key="entidades_dashboard"
+            )
+        
+        with col_f6:
+            areas_disponibles = sorted(df['Area'].dropna().unique().tolist())
+            areas_seleccionadas = st.multiselect(
+                "📂 Área",
+                options=areas_disponibles,
+                default=areas_disponibles,
+                key="areas_dashboard"
+            )
+        
+        with col_f7:
+            sedes_disponibles = sorted(df['Sede'].dropna().unique().tolist())
+            sedes_seleccionadas = st.multiselect(
+                "📍 Sede",
+                options=sedes_disponibles,
+                default=sedes_disponibles,
+                key="sedes_dashboard"
+            )
+        
+        # Botón para resetear filtros (fuera del flujo del form)
+        if st.button("🔄 Restablecer Filtros", key="reset_filters_dashboard"):
             st.session_state.df_filtrado = None
+            st.session_state.filtros_aplicados = False
             st.rerun()
     
     # ======================== APLICAR FILTROS ========================
-    if st.session_state.df_filtrado is None:
+    # Siempre aplicar filtros cuando se carga el archivo o cuando se presiona el botón
+    if st.session_state.df_filtrado is None or aplicar_filtros:
         df_filtrado = df.copy()
         
+        # Aplicar filtro de fechas
         if fecha_inicio and fecha_fin:
             if fecha_inicio <= fecha_fin:
                 fecha_inicio_dt = pd.Timestamp(fecha_inicio)
                 fecha_fin_dt = pd.Timestamp(fecha_fin) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
                 df_filtrado = df_filtrado[(df_filtrado['Solicitado'] >= fecha_inicio_dt) & (df_filtrado['Solicitado'] <= fecha_fin_dt)]
+            else:
+                st.warning("⚠️ La fecha de inicio debe ser menor o igual a la fecha de fin")
         
+        # Aplicar filtros de selección
         if estados_seleccionados:
             df_filtrado = df_filtrado[df_filtrado['Estado'].isin(estados_seleccionados)]
         if entidades_seleccionadas:
@@ -295,17 +301,22 @@ if st.session_state.df is not None:
             df_filtrado = df_filtrado[df_filtrado['Sede'].isin(sedes_seleccionadas)]
         
         st.session_state.df_filtrado = df_filtrado
-    else:
-        df_filtrado = st.session_state.df_filtrado
+        st.session_state.filtros_aplicados = True
+        
+        # Mostrar mensaje de confirmación
+        st.success(f"✅ Filtros aplicados: {len(df_filtrado)} registros encontrados")
+    
+    # Usar el DataFrame filtrado
+    df_filtrado = st.session_state.df_filtrado.copy()
     
     # ======================== KPI CARDS ========================
     st.markdown("### 📊 Indicadores Clave")
     
     # Calcular métricas
     total_registros = len(df_filtrado)
-    total_entidades = df_filtrado['Entidad'].nunique()
-    total_pacientes = df_filtrado['Paciente'].nunique()
-    total_servicios = df_filtrado['Servicio'].nunique()
+    total_entidades = df_filtrado['Entidad'].nunique() if len(df_filtrado) > 0 else 0
+    total_pacientes = df_filtrado['Paciente'].nunique() if len(df_filtrado) > 0 else 0
+    total_servicios = df_filtrado['Servicio'].nunique() if len(df_filtrado) > 0 else 0
     
     # Días promedio de entrega
     if 'Entregado' in df_filtrado.columns and len(df_filtrado) > 0:
@@ -331,71 +342,74 @@ if st.session_state.df is not None:
         promedio_paciente_dia = "N/A"
     
     # Mostrar KPI Cards
-    col_k1, col_k2, col_k3, col_k4 = st.columns(4)
-    
-    with col_k1:
-        st.markdown(f"""
-            <div class="metric-card">
-                <h4 style="margin:0; font-size:14px; opacity:0.9;">📊 Total Registros</h4>
-                <h2 style="margin:5px 0 0 0; font-size:28px;">{total_registros:,}</h2>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col_k2:
-        st.markdown(f"""
-            <div class="metric-card">
-                <h4 style="margin:0; font-size:14px; opacity:0.9;">🏥 Entidades</h4>
-                <h2 style="margin:5px 0 0 0; font-size:28px;">{total_entidades:,}</h2>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col_k3:
-        st.markdown(f"""
-            <div class="metric-card">
-                <h4 style="margin:0; font-size:14px; opacity:0.9;">👥 Pacientes</h4>
-                <h2 style="margin:5px 0 0 0; font-size:28px;">{total_pacientes:,}</h2>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col_k4:
-        st.markdown(f"""
-            <div class="metric-card">
-                <h4 style="margin:0; font-size:14px; opacity:0.9;">📋 Servicios</h4>
-                <h2 style="margin:5px 0 0 0; font-size:28px;">{total_servicios:,}</h2>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    # Segunda fila de KPI
-    col_k5, col_k6, col_k7 = st.columns(3)
-    
-    with col_k5:
-        st.markdown(f"""
-            <div class="metric-card-small">
-                <h4 style="margin:0; font-size:12px; opacity:0.9;">⏱️ Días promedio entrega</h4>
-                <h3 style="margin:5px 0 0 0; font-size:22px;">{promedio_dias_entrega}</h3>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col_k6:
-        st.markdown(f"""
-            <div class="metric-card-small">
-                <h4 style="margin:0; font-size:12px; opacity:0.9;">📅 Ordenamientos/día por sede</h4>
-                <h3 style="margin:5px 0 0 0; font-size:22px;">{promedio_dia_sede}</h3>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col_k7:
-        st.markdown(f"""
-            <div class="metric-card-small">
-                <h4 style="margin:0; font-size:12px; opacity:0.9;">👤 Ordenamientos/día por paciente</h4>
-                <h3 style="margin:5px 0 0 0; font-size:22px;">{promedio_paciente_dia}</h3>
-            </div>
-        """, unsafe_allow_html=True)
+    if len(df_filtrado) > 0:
+        col_k1, col_k2, col_k3, col_k4 = st.columns(4)
+        
+        with col_k1:
+            st.markdown(f"""
+                <div class="metric-card">
+                    <h4 style="margin:0; font-size:14px; opacity:0.9;">📊 Total Registros</h4>
+                    <h2 style="margin:5px 0 0 0; font-size:28px;">{total_registros:,}</h2>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        with col_k2:
+            st.markdown(f"""
+                <div class="metric-card">
+                    <h4 style="margin:0; font-size:14px; opacity:0.9;">🏥 Entidades</h4>
+                    <h2 style="margin:5px 0 0 0; font-size:28px;">{total_entidades:,}</h2>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        with col_k3:
+            st.markdown(f"""
+                <div class="metric-card">
+                    <h4 style="margin:0; font-size:14px; opacity:0.9;">👥 Pacientes</h4>
+                    <h2 style="margin:5px 0 0 0; font-size:28px;">{total_pacientes:,}</h2>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        with col_k4:
+            st.markdown(f"""
+                <div class="metric-card">
+                    <h4 style="margin:0; font-size:14px; opacity:0.9;">📋 Servicios</h4>
+                    <h2 style="margin:5px 0 0 0; font-size:28px;">{total_servicios:,}</h2>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Segunda fila de KPI
+        col_k5, col_k6, col_k7 = st.columns(3)
+        
+        with col_k5:
+            st.markdown(f"""
+                <div class="metric-card-small">
+                    <h4 style="margin:0; font-size:12px; opacity:0.9;">⏱️ Días promedio entrega</h4>
+                    <h3 style="margin:5px 0 0 0; font-size:22px;">{promedio_dias_entrega}</h3>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        with col_k6:
+            st.markdown(f"""
+                <div class="metric-card-small">
+                    <h4 style="margin:0; font-size:12px; opacity:0.9;">📅 Ordenamientos/día por sede</h4>
+                    <h3 style="margin:5px 0 0 0; font-size:22px;">{promedio_dia_sede}</h3>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        with col_k7:
+            st.markdown(f"""
+                <div class="metric-card-small">
+                    <h4 style="margin:0; font-size:12px; opacity:0.9;">👤 Ordenamientos/día por paciente</h4>
+                    <h3 style="margin:5px 0 0 0; font-size:22px;">{promedio_paciente_dia}</h3>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.warning("⚠️ No hay datos con los filtros seleccionados")
     
     # ======================== GRÁFICOS ========================
-    st.markdown("### 📈 Análisis Visual")
-    
     if len(df_filtrado) > 0:
+        st.markdown("### 📈 Análisis Visual")
+        
         # Función para clasificar estado de gestión
         def clasificar_estado_gestion(estado):
             if estado == "PROGRAMAR":
