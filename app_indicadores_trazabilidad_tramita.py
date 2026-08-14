@@ -493,7 +493,7 @@ if st.session_state.df is not None:
         plt.close()
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 2: Gestión de autorizaciones (ANILLO) ========================
+        # ======================== GRÁFICO 2: Gestión de autorizaciones (ANILLO MEJORADO) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
@@ -501,7 +501,7 @@ if st.session_state.df is not None:
             estado_gestion_counts = df_filtrado['Estado_Gestion'].value_counts().reset_index()
             estado_gestion_counts.columns = ['Estado', 'Cantidad']
             
-            fig2, ax2 = plt.subplots(figsize=(10, 7))
+            fig2, ax2 = plt.subplots(figsize=(12, 8))
             colors = ['#6d28d9', '#7c3aed', '#a78bfa', '#c4b5fd']
             
             # Gráfico de anillo
@@ -512,30 +512,44 @@ if st.session_state.df is not None:
                 colors=colors[:len(estado_gestion_counts)],
                 startangle=90,
                 wedgeprops={'width': 0.4, 'edgecolor': 'white', 'linewidth': 2},
-                textprops={'fontsize': 11, 'fontweight': 'bold', 'color': 'black'}
+                textprops={'fontsize': 12, 'fontweight': 'bold', 'color': 'black'},
+                pctdistance=0.65
             )
             
-            # Ajustar etiquetas de porcentaje a color negro
+            # Ajustar etiquetas de porcentaje a color negro con fondo blanco para mejor legibilidad
             for autotext in autotexts:
                 autotext.set_color('black')
-                autotext.set_fontsize(12)
+                autotext.set_fontsize(13)
                 autotext.set_fontweight('bold')
+                autotext.set_bbox(dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.7))
             
-            # Agregar cantidades fuera del gráfico en color negro
+            # Agregar cantidades fuera del gráfico con líneas conectoras
             for i, wedge in enumerate(wedges):
                 ang = (wedge.theta2 + wedge.theta1) / 2
-                x = 1.15 * np.cos(np.radians(ang))
-                y = 1.15 * np.sin(np.radians(ang))
+                # Posición fuera del gráfico
+                x = 1.25 * np.cos(np.radians(ang))
+                y = 1.25 * np.sin(np.radians(ang))
+                
+                # Posición intermedia para la línea
+                x_mid = 1.05 * np.cos(np.radians(ang))
+                y_mid = 1.05 * np.sin(np.radians(ang))
+                
+                # Dibujar línea conectora
+                ax2.plot([x_mid, x], [y_mid, y], color='gray', linewidth=0.8, linestyle='--')
+                
+                # Texto de cantidad
                 ax2.text(x, y, f"{estado_gestion_counts['Cantidad'].iloc[i]}", 
-                        fontsize=11, fontweight='bold', ha='center', va='center', color='black')
+                        fontsize=13, fontweight='bold', ha='center', va='center', 
+                        color='black',
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.8))
             
-            ax2.set_title('Gestión de autorizaciones y ordenes disponibles para programación', fontsize=13, fontweight='bold')
+            ax2.set_title('Gestión de autorizaciones y ordenes disponibles para programación', fontsize=14, fontweight='bold', pad=20)
             plt.tight_layout()
             st.pyplot(fig2)
             plt.close()
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO) ========================
+        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO MEJORADO) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Pendientes de Gestión por Área")
@@ -545,7 +559,7 @@ if st.session_state.df is not None:
                 pendientes_por_area = df_pendientes['Area'].value_counts().reset_index()
                 pendientes_por_area.columns = ['Área', 'Cantidad']
                 
-                fig3, ax3 = plt.subplots(figsize=(10, 7))
+                fig3, ax3 = plt.subplots(figsize=(12, 8))
                 colors_area = purple_palette[:len(pendientes_por_area)]
                 
                 wedges, texts, autotexts = ax3.pie(
@@ -555,24 +569,34 @@ if st.session_state.df is not None:
                     colors=colors_area,
                     startangle=90,
                     wedgeprops={'width': 0.4, 'edgecolor': 'white', 'linewidth': 2},
-                    textprops={'fontsize': 10, 'fontweight': 'bold', 'color': 'black'}
+                    textprops={'fontsize': 11, 'fontweight': 'bold', 'color': 'black'},
+                    pctdistance=0.65
                 )
                 
-                # Ajustar etiquetas de porcentaje a color negro
+                # Ajustar etiquetas de porcentaje a color negro con fondo blanco
                 for autotext in autotexts:
                     autotext.set_color('black')
-                    autotext.set_fontsize(11)
+                    autotext.set_fontsize(12)
                     autotext.set_fontweight('bold')
+                    autotext.set_bbox(dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.7))
                 
-                # Agregar cantidades fuera del gráfico en color negro
+                # Agregar cantidades fuera del gráfico con líneas conectoras
                 for i, wedge in enumerate(wedges):
                     ang = (wedge.theta2 + wedge.theta1) / 2
-                    x = 1.15 * np.cos(np.radians(ang))
-                    y = 1.15 * np.sin(np.radians(ang))
+                    x = 1.25 * np.cos(np.radians(ang))
+                    y = 1.25 * np.sin(np.radians(ang))
+                    
+                    x_mid = 1.05 * np.cos(np.radians(ang))
+                    y_mid = 1.05 * np.sin(np.radians(ang))
+                    
+                    ax3.plot([x_mid, x], [y_mid, y], color='gray', linewidth=0.8, linestyle='--')
+                    
                     ax3.text(x, y, f"{pendientes_por_area['Cantidad'].iloc[i]}", 
-                            fontsize=10, fontweight='bold', ha='center', va='center', color='black')
+                            fontsize=12, fontweight='bold', ha='center', va='center', 
+                            color='black',
+                            bbox=dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.8))
                 
-                ax3.set_title('Pendientes de Gestión por Área', fontsize=13, fontweight='bold')
+                ax3.set_title('Pendientes de Gestión por Área', fontsize=14, fontweight='bold', pad=20)
                 plt.tight_layout()
                 st.pyplot(fig3)
                 plt.close()
