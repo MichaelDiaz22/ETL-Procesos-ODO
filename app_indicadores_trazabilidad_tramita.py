@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from datetime import datetime
 from io import BytesIO
 
@@ -57,9 +58,6 @@ PORTAFOLIO_BASE = [
 
 # Crear DataFrame del portafolio base
 df_portafolio_base = pd.DataFrame(PORTAFOLIO_BASE, columns=['CUPS', 'codIPS', 'descrCodIPS', 'codREPS', 'A', 'UNIDAD EJECUTORA', 'Codigo unidad'])
-
-# Crear un diccionario de mapeo de CUPS a Área (codREPS) para el cruce
-dict_cups_area = dict(zip(df_portafolio_base['CUPS'].astype(str), df_portafolio_base['codREPS']))
 
 # Inicializar el estado de la sesión para el DataFrame
 if 'df' not in st.session_state:
@@ -388,7 +386,6 @@ if st.session_state.df is not None:
         df['Cups_str'] = df['Cups'].astype(str).str[:6]
         
         # Crear diccionario de mapeo de CUPS (primeros 6 dígitos) a Área
-        # Primero, asegurarse de que los CUPS del portafolio estén como string y tomar primeros 6
         df_portafolio_base['CUPS_str'] = df_portafolio_base['CUPS'].astype(str).str[:6]
         dict_cups_area = dict(zip(df_portafolio_base['CUPS_str'], df_portafolio_base['codREPS']))
         
@@ -605,6 +602,182 @@ if st.session_state.df is not None:
                 promedio_ordenamientos_paciente_dia_str,
                 help="Promedio de ordenamientos generados por día por paciente"
             )
+        
+        # ======================== GRÁFICOS ========================
+        st.divider()
+        st.subheader("📊 Gráficos")
+        
+        # 1. Ordenes generadas vs. Ordenes gestionadas por semana
+        if len(df_filtrado) > 0:
+            st.subheader("📊 Ordenes generadas vs. Ordenes gestionadas por semana")
+            
+            # Ordenes generadas por día (todas)
+            ordenes_generadas = df_filtrado.groupby(df_filtrado['Solicitado'].dt.date).size().reset_index()
+            ordenes_generadas.columns = ['Fecha', 'Generadas']
+            
+            # Ordenes gestionadas por día (Estado != "RADICAR")
+            df_gestionadas = df_filtrado[df_filtrado['Estado'] != "RADICAR"]
+            ordenes_gestionadas = df_gestionadas.groupby(df_gestionadas['Solicitado'].dt.date).size().reset_index()
+            ordenes_gestionadas.columns = ['Fecha', 'Gestionadas']
+            
+            # Combinar ambos DataFrames
+            df_graf1 = pd.merge(ordenes_generadas, ordenes_gestionadas, on='Fecha', how='outer').fillna(0)
+            
+            # Crear gráfico con Plotly
+            fig1 = px.bar(
+                df_graf1,
+                x='Fecha',
+                y=['Generadas', 'Gestionadas'],
+                title='Órdenes Generadas vs Gestionadas por Día',
+                labels={'value': 'Cantidad', 'Fecha': 'Fecha', 'variable': 'Tipo'},
+                barmode='group',
+                color_discrete_map={'Generadas': '#1f77b4', 'Gestionadas': '#2ca02c'}
+            )
+            fig1.update_layout(
+                xaxis_title='Fecha',
+                yaxis_title='Cantidad',
+                legend_title='Tipo',
+                height=400
+            )
+            st.plotly_chart(fig1, use_container_width=True)
+        
+        # 2. Gestión de autorizaciones y ordenes disponibles para programación
+        if len(df_filtrado) > 0:
+            st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
+            
+            def clasificar_estado_gestion(estado):
+                if estado == "PROGRAMAR":
+                    return "Pendiente gestión desde programación"
+                elif estado == "RADICAR":
+                    return "Pendiente gestión desde Autorizaciones"
+                elif estado in ["PROGRAMADO", "PENDIENTE PROGRAMAR"]:
+                    return "Gestionado desde programación"
+                else:
+                    return "Gestionado / En seguimiento desde Autorizaciones"
+            
+            df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
+            
+            estado_gestion_counts = df_filtrado['Estado_Gestion'].value_counts().reset_index()
+            estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
+            
+            fig2 = px.bar(
+                estado_gestion_counts,
+                x='Estado de Gestión',
+                y='Cantidad',
+                title='Distribución por Estado de Gestión',
+                labels={'Cantidad': 'Cantidad', 'Estado de Gestión': 'Estado de Gestión'},
+                color='Estado de Gestión',
+                color_discrete_sequence=px.colors.qualitative.Set2
+            )
+            fig2.update_layout(
+                xaxis_title='Estado de Gestión',
+                yaxis_title='Cantidad',
+                height=400,
+                showlegend=False
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+        
+        # 3. Ordenamientos disponibles para programación, pendientes de gestión
+        if len(df_filtrado) > 0:
+            st.subheader("📊 Ordenamientos disponibles para programación, pendientes de gestión")
+            
+            # Filtrar solo los que están en "Pendiente gestión desde programación"
+            df_pendientes_programacion = df_filtrado[df_filtrado['Estado_Gestion'] == "Pendiente gestión desde programación"]
+            
+            if len(df_pendientes_programacion) > 0:
+                pendientes_por_area = df_pendientes_programacion['Area'].value_counts().reset_index()
+                pendientes_por_area.columns = ['Área', 'Cantidad']
+                
+                fig3 = px.bar(
+                    pendientes_por_area,
+                    x='Área',
+                    y='Cantidad',
+                    title='Ordenamientos Pendientes de Gestión por Área',
+                    labels={'Cantidad': 'Cantidad', 'Área': 'Área'},
+                    color='Área',
+                    color_discrete_sequence=px.colors.qualitative.Set3
+                )
+                fig3.update_layout(
+                    xaxis_title='Área',
+                    yaxis_title='Cantidad',
+                    height=400,
+                    showlegend=False
+                )
+                st.plotly_chart(fig3, use_container_width=True)
+            else:
+                st.info("No hay ordenamientos pendientes de gestión desde programación")
+        
+        # 4. Ordenes generadas por servicio
+        if len(df_filtrado) > 0:
+            st.subheader("📊 Ordenes generadas por servicio")
+            
+            ordenes_por_area = df_filtrado['Area'].value_counts().reset_index()
+            ordenes_por_area.columns = ['Área', 'Cantidad']
+            
+            fig4 = px.bar(
+                ordenes_por_area,
+                x='Área',
+                y='Cantidad',
+                title='Órdenes Generadas por Área de Servicio',
+                labels={'Cantidad': 'Cantidad', 'Área': 'Área'},
+                color='Área',
+                color_discrete_sequence=px.colors.qualitative.Pastel
+            )
+            fig4.update_layout(
+                xaxis_title='Área',
+                yaxis_title='Cantidad',
+                height=400,
+                showlegend=False
+            )
+            st.plotly_chart(fig4, use_container_width=True)
+        
+        # 5. Estados de servicios gestionados
+        if len(df_filtrado) > 0:
+            st.subheader("📊 Estados de servicios gestionados")
+            
+            estados_counts = df_filtrado['Estado'].value_counts().reset_index()
+            estados_counts.columns = ['Estado', 'Cantidad']
+            
+            fig5 = px.bar(
+                estados_counts,
+                x='Estado',
+                y='Cantidad',
+                title='Distribución por Estado',
+                labels={'Cantidad': 'Cantidad', 'Estado': 'Estado'},
+                color='Estado',
+                color_discrete_sequence=px.colors.qualitative.Set1
+            )
+            fig5.update_layout(
+                xaxis_title='Estado',
+                yaxis_title='Cantidad',
+                height=400,
+                showlegend=False
+            )
+            st.plotly_chart(fig5, use_container_width=True)
+        
+        # 6. Ordenamientos distribuidos por entidad
+        if len(df_filtrado) > 0:
+            st.subheader("📊 Ordenamientos distribuidos por entidad")
+            
+            entidad_counts = df_filtrado['Entidad'].value_counts().reset_index()
+            entidad_counts.columns = ['Entidad', 'Cantidad']
+            
+            fig6 = px.bar(
+                entidad_counts,
+                x='Entidad',
+                y='Cantidad',
+                title='Distribución por Entidad',
+                labels={'Cantidad': 'Cantidad', 'Entidad': 'Entidad'},
+                color='Entidad',
+                color_discrete_sequence=px.colors.qualitative.Paired
+            )
+            fig6.update_layout(
+                xaxis_title='Entidad',
+                yaxis_title='Cantidad',
+                height=400,
+                showlegend=False
+            )
+            st.plotly_chart(fig6, use_container_width=True)
         
         # Mostrar información de filtros aplicados
         st.divider()
