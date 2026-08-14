@@ -502,6 +502,7 @@ if st.session_state.df is not None:
         
         # Diccionario para almacenar figuras para exportación
         figuras_export = {}
+        archivos_temporales = []  # Lista para guardar rutas de archivos temporales
         
         # ======================== GRÁFICO 1: Órdenes generadas vs gestionadas ========================
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -936,7 +937,7 @@ if st.session_state.df is not None:
             
             return datos_detalle, resumen_df
         
-        # Botón de exportación
+        # Botón de exportación - versión mejorada sin archivos temporales problemáticos
         if st.button("📥 Exportar a Excel con Gráficos", use_container_width=True, type="primary"):
             try:
                 # Preparar datos para exportación
@@ -975,7 +976,7 @@ if st.session_state.df is not None:
                     for c_idx, value in enumerate(row, 1):
                         ws2.cell(row=r_idx, column=c_idx, value=value)
                 
-                # --- Hoja 3: Imágenes de Gráficos ---
+                # --- Hoja 3: Imágenes de Gráficos (usando BytesIO en lugar de archivos temporales) ---
                 ws_img = wb.create_sheet("Gráficos")
                 
                 # Configurar anchos de columna para imágenes
@@ -999,17 +1000,17 @@ if st.session_state.df is not None:
                 for idx, fig in enumerate(figuras):
                     if idx < len(titulos):
                         try:
-                            # Crear archivo temporal para la imagen
-                            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmpfile:
-                                fig.savefig(tmpfile.name, dpi=150, bbox_inches='tight')
-                                tmpfile_path = tmpfile.name
+                            # Guardar figura en BytesIO en lugar de archivo temporal
+                            img_bytes = BytesIO()
+                            fig.savefig(img_bytes, dpi=150, bbox_inches='tight', format='png')
+                            img_bytes.seek(0)
                             
                             # Agregar título
                             ws_img.cell(row=idx*20 + 1, column=2, value=titulos[idx])
                             ws_img.cell(row=idx*20 + 1, column=2).font = Font(bold=True, size=12)
                             
-                            # Agregar imagen
-                            img = Image(tmpfile_path)
+                            # Crear imagen desde BytesIO
+                            img = Image(img_bytes)
                             # Ajustar tamaño para que quepa bien
                             img.width = 700
                             img.height = int(img.height * (700 / img.width))
@@ -1017,8 +1018,6 @@ if st.session_state.df is not None:
                             # Posicionar imagen
                             ws_img.add_image(img, f'B{idx*20 + 2}')
                             
-                            # Eliminar archivo temporal
-                            os.unlink(tmpfile_path)
                         except Exception as e:
                             st.warning(f"No se pudo agregar la imagen del gráfico {idx+1}: {e}")
                 
