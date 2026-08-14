@@ -501,7 +501,14 @@ if st.session_state.df is not None:
             estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
             estado_gestion_counts = estado_gestion_counts.sort_values('Cantidad', ascending=False)
             
-            # Gráfico de anillo con colores mejorados
+            # Calcular porcentajes para mostrar en las etiquetas
+            total = estado_gestion_counts['Cantidad'].sum()
+            estado_gestion_counts['Porcentaje'] = (estado_gestion_counts['Cantidad'] / total * 100).round(1)
+            estado_gestion_counts['Etiqueta'] = estado_gestion_counts.apply(
+                lambda row: f"{row['Cantidad']} ({row['Porcentaje']}%)", axis=1
+            )
+            
+            # Gráfico de anillo
             pie_chart2 = alt.Chart(estado_gestion_counts).mark_arc(
                 innerRadius=80,
                 stroke='#fff',
@@ -522,23 +529,23 @@ if st.session_state.df is not None:
                         titleFontSize=13
                     )
                 ),
-                tooltip=['Estado de Gestión', 'Cantidad']
+                tooltip=['Estado de Gestión', 'Cantidad', 'Porcentaje']
             ).properties(
                 height=400
             )
             
-            # Etiquetas para el gráfico de anillo
+            # Etiquetas DENTRO del gráfico de anillo
             text_labels2 = alt.Chart(estado_gestion_counts).mark_text(
-                fontSize=14,
+                fontSize=12,
                 fontWeight='bold',
                 color='white',
                 stroke='white',
                 strokeWidth=0.5
             ).encode(
                 theta=alt.Theta(field="Cantidad", type="quantitative"),
-                text=alt.Text('Cantidad:Q', format='.0f'),
+                text=alt.Text('Etiqueta:N'),
                 color=alt.value('white'),
-                radius=alt.value(60)
+                radius=alt.value(65)  # Posicionamiento dentro del anillo
             )
             
             chart2 = alt.LayerChart(layer=[pie_chart2, text_labels2], height=400)
@@ -556,7 +563,14 @@ if st.session_state.df is not None:
                 pendientes_por_area.columns = ['Área', 'Cantidad']
                 pendientes_por_area = pendientes_por_area.sort_values('Cantidad', ascending=False)
                 
-                # Gráfico de anillo con colores mejorados
+                # Calcular porcentajes
+                total_area = pendientes_por_area['Cantidad'].sum()
+                pendientes_por_area['Porcentaje'] = (pendientes_por_area['Cantidad'] / total_area * 100).round(1)
+                pendientes_por_area['Etiqueta'] = pendientes_por_area.apply(
+                    lambda row: f"{row['Cantidad']} ({row['Porcentaje']}%)", axis=1
+                )
+                
+                # Gráfico de anillo
                 pie_chart3 = alt.Chart(pendientes_por_area).mark_arc(
                     innerRadius=80,
                     stroke='#fff',
@@ -577,23 +591,23 @@ if st.session_state.df is not None:
                             titleFontSize=13
                         )
                     ),
-                    tooltip=['Área', 'Cantidad']
+                    tooltip=['Área', 'Cantidad', 'Porcentaje']
                 ).properties(
                     height=400
                 )
                 
-                # Etiquetas para el gráfico de anillo
+                # Etiquetas DENTRO del gráfico de anillo
                 text_labels3 = alt.Chart(pendientes_por_area).mark_text(
-                    fontSize=14,
+                    fontSize=11,
                     fontWeight='bold',
                     color='white',
                     stroke='white',
                     strokeWidth=0.5
                 ).encode(
                     theta=alt.Theta(field="Cantidad", type="quantitative"),
-                    text=alt.Text('Cantidad:Q', format='.0f'),
+                    text=alt.Text('Etiqueta:N'),
                     color=alt.value('white'),
-                    radius=alt.value(60)
+                    radius=alt.value(65)  # Posicionamiento dentro del anillo
                 )
                 
                 chart3 = alt.LayerChart(layer=[pie_chart3, text_labels3], height=400)
@@ -613,9 +627,6 @@ if st.session_state.df is not None:
             ordenes_por_area = df_filtrado['Area'].value_counts().reset_index()
             ordenes_por_area.columns = ['Área', 'Cantidad']
             ordenes_por_area = ordenes_por_area.sort_values('Cantidad', ascending=False)
-            
-            # Usar colores con mejor contraste
-            area_colors_short = ['#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#5b21b6', '#9b59b6']
             
             bars4 = alt.Chart(ordenes_por_area).mark_bar(color='#7c3aed').encode(
                 x=alt.X('Área:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=10)),
