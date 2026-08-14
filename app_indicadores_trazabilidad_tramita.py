@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
+import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 from datetime import datetime
 from io import BytesIO
@@ -59,6 +60,13 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
+
+# Configurar estilo de seaborn
+sns.set_style("whitegrid")
+plt.rcParams['font.size'] = 11
+plt.rcParams['axes.labelsize'] = 12
+plt.rcParams['axes.titlesize'] = 14
+plt.rcParams['legend.fontsize'] = 11
 
 # Datos estáticos del portafolio base
 PORTAFOLIO_BASE = [
@@ -418,19 +426,8 @@ if st.session_state.df is not None:
         
         df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
         
-        # Paleta de colores mejorada con mayor contraste
-        color_palette = {
-            'Pendiente gestión desde programación': '#6d28d9',
-            'Pendiente gestión desde Autorizaciones': '#7c3aed',
-            'Gestionado desde programación': '#a78bfa',
-            'Gestionado / En seguimiento desde Autorizaciones': '#c4b5fd'
-        }
-        
-        # Paleta para áreas con más contraste
-        area_colors = [
-            '#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd',
-            '#5b21b6', '#4c1d95', '#9b59b6', '#b083f0', '#d8b4fe'
-        ]
+        # Paleta de colores morados
+        purple_palette = ['#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#5b21b6', '#4c1d95', '#9b59b6']
         
         # ======================== GRÁFICO 1: Órdenes generadas vs gestionadas ========================
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -468,115 +465,77 @@ if st.session_state.df is not None:
         ordenes_gestionadas.columns = ['Fecha', 'Gestionadas']
         
         df_graf1 = pd.merge(ordenes_generadas, ordenes_gestionadas, on='Fecha', how='outer').fillna(0)
-        df_graf1['Fecha'] = df_graf1['Fecha'].astype(str)
+        df_graf1 = df_graf1.sort_values('Fecha')
         
-        df_graf1_melted = df_graf1.melt(id_vars=['Fecha'], var_name='Tipo', value_name='Cantidad')
+        # Crear gráfico con matplotlib
+        fig1, ax1 = plt.subplots(figsize=(12, 5))
+        x = np.arange(len(df_graf1['Fecha']))
+        width = 0.35
         
-        bars = alt.Chart(df_graf1_melted).mark_bar().encode(
-            x=alt.X('Fecha:N', title='Fecha', axis=alt.Axis(labelAngle=-45, labelFontSize=11)),
-            y=alt.Y('Cantidad:Q', title='Cantidad'),
-            color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Generadas', 'Gestionadas'], range=['#6d28d9', '#a78bfa'])),
-            tooltip=['Fecha', 'Tipo', 'Cantidad']
-        )
+        ax1.bar(x - width/2, df_graf1['Generadas'], width, label='Generadas', color='#6d28d9')
+        ax1.bar(x + width/2, df_graf1['Gestionadas'], width, label='Gestionadas', color='#a78bfa')
         
-        text_labels = alt.Chart(df_graf1_melted).mark_text(
-            align='center',
-            baseline='bottom',
-            dy=-5,
-            fontSize=13,
-            fontWeight='bold',
-            color='#000000'
-        ).encode(
-            x='Fecha:N',
-            y='Cantidad:Q',
-            text=alt.Text('Cantidad:Q', format='.0f'),
-            detail='Tipo:N'
-        )
+        ax1.set_xlabel('Fecha')
+        ax1.set_ylabel('Cantidad')
+        ax1.set_title('Órdenes Generadas vs Gestionadas')
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(df_graf1['Fecha'], rotation=45, ha='right', fontsize=9)
+        ax1.legend()
         
-        chart1 = alt.LayerChart(
-            layer=[bars, text_labels],
-            height=400
-        ).configure_legend(
-            orient='top',
-            labelFontSize=13,
-            titleFontSize=14
-        )
+        # Agregar etiquetas de datos
+        for i, v in enumerate(df_graf1['Generadas']):
+            ax1.text(i - width/2, v + 0.5, str(int(v)), ha='center', va='bottom', fontsize=10, fontweight='bold', color='black')
+        for i, v in enumerate(df_graf1['Gestionadas']):
+            ax1.text(i + width/2, v + 0.5, str(int(v)), ha='center', va='bottom', fontsize=10, fontweight='bold', color='black')
         
-        st.altair_chart(chart1, use_container_width=True)
+        plt.tight_layout()
+        st.pyplot(fig1)
+        plt.close()
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 2: Gestión de autorizaciones (ANILLO CON ETIQUETAS MEJORADAS) ========================
+        # ======================== GRÁFICO 2: Gestión de autorizaciones (ANILLO) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
             
             estado_gestion_counts = df_filtrado['Estado_Gestion'].value_counts().reset_index()
-            estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
-            estado_gestion_counts = estado_gestion_counts.sort_values('Cantidad', ascending=False)
+            estado_gestion_counts.columns = ['Estado', 'Cantidad']
             
-            # Calcular porcentajes
-            total = estado_gestion_counts['Cantidad'].sum()
-            estado_gestion_counts['Porcentaje'] = (estado_gestion_counts['Cantidad'] / total * 100).round(1)
-            
-            # Calcular ángulos para posicionar etiquetas
-            estado_gestion_counts['Angulo'] = estado_gestion_counts['Cantidad'] / total * 360
-            estado_gestion_counts['Angulo_Acumulado'] = estado_gestion_counts['Angulo'].cumsum() - estado_gestion_counts['Angulo'] / 2
-            estado_gestion_counts['Rad'] = np.radians(estado_gestion_counts['Angulo_Acumulado'])
-            
-            # Posiciones para etiquetas (radio externo)
-            radio_externo = 140
-            estado_gestion_counts['X'] = radio_externo * np.sin(estado_gestion_counts['Rad'])
-            estado_gestion_counts['Y'] = -radio_externo * np.cos(estado_gestion_counts['Rad'])
-            
-            estado_gestion_counts['Etiqueta'] = estado_gestion_counts.apply(
-                lambda row: f"{row['Estado de Gestión']}: {row['Cantidad']} ({row['Porcentaje']}%)", axis=1
-            )
+            fig2, ax2 = plt.subplots(figsize=(10, 7))
+            colors = ['#6d28d9', '#7c3aed', '#a78bfa', '#c4b5fd']
             
             # Gráfico de anillo
-            pie_chart2 = alt.Chart(estado_gestion_counts).mark_arc(
-                innerRadius=80,
-                stroke='#fff',
-                strokeWidth=3
-            ).encode(
-                theta=alt.Theta(field="Cantidad", type="quantitative"),
-                color=alt.Color(
-                    field="Estado de Gestión", 
-                    type="nominal",
-                    scale=alt.Scale(
-                        domain=list(color_palette.keys()),
-                        range=list(color_palette.values())
-                    ),
-                    legend=alt.Legend(
-                        title="Estado de Gestión",
-                        orient='right',
-                        labelFontSize=12,
-                        titleFontSize=13
-                    )
-                ),
-                tooltip=['Estado de Gestión', 'Cantidad', 'Porcentaje']
-            ).properties(
-                height=450
+            wedges, texts, autotexts = ax2.pie(
+                estado_gestion_counts['Cantidad'],
+                labels=estado_gestion_counts['Estado'],
+                autopct=lambda pct: f'{pct:.1f}%',
+                colors=colors[:len(estado_gestion_counts)],
+                startangle=90,
+                wedgeprops={'width': 0.4, 'edgecolor': 'white', 'linewidth': 2},
+                textprops={'fontsize': 11, 'fontweight': 'bold'}
             )
             
-            # Etiquetas posicionadas correctamente alrededor del anillo
-            text_labels2 = alt.Chart(estado_gestion_counts).mark_text(
-                fontSize=11,
-                fontWeight='bold',
-                color='#000000',
-                align='center',
-                baseline='middle'
-            ).encode(
-                x='X:Q',
-                y='Y:Q',
-                text='Etiqueta:N',
-                tooltip=['Etiqueta']
-            )
+            # Ajustar etiquetas de porcentaje
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontsize(12)
+                autotext.set_fontweight('bold')
             
-            chart2 = alt.LayerChart(layer=[pie_chart2, text_labels2], height=450)
-            st.altair_chart(chart2, use_container_width=True)
+            # Agregar cantidades fuera del gráfico
+            for i, wedge in enumerate(wedges):
+                ang = (wedge.theta2 + wedge.theta1) / 2
+                x = 1.15 * np.cos(np.radians(ang))
+                y = 1.15 * np.sin(np.radians(ang))
+                ax2.text(x, y, f"{estado_gestion_counts['Cantidad'].iloc[i]}", 
+                        fontsize=11, fontweight='bold', ha='center', va='center')
+            
+            ax2.set_title('Gestión de autorizaciones y ordenes disponibles para programación', fontsize=13, fontweight='bold')
+            plt.tight_layout()
+            st.pyplot(fig2)
+            plt.close()
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO CON ETIQUETAS MEJORADAS) ========================
+        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Pendientes de Gestión por Área")
@@ -585,68 +544,36 @@ if st.session_state.df is not None:
             if len(df_pendientes) > 0:
                 pendientes_por_area = df_pendientes['Area'].value_counts().reset_index()
                 pendientes_por_area.columns = ['Área', 'Cantidad']
-                pendientes_por_area = pendientes_por_area.sort_values('Cantidad', ascending=False)
                 
-                # Calcular porcentajes
-                total_area = pendientes_por_area['Cantidad'].sum()
-                pendientes_por_area['Porcentaje'] = (pendientes_por_area['Cantidad'] / total_area * 100).round(1)
+                fig3, ax3 = plt.subplots(figsize=(10, 7))
+                colors_area = purple_palette[:len(pendientes_por_area)]
                 
-                # Calcular ángulos para posicionar etiquetas
-                pendientes_por_area['Angulo'] = pendientes_por_area['Cantidad'] / total_area * 360
-                pendientes_por_area['Angulo_Acumulado'] = pendientes_por_area['Angulo'].cumsum() - pendientes_por_area['Angulo'] / 2
-                pendientes_por_area['Rad'] = np.radians(pendientes_por_area['Angulo_Acumulado'])
-                
-                # Posiciones para etiquetas (radio externo)
-                radio_externo = 140
-                pendientes_por_area['X'] = radio_externo * np.sin(pendientes_por_area['Rad'])
-                pendientes_por_area['Y'] = -radio_externo * np.cos(pendientes_por_area['Rad'])
-                
-                pendientes_por_area['Etiqueta'] = pendientes_por_area.apply(
-                    lambda row: f"{row['Área']}: {row['Cantidad']} ({row['Porcentaje']}%)", axis=1
+                wedges, texts, autotexts = ax3.pie(
+                    pendientes_por_area['Cantidad'],
+                    labels=pendientes_por_area['Área'],
+                    autopct=lambda pct: f'{pct:.1f}%',
+                    colors=colors_area,
+                    startangle=90,
+                    wedgeprops={'width': 0.4, 'edgecolor': 'white', 'linewidth': 2},
+                    textprops={'fontsize': 10, 'fontweight': 'bold'}
                 )
                 
-                # Gráfico de anillo
-                pie_chart3 = alt.Chart(pendientes_por_area).mark_arc(
-                    innerRadius=80,
-                    stroke='#fff',
-                    strokeWidth=3
-                ).encode(
-                    theta=alt.Theta(field="Cantidad", type="quantitative"),
-                    color=alt.Color(
-                        field="Área", 
-                        type="nominal",
-                        scale=alt.Scale(
-                            domain=pendientes_por_area['Área'].tolist(),
-                            range=area_colors[:len(pendientes_por_area)]
-                        ),
-                        legend=alt.Legend(
-                            title="Área",
-                            orient='right',
-                            labelFontSize=11,
-                            titleFontSize=13
-                        )
-                    ),
-                    tooltip=['Área', 'Cantidad', 'Porcentaje']
-                ).properties(
-                    height=450
-                )
+                for autotext in autotexts:
+                    autotext.set_color('white')
+                    autotext.set_fontsize(11)
+                    autotext.set_fontweight('bold')
                 
-                # Etiquetas posicionadas correctamente alrededor del anillo
-                text_labels3 = alt.Chart(pendientes_por_area).mark_text(
-                    fontSize=10,
-                    fontWeight='bold',
-                    color='#000000',
-                    align='center',
-                    baseline='middle'
-                ).encode(
-                    x='X:Q',
-                    y='Y:Q',
-                    text='Etiqueta:N',
-                    tooltip=['Etiqueta']
-                )
+                for i, wedge in enumerate(wedges):
+                    ang = (wedge.theta2 + wedge.theta1) / 2
+                    x = 1.15 * np.cos(np.radians(ang))
+                    y = 1.15 * np.sin(np.radians(ang))
+                    ax3.text(x, y, f"{pendientes_por_area['Cantidad'].iloc[i]}", 
+                            fontsize=10, fontweight='bold', ha='center', va='center')
                 
-                chart3 = alt.LayerChart(layer=[pie_chart3, text_labels3], height=450)
-                st.altair_chart(chart3, use_container_width=True)
+                ax3.set_title('Pendientes de Gestión por Área', fontsize=13, fontweight='bold')
+                plt.tight_layout()
+                st.pyplot(fig3)
+                plt.close()
             else:
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -663,27 +590,23 @@ if st.session_state.df is not None:
             ordenes_por_area.columns = ['Área', 'Cantidad']
             ordenes_por_area = ordenes_por_area.sort_values('Cantidad', ascending=False)
             
-            bars4 = alt.Chart(ordenes_por_area).mark_bar(color='#7c3aed').encode(
-                x=alt.X('Área:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=10)),
-                y=alt.Y('Cantidad:Q', title='Cantidad'),
-                tooltip=['Área', 'Cantidad']
-            )
+            fig4, ax4 = plt.subplots(figsize=(10, 5))
+            bars4 = ax4.bar(ordenes_por_area['Área'], ordenes_por_area['Cantidad'], color='#7c3aed')
             
-            text4 = alt.Chart(ordenes_por_area).mark_text(
-                align='center',
-                baseline='bottom',
-                dy=-5,
-                fontSize=13,
-                fontWeight='bold',
-                color='#000000'
-            ).encode(
-                x='Área:N',
-                y='Cantidad:Q',
-                text=alt.Text('Cantidad:Q', format='.0f')
-            )
+            ax4.set_xlabel('Área')
+            ax4.set_ylabel('Cantidad')
+            ax4.set_title('Órdenes Generadas por Área')
+            ax4.set_xticklabels(ordenes_por_area['Área'], rotation=30, ha='right', fontsize=9)
             
-            chart4 = alt.LayerChart(layer=[bars4, text4], height=350)
-            st.altair_chart(chart4, use_container_width=True)
+            # Agregar etiquetas de datos
+            for bar in bars4:
+                height = bar.get_height()
+                ax4.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                        f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold', color='black')
+            
+            plt.tight_layout()
+            st.pyplot(fig4)
+            plt.close()
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 5: Estados de servicios ========================
@@ -695,27 +618,22 @@ if st.session_state.df is not None:
             estados_counts.columns = ['Estado', 'Cantidad']
             estados_counts = estados_counts.sort_values('Cantidad', ascending=False)
             
-            bars5 = alt.Chart(estados_counts).mark_bar(color='#8b5cf6').encode(
-                x=alt.X('Estado:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=10)),
-                y=alt.Y('Cantidad:Q', title='Cantidad'),
-                tooltip=['Estado', 'Cantidad']
-            )
+            fig5, ax5 = plt.subplots(figsize=(10, 5))
+            bars5 = ax5.bar(estados_counts['Estado'], estados_counts['Cantidad'], color='#8b5cf6')
             
-            text5 = alt.Chart(estados_counts).mark_text(
-                align='center',
-                baseline='bottom',
-                dy=-5,
-                fontSize=13,
-                fontWeight='bold',
-                color='#000000'
-            ).encode(
-                x='Estado:N',
-                y='Cantidad:Q',
-                text=alt.Text('Cantidad:Q', format='.0f')
-            )
+            ax5.set_xlabel('Estado')
+            ax5.set_ylabel('Cantidad')
+            ax5.set_title('Estados de Servicios')
+            ax5.set_xticklabels(estados_counts['Estado'], rotation=30, ha='right', fontsize=9)
             
-            chart5 = alt.LayerChart(layer=[bars5, text5], height=350)
-            st.altair_chart(chart5, use_container_width=True)
+            for bar in bars5:
+                height = bar.get_height()
+                ax5.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                        f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold', color='black')
+            
+            plt.tight_layout()
+            st.pyplot(fig5)
+            plt.close()
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 6: Distribución por entidad ========================
@@ -726,27 +644,22 @@ if st.session_state.df is not None:
         entidad_counts.columns = ['Entidad', 'Cantidad']
         entidad_counts = entidad_counts.sort_values('Cantidad', ascending=False)
         
-        bars6 = alt.Chart(entidad_counts).mark_bar(color='#6d28d9').encode(
-            x=alt.X('Entidad:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=10)),
-            y=alt.Y('Cantidad:Q', title='Cantidad'),
-            tooltip=['Entidad', 'Cantidad']
-        )
+        fig6, ax6 = plt.subplots(figsize=(12, 6))
+        bars6 = ax6.bar(entidad_counts['Entidad'], entidad_counts['Cantidad'], color='#6d28d9')
         
-        text6 = alt.Chart(entidad_counts).mark_text(
-            align='center',
-            baseline='bottom',
-            dy=-5,
-            fontSize=13,
-            fontWeight='bold',
-            color='#000000'
-        ).encode(
-            x='Entidad:N',
-            y='Cantidad:Q',
-            text=alt.Text('Cantidad:Q', format='.0f')
-        )
+        ax6.set_xlabel('Entidad')
+        ax6.set_ylabel('Cantidad')
+        ax6.set_title('Ordenamientos Distribuidos por Entidad')
+        ax6.set_xticklabels(entidad_counts['Entidad'], rotation=30, ha='right', fontsize=9)
         
-        chart6 = alt.LayerChart(layer=[bars6, text6], height=400)
-        st.altair_chart(chart6, use_container_width=True)
+        for bar in bars6:
+            height = bar.get_height()
+            ax6.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                    f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold', color='black')
+        
+        plt.tight_layout()
+        st.pyplot(fig6)
+        plt.close()
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== INFORMACIÓN DE FILTROS ========================
