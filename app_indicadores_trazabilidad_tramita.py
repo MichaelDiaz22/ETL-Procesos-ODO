@@ -445,19 +445,15 @@ if st.session_state.df is not None:
         
         df_graf1_melted = df_graf1.melt(id_vars=['Fecha'], var_name='Tipo', value_name='Cantidad')
         
-        chart1 = alt.Chart(df_graf1_melted).mark_bar().encode(
+        # Crear el gráfico con etiquetas usando alt.LayerChart
+        bars = alt.Chart(df_graf1_melted).mark_bar().encode(
             x=alt.X('Fecha:N', title='Fecha', axis=alt.Axis(labelAngle=-45, labelFontSize=10)),
             y=alt.Y('Cantidad:Q', title='Cantidad'),
             color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Generadas', 'Gestionadas'], range=['#7c3aed', '#a78bfa'])),
             tooltip=['Fecha', 'Tipo', 'Cantidad']
-        ).properties(
-            height=400
-        ).configure_legend(
-            orient='top'
         )
         
-        # Agregar etiquetas de datos
-        text1 = chart1.mark_text(
+        text_labels = alt.Chart(df_graf1_melted).mark_text(
             align='center',
             baseline='bottom',
             dy=-5,
@@ -465,11 +461,20 @@ if st.session_state.df is not None:
             fontWeight='bold',
             color='#4a5568'
         ).encode(
+            x='Fecha:N',
+            y='Cantidad:Q',
             text=alt.Text('Cantidad:Q', format='.0f'),
-            y=alt.Y('Cantidad:Q', aggregate=None)
+            detail='Tipo:N'
         )
         
-        st.altair_chart(chart1 + text1, use_container_width=True)
+        chart1 = alt.LayerChart(
+            layer=[bars, text_labels],
+            height=400
+        ).configure_legend(
+            orient='top'
+        )
+        
+        st.altair_chart(chart1, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICOS EN DOS COLUMNAS ========================
@@ -484,16 +489,13 @@ if st.session_state.df is not None:
             estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
             estado_gestion_counts = estado_gestion_counts.sort_values('Cantidad', ascending=False)
             
-            chart2 = alt.Chart(estado_gestion_counts).mark_bar(color='#8b5cf6').encode(
+            bars2 = alt.Chart(estado_gestion_counts).mark_bar(color='#8b5cf6').encode(
                 x=alt.X('Estado de Gestión:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
                 y=alt.Y('Cantidad:Q', title='Cantidad'),
                 tooltip=['Estado de Gestión', 'Cantidad']
-            ).properties(
-                height=350
             )
             
-            # Agregar etiquetas de datos
-            text2 = chart2.mark_text(
+            text2 = alt.Chart(estado_gestion_counts).mark_text(
                 align='center',
                 baseline='bottom',
                 dy=-5,
@@ -501,11 +503,13 @@ if st.session_state.df is not None:
                 fontWeight='bold',
                 color='#4a5568'
             ).encode(
-                text=alt.Text('Cantidad:Q', format='.0f'),
-                y=alt.Y('Cantidad:Q', aggregate=None)
+                x='Estado de Gestión:N',
+                y='Cantidad:Q',
+                text=alt.Text('Cantidad:Q', format='.0f')
             )
             
-            st.altair_chart(chart2 + text2, use_container_width=True)
+            chart2 = alt.LayerChart(layer=[bars2, text2], height=350)
+            st.altair_chart(chart2, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión ========================
@@ -519,15 +523,13 @@ if st.session_state.df is not None:
                 pendientes_por_area.columns = ['Área', 'Cantidad']
                 pendientes_por_area = pendientes_por_area.sort_values('Cantidad', ascending=False)
                 
-                chart3 = alt.Chart(pendientes_por_area).mark_bar(color='#6d28d9').encode(
+                bars3 = alt.Chart(pendientes_por_area).mark_bar(color='#6d28d9').encode(
                     x=alt.X('Área:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
                     y=alt.Y('Cantidad:Q', title='Cantidad'),
                     tooltip=['Área', 'Cantidad']
-                ).properties(
-                    height=350
                 )
                 
-                text3 = chart3.mark_text(
+                text3 = alt.Chart(pendientes_por_area).mark_text(
                     align='center',
                     baseline='bottom',
                     dy=-5,
@@ -535,11 +537,13 @@ if st.session_state.df is not None:
                     fontWeight='bold',
                     color='#4a5568'
                 ).encode(
-                    text=alt.Text('Cantidad:Q', format='.0f'),
-                    y=alt.Y('Cantidad:Q', aggregate=None)
+                    x='Área:N',
+                    y='Cantidad:Q',
+                    text=alt.Text('Cantidad:Q', format='.0f')
                 )
                 
-                st.altair_chart(chart3 + text3, use_container_width=True)
+                chart3 = alt.LayerChart(layer=[bars3, text3], height=350)
+                st.altair_chart(chart3, use_container_width=True)
             else:
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -556,15 +560,13 @@ if st.session_state.df is not None:
             ordenes_por_area.columns = ['Área', 'Cantidad']
             ordenes_por_area = ordenes_por_area.sort_values('Cantidad', ascending=False)
             
-            chart4 = alt.Chart(ordenes_por_area).mark_bar(color='#5b21b6').encode(
+            bars4 = alt.Chart(ordenes_por_area).mark_bar(color='#5b21b6').encode(
                 x=alt.X('Área:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
                 y=alt.Y('Cantidad:Q', title='Cantidad'),
                 tooltip=['Área', 'Cantidad']
-            ).properties(
-                height=350
             )
             
-            text4 = chart4.mark_text(
+            text4 = alt.Chart(ordenes_por_area).mark_text(
                 align='center',
                 baseline='bottom',
                 dy=-5,
@@ -572,11 +574,13 @@ if st.session_state.df is not None:
                 fontWeight='bold',
                 color='#4a5568'
             ).encode(
-                text=alt.Text('Cantidad:Q', format='.0f'),
-                y=alt.Y('Cantidad:Q', aggregate=None)
+                x='Área:N',
+                y='Cantidad:Q',
+                text=alt.Text('Cantidad:Q', format='.0f')
             )
             
-            st.altair_chart(chart4 + text4, use_container_width=True)
+            chart4 = alt.LayerChart(layer=[bars4, text4], height=350)
+            st.altair_chart(chart4, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 5: Estados de servicios ========================
@@ -588,15 +592,13 @@ if st.session_state.df is not None:
             estados_counts.columns = ['Estado', 'Cantidad']
             estados_counts = estados_counts.sort_values('Cantidad', ascending=False)
             
-            chart5 = alt.Chart(estados_counts).mark_bar(color='#9b59b6').encode(
+            bars5 = alt.Chart(estados_counts).mark_bar(color='#9b59b6').encode(
                 x=alt.X('Estado:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
                 y=alt.Y('Cantidad:Q', title='Cantidad'),
                 tooltip=['Estado', 'Cantidad']
-            ).properties(
-                height=350
             )
             
-            text5 = chart5.mark_text(
+            text5 = alt.Chart(estados_counts).mark_text(
                 align='center',
                 baseline='bottom',
                 dy=-5,
@@ -604,11 +606,13 @@ if st.session_state.df is not None:
                 fontWeight='bold',
                 color='#4a5568'
             ).encode(
-                text=alt.Text('Cantidad:Q', format='.0f'),
-                y=alt.Y('Cantidad:Q', aggregate=None)
+                x='Estado:N',
+                y='Cantidad:Q',
+                text=alt.Text('Cantidad:Q', format='.0f')
             )
             
-            st.altair_chart(chart5 + text5, use_container_width=True)
+            chart5 = alt.LayerChart(layer=[bars5, text5], height=350)
+            st.altair_chart(chart5, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 6: Distribución por entidad ========================
@@ -619,15 +623,13 @@ if st.session_state.df is not None:
         entidad_counts.columns = ['Entidad', 'Cantidad']
         entidad_counts = entidad_counts.sort_values('Cantidad', ascending=False)
         
-        chart6 = alt.Chart(entidad_counts).mark_bar(color='#7c3aed').encode(
+        bars6 = alt.Chart(entidad_counts).mark_bar(color='#7c3aed').encode(
             x=alt.X('Entidad:N', title='', axis=alt.Axis(labelAngle=-30, labelFontSize=9)),
             y=alt.Y('Cantidad:Q', title='Cantidad'),
             tooltip=['Entidad', 'Cantidad']
-        ).properties(
-            height=400
         )
         
-        text6 = chart6.mark_text(
+        text6 = alt.Chart(entidad_counts).mark_text(
             align='center',
             baseline='bottom',
             dy=-5,
@@ -635,11 +637,13 @@ if st.session_state.df is not None:
             fontWeight='bold',
             color='#4a5568'
         ).encode(
-            text=alt.Text('Cantidad:Q', format='.0f'),
-            y=alt.Y('Cantidad:Q', aggregate=None)
+            x='Entidad:N',
+            y='Cantidad:Q',
+            text=alt.Text('Cantidad:Q', format='.0f')
         )
         
-        st.altair_chart(chart6 + text6, use_container_width=True)
+        chart6 = alt.LayerChart(layer=[bars6, text6], height=400)
+        st.altair_chart(chart6, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== INFORMACIÓN DE FILTROS ========================
