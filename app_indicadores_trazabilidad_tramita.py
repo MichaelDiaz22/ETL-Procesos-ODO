@@ -4359,9 +4359,26 @@ if st.session_state.df is not None:
         plt.tight_layout()
         st.pyplot(fig1)
         plt.close()
+        
+        # Interpretación del gráfico 1
+        total_generadas = df_graf1['Generadas'].sum()
+        total_gestionadas = df_graf1['Gestionadas'].sum()
+        pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
+        pct_pendientes = 100 - pct_gestionadas
+        
+        st.markdown(f"""
+            <div class="interpretation-box">
+                <strong>📝 Interpretación:</strong> Se generaron <strong>{int(total_generadas)}</strong> órdenes en total, de las cuales 
+                <strong>{int(total_gestionadas)} ({pct_gestionadas:.1f}%)</strong> ya fueron gestionadas y 
+                <strong>{int(total_generadas - total_gestionadas)} ({pct_pendientes:.1f}%)</strong> aún se encuentran pendientes de gestión. 
+                El día con mayor actividad fue <strong>{df_graf1.loc[df_graf1['Generadas'].idxmax(), 'Fecha']}</strong> con 
+                <strong>{int(df_graf1['Generadas'].max())}</strong> órdenes generadas.
+            </div>
+        """, unsafe_allow_html=True)
+        
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 2: Gestión de autorizaciones (ANILLO MEJORADO) ========================
+        # ======================== GRÁFICO 2: Gestión de autorizaciones (ANILLO) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
@@ -4384,28 +4401,24 @@ if st.session_state.df is not None:
                 pctdistance=0.65
             )
             
-            # Ajustar etiquetas de porcentaje a color negro con fondo blanco para mejor legibilidad
+            # Ajustar etiquetas de porcentaje
             for autotext in autotexts:
                 autotext.set_color('black')
                 autotext.set_fontsize(13)
                 autotext.set_fontweight('bold')
                 autotext.set_bbox(dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.7))
             
-            # Agregar cantidades fuera del gráfico con líneas conectoras
+            # Agregar cantidades fuera del gráfico
             for i, wedge in enumerate(wedges):
                 ang = (wedge.theta2 + wedge.theta1) / 2
-                # Posición fuera del gráfico
                 x = 1.25 * np.cos(np.radians(ang))
                 y = 1.25 * np.sin(np.radians(ang))
                 
-                # Posición intermedia para la línea
                 x_mid = 1.05 * np.cos(np.radians(ang))
                 y_mid = 1.05 * np.sin(np.radians(ang))
                 
-                # Dibujar línea conectora
                 ax2.plot([x_mid, x], [y_mid, y], color='gray', linewidth=0.8, linestyle='--')
                 
-                # Texto de cantidad
                 ax2.text(x, y, f"{estado_gestion_counts['Cantidad'].iloc[i]}", 
                         fontsize=13, fontweight='bold', ha='center', va='center', 
                         color='black',
@@ -4415,12 +4428,31 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig2)
             plt.close()
+            
+            # Interpretación del gráfico 2
+            total_estados = estado_gestion_counts['Cantidad'].sum()
+            estado_pendientes_prog = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Pendiente gestión desde programación']['Cantidad'].sum() if 'Pendiente gestión desde programación' in estado_gestion_counts['Estado'].values else 0
+            estado_pendientes_aut = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Pendiente gestión desde Autorizaciones']['Cantidad'].sum() if 'Pendiente gestión desde Autorizaciones' in estado_gestion_counts['Estado'].values else 0
+            estado_gestionados_prog = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Gestionado desde programación']['Cantidad'].sum() if 'Gestionado desde programación' in estado_gestion_counts['Estado'].values else 0
+            estado_gestionados_aut = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Gestionado / En seguimiento desde Autorizaciones']['Cantidad'].sum() if 'Gestionado / En seguimiento desde Autorizaciones' in estado_gestion_counts['Estado'].values else 0
+            
+            st.markdown(f"""
+                <div class="interpretation-box">
+                    <strong>📝 Interpretación:</strong> Del total de <strong>{total_estados}</strong> órdenes, 
+                    <strong>{estado_pendientes_prog} ({estado_pendientes_prog/total_estados*100:.1f}%)</strong> se encuentran pendientes de gestión desde programación, 
+                    <strong>{estado_pendientes_aut} ({estado_pendientes_aut/total_estados*100:.1f}%)</strong> pendientes desde autorizaciones, 
+                    <strong>{estado_gestionados_prog} ({estado_gestionados_prog/total_estados*100:.1f}%)</strong> ya gestionadas desde programación, y 
+                    <strong>{estado_gestionados_aut} ({estado_gestionados_aut/total_estados*100:.1f}%)</strong> gestionadas o en seguimiento desde autorizaciones.
+                    La mayor carga de trabajo se concentra en <strong>{"Pendiente gestión desde programación" if estado_pendientes_prog == max([estado_pendientes_prog, estado_pendientes_aut, estado_gestionados_prog, estado_gestionados_aut]) else "Pendiente gestión desde Autorizaciones"}</strong>.
+                </div>
+            """, unsafe_allow_html=True)
+            
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO MEJORADO) ========================
+        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.subheader("📊 Ordenamientos disponibles para programación, pendientes de gestión")
+            st.subheader("📊 Pendientes de Gestión por Área")
             
             df_pendientes = df_filtrado[df_filtrado['Estado_Gestion'] == "Pendiente gestión desde programación"]
             if len(df_pendientes) > 0:
@@ -4441,14 +4473,14 @@ if st.session_state.df is not None:
                     pctdistance=0.65
                 )
                 
-                # Ajustar etiquetas de porcentaje a color negro con fondo blanco
+                # Ajustar etiquetas de porcentaje
                 for autotext in autotexts:
                     autotext.set_color('black')
                     autotext.set_fontsize(12)
                     autotext.set_fontweight('bold')
                     autotext.set_bbox(dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.7))
                 
-                # Agregar cantidades fuera del gráfico con líneas conectoras
+                # Agregar cantidades fuera del gráfico
                 for i, wedge in enumerate(wedges):
                     ang = (wedge.theta2 + wedge.theta1) / 2
                     x = 1.25 * np.cos(np.radians(ang))
@@ -4464,10 +4496,25 @@ if st.session_state.df is not None:
                             color='black',
                             bbox=dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.8))
                 
-                ax3.set_title('Ordenamientos disponibles para programación, pendientes de gestión', fontsize=14, fontweight='bold', pad=20)
+                ax3.set_title('Pendientes de Gestión por Área', fontsize=14, fontweight='bold', pad=20)
                 plt.tight_layout()
                 st.pyplot(fig3)
                 plt.close()
+                
+                # Interpretación del gráfico 3
+                total_pendientes = pendientes_por_area['Cantidad'].sum()
+                max_area = pendientes_por_area.iloc[0]['Área']
+                max_cantidad = pendientes_por_area.iloc[0]['Cantidad']
+                
+                st.markdown(f"""
+                    <div class="interpretation-box">
+                        <strong>📝 Interpretación:</strong> Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas. 
+                        El área con mayor volumen de pendientes es <strong>"{max_area}"</strong> con <strong>{max_cantidad}</strong> órdenes 
+                        ({max_cantidad/total_pendientes*100:.1f}% del total). 
+                        {pendientes_por_area.iloc[1]['Área'] if len(pendientes_por_area) > 1 else ''} es la segunda área con 
+                        <strong>{pendientes_por_area.iloc[1]['Cantidad'] if len(pendientes_por_area) > 1 else 0}</strong> órdenes pendientes.
+                    </div>
+                """, unsafe_allow_html=True)
             else:
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -4501,6 +4548,23 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig4)
             plt.close()
+            
+            # Interpretación del gráfico 4
+            total_ordenes = ordenes_por_area['Cantidad'].sum()
+            top_area = ordenes_por_area.iloc[0]['Área']
+            top_cantidad = ordenes_por_area.iloc[0]['Cantidad']
+            
+            st.markdown(f"""
+                <div class="interpretation-box">
+                    <strong>📝 Interpretación:</strong> Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. 
+                    El área con mayor generación de órdenes es <strong>"{top_area}"</strong> con <strong>{top_cantidad}</strong> órdenes 
+                    ({top_cantidad/total_ordenes*100:.1f}% del total). 
+                    {ordenes_por_area.iloc[1]['Área'] if len(ordenes_por_area) > 1 else ''} generó 
+                    <strong>{ordenes_por_area.iloc[1]['Cantidad'] if len(ordenes_por_area) > 1 else 0}</strong> órdenes, 
+                    representando el {ordenes_por_area.iloc[1]['Cantidad']/total_ordenes*100:.1f}% del total.
+                </div>
+            """, unsafe_allow_html=True)
+            
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 5: Estados de servicios ========================
@@ -4528,6 +4592,23 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig5)
             plt.close()
+            
+            # Interpretación del gráfico 5
+            total_estados_serv = estados_counts['Cantidad'].sum()
+            top_estado = estados_counts.iloc[0]['Estado']
+            top_estado_cant = estados_counts.iloc[0]['Cantidad']
+            
+            st.markdown(f"""
+                <div class="interpretation-box">
+                    <strong>📝 Interpretación:</strong> El estado más frecuente es <strong>"{top_estado}"</strong> con 
+                    <strong>{top_estado_cant}</strong> órdenes ({top_estado_cant/total_estados_serv*100:.1f}% del total). 
+                    {estados_counts.iloc[1]['Estado'] if len(estados_counts) > 1 else ''} es el segundo estado con 
+                    <strong>{estados_counts.iloc[1]['Cantidad'] if len(estados_counts) > 1 else 0}</strong> órdenes 
+                    ({estados_counts.iloc[1]['Cantidad']/total_estados_serv*100:.1f}% del total) si existe.
+                    Esto indica que la mayoría de las órdenes se encuentran en estado "{top_estado}".
+                </div>
+            """, unsafe_allow_html=True)
+            
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 6: Distribución por entidad ========================
@@ -4554,6 +4635,23 @@ if st.session_state.df is not None:
         plt.tight_layout()
         st.pyplot(fig6)
         plt.close()
+        
+        # Interpretación del gráfico 6
+        total_entidad = entidad_counts['Cantidad'].sum()
+        top_entidad = entidad_counts.iloc[0]['Entidad']
+        top_entidad_cant = entidad_counts.iloc[0]['Cantidad']
+        
+        st.markdown(f"""
+            <div class="interpretation-box">
+                <strong>📝 Interpretación:</strong> <strong>{total_entidad}</strong> órdenes están distribuidas entre <strong>{len(entidad_counts)}</strong> entidades. 
+                La entidad con mayor volumen es <strong>"{top_entidad}"</strong> con <strong>{top_entidad_cant}</strong> órdenes 
+                ({top_entidad_cant/total_entidad*100:.1f}% del total). 
+                {entidad_counts.iloc[1]['Entidad'] if len(entidad_counts) > 1 else ''} es la segunda entidad con 
+                <strong>{entidad_counts.iloc[1]['Cantidad'] if len(entidad_counts) > 1 else 0}</strong> órdenes 
+                ({entidad_counts.iloc[1]['Cantidad']/total_entidad*100:.1f}% del total).
+            </div>
+        """, unsafe_allow_html=True)
+        
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== INFORMACIÓN DE FILTROS ========================
@@ -4580,3 +4678,7 @@ else:
                 "Codigo unidad": st.column_config.TextColumn("Código Unidad", width="small"),
             }
         )
+
+# Mensaje de pie de página
+st.divider()
+st.caption("💡 Dashboard de Gestión de Portafolio - Datos actualizados en tiempo real")
