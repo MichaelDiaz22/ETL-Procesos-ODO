@@ -269,8 +269,10 @@ if st.session_state.df is not None:
                 default=sedes_disponibles,
                 key="sedes_dashboard"
             )
-        
-        # Botón para resetear filtros (fuera del flujo del form)
+    
+    # Botón para resetear filtros (FUERA del formulario)
+    col_reset1, col_reset2 = st.columns([1, 5])
+    with col_reset1:
         if st.button("🔄 Restablecer Filtros", key="reset_filters_dashboard"):
             st.session_state.df_filtrado = None
             st.session_state.filtros_aplicados = False
@@ -304,7 +306,10 @@ if st.session_state.df is not None:
         st.session_state.filtros_aplicados = True
         
         # Mostrar mensaje de confirmación
-        st.success(f"✅ Filtros aplicados: {len(df_filtrado)} registros encontrados")
+        if len(df_filtrado) > 0:
+            st.success(f"✅ Filtros aplicados: {len(df_filtrado)} registros encontrados")
+        else:
+            st.warning("⚠️ No hay datos con los filtros seleccionados")
     
     # Usar el DataFrame filtrado
     df_filtrado = st.session_state.df_filtrado.copy()
@@ -403,8 +408,6 @@ if st.session_state.df is not None:
                     <h3 style="margin:5px 0 0 0; font-size:22px;">{promedio_paciente_dia}</h3>
                 </div>
             """, unsafe_allow_html=True)
-    else:
-        st.warning("⚠️ No hay datos con los filtros seleccionados")
     
     # ======================== GRÁFICOS ========================
     if len(df_filtrado) > 0:
