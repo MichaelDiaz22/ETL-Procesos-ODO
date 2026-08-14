@@ -4177,7 +4177,7 @@ if st.session_state.df is not None:
     
     df_filtrado = st.session_state.df_filtrado.copy()
     
-    # ======================== KPI CARDS ========================
+      # ======================== KPI CARDS ========================
     st.markdown("### 📊 Indicadores Clave")
     
     total_registros = len(df_filtrado)
@@ -4270,7 +4270,6 @@ if st.session_state.df is not None:
     if len(df_filtrado) > 0:
         st.markdown("### 📈 Análisis Visual")
         
-        # Función para clasificar estado de gestión
         def clasificar_estado_gestion(estado):
             if estado == "PROGRAMAR":
                 return "Pendiente gestión desde programación"
@@ -4282,9 +4281,6 @@ if st.session_state.df is not None:
                 return "Gestionado / En seguimiento desde Autorizaciones"
         
         df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
-        
-        # Paleta de colores morados
-        purple_palette = ['#7c3aed', '#8b5cf6', '#a78bfa', '#6d28d9', '#5b21b6', '#9b59b6']
         
         # ======================== GRÁFICO 1: Órdenes generadas vs gestionadas ========================
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -4322,11 +4318,8 @@ if st.session_state.df is not None:
         ordenes_gestionadas.columns = ['Fecha', 'Gestionadas']
         
         df_graf1 = pd.merge(ordenes_generadas, ordenes_gestionadas, on='Fecha', how='outer').fillna(0)
-        
-        # Convertir Fecha a string para mejor visualización
         df_graf1['Fecha'] = df_graf1['Fecha'].astype(str)
         
-        # Gráfico con Altair
         df_graf1_melted = df_graf1.melt(id_vars=['Fecha'], var_name='Tipo', value_name='Cantidad')
         
         chart1 = alt.Chart(df_graf1_melted).mark_bar().encode(
@@ -4340,7 +4333,20 @@ if st.session_state.df is not None:
             orient='top'
         )
         
-        st.altair_chart(chart1, use_container_width=True)
+        # Agregar etiquetas de datos
+        text1 = chart1.mark_text(
+            align='center',
+            baseline='bottom',
+            dy=-5,
+            fontSize=10,
+            fontWeight='bold',
+            color='#4a5568'
+        ).encode(
+            text=alt.Text('Cantidad:Q', format='.0f'),
+            y=alt.Y('Cantidad:Q', aggregate=None)
+        )
+        
+        st.altair_chart(chart1 + text1, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICOS EN DOS COLUMNAS ========================
@@ -4349,7 +4355,7 @@ if st.session_state.df is not None:
         # ======================== GRÁFICO 2: Gestión de autorizaciones ========================
         with col_g1:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.subheader("📊 Gestión de autorizaciones y oórdenes disponibles para programación")
+            st.subheader("📊 Gestión de Autorizaciones")
             
             estado_gestion_counts = df_filtrado['Estado_Gestion'].value_counts().reset_index()
             estado_gestion_counts.columns = ['Estado de Gestión', 'Cantidad']
@@ -4363,7 +4369,20 @@ if st.session_state.df is not None:
                 height=350
             )
             
-            st.altair_chart(chart2, use_container_width=True)
+            # Agregar etiquetas de datos
+            text2 = chart2.mark_text(
+                align='center',
+                baseline='bottom',
+                dy=-5,
+                fontSize=10,
+                fontWeight='bold',
+                color='#4a5568'
+            ).encode(
+                text=alt.Text('Cantidad:Q', format='.0f'),
+                y=alt.Y('Cantidad:Q', aggregate=None)
+            )
+            
+            st.altair_chart(chart2 + text2, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión ========================
@@ -4385,7 +4404,19 @@ if st.session_state.df is not None:
                     height=350
                 )
                 
-                st.altair_chart(chart3, use_container_width=True)
+                text3 = chart3.mark_text(
+                    align='center',
+                    baseline='bottom',
+                    dy=-5,
+                    fontSize=10,
+                    fontWeight='bold',
+                    color='#4a5568'
+                ).encode(
+                    text=alt.Text('Cantidad:Q', format='.0f'),
+                    y=alt.Y('Cantidad:Q', aggregate=None)
+                )
+                
+                st.altair_chart(chart3 + text3, use_container_width=True)
             else:
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -4410,7 +4441,19 @@ if st.session_state.df is not None:
                 height=350
             )
             
-            st.altair_chart(chart4, use_container_width=True)
+            text4 = chart4.mark_text(
+                align='center',
+                baseline='bottom',
+                dy=-5,
+                fontSize=10,
+                fontWeight='bold',
+                color='#4a5568'
+            ).encode(
+                text=alt.Text('Cantidad:Q', format='.0f'),
+                y=alt.Y('Cantidad:Q', aggregate=None)
+            )
+            
+            st.altair_chart(chart4 + text4, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 5: Estados de servicios ========================
@@ -4430,7 +4473,19 @@ if st.session_state.df is not None:
                 height=350
             )
             
-            st.altair_chart(chart5, use_container_width=True)
+            text5 = chart5.mark_text(
+                align='center',
+                baseline='bottom',
+                dy=-5,
+                fontSize=10,
+                fontWeight='bold',
+                color='#4a5568'
+            ).encode(
+                text=alt.Text('Cantidad:Q', format='.0f'),
+                y=alt.Y('Cantidad:Q', aggregate=None)
+            )
+            
+            st.altair_chart(chart5 + text5, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 6: Distribución por entidad ========================
@@ -4449,7 +4504,19 @@ if st.session_state.df is not None:
             height=400
         )
         
-        st.altair_chart(chart6, use_container_width=True)
+        text6 = chart6.mark_text(
+            align='center',
+            baseline='bottom',
+            dy=-5,
+            fontSize=10,
+            fontWeight='bold',
+            color='#4a5568'
+        ).encode(
+            text=alt.Text('Cantidad:Q', format='.0f'),
+            y=alt.Y('Cantidad:Q', aggregate=None)
+        )
+        
+        st.altair_chart(chart6 + text6, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== INFORMACIÓN DE FILTROS ========================
