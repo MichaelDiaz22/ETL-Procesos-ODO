@@ -63,10 +63,10 @@ SEDES = {
     },
     "CAT ARMENIA": {
         "fecha_inicio": datetime(2025, 11, 20),
-        "centro_atencion": None,  # CAT Armenia no tiene centro de atención específico
+        "centro_atencion": None,
         "unidades_clave": ["CAT ARMENIA"],
         "unidad_operativa": "ARMENIA",
-        "activa": False  # Desactivamos CAT Armenia temporalmente
+        "activa": False
     }
 }
 
@@ -171,12 +171,10 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, config):
     
     # Filtrar por unidades funcionales seleccionadas
     if unidades_filtro and len(unidades_filtro) > 0:
-        # Buscar unidades que coincidan con las claves de la sede
         unidades_filtro_sede = [u for u in unidades_filtro if any(clave in u for clave in config['unidades_clave'])]
         if unidades_filtro_sede:
             mask_unidades = valores_funcionales.isin(unidades_filtro_sede)
         else:
-            # Si no hay unidades específicas para esta sede, intentar con las claves
             mask_unidades = valores_funcionales.str.contains('|'.join(config['unidades_clave']), na=False, regex=False)
     else:
         mask_unidades = valores_funcionales.str.contains('|'.join(config['unidades_clave']), na=False, regex=False)
@@ -425,7 +423,6 @@ def cargar_archivo(archivo, unidades_filtro):
             df = pd.read_excel(archivo, sheet_name=hoja)
             
             for sede, config in SEDES.items():
-                # Saltar sedes inactivas
                 if not config.get('activa', True):
                     continue
                     
@@ -443,7 +440,6 @@ def cargar_archivo(archivo, unidades_filtro):
             df = pd.read_excel(archivo, sheet_name=hoja)
             
             for sede, config in SEDES.items():
-                # Saltar sedes inactivas
                 if not config.get('activa', True):
                     continue
                     
@@ -459,7 +455,6 @@ def cargar_archivo(archivo, unidades_filtro):
         # Combinar resultados
         dfs_resultado = {}
         for sede in SEDES.keys():
-            # Saltar sedes inactivas
             if not SEDES[sede].get('activa', True):
                 continue
                 
@@ -480,9 +475,7 @@ def cargar_archivo(archivo, unidades_filtro):
         
         dfs_resultado['NOVEDADES'] = df_novedades
         
-        # Procesar novedades completas para cada sede
         for sede, config in SEDES.items():
-            # Saltar sedes inactivas
             if not config.get('activa', True):
                 continue
                 
@@ -555,13 +548,11 @@ def calcular_resumen_ejecutivo(dfs, fecha_fin):
     resultados = []
     
     for sede, config in SEDES.items():
-        # Saltar sedes inactivas
         if not config.get('activa', True):
             continue
             
         fecha_inicio = config['fecha_inicio']
         
-        # Si la fecha de fin es anterior a la fecha de inicio, saltar esta sede
         if fecha_fin < fecha_inicio:
             continue
         
@@ -1673,7 +1664,83 @@ if st.session_state.datos_cargados:
                 output = BytesIO()
                 workbook = xlsxwriter.Workbook(output, {'constant_memory': False})
                 
-                # Hoja 1: Resumen Ejecutivo (datos)
+                # ============ HOJA 1: INGRESOS ============
+                worksheet_ingresos = workbook.add_worksheet('Ingresos')
+                
+                # Recopilar todos los ingresos por sede
+                row_ingresos = 0
+                # Escribir encabezados
+                headers_ingresos = ['Sede', 'Fecha_Ingreso', 'Unidad_Funcional', 'Tipo']
+                for col_num, header in enumerate(headers_ingresos):
+                    worksheet_ingresos.write(row_ingresos, col_num, header)
+                row_ingresos += 1
+                
+                # Procesar cada sede para obtener los ingresos
+                for sede in SEDES.keys():
+                    config = SEDES[sede]
+                    if not config.get('activa', True):
+                        continue
+                        
+                    fecha_inicio = config['fecha_inicio']
+                    if fecha_fin < fecha_inicio:
+                        continue
+                    
+                    df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
+                    
+                    if not df_ingresos.empty:
+                        # Filtrar por fechas
+                        mask_fecha = (df_ingresos['_fecha'] >= fecha_inicio.date()) & (df_ingresos['_fecha'] <= fecha_fin.date())
+                        df_filtrado = df_ingresos[mask_fecha]
+                        
+                        for idx, row in df_filtrado.iterrows():
+                            worksheet_ingresos.write(row_ingresos, 0, sede)
+                            worksheet_ingresos.write(row_ingresos, 1, str(row['_fecha']) if pd.notna(row['_fecha']) else '')
+                            worksheet_ingresos.write(row_ingresos, 2, str(row['_valor_funcional']) if pd.notna(row['_valor_funcional']) else '')
+                            worksheet_ingresos.write(row_ingresos, 3, 'Ingreso')
+                            row_ingresos += 1
+                
+                # ============ HOJA 2: FACTURADO TOTAL ============
+                worksheet_facturado = workbook.add_worksheet('Facturado_total')
+                
+                # Recopilar todos los registros facturados por sede
+                row_facturado = 0
+                # Escribir encabezados
+                headers_facturado = ['Sede', 'Fecha_Ingreso', 'Fecha_Factura', 'Unidad_Funcional', 'Usuario_Facturador', 'Tipo_Facturacion']
+                for col_num, header in enumerate(headers_facturado):
+                    worksheet_facturado.write(row_facturado, col_num, header)
+                row_facturado += 1
+                
+                # Procesar cada sede para obtener los registros facturados
+                for sede in SEDES.keys():
+                    config = SEDES[sede]
+                    if not config.get('activa', True):
+                        continue
+                        
+                    fecha_inicio = config['fecha_inicio']
+                    if fecha_fin < fecha_inicio:
+                        continue
+                    
+                    df_facturacion_detalle = st.session_state.dfs.get(f'FACTURACION_DETALLE_{sede}', pd.DataFrame())
+                    
+                    if not df_facturacion_detalle.empty:
+                        # Filtrar por fechas de facturación
+                        mask_fecha = (df_facturacion_detalle['_fecha_factura'] >= fecha_inicio.date()) & (df_facturacion_detalle['_fecha_factura'] <= fecha_fin.date())
+                        df_filtrado = df_facturacion_detalle[mask_fecha]
+                        
+                        for idx, row in df_filtrado.iterrows():
+                            # Determinar tipo de facturación (modelo o fuera de modelo)
+                            fecha_ingreso = row['_fecha_ingreso']
+                            tipo_facturacion = 'Modelo' if (fecha_ingreso is not None and fecha_ingreso >= fecha_inicio.date()) else 'Fuera de Modelo'
+                            
+                            worksheet_facturado.write(row_facturado, 0, sede)
+                            worksheet_facturado.write(row_facturado, 1, str(row['_fecha_ingreso']) if pd.notna(row['_fecha_ingreso']) else '')
+                            worksheet_facturado.write(row_facturado, 2, str(row['_fecha_factura']) if pd.notna(row['_fecha_factura']) else '')
+                            worksheet_facturado.write(row_facturado, 3, str(row['_valor_funcional']) if pd.notna(row['_valor_funcional']) else '')
+                            worksheet_facturado.write(row_facturado, 4, str(row['_usuario']) if pd.notna(row['_usuario']) else '')
+                            worksheet_facturado.write(row_facturado, 5, tipo_facturacion)
+                            row_facturado += 1
+                
+                # ============ HOJA 3: Resumen Ejecutivo (datos) ============
                 if st.session_state.resumen_ejecutivo is not None and not st.session_state.resumen_ejecutivo.empty:
                     df_resumen_export = st.session_state.resumen_ejecutivo.copy()
                     df_resumen_export['Ingresos_num'] = df_resumen_export['Ingresos'].str.replace(',', '').astype(int)
@@ -1687,7 +1754,7 @@ if st.session_state.datos_cargados:
                         for col_num, value in enumerate(row):
                             worksheet.write(row_num, col_num, value)
                 
-                # Hoja 2: Narrativa Ejecutiva
+                # ============ HOJA 4: Narrativa Ejecutiva ============
                 worksheet_narrativa = workbook.add_worksheet('Narrativa_Ejecutiva')
                 narrativa_texto = generar_narrativa_ejecutiva(st.session_state.resumen_ejecutivo)
                 
