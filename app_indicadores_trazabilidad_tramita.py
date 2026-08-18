@@ -4038,7 +4038,7 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
             
             # Verificar que las columnas necesarias existan (con los nuevos nombres)
             columnas_requeridas = ['Etiqueta', 'Solicitado', 'Auditado', 'Sede', 'Doc.', 'Paciente', 
-                                   'Edad', 'Género', 'Diagnóstico', 'Entidad', 'Grupo Atención', 
+                                   'Edad', 'Género', 'Diagnóstico.', 'Entidad', 'Grupo Atención', 
                                    'Servicio', 'Tazas', 'Radiación', 'Radicado', 'Autorizado', 
                                    'Autorización', 'Vence', 'Entregado', 'Servicio proceso tramita', 
                                    'Programado', 'Responsable', 'Estado', 'Observación', 'Prioridad', 
