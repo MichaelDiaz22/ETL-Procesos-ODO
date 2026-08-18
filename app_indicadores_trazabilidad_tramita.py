@@ -5,13 +5,9 @@ import seaborn as sns
 import numpy as np
 from datetime import datetime
 from io import BytesIO
-import base64
-from openpyxl.drawing.image import Image
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl import Workbook
-from openpyxl.styles import Font
-import tempfile
-import os
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 # Configuración de la página
 st.set_page_config(
@@ -77,6 +73,11 @@ st.markdown("""
     }
     .interpretation-box strong {
         color: #5b21b6;
+    }
+    .export-btn-container {
+        display: flex;
+        justify-content: center;
+        margin: 20px 0;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -4008,14 +4009,14 @@ if 'filtros_aplicados' not in st.session_state:
     st.session_state.filtros_aplicados = False
 
 # Título principal
-st.title("📊 Resumen de gestión de Autorizaciones y Programación en Tramita")
+st.title("📊 Dashboard de Gestión de Portafolio")
 
 # ======================== SECCIÓN DE CARGA (COLAPSABLE) ========================
 with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
     archivo = st.file_uploader(
         "Selecciona un archivo Excel",
         type=['xlsx', 'xls'],
-        help="El archivo debe contener los campos: Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Cups, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo"
+        help="El archivo debe contener los campos: Etiqueta, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Género, Diagnóstico, Entidad, Grupo Atención, Servicio, Tazas, Radiación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo"
     )
     
     if archivo is not None:
@@ -4032,16 +4033,22 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                         cols[i] = 'Servicio proceso tramita'
             df.columns = cols
             
-            columnas_requeridas = ['Tag', 'Solicitado', 'Auditado', 'Sede', 'Doc.', 'Paciente', 
-                                   'Edad', 'Genero', 'Diag.', 'Entidad', 'Grupo Atención', 
-                                   'Servicio', 'Cups', 'Radicación', 'Radicado', 'Autorizado', 
+            # Guardar el nombre de las columnas
+            st.session_state.header_row = df.columns.tolist()
+            
+            # Verificar que las columnas necesarias existan (con los nuevos nombres)
+            columnas_requeridas = ['Etiqueta', 'Solicitado', 'Auditado', 'Sede', 'Doc.', 'Paciente', 
+                                   'Edad', 'Género', 'Diagnóstico', 'Entidad', 'Grupo Atención', 
+                                   'Servicio', 'Tazas', 'Radiación', 'Radicado', 'Autorizado', 
                                    'Autorización', 'Vence', 'Entregado', 'Servicio proceso tramita', 
                                    'Programado', 'Responsable', 'Estado', 'Observación', 'Prioridad', 
                                    'idOrden', 'idIndigo']
             
+            # Normalizar nombres de columnas para comparación
             columnas_df = [col.strip() for col in df.columns]
             columnas_requeridas_norm = [col.strip() for col in columnas_requeridas]
             
+            # Verificar columnas faltantes
             columnas_faltantes = []
             for i, col in enumerate(columnas_requeridas_norm):
                 if col not in columnas_df:
@@ -4059,8 +4066,13 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                 st.info(f"📋 Columnas encontradas: {', '.join(df.columns.tolist())}")
                 st.session_state.df = None
             else:
+                # Limpiar datos vacíos
                 df = df.dropna(how='all')
+                
+                # Convertir 'Solicitado' a datetime
                 df['Solicitado'] = pd.to_datetime(df['Solicitado'])
+                
+                # Convertir 'Entregado' a datetime si existe
                 if 'Entregado' in df.columns:
                     df['Entregado'] = pd.to_datetime(df['Entregado'])
                 
@@ -4104,7 +4116,7 @@ if st.session_state.df is not None:
         st.stop()
     
     # Crear columna de Área cruzando Cups con el portafolio
-    df['Cups_str'] = df['Cups'].astype(str).str[:6]
+    df['Cups_str'] = df['Tazas'].astype(str).str[:6]
     df_portafolio_base['CUPS_str'] = df_portafolio_base['CUPS'].astype(str).str[:6]
     dict_cups_area = dict(zip(df_portafolio_base['CUPS_str'], df_portafolio_base['UNIDAD EJECUTORA']))
     df['Area'] = df['Cups_str'].map(dict_cups_area)
@@ -4317,7 +4329,7 @@ if st.session_state.df is not None:
         df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
         
         # Seleccionar columnas para la tabla
-        columnas_tabla = ['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']
+        columnas_tabla = ['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Tazas', 'Servicio', 'Observación']
         # Verificar que las columnas existan
         columnas_existentes = [col for col in columnas_tabla if col in df_filtrado.columns]
         
@@ -4340,7 +4352,7 @@ if st.session_state.df is not None:
                     "Paciente": st.column_config.TextColumn("Paciente", width="large"),
                     "Entidad": st.column_config.TextColumn("Entidad", width="large"),
                     "Area": st.column_config.TextColumn("Área", width="large"),
-                    "Cups": st.column_config.TextColumn("CUPS", width="small"),
+                    "Tazas": st.column_config.TextColumn("Tazas", width="small"),
                     "Servicio": st.column_config.TextColumn("Servicio", width="medium"),
                     "Observación": st.column_config.TextColumn("Observación", width="large"),
                 }
@@ -4367,10 +4379,6 @@ if st.session_state.df is not None:
         
         # Paleta de colores morados
         purple_palette = ['#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#5b21b6', '#4c1d95', '#9b59b6']
-        
-        # Diccionario para almacenar figuras para exportación
-        figuras_export = {}
-        archivos_temporales = []  # Lista para guardar rutas de archivos temporales
         
         # ======================== GRÁFICO 1: Órdenes generadas vs gestionadas ========================
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -4433,9 +4441,6 @@ if st.session_state.df is not None:
         
         plt.tight_layout()
         st.pyplot(fig1)
-        
-        # Guardar figura para exportación
-        figuras_export['grafico1'] = fig1
         
         # Interpretación del gráfico 1
         total_generadas = df_graf1['Generadas'].sum()
@@ -4504,9 +4509,6 @@ if st.session_state.df is not None:
             ax2.set_title('Gestión de autorizaciones y ordenes disponibles para programación', fontsize=14, fontweight='bold', pad=20)
             plt.tight_layout()
             st.pyplot(fig2)
-            
-            # Guardar figura para exportación
-            figuras_export['grafico2'] = fig2
             
             # Interpretación del gráfico 2
             total_estados = estado_gestion_counts['Cantidad'].sum()
@@ -4579,9 +4581,6 @@ if st.session_state.df is not None:
                 plt.tight_layout()
                 st.pyplot(fig3)
                 
-                # Guardar figura para exportación
-                figuras_export['grafico3'] = fig3
-                
                 # Interpretación del gráfico 3
                 total_pendientes = pendientes_por_area['Cantidad'].sum()
                 max_area = pendientes_por_area.iloc[0]['Área']
@@ -4629,9 +4628,6 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig4)
             
-            # Guardar figura para exportación
-            figuras_export['grafico4'] = fig4
-            
             # Interpretación del gráfico 4
             total_ordenes = ordenes_por_area['Cantidad'].sum()
             top_area = ordenes_por_area.iloc[0]['Área']
@@ -4675,9 +4671,6 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig5)
             
-            # Guardar figura para exportación
-            figuras_export['grafico5'] = fig5
-            
             # Interpretación del gráfico 5
             total_estados_serv = estados_counts['Cantidad'].sum()
             top_estado = estados_counts.iloc[0]['Estado']
@@ -4720,9 +4713,6 @@ if st.session_state.df is not None:
         plt.tight_layout()
         st.pyplot(fig6)
         
-        # Guardar figura para exportación
-        figuras_export['grafico6'] = fig6
-        
         # Interpretación del gráfico 6
         total_entidad = entidad_counts['Cantidad'].sum()
         top_entidad = entidad_counts.iloc[0]['Entidad']
@@ -4741,14 +4731,14 @@ if st.session_state.df is not None:
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== BOTÓN DE EXPORTACIÓN A EXCEL ========================
+        # ======================== EXPORTACIÓN A EXCEL (UN SOLO BOTÓN) ========================
         st.divider()
         st.markdown("### 📥 Exportar Reporte Completo")
         
-        # Función para preparar datos de gráficos e interpretaciones
+        # Preparar datos para exportación
         def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, ordenes_area_data, estados_serv_data, entidad_data):
             # Hoja 1: Datos detallados
-            datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
+            datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Tazas', 'Servicio', 'Observación']].copy()
             datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
             
             # Hoja 2: Resumen de gráficos e interpretaciones
@@ -4805,8 +4795,8 @@ if st.session_state.df is not None:
             
             return datos_detalle, resumen_df
         
-        # Botón de exportación - versión mejorada sin archivos temporales problemáticos
-        if st.button("📥 Exportar a Excel con Gráficos", use_container_width=True, type="primary"):
+        # Botón de exportación - UN SOLO BOTÓN
+        if st.button("📥 Exportar Reporte a Excel", use_container_width=True, type="primary"):
             try:
                 # Preparar datos para exportación
                 df_export = df_filtrado.copy()
@@ -4823,7 +4813,7 @@ if st.session_state.df is not None:
                     ordenes_area_data, estados_serv_data, entidad_data
                 )
                 
-                # Crear archivo Excel con imágenes
+                # Crear archivo Excel (SIN IMÁGENES)
                 output = BytesIO()
                 
                 # Crear workbook
@@ -4833,76 +4823,77 @@ if st.session_state.df is not None:
                 ws1 = wb.active
                 ws1.title = "Datos Detallados"
                 
-                # Escribir datos
+                # Estilo para encabezados
+                header_fill = PatternFill(start_color="7c3aed", end_color="7c3aed", fill_type="solid")
+                header_font = Font(color="FFFFFF", bold=True)
+                thin_border = Border(
+                    left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin')
+                )
+                
+                # Escribir encabezados y datos
                 for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
                     for c_idx, value in enumerate(row, 1):
-                        ws1.cell(row=r_idx, column=c_idx, value=value)
+                        cell = ws1.cell(row=r_idx, column=c_idx, value=value)
+                        if r_idx == 1:
+                            cell.fill = header_fill
+                            cell.font = header_font
+                            cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.border = thin_border
+                
+                # Ajustar ancho de columnas
+                for column in ws1.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_length = min(max_length + 2, 50)
+                    ws1.column_dimensions[column_letter].width = adjusted_length
                 
                 # --- Hoja 2: Resumen Gráficos ---
                 ws2 = wb.create_sheet("Resumen Gráficos")
                 for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
                     for c_idx, value in enumerate(row, 1):
-                        ws2.cell(row=r_idx, column=c_idx, value=value)
+                        cell = ws2.cell(row=r_idx, column=c_idx, value=value)
+                        if r_idx == 1:
+                            cell.fill = header_fill
+                            cell.font = header_font
+                            cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.border = thin_border
                 
-                # --- Hoja 3: Imágenes de Gráficos (usando BytesIO en lugar de archivos temporales) ---
-                ws_img = wb.create_sheet("Gráficos")
-                
-                # Configurar anchos de columna para imágenes
-                ws_img.column_dimensions['A'].width = 5
-                ws_img.column_dimensions['B'].width = 80
-                
-                # Títulos de los gráficos
-                titulos = [
-                    "Gráfico 1: Órdenes Generadas vs Gestionadas",
-                    "Gráfico 2: Gestión de autorizaciones y ordenes disponibles",
-                    "Gráfico 3: Pendientes de Gestión por Área",
-                    "Gráfico 4: Órdenes Generadas por Área",
-                    "Gráfico 5: Estados de Servicios",
-                    "Gráfico 6: Ordenamientos Distribuidos por Entidad"
-                ]
-                
-                # Obtener figuras del diccionario
-                figuras = [figuras_export.get(f'grafico{i}', None) for i in range(1, 7)]
-                figuras = [f for f in figuras if f is not None]
-                
-                for idx, fig in enumerate(figuras):
-                    if idx < len(titulos):
+                # Ajustar ancho de columnas
+                for column in ws2.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
                         try:
-                            # Guardar figura en BytesIO en lugar de archivo temporal
-                            img_bytes = BytesIO()
-                            fig.savefig(img_bytes, dpi=150, bbox_inches='tight', format='png')
-                            img_bytes.seek(0)
-                            
-                            # Agregar título
-                            ws_img.cell(row=idx*20 + 1, column=2, value=titulos[idx])
-                            ws_img.cell(row=idx*20 + 1, column=2).font = Font(bold=True, size=12)
-                            
-                            # Crear imagen desde BytesIO
-                            img = Image(img_bytes)
-                            # Ajustar tamaño para que quepa bien
-                            img.width = 700
-                            img.height = int(img.height * (700 / img.width))
-                            
-                            # Posicionar imagen
-                            ws_img.add_image(img, f'B{idx*20 + 2}')
-                            
-                        except Exception as e:
-                            st.warning(f"No se pudo agregar la imagen del gráfico {idx+1}: {e}")
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_length = min(max_length + 2, 50)
+                    ws2.column_dimensions[column_letter].width = adjusted_length
                 
                 # Guardar workbook en BytesIO
                 wb.save(output)
                 output.seek(0)
                 
-                # Descargar archivo
+                # Descarga directa - UN SOLO BOTÓN
                 st.download_button(
-                    label="⬇️ Descargar Excel con Gráficos",
+                    label="⬇️ Descargar Excel",
                     data=output,
                     file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
                 
-                st.success("✅ Reporte exportado correctamente")
+                st.success("✅ Reporte generado correctamente. Haz clic en 'Descargar Excel' para guardar el archivo.")
                 
             except Exception as e:
                 st.error(f"❌ Error al exportar: {e}")
