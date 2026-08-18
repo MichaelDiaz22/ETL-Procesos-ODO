@@ -74,11 +74,6 @@ st.markdown("""
     .interpretation-box strong {
         color: #5b21b6;
     }
-    .export-btn-container {
-        display: flex;
-        justify-content: center;
-        margin: 20px 0;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -4009,7 +4004,7 @@ if 'filtros_aplicados' not in st.session_state:
     st.session_state.filtros_aplicados = False
 
 # Título principal
-st.title("📊 Dashboard de Gestión de Portafolio")
+st.title("📊 Tablero resumen de gestión de Autorizaciones y Programación en Tramita")
 
 # ======================== SECCIÓN DE CARGA (COLAPSABLE) ========================
 with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
@@ -4244,12 +4239,22 @@ if st.session_state.df is not None:
     else:
         promedio_dias_entrega = "N/A"
     
-    if len(df_filtrado) > 0 and 'Sede' in df_filtrado.columns:
-        ordenamientos_por_dia_sede = df_filtrado.groupby([df_filtrado['Solicitado'].dt.date, 'Sede']).size()
-        promedio_dia_sede = f"{ordenamientos_por_dia_sede.mean():.1f}" if len(ordenamientos_por_dia_sede) > 0 else "N/A"
+    # ======================== NUEVA MÉTRICA: Ordenamientos/día por sede (solo días laborales) ========================
+    if len(df_filtrado) > 0 and 'Sede' in df_filtrado.columns and 'Solicitado' in df_filtrado.columns:
+        # Filtrar solo días laborales (lunes a viernes)
+        # weekday(): 0=Lunes, 1=Martes, 2=Miércoles, 3=Jueves, 4=Viernes, 5=Sábado, 6=Domingo
+        df_laboral = df_filtrado[df_filtrado['Solicitado'].dt.weekday < 5].copy()
+        
+        if len(df_laboral) > 0:
+            # Agrupar por fecha y sede
+            ordenamientos_por_dia_sede = df_laboral.groupby([df_laboral['Solicitado'].dt.date, 'Sede']).size()
+            promedio_dia_sede = f"{ordenamientos_por_dia_sede.mean():.1f}" if len(ordenamientos_por_dia_sede) > 0 else "N/A"
+        else:
+            promedio_dia_sede = "N/A"
     else:
         promedio_dia_sede = "N/A"
     
+    # ======================== Ordenamientos/día por paciente (todos los días) ========================
     if len(df_filtrado) > 0 and 'Doc.' in df_filtrado.columns:
         ordenamientos_por_paciente_dia = df_filtrado.groupby(['Doc.', df_filtrado['Solicitado'].dt.date]).size()
         promedio_paciente_dia = f"{ordenamientos_por_paciente_dia.mean():.1f}" if len(ordenamientos_por_paciente_dia) > 0 else "N/A"
@@ -4297,7 +4302,7 @@ if st.session_state.df is not None:
         with col_k5:
             st.markdown(f"""
                 <div class="metric-card-small">
-                    <p class="metric-label">📅 Ordenamientos/día por sede</p>
+                    <p class="metric-label">📅 Ordenamientos/día por sede (Lun-Vie)</p>
                     <p class="metric-value">{promedio_dia_sede}</p>
                 </div>
             """, unsafe_allow_html=True)
@@ -4731,7 +4736,7 @@ if st.session_state.df is not None:
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== EXPORTACIÓN A EXCEL (UN SOLO BOTÓN) ========================
+        # ======================== EXPORTACIÓN A EXCEL ========================
         st.divider()
         st.markdown("### 📥 Exportar Reporte Completo")
         
@@ -4795,7 +4800,7 @@ if st.session_state.df is not None:
             
             return datos_detalle, resumen_df
         
-        # Botón de exportación - UN SOLO BOTÓN
+        # Botón de exportación
         if st.button("📥 Exportar Reporte a Excel", use_container_width=True, type="primary"):
             try:
                 # Preparar datos para exportación
@@ -4813,7 +4818,7 @@ if st.session_state.df is not None:
                     ordenes_area_data, estados_serv_data, entidad_data
                 )
                 
-                # Crear archivo Excel (SIN IMÁGENES)
+                # Crear archivo Excel
                 output = BytesIO()
                 
                 # Crear workbook
@@ -4884,7 +4889,7 @@ if st.session_state.df is not None:
                 wb.save(output)
                 output.seek(0)
                 
-                # Descarga directa - UN SOLO BOTÓN
+                # Descarga directa
                 st.download_button(
                     label="⬇️ Descargar Excel",
                     data=output,
