@@ -318,6 +318,87 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
     
     return df_temp
 
+def procesar_hoja_facturacion_sin_filtro(df, nombre_hoja, config):
+    """
+    Procesa hojas EVENTO y PGP para facturación SIN FILTRO de unidades funcionales
+    Usa SOLO el filtro de centro/unidad operativa
+    """
+    col_fecha_ingreso = None
+    col_fecha_factura = None
+    col_unidad_funcional = None
+    col_unidad_operativa = None
+    col_usuario_facturo = None
+    
+    for col in df.columns:
+        col_lower = col.lower().strip()
+        if 'fecha ingreso' in col_lower:
+            col_fecha_ingreso = col
+        elif 'fecha factura' in col_lower or 'fecha_factura' in col_lower:
+            col_fecha_factura = col
+        elif 'unidad funcional ingreso' in col_lower:
+            col_unidad_funcional = col
+        elif 'unidad operativa' in col_lower or 'ciudad unidad operativa' in col_lower:
+            col_unidad_operativa = col
+        elif 'usuario facturo' in col_lower or 'usuario_facturo' in col_lower or 'facturador' in col_lower:
+            col_usuario_facturo = col
+    
+    if not col_fecha_ingreso or not col_fecha_factura or not col_unidad_funcional:
+        return pd.DataFrame()
+    
+    fechas_ingreso = []
+    for v in df[col_fecha_ingreso]:
+        fecha = convertir_fecha_excel(v)
+        fechas_ingreso.append(fecha.date() if fecha else None)
+    
+    fechas_factura = []
+    for v in df[col_fecha_factura]:
+        fecha = convertir_fecha_excel(v)
+        fechas_factura.append(fecha.date() if fecha else None)
+    
+    valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
+    
+    # Obtener usuarios facturadores si existen
+    usuarios = []
+    if col_usuario_facturo:
+        usuarios = df[col_usuario_facturo].astype(str).str.upper().str.strip().fillna('NO ESPECIFICADO').tolist()
+    else:
+        usuarios = ['NO ESPECIFICADO'] * len(df)
+    
+    # NO FILTRAR POR UNIDADES FUNCIONALES - solo por unidad operativa/centro
+    df_temp = pd.DataFrame({
+        '_fecha_ingreso': fechas_ingreso,
+        '_fecha_factura': fechas_factura,
+        '_valor_funcional': valores_funcionales,
+        '_usuario': usuarios
+    })
+    
+    # Filtrar por unidad operativa (este filtro SÍ se mantiene)
+    if col_unidad_operativa and not df_temp.empty:
+        valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
+        mask_operativa = valores_unidad_operativa == config['unidad_operativa']
+        df_temp = df_temp.loc[mask_operativa]
+    
+    # Filtrar por centro de atención para sedes que lo requieren
+    col_centro = None
+    for col in df.columns:
+        if 'centro de atencion' in col.lower():
+            col_centro = col
+            break
+    
+    if col_centro and config['centro_atencion'] and not df_temp.empty:
+        centros_normalizados = df[col_centro].astype(str).str.upper().str.strip()
+        centros_normalizados = [normalizar_texto(c) for c in centros_normalizados]
+        centro_upper = normalizar_texto(config['centro_atencion'])
+        mask_centro = [c == centro_upper for c in centros_normalizados]
+        if col_unidad_operativa:
+            mask_operativa = valores_unidad_operativa == config['unidad_operativa']
+            mask_combinada = mask_operativa & pd.Series(mask_centro)
+            df_temp = df_temp.loc[mask_combinada]
+        else:
+            df_temp = df_temp.loc[pd.Series(mask_centro)]
+    
+    return df_temp
+
 def procesar_novedades_completo(df, centro_atencion):
     """Procesa la hoja NOVEDADES para obtener todos los detalles"""
     if df is None or df.empty or not centro_atencion:
@@ -418,6 +499,10 @@ def cargar_archivo(archivo, unidades_filtro):
         dfs_facturacion = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion_detalle = {sede: [] for sede in SEDES.keys()}
         
+        # NUEVO: Diccionarios para datos SIN FILTRO de unidades funcionales
+        dfs_facturacion_sin_filtro = {sede: [] for sede in SEDES.keys()}
+        dfs_facturacion_detalle_sin_filtro = {sede: [] for sede in SEDES.keys()}
+        
         # Procesar hojas EVENTO y PGP
         for hoja in ['EVENTO', 'PGP']:
             df = pd.read_excel(archivo, sheet_name=hoja)
@@ -426,6 +511,7 @@ def cargar_archivo(archivo, unidades_filtro):
                 if not config.get('activa', True):
                     continue
                     
+                # Datos con filtro (existentes)
                 df_ing = procesar_hoja_ingresos_evento_pgp(df, hoja, unidades_filtro, config)
                 if not df_ing.empty:
                     dfs_ingresos[sede].append(df_ing)
@@ -434,6 +520,12 @@ def cargar_archivo(archivo, unidades_filtro):
                 if not df_fac.empty:
                     dfs_facturacion[sede].append(df_fac)
                     dfs_facturacion_detalle[sede].append(df_fac)
+                
+                # NUEVO: Datos SIN FILTRO para la matriz de usuario vs unidad
+                df_fac_sin_filtro = procesar_hoja_facturacion_sin_filtro(df, hoja, config)
+                if not df_fac_sin_filtro.empty:
+                    dfs_facturacion_sin_filtro[sede].append(df_fac_sin_filtro)
+                    dfs_facturacion_detalle_sin_filtro[sede].append(df_fac_sin_filtro)
         
         # Procesar hojas PDTE EVENTO y PDTE PGP
         for hoja in ['PDTE EVENTO', 'PDTE PGP']:
@@ -472,6 +564,17 @@ def cargar_archivo(archivo, unidades_filtro):
                 dfs_resultado[f'FACTURACION_DETALLE_{sede}'] = pd.concat(dfs_facturacion_detalle[sede], ignore_index=True)
             else:
                 dfs_resultado[f'FACTURACION_DETALLE_{sede}'] = pd.DataFrame()
+            
+            # NUEVO: Guardar datos sin filtro en el resultado
+            if dfs_facturacion_sin_filtro[sede]:
+                dfs_resultado[f'FACTURACION_SIN_FILTRO_{sede}'] = pd.concat(dfs_facturacion_sin_filtro[sede], ignore_index=True)
+            else:
+                dfs_resultado[f'FACTURACION_SIN_FILTRO_{sede}'] = pd.DataFrame()
+            
+            if dfs_facturacion_detalle_sin_filtro[sede]:
+                dfs_resultado[f'FACTURACION_DETALLE_SIN_FILTRO_{sede}'] = pd.concat(dfs_facturacion_detalle_sin_filtro[sede], ignore_index=True)
+            else:
+                dfs_resultado[f'FACTURACION_DETALLE_SIN_FILTRO_{sede}'] = pd.DataFrame()
         
         dfs_resultado['NOVEDADES'] = df_novedades
         
@@ -664,6 +767,65 @@ def construir_tabla_sede(sede, config, fecha_inicio, fecha_fin, df_ingresos, df_
     df_agrupado = agrupar_por_periodo(df, periodo, fecha_fin)
     
     return df_agrupado
+
+def obtener_matriz_usuario_unidad_sin_filtro(df_facturacion_sin_filtro, fecha_inicio, fecha_fin, sede_config):
+    """
+    Genera la matriz de facturación por Usuario vs Unidad Funcional SIN FILTRO de unidades
+    Usa los DataFrames sin filtrar por unidades funcionales
+    """
+    if df_facturacion_sin_filtro is None or df_facturacion_sin_filtro.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    
+    # Filtrar por fechas (solo filtro de fecha)
+    mask_fecha = (df_facturacion_sin_filtro['_fecha_factura'] >= fecha_inicio.date()) & \
+                 (df_facturacion_sin_filtro['_fecha_factura'] <= fecha_fin.date())
+    df_filtrado = df_facturacion_sin_filtro[mask_fecha].copy()
+    
+    if df_filtrado.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    
+    # Agrupar por usuario y unidad funcional
+    matriz = df_filtrado.groupby(['_usuario', '_valor_funcional']).size().reset_index(name='Cantidad')
+    
+    # Crear tabla pivote: Usuarios vs Unidades Funcionales
+    pivot_usuario_unidad = matriz.pivot_table(
+        index='_usuario', 
+        columns='_valor_funcional', 
+        values='Cantidad', 
+        fill_value=0
+    ).reset_index()
+    
+    # Agregar columna de total
+    pivot_usuario_unidad['TOTAL'] = pivot_usuario_unidad.select_dtypes(include=['number']).sum(axis=1)
+    
+    # Ordenar por total descendente
+    pivot_usuario_unidad = pivot_usuario_unidad.sort_values('TOTAL', ascending=False)
+    
+    # Reordenar columnas
+    columnas_unidades = [col for col in pivot_usuario_unidad.columns if col not in ['_usuario', 'TOTAL']]
+    columnas_unidades_ordenadas = sorted(columnas_unidades)
+    pivot_usuario_unidad = pivot_usuario_unidad[['_usuario'] + columnas_unidades_ordenadas + ['TOTAL']]
+    
+    # Crear también la matriz transpuesta (Unidades vs Usuarios)
+    pivot_unidad_usuario = matriz.pivot_table(
+        index='_valor_funcional', 
+        columns='_usuario', 
+        values='Cantidad', 
+        fill_value=0
+    ).reset_index()
+    
+    # Agregar columna de total para unidades
+    pivot_unidad_usuario['TOTAL'] = pivot_unidad_usuario.select_dtypes(include=['number']).sum(axis=1)
+    
+    # Ordenar por total descendente
+    pivot_unidad_usuario = pivot_unidad_usuario.sort_values('TOTAL', ascending=False)
+    
+    # Reordenar columnas
+    columnas_usuarios = [col for col in pivot_unidad_usuario.columns if col not in ['_valor_funcional', 'TOTAL']]
+    columnas_usuarios_ordenadas = sorted(columnas_usuarios)
+    pivot_unidad_usuario = pivot_unidad_usuario[['_valor_funcional'] + columnas_usuarios_ordenadas + ['TOTAL']]
+    
+    return pivot_usuario_unidad, pivot_unidad_usuario
 
 def obtener_matriz_usuario_unidad(df_facturacion_detalle, fecha_inicio, fecha_fin, periodo):
     """
@@ -1440,6 +1602,7 @@ if st.session_state.datos_cargados:
             df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
             df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
             df_facturacion_detalle = st.session_state.dfs.get(f'FACTURACION_DETALLE_{sede}', pd.DataFrame())
+            df_facturacion_sin_filtro = st.session_state.dfs.get(f'FACTURACION_DETALLE_SIN_FILTRO_{sede}', pd.DataFrame())
             df_novedades_sede = st.session_state.dfs.get(f'NOVEDADES_DETALLE_{sede}', pd.DataFrame())
             
             with st.spinner(f"Calculando {sede}..."):
@@ -1546,58 +1709,73 @@ if st.session_state.datos_cargados:
                         else:
                             st.info("No hay datos suficientes para generar la gráfica de facturación por usuario")
                         
-                        # ============ SECCIÓN: Matriz Usuario vs Unidad Funcional ============
-                        with st.expander("🏢 Ver Facturación por Usuario vs Unidad Funcional", expanded=False):
-                            st.markdown("*Esta tabla muestra la cantidad de registros facturados por cada usuario en cada unidad funcional, basado en los filtros de unidad funcional seleccionados.*")
+                        # ============ SECCIÓN: Matriz Usuario vs Unidad Funcional (SIN FILTRO) ============
+                        with st.expander("🏢 Ver Facturación por Usuario vs Unidad Funcional - Todas las Unidades", expanded=False):
+                            st.markdown("*Esta tabla muestra la cantidad de registros facturados por cada usuario en TODAS las unidades funcionales disponibles, sin aplicar el filtro de unidades funcionales seleccionado.*")
+                            st.info("ℹ️ Los datos mostrados aquí incluyen TODAS las unidades funcionales de la ciudad, independientemente del filtro aplicado en el resto del reporte.")
                             
-                            # Generar matriz de usuario vs unidad funcional
-                            df_matriz_usuario, df_matriz_unidad = obtener_matriz_usuario_unidad(
-                                df_facturacion_detalle, fecha_inicio, fecha_fin, periodo
-                            )
-                            
-                            if not df_matriz_usuario.empty:
-                                # Mostrar tabla de usuarios vs unidades
-                                st.markdown("**📋 Matriz: Usuarios vs Unidades Funcionales**")
-                                st.dataframe(df_matriz_usuario, use_container_width=True)
-                                
-                                st.markdown("---")
-                                
-                                # Mostrar tabla transpuesta (unidades vs usuarios)
-                                st.markdown("**📋 Matriz: Unidades Funcionales vs Usuarios**")
-                                st.dataframe(df_matriz_unidad, use_container_width=True)
-                                
-                                # Gráfica de calor
-                                st.markdown("---")
-                                st.markdown("**📊 Mapa de Calor - Facturación por Usuario y Unidad Funcional**")
-                                fig_heatmap = graficar_matriz_calor(df_matriz_usuario, f'Distribución de Facturación - {sede}')
-                                if fig_heatmap:
-                                    st.pyplot(fig_heatmap, use_container_width=True)
-                                    plt.close()
-                                else:
-                                    st.info("No hay suficientes datos para generar el mapa de calor")
-                                
-                                # Botón para descargar matrices
-                                output_matrices = BytesIO()
-                                with pd.ExcelWriter(output_matrices, engine='openpyxl') as writer:
-                                    # Asegurarse de que los DataFrames tengan formato plano
-                                    df_usuario_export = df_matriz_usuario.copy()
-                                    df_unidad_export = df_matriz_unidad.copy()
-                                    
-                                    # Convertir nombres de columnas a string para evitar problemas
-                                    df_usuario_export.columns = [str(col) for col in df_usuario_export.columns]
-                                    df_unidad_export.columns = [str(col) for col in df_unidad_export.columns]
-                                    
-                                    df_usuario_export.to_excel(writer, sheet_name='Usuarios_vs_Unidades', index=False)
-                                    df_unidad_export.to_excel(writer, sheet_name='Unidades_vs_Usuarios', index=False)
-                                
-                                st.download_button(
-                                    label="📥 Descargar Matrices (Excel)",
-                                    data=output_matrices.getvalue(),
-                                    file_name=f"{sede.lower().replace(' ', '_')}_matriz_usuario_unidad.xlsx",
-                                    key=f"excel_matriz_{sede}_{periodo}"
+                            if not df_facturacion_sin_filtro.empty:
+                                # Generar matriz sin filtro
+                                df_matriz_usuario, df_matriz_unidad = obtener_matriz_usuario_unidad_sin_filtro(
+                                    df_facturacion_sin_filtro, fecha_inicio, fecha_fin, config
                                 )
+                                
+                                if not df_matriz_usuario.empty:
+                                    # Mostrar tabla de usuarios vs unidades
+                                    st.markdown("**📋 Matriz: Usuarios vs Unidades Funcionales (Todas las unidades)**")
+                                    st.dataframe(df_matriz_usuario, use_container_width=True)
+                                    
+                                    st.markdown("---")
+                                    
+                                    # Mostrar tabla transpuesta (unidades vs usuarios)
+                                    st.markdown("**📋 Matriz: Unidades Funcionales vs Usuarios (Todas las unidades)**")
+                                    st.dataframe(df_matriz_unidad, use_container_width=True)
+                                    
+                                    # Gráfica de calor
+                                    st.markdown("---")
+                                    st.markdown("**📊 Mapa de Calor - Facturación por Usuario y Unidad Funcional (Todas las unidades)**")
+                                    fig_heatmap = graficar_matriz_calor(df_matriz_usuario, f'Distribución de Facturación - {sede} (Todas las unidades)')
+                                    if fig_heatmap:
+                                        st.pyplot(fig_heatmap, use_container_width=True)
+                                        plt.close()
+                                    else:
+                                        st.info("No hay suficientes datos para generar el mapa de calor")
+                                    
+                                    # Estadísticas adicionales
+                                    st.markdown("---")
+                                    st.markdown("**📊 Estadísticas de la Matriz**")
+                                    col1, col2, col3 = st.columns(3)
+                                    
+                                    total_usuarios = len(df_matriz_usuario)
+                                    total_unidades = len(df_matriz_unidad)
+                                    total_facturas = df_matriz_usuario['TOTAL'].sum() if 'TOTAL' in df_matriz_usuario.columns else 0
+                                    
+                                    col1.metric("👥 Total de Usuarios Facturadores", total_usuarios)
+                                    col2.metric("🏢 Total de Unidades Funcionales", total_unidades)
+                                    col3.metric("📄 Total de Facturas", f"{total_facturas:,}")
+                                    
+                                    # Botón para descargar matrices (con indicador de "sin filtro")
+                                    output_matrices = BytesIO()
+                                    with pd.ExcelWriter(output_matrices, engine='openpyxl') as writer:
+                                        df_usuario_export = df_matriz_usuario.copy()
+                                        df_unidad_export = df_matriz_unidad.copy()
+                                        
+                                        df_usuario_export.columns = [str(col) for col in df_usuario_export.columns]
+                                        df_unidad_export.columns = [str(col) for col in df_unidad_export.columns]
+                                        
+                                        df_usuario_export.to_excel(writer, sheet_name='Usuarios_vs_Unidades', index=False)
+                                        df_unidad_export.to_excel(writer, sheet_name='Unidades_vs_Usuarios', index=False)
+                                    
+                                    st.download_button(
+                                        label="📥 Descargar Matrices (Excel) - Todas las unidades",
+                                        data=output_matrices.getvalue(),
+                                        file_name=f"{sede.lower().replace(' ', '_')}_matriz_usuario_unidad_todas_unidades.xlsx",
+                                        key=f"excel_matriz_sin_filtro_{sede}"
+                                    )
+                                else:
+                                    st.info("No hay datos de facturación por usuario y unidad funcional para mostrar en este período")
                             else:
-                                st.info("No hay datos de facturación por usuario y unidad funcional para mostrar en este período")
+                                st.info("No hay datos de facturación disponibles para generar la matriz sin filtro")
                         # ============ FIN SECCIÓN ============
                     else:
                         st.info("No hay datos de facturación por usuario para mostrar")
@@ -1778,6 +1956,7 @@ if st.session_state.datos_cargados:
                         df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
                         df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
                         df_facturacion_detalle = st.session_state.dfs.get(f'FACTURACION_DETALLE_{sede}', pd.DataFrame())
+                        df_facturacion_sin_filtro = st.session_state.dfs.get(f'FACTURACION_DETALLE_SIN_FILTRO_{sede}', pd.DataFrame())
                         df_novedades_sede = st.session_state.dfs.get(f'NOVEDADES_DETALLE_{sede}', pd.DataFrame())
                         
                         # Obtener el período seleccionado para esta sede (default: Semanal)
@@ -1807,28 +1986,29 @@ if st.session_state.datos_cargados:
                             
                             row_start = len(df_export) + 3
                             
-                            # Matriz Usuario vs Unidad Funcional
-                            df_matriz_usuario, df_matriz_unidad = obtener_matriz_usuario_unidad(
-                                df_facturacion_detalle, fecha_inicio, fecha_fin, periodo_export
-                            )
-                            if not df_matriz_usuario.empty:
-                                worksheet.write(row_start, 0, f"Matriz: Usuarios vs Unidades Funcionales")
-                                row_start += 1
-                                for col_num, value in enumerate(df_matriz_usuario.columns.values):
-                                    worksheet.write(row_start, col_num, str(value))
-                                for row_num, row in enumerate(df_matriz_usuario.values, row_start + 1):
-                                    for col_num, value in enumerate(row):
-                                        worksheet.write(row_num, col_num, value)
-                                row_start += len(df_matriz_usuario) + 3
-                                
-                                worksheet.write(row_start, 0, f"Matriz: Unidades Funcionales vs Usuarios")
-                                row_start += 1
-                                for col_num, value in enumerate(df_matriz_unidad.columns.values):
-                                    worksheet.write(row_start, col_num, str(value))
-                                for row_num, row in enumerate(df_matriz_unidad.values, row_start + 1):
-                                    for col_num, value in enumerate(row):
-                                        worksheet.write(row_num, col_num, value)
-                                row_start += len(df_matriz_unidad) + 3
+                            # Matriz Usuario vs Unidad Funcional (SIN FILTRO - TODAS LAS UNIDADES)
+                            if not df_facturacion_sin_filtro.empty:
+                                df_matriz_usuario, df_matriz_unidad = obtener_matriz_usuario_unidad_sin_filtro(
+                                    df_facturacion_sin_filtro, fecha_inicio, fecha_fin, config
+                                )
+                                if not df_matriz_usuario.empty:
+                                    worksheet.write(row_start, 0, f"Matriz: Usuarios vs Unidades Funcionales (TODAS LAS UNIDADES)")
+                                    row_start += 1
+                                    for col_num, value in enumerate(df_matriz_usuario.columns.values):
+                                        worksheet.write(row_start, col_num, str(value))
+                                    for row_num, row in enumerate(df_matriz_usuario.values, row_start + 1):
+                                        for col_num, value in enumerate(row):
+                                            worksheet.write(row_num, col_num, value)
+                                    row_start += len(df_matriz_usuario) + 3
+                                    
+                                    worksheet.write(row_start, 0, f"Matriz: Unidades Funcionales vs Usuarios (TODAS LAS UNIDADES)")
+                                    row_start += 1
+                                    for col_num, value in enumerate(df_matriz_unidad.columns.values):
+                                        worksheet.write(row_start, col_num, str(value))
+                                    for row_num, row in enumerate(df_matriz_unidad.values, row_start + 1):
+                                        for col_num, value in enumerate(row):
+                                            worksheet.write(row_num, col_num, value)
+                                    row_start += len(df_matriz_unidad) + 3
                             
                             # Gráfica de Facturación (con el período seleccionado)
                             fig_fact = graficar_facturacion_temporal(df_sede, periodo_export)
