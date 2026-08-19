@@ -7,3 +7,5 @@ xlsxwriter
 matplotlib
 seaborn
 fpdf
+streamlit
+plotly
