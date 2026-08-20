@@ -1409,7 +1409,7 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         for x, y in zip(x_vals, y_vals):
             if y > 0:
                 # Usar offset en unidades de datos: 2% del valor
-                offset_data = y * 0.02
+                offset_data = y * 0.002
                 # Mínimo 20 unidades de datos
                 if offset_data < 20:
                     offset_data = 20
