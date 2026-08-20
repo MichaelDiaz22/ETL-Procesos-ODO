@@ -1325,7 +1325,7 @@ def graficar_ingresos_por_usuario_mensual(df_ingresos_sin_filtro, fecha_inicio, 
 def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     """
     Gráfica de tendencia de Ingresos, Facturación y Novedades usando seaborn y matplotlib
-    Con etiquetas de datos justo encima de los marcadores
+    Con etiquetas de datos justo en los marcadores
     """
     if df_tabla.empty:
         return None
@@ -1399,7 +1399,7 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
                 linestyle='--', linewidth=2, color=colores['facturacion'], 
                 alpha=0.4, label='Tendencia Facturación', zorder=2)
     
-    # ===== 4. ETIQUETAS DE DATOS JUSTO ENCIMA DE LOS MARCADORES =====
+    # ===== 4. ETIQUETAS DE DATOS JUSTO EN LOS MARCADORES =====
     # Calcular el valor máximo para el offset
     max_val = max([
         df_plot['ingresos'].max() if not df_plot['ingresos'].empty else 0,
@@ -1407,42 +1407,37 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         df_plot['Novedades'].max() if not df_plot['Novedades'].empty else 0
     ])
     
-    # Offset pequeño (3% del valor del punto o mínimo 200 unidades)
-    def get_offset(y, max_val):
-        # Offset dinámico: 3% del valor o mínimo 200
-        offset = max(y * 0.03, 200)
-        # Si el valor es muy pequeño, usar un offset fijo
-        if y < 1000:
-            offset = 300
-        return offset
-    
-    # Función para agregar etiquetas justo encima de los marcadores
-    def agregar_etiquetas_encima(x_vals, y_vals, color, label_prefix=''):
+    # Función para agregar etiquetas justo en el marcador
+    def agregar_etiquetas_encima(x_vals, y_vals, color):
         for x, y in zip(x_vals, y_vals):
             if y > 0:
-                # Offset pequeño justo encima del marcador
-                offset = get_offset(y, max_val)
+                # Offset muy pequeño: 2% del valor o mínimo 100 unidades
+                # Esto hace que la etiqueta quede CASI pegada al marcador
+                offset = max(y * 0.02, 100)
+                
+                # Si el valor es muy pequeño, usar offset fijo
+                if y < 500:
+                    offset = 150
                 
                 ax.annotate(f'{int(y):,}', 
-                           xy=(x, y), 
-                           xytext=(0, offset),
+                           xy=(x, y),  # El punto exacto del marcador
+                           xytext=(0, offset),  # Offset vertical mínimo
                            textcoords='offset points',
                            ha='center', 
                            va='bottom',
                            fontsize=9,
                            fontweight='bold',
                            color=color,
-                           bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
-                                    edgecolor=color, linewidth=1, alpha=0.85))
+                           bbox=dict(boxstyle='round,pad=0.15', facecolor='white', 
+                                    edgecolor=color, linewidth=1, alpha=0.9))
     
-    # Agregar etiquetas para cada métrica con offset ajustado
+    # Agregar etiquetas para cada métrica con offset mínimo
     agregar_etiquetas_encima(df_plot['Fecha'], df_plot['ingresos'], colores['ingresos'])
     agregar_etiquetas_encima(df_plot['Fecha'], df_plot['facturado total'], colores['facturacion'])
     agregar_etiquetas_encima(df_plot['Fecha'], df_plot['Novedades'], colores['novedades'])
     
     # ===== 5. CONFIGURACIÓN DEL EJE X =====
     if periodo == 'Mensual':
-        # Crear etiquetas de meses
         etiquetas = []
         for fecha in df_plot['Fecha']:
             nombre_mes = meses_es.get(fecha.strftime('%B'), fecha.strftime('%B'))
@@ -1453,10 +1448,8 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         ax.set_xlabel('Mes', fontsize=12, fontweight='bold')
         
     elif periodo == 'Semanal':
-        # Agrupar por semana
         df_plot['Semana'] = df_plot['Fecha'].dt.isocalendar().week
         
-        # Mostrar todas las semanas o un subconjunto
         step = max(1, len(df_plot) // 8)
         indices_mostrar = list(range(0, len(df_plot), step))
         if len(df_plot) - 1 not in indices_mostrar:
@@ -1467,7 +1460,6 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         
         for fecha in fechas_mostrar:
             inicio_semana = fecha - pd.Timedelta(days=fecha.weekday())
-            fin_semana = inicio_semana + pd.Timedelta(days=6)
             semana = fecha.isocalendar()[1]
             etiqueta = f"Sem {semana}\n{inicio_semana.strftime('%d/%m')}"
             etiquetas_semanas.append(etiqueta)
@@ -1496,8 +1488,8 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     
     # ===== 6. CONFIGURACIÓN DEL EJE Y =====
     if max_val > 0:
-        # 20% de espacio adicional para las etiquetas (menos que antes porque ahora están más cerca)
-        ax.set_ylim(0, max_val * 1.20)
+        # 15% de espacio adicional (mínimo necesario)
+        ax.set_ylim(0, max_val * 1.15)
     
     # Formato de números con separadores de miles
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
