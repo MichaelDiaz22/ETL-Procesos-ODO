@@ -8,6 +8,11 @@ import xlsxwriter
 from io import BytesIO
 import tempfile
 import os
+import seaborn as sns
+
+# Configurar estilo de seaborn
+sns.set_style("whitegrid")
+sns.set_palette("husl")
 
 # Configuración de la página
 st.set_page_config(
@@ -138,7 +143,7 @@ def normalizar_texto(texto):
     return texto_str
 
 def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, config):
-    """Procesa hojas EVENTO y PGP para ingresos"""
+    """Procesa hojas EVENTO y PGP para ingresos - Usuario: USUARIO FACTURO"""
     col_fecha = None
     for col in df.columns:
         if 'fecha ingreso' in col.lower():
@@ -158,10 +163,11 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, config):
             col_unidad_operativa = col
             break
     
+    # Buscar usuario de ingreso en hojas EVENTO y PGP (USUARIO FACTURO)
     col_usuario_ingreso = None
     for col in df.columns:
         col_lower = col.lower().strip()
-        if 'usuario ingreso' in col_lower or 'usuario_ingreso' in col_lower or 'admisionador' in col_lower:
+        if 'usuario facturo' in col_lower or 'usuario_facturo' in col_lower or 'facturador' in col_lower:
             col_usuario_ingreso = col
             break
     
@@ -176,7 +182,7 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, config):
     
     valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
     
-    # Obtener usuarios de ingreso si existen
+    # Obtener usuarios de ingreso
     usuarios = []
     if col_usuario_ingreso:
         usuarios = df[col_usuario_ingreso].astype(str).str.upper().str.strip().fillna('NO ESPECIFICADO').tolist()
@@ -208,7 +214,7 @@ def procesar_hoja_ingresos_evento_pgp(df, nombre_hoja, unidades_filtro, config):
     return df_temp
 
 def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
-    """Procesa hojas PDTE EVENTO y PDTE PGP para ingresos"""
+    """Procesa hojas PDTE EVENTO y PDTE PGP para ingresos - Usuario: USUARIO CREO"""
     col_fecha = None
     for col in df.columns:
         if 'fecha ingreso' in col.lower():
@@ -227,10 +233,11 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
             col_centro = col
             break
     
+    # Buscar usuario de ingreso en hojas PDTE (USUARIO CREO)
     col_usuario_ingreso = None
     for col in df.columns:
         col_lower = col.lower().strip()
-        if 'usuario ingreso' in col_lower or 'usuario_ingreso' in col_lower or 'admisionador' in col_lower:
+        if 'usuario creo' in col_lower or 'usuario_creo' in col_lower or 'creado por' in col_lower:
             col_usuario_ingreso = col
             break
     
@@ -245,7 +252,7 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
     
     valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
     
-    # Obtener usuarios de ingreso si existen
+    # Obtener usuarios de ingreso
     usuarios = []
     if col_usuario_ingreso:
         usuarios = df[col_usuario_ingreso].astype(str).str.upper().str.strip().fillna('NO ESPECIFICADO').tolist()
@@ -282,8 +289,7 @@ def procesar_hoja_ingresos_pdte(df, nombre_hoja, unidades_filtro, config):
 
 def procesar_hoja_ingresos_sin_filtro(df, nombre_hoja, config):
     """
-    Procesa hojas EVENTO y PGP para ingresos SIN FILTRO de unidades funcionales
-    Usa SOLO el filtro de centro/unidad operativa
+    Procesa hojas para ingresos SIN FILTRO de unidades funcionales
     """
     col_fecha = None
     for col in df.columns:
@@ -304,12 +310,20 @@ def procesar_hoja_ingresos_sin_filtro(df, nombre_hoja, config):
             col_unidad_operativa = col
             break
     
+    # Buscar usuario según el tipo de hoja
     col_usuario_ingreso = None
     for col in df.columns:
         col_lower = col.lower().strip()
-        if 'usuario ingreso' in col_lower or 'usuario_ingreso' in col_lower or 'admisionador' in col_lower:
-            col_usuario_ingreso = col
-            break
+        # Para hojas EVENTO y PGP: USUARIO FACTURO
+        if nombre_hoja in ['EVENTO', 'PGP']:
+            if 'usuario facturo' in col_lower or 'usuario_facturo' in col_lower or 'facturador' in col_lower:
+                col_usuario_ingreso = col
+                break
+        # Para hojas PDTE: USUARIO CREO
+        else:
+            if 'usuario creo' in col_lower or 'usuario_creo' in col_lower or 'creado por' in col_lower:
+                col_usuario_ingreso = col
+                break
     
     if not col_fecha or not col_unidad_funcional:
         return pd.DataFrame()
@@ -322,27 +336,27 @@ def procesar_hoja_ingresos_sin_filtro(df, nombre_hoja, config):
     
     valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
     
-    # Obtener usuarios de ingreso si existen
+    # Obtener usuarios de ingreso
     usuarios = []
     if col_usuario_ingreso:
         usuarios = df[col_usuario_ingreso].astype(str).str.upper().str.strip().fillna('NO ESPECIFICADO').tolist()
     else:
         usuarios = ['NO ESPECIFICADO'] * len(df)
     
-    # NO FILTRAR POR UNIDADES FUNCIONALES - solo por unidad operativa/centro
+    # NO FILTRAR POR UNIDADES FUNCIONALES
     df_temp = pd.DataFrame({
         '_fecha': fechas_convertidas,
         '_valor_funcional': valores_funcionales,
         '_usuario': usuarios
     })
     
-    # Filtrar por unidad operativa (este filtro SÍ se mantiene)
+    # Filtrar por unidad operativa
     if col_unidad_operativa and not df_temp.empty:
         valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
         mask_operativa = valores_unidad_operativa == config['unidad_operativa']
         df_temp = df_temp.loc[mask_operativa]
     
-    # Filtrar por centro de atención para sedes que lo requieren
+    # Filtrar por centro de atención
     col_centro = None
     for col in df.columns:
         if 'centro de atencion' in col.lower():
@@ -399,7 +413,7 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
     
     valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
     
-    # Obtener usuarios facturadores si existen
+    # Obtener usuarios facturadores
     usuarios = []
     if col_usuario_facturo:
         usuarios = df[col_usuario_facturo].astype(str).str.upper().str.strip().fillna('NO ESPECIFICADO').tolist()
@@ -434,7 +448,6 @@ def procesar_hoja_facturacion(df, nombre_hoja, unidades_filtro, config):
 def procesar_hoja_facturacion_sin_filtro(df, nombre_hoja, config):
     """
     Procesa hojas EVENTO y PGP para facturación SIN FILTRO de unidades funcionales
-    Usa SOLO el filtro de centro/unidad operativa
     """
     col_fecha_ingreso = None
     col_fecha_factura = None
@@ -470,14 +483,14 @@ def procesar_hoja_facturacion_sin_filtro(df, nombre_hoja, config):
     
     valores_funcionales = df[col_unidad_funcional].astype(str).str.upper().str.strip()
     
-    # Obtener usuarios facturadores si existen
+    # Obtener usuarios facturadores
     usuarios = []
     if col_usuario_facturo:
         usuarios = df[col_usuario_facturo].astype(str).str.upper().str.strip().fillna('NO ESPECIFICADO').tolist()
     else:
         usuarios = ['NO ESPECIFICADO'] * len(df)
     
-    # NO FILTRAR POR UNIDADES FUNCIONALES - solo por unidad operativa/centro
+    # NO FILTRAR POR UNIDADES FUNCIONALES
     df_temp = pd.DataFrame({
         '_fecha_ingreso': fechas_ingreso,
         '_fecha_factura': fechas_factura,
@@ -485,13 +498,13 @@ def procesar_hoja_facturacion_sin_filtro(df, nombre_hoja, config):
         '_usuario': usuarios
     })
     
-    # Filtrar por unidad operativa (este filtro SÍ se mantiene)
+    # Filtrar por unidad operativa
     if col_unidad_operativa and not df_temp.empty:
         valores_unidad_operativa = df[col_unidad_operativa].astype(str).str.upper().str.strip()
         mask_operativa = valores_unidad_operativa == config['unidad_operativa']
         df_temp = df_temp.loc[mask_operativa]
     
-    # Filtrar por centro de atención para sedes que lo requieren
+    # Filtrar por centro de atención
     col_centro = None
     for col in df.columns:
         if 'centro de atencion' in col.lower():
@@ -612,7 +625,7 @@ def cargar_archivo(archivo, unidades_filtro):
         dfs_facturacion = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion_detalle = {sede: [] for sede in SEDES.keys()}
         
-        # NUEVO: Diccionarios para datos SIN FILTRO de unidades funcionales
+        # Diccionarios para datos SIN FILTRO
         dfs_ingresos_sin_filtro = {sede: [] for sede in SEDES.keys()}
         dfs_ingresos_detalle_sin_filtro = {sede: [] for sede in SEDES.keys()}
         dfs_facturacion_sin_filtro = {sede: [] for sede in SEDES.keys()}
@@ -625,8 +638,8 @@ def cargar_archivo(archivo, unidades_filtro):
             for sede, config in SEDES.items():
                 if not config.get('activa', True):
                     continue
-                    
-                # Datos con filtro (existentes)
+                
+                # Datos con filtro
                 df_ing = procesar_hoja_ingresos_evento_pgp(df, hoja, unidades_filtro, config)
                 if not df_ing.empty:
                     dfs_ingresos[sede].append(df_ing)
@@ -636,13 +649,12 @@ def cargar_archivo(archivo, unidades_filtro):
                     dfs_facturacion[sede].append(df_fac)
                     dfs_facturacion_detalle[sede].append(df_fac)
                 
-                # NUEVO: Datos SIN FILTRO para ingresos
+                # Datos SIN FILTRO
                 df_ing_sin_filtro = procesar_hoja_ingresos_sin_filtro(df, hoja, config)
                 if not df_ing_sin_filtro.empty:
                     dfs_ingresos_sin_filtro[sede].append(df_ing_sin_filtro)
                     dfs_ingresos_detalle_sin_filtro[sede].append(df_ing_sin_filtro)
                 
-                # NUEVO: Datos SIN FILTRO para facturación
                 df_fac_sin_filtro = procesar_hoja_facturacion_sin_filtro(df, hoja, config)
                 if not df_fac_sin_filtro.empty:
                     dfs_facturacion_sin_filtro[sede].append(df_fac_sin_filtro)
@@ -655,12 +667,12 @@ def cargar_archivo(archivo, unidades_filtro):
             for sede, config in SEDES.items():
                 if not config.get('activa', True):
                     continue
-                    
+                
                 df_ing = procesar_hoja_ingresos_pdte(df, hoja, unidades_filtro, config)
                 if not df_ing.empty:
                     dfs_ingresos[sede].append(df_ing)
                 
-                # También procesar ingresos sin filtro para PDTE
+                # Datos SIN FILTRO para ingresos
                 df_ing_sin_filtro = procesar_hoja_ingresos_sin_filtro(df, hoja, config)
                 if not df_ing_sin_filtro.empty:
                     dfs_ingresos_sin_filtro[sede].append(df_ing_sin_filtro)
@@ -676,7 +688,7 @@ def cargar_archivo(archivo, unidades_filtro):
         for sede in SEDES.keys():
             if not SEDES[sede].get('activa', True):
                 continue
-                
+            
             if dfs_ingresos[sede]:
                 dfs_resultado[f'INGRESOS_{sede}'] = pd.concat(dfs_ingresos[sede], ignore_index=True)
             else:
@@ -692,7 +704,7 @@ def cargar_archivo(archivo, unidades_filtro):
             else:
                 dfs_resultado[f'FACTURACION_DETALLE_{sede}'] = pd.DataFrame()
             
-            # NUEVO: Guardar datos sin filtro en el resultado
+            # Guardar datos sin filtro
             if dfs_ingresos_sin_filtro[sede]:
                 dfs_resultado[f'INGRESOS_SIN_FILTRO_{sede}'] = pd.concat(dfs_ingresos_sin_filtro[sede], ignore_index=True)
             else:
@@ -718,7 +730,7 @@ def cargar_archivo(archivo, unidades_filtro):
         for sede, config in SEDES.items():
             if not config.get('activa', True):
                 continue
-                
+            
             if config['centro_atencion']:
                 df_novedades_sede = procesar_novedades_completo(df_novedades, config['centro_atencion'])
                 dfs_resultado[f'NOVEDADES_DETALLE_{sede}'] = df_novedades_sede
@@ -906,13 +918,10 @@ def construir_tabla_sede(sede, config, fecha_inicio, fecha_fin, df_ingresos, df_
     return df_agrupado
 
 def obtener_matriz_usuario_unidad_mensual_sin_filtro_ingresos(df_ingresos_sin_filtro, fecha_inicio, fecha_fin, sede_config):
-    """
-    Genera una matriz de ingresos por Mes, Usuario y Unidad Funcional SIN FILTRO de unidades
-    """
+    """Genera una matriz de ingresos por Mes, Usuario y Unidad Funcional SIN FILTRO"""
     if df_ingresos_sin_filtro is None or df_ingresos_sin_filtro.empty:
         return pd.DataFrame()
     
-    # Filtrar por fechas
     mask_fecha = (df_ingresos_sin_filtro['_fecha'] >= fecha_inicio.date()) & \
                  (df_ingresos_sin_filtro['_fecha'] <= fecha_fin.date())
     df_filtrado = df_ingresos_sin_filtro[mask_fecha].copy()
@@ -920,17 +929,11 @@ def obtener_matriz_usuario_unidad_mensual_sin_filtro_ingresos(df_ingresos_sin_fi
     if df_filtrado.empty:
         return pd.DataFrame()
     
-    # Crear columna de mes
     df_filtrado['Mes'] = pd.to_datetime(df_filtrado['_fecha']).dt.strftime('%Y-%m')
-    df_filtrado['NombreMes'] = pd.to_datetime(df_filtrado['_fecha']).dt.strftime('%B %Y')
     
-    # Agrupar por mes, usuario y unidad funcional
-    matriz = df_filtrado.groupby(['Mes', 'NombreMes', '_usuario', '_valor_funcional']).size().reset_index(name='Cantidad')
-    
-    # Crear tabla pivote: Mes x Usuario x Unidad Funcional
+    matriz = df_filtrado.groupby(['Mes', '_usuario', '_valor_funcional']).size().reset_index(name='Cantidad')
     matriz['Usuario_Unidad'] = matriz['_usuario'] + ' | ' + matriz['_valor_funcional']
     
-    # Pivotar para tener Meses como columnas y Usuario|Unidad como filas
     pivot_mensual = matriz.pivot_table(
         index=['_usuario', '_valor_funcional', 'Usuario_Unidad'],
         columns='Mes',
@@ -938,21 +941,15 @@ def obtener_matriz_usuario_unidad_mensual_sin_filtro_ingresos(df_ingresos_sin_fi
         fill_value=0
     ).reset_index()
     
-    # Reordenar columnas (meses) cronológicamente
     columnas_meses = [col for col in pivot_mensual.columns if col not in ['_usuario', '_valor_funcional', 'Usuario_Unidad']]
     columnas_meses_ordenadas = sorted(columnas_meses)
     
-    # Agregar columna de total
     pivot_mensual['TOTAL'] = pivot_mensual[columnas_meses_ordenadas].sum(axis=1)
-    
-    # Ordenar por total descendente
     pivot_mensual = pivot_mensual.sort_values('TOTAL', ascending=False)
     
-    # Seleccionar columnas finales
     columnas_finales = ['_usuario', '_valor_funcional'] + columnas_meses_ordenadas + ['TOTAL']
     pivot_mensual = pivot_mensual[columnas_finales]
     
-    # Renombrar columnas para mejor visualización
     pivot_mensual = pivot_mensual.rename(columns={
         '_usuario': 'Usuario',
         '_valor_funcional': 'Unidad Funcional'
@@ -961,13 +958,10 @@ def obtener_matriz_usuario_unidad_mensual_sin_filtro_ingresos(df_ingresos_sin_fi
     return pivot_mensual
 
 def obtener_matriz_usuario_unidad_sin_filtro_ingresos(df_ingresos_sin_filtro, fecha_inicio, fecha_fin, sede_config):
-    """
-    Genera la matriz de ingresos por Usuario vs Unidad Funcional SIN FILTRO de unidades
-    """
+    """Genera la matriz de ingresos por Usuario vs Unidad Funcional SIN FILTRO"""
     if df_ingresos_sin_filtro is None or df_ingresos_sin_filtro.empty:
         return pd.DataFrame(), pd.DataFrame()
     
-    # Filtrar por fechas
     mask_fecha = (df_ingresos_sin_filtro['_fecha'] >= fecha_inicio.date()) & \
                  (df_ingresos_sin_filtro['_fecha'] <= fecha_fin.date())
     df_filtrado = df_ingresos_sin_filtro[mask_fecha].copy()
@@ -975,10 +969,8 @@ def obtener_matriz_usuario_unidad_sin_filtro_ingresos(df_ingresos_sin_filtro, fe
     if df_filtrado.empty:
         return pd.DataFrame(), pd.DataFrame()
     
-    # Agrupar por usuario y unidad funcional
     matriz = df_filtrado.groupby(['_usuario', '_valor_funcional']).size().reset_index(name='Cantidad')
     
-    # Crear tabla pivote: Usuarios vs Unidades Funcionales
     pivot_usuario_unidad = matriz.pivot_table(
         index='_usuario', 
         columns='_valor_funcional', 
@@ -986,18 +978,13 @@ def obtener_matriz_usuario_unidad_sin_filtro_ingresos(df_ingresos_sin_filtro, fe
         fill_value=0
     ).reset_index()
     
-    # Agregar columna de total
     pivot_usuario_unidad['TOTAL'] = pivot_usuario_unidad.select_dtypes(include=['number']).sum(axis=1)
-    
-    # Ordenar por total descendente
     pivot_usuario_unidad = pivot_usuario_unidad.sort_values('TOTAL', ascending=False)
     
-    # Reordenar columnas
     columnas_unidades = [col for col in pivot_usuario_unidad.columns if col not in ['_usuario', 'TOTAL']]
     columnas_unidades_ordenadas = sorted(columnas_unidades)
     pivot_usuario_unidad = pivot_usuario_unidad[['_usuario'] + columnas_unidades_ordenadas + ['TOTAL']]
     
-    # Crear también la matriz transpuesta (Unidades vs Usuarios)
     pivot_unidad_usuario = matriz.pivot_table(
         index='_valor_funcional', 
         columns='_usuario', 
@@ -1005,13 +992,9 @@ def obtener_matriz_usuario_unidad_sin_filtro_ingresos(df_ingresos_sin_filtro, fe
         fill_value=0
     ).reset_index()
     
-    # Agregar columna de total para unidades
     pivot_unidad_usuario['TOTAL'] = pivot_unidad_usuario.select_dtypes(include=['number']).sum(axis=1)
-    
-    # Ordenar por total descendente
     pivot_unidad_usuario = pivot_unidad_usuario.sort_values('TOTAL', ascending=False)
     
-    # Reordenar columnas
     columnas_usuarios = [col for col in pivot_unidad_usuario.columns if col not in ['_valor_funcional', 'TOTAL']]
     columnas_usuarios_ordenadas = sorted(columnas_usuarios)
     pivot_unidad_usuario = pivot_unidad_usuario[['_valor_funcional'] + columnas_usuarios_ordenadas + ['TOTAL']]
@@ -1019,13 +1002,10 @@ def obtener_matriz_usuario_unidad_sin_filtro_ingresos(df_ingresos_sin_filtro, fe
     return pivot_usuario_unidad, pivot_unidad_usuario
 
 def obtener_matriz_usuario_unidad_mensual_sin_filtro_facturacion(df_facturacion_sin_filtro, fecha_inicio, fecha_fin, sede_config):
-    """
-    Genera una matriz de facturación por Mes, Usuario y Unidad Funcional SIN FILTRO de unidades
-    """
+    """Genera una matriz de facturación por Mes, Usuario y Unidad Funcional SIN FILTRO"""
     if df_facturacion_sin_filtro is None or df_facturacion_sin_filtro.empty:
         return pd.DataFrame()
     
-    # Filtrar por fechas
     mask_fecha = (df_facturacion_sin_filtro['_fecha_factura'] >= fecha_inicio.date()) & \
                  (df_facturacion_sin_filtro['_fecha_factura'] <= fecha_fin.date())
     df_filtrado = df_facturacion_sin_filtro[mask_fecha].copy()
@@ -1033,17 +1013,11 @@ def obtener_matriz_usuario_unidad_mensual_sin_filtro_facturacion(df_facturacion_
     if df_filtrado.empty:
         return pd.DataFrame()
     
-    # Crear columna de mes
     df_filtrado['Mes'] = pd.to_datetime(df_filtrado['_fecha_factura']).dt.strftime('%Y-%m')
-    df_filtrado['NombreMes'] = pd.to_datetime(df_filtrado['_fecha_factura']).dt.strftime('%B %Y')
     
-    # Agrupar por mes, usuario y unidad funcional
-    matriz = df_filtrado.groupby(['Mes', 'NombreMes', '_usuario', '_valor_funcional']).size().reset_index(name='Cantidad')
-    
-    # Crear tabla pivote: Mes x Usuario x Unidad Funcional
+    matriz = df_filtrado.groupby(['Mes', '_usuario', '_valor_funcional']).size().reset_index(name='Cantidad')
     matriz['Usuario_Unidad'] = matriz['_usuario'] + ' | ' + matriz['_valor_funcional']
     
-    # Pivotar para tener Meses como columnas y Usuario|Unidad como filas
     pivot_mensual = matriz.pivot_table(
         index=['_usuario', '_valor_funcional', 'Usuario_Unidad'],
         columns='Mes',
@@ -1051,21 +1025,15 @@ def obtener_matriz_usuario_unidad_mensual_sin_filtro_facturacion(df_facturacion_
         fill_value=0
     ).reset_index()
     
-    # Reordenar columnas (meses) cronológicamente
     columnas_meses = [col for col in pivot_mensual.columns if col not in ['_usuario', '_valor_funcional', 'Usuario_Unidad']]
     columnas_meses_ordenadas = sorted(columnas_meses)
     
-    # Agregar columna de total
     pivot_mensual['TOTAL'] = pivot_mensual[columnas_meses_ordenadas].sum(axis=1)
-    
-    # Ordenar por total descendente
     pivot_mensual = pivot_mensual.sort_values('TOTAL', ascending=False)
     
-    # Seleccionar columnas finales
     columnas_finales = ['_usuario', '_valor_funcional'] + columnas_meses_ordenadas + ['TOTAL']
     pivot_mensual = pivot_mensual[columnas_finales]
     
-    # Renombrar columnas para mejor visualización
     pivot_mensual = pivot_mensual.rename(columns={
         '_usuario': 'Usuario',
         '_valor_funcional': 'Unidad Funcional'
@@ -1074,13 +1042,10 @@ def obtener_matriz_usuario_unidad_mensual_sin_filtro_facturacion(df_facturacion_
     return pivot_mensual
 
 def obtener_matriz_usuario_unidad_sin_filtro_facturacion(df_facturacion_sin_filtro, fecha_inicio, fecha_fin, sede_config):
-    """
-    Genera la matriz de facturación por Usuario vs Unidad Funcional SIN FILTRO de unidades
-    """
+    """Genera la matriz de facturación por Usuario vs Unidad Funcional SIN FILTRO"""
     if df_facturacion_sin_filtro is None or df_facturacion_sin_filtro.empty:
         return pd.DataFrame(), pd.DataFrame()
     
-    # Filtrar por fechas
     mask_fecha = (df_facturacion_sin_filtro['_fecha_factura'] >= fecha_inicio.date()) & \
                  (df_facturacion_sin_filtro['_fecha_factura'] <= fecha_fin.date())
     df_filtrado = df_facturacion_sin_filtro[mask_fecha].copy()
@@ -1088,10 +1053,8 @@ def obtener_matriz_usuario_unidad_sin_filtro_facturacion(df_facturacion_sin_filt
     if df_filtrado.empty:
         return pd.DataFrame(), pd.DataFrame()
     
-    # Agrupar por usuario y unidad funcional
     matriz = df_filtrado.groupby(['_usuario', '_valor_funcional']).size().reset_index(name='Cantidad')
     
-    # Crear tabla pivote: Usuarios vs Unidades Funcionales
     pivot_usuario_unidad = matriz.pivot_table(
         index='_usuario', 
         columns='_valor_funcional', 
@@ -1099,18 +1062,13 @@ def obtener_matriz_usuario_unidad_sin_filtro_facturacion(df_facturacion_sin_filt
         fill_value=0
     ).reset_index()
     
-    # Agregar columna de total
     pivot_usuario_unidad['TOTAL'] = pivot_usuario_unidad.select_dtypes(include=['number']).sum(axis=1)
-    
-    # Ordenar por total descendente
     pivot_usuario_unidad = pivot_usuario_unidad.sort_values('TOTAL', ascending=False)
     
-    # Reordenar columnas
     columnas_unidades = [col for col in pivot_usuario_unidad.columns if col not in ['_usuario', 'TOTAL']]
     columnas_unidades_ordenadas = sorted(columnas_unidades)
     pivot_usuario_unidad = pivot_usuario_unidad[['_usuario'] + columnas_unidades_ordenadas + ['TOTAL']]
     
-    # Crear también la matriz transpuesta (Unidades vs Usuarios)
     pivot_unidad_usuario = matriz.pivot_table(
         index='_valor_funcional', 
         columns='_usuario', 
@@ -1118,13 +1076,9 @@ def obtener_matriz_usuario_unidad_sin_filtro_facturacion(df_facturacion_sin_filt
         fill_value=0
     ).reset_index()
     
-    # Agregar columna de total para unidades
     pivot_unidad_usuario['TOTAL'] = pivot_unidad_usuario.select_dtypes(include=['number']).sum(axis=1)
-    
-    # Ordenar por total descendente
     pivot_unidad_usuario = pivot_unidad_usuario.sort_values('TOTAL', ascending=False)
     
-    # Reordenar columnas
     columnas_usuarios = [col for col in pivot_unidad_usuario.columns if col not in ['_valor_funcional', 'TOTAL']]
     columnas_usuarios_ordenadas = sorted(columnas_usuarios)
     pivot_unidad_usuario = pivot_unidad_usuario[['_valor_funcional'] + columnas_usuarios_ordenadas + ['TOTAL']]
@@ -1136,32 +1090,23 @@ def graficar_matriz_calor_mensual(df_matriz_mensual, titulo):
     if df_matriz_mensual.empty or len(df_matriz_mensual.columns) < 3:
         return None
     
-    # Identificar columnas de meses (todas excepto Usuario, Unidad Funcional y TOTAL)
     columnas_meses = [col for col in df_matriz_mensual.columns 
                      if col not in ['Usuario', 'Unidad Funcional', 'TOTAL']]
     
     if not columnas_meses:
         return None
     
-    # Limitar a top 20 combinaciones para mejor visualización
     df_heat = df_matriz_mensual.copy()
-    
     if len(df_heat) > 20:
         df_heat = df_heat.nlargest(20, 'TOTAL')
     
-    # Crear etiquetas para las filas (Usuario + Unidad)
     etiquetas_filas = df_heat['Usuario'] + ' | ' + df_heat['Unidad Funcional']
-    
-    # Crear matriz de datos (solo meses)
     datos_heat = df_heat[columnas_meses].values
     
-    # Crear gráfica
     fig, ax = plt.subplots(figsize=(max(12, len(columnas_meses) * 0.5), max(6, len(df_heat) * 0.4)))
     
-    # Crear heatmap
     im = ax.imshow(datos_heat, cmap='YlOrRd', aspect='auto', interpolation='nearest')
     
-    # Configurar ejes
     ax.set_xticks(np.arange(len(columnas_meses)))
     ax.set_yticks(np.arange(len(df_heat)))
     ax.set_xticklabels(columnas_meses, rotation=45, ha='right', fontsize=8)
@@ -1171,7 +1116,6 @@ def graficar_matriz_calor_mensual(df_matriz_mensual, titulo):
     ax.set_ylabel('Usuario | Unidad Funcional', fontsize=11, fontweight='bold')
     ax.set_title(titulo, fontsize=13, fontweight='bold')
     
-    # Agregar valores en las celdas
     max_valor = datos_heat.max()
     for i in range(len(df_heat)):
         for j in range(len(columnas_meses)):
@@ -1180,25 +1124,19 @@ def graficar_matriz_calor_mensual(df_matriz_mensual, titulo):
                 text_color = 'white' if valor > max_valor * 0.6 else 'black'
                 ax.text(j, i, str(int(valor)), ha='center', va='center', fontsize=6, color=text_color)
     
-    # Agregar barra de color
     plt.colorbar(im, ax=ax, label='Cantidad')
-    
     plt.tight_layout()
     return fig
 
 def graficar_matriz_calor(df_matriz, titulo):
-    """Genera gráfica de calor para la matriz de facturación"""
+    """Genera gráfica de calor para la matriz"""
     if df_matriz.empty or len(df_matriz.columns) < 2:
         return None
     
-    # Preparar datos para la gráfica de calor
     if '_usuario' in df_matriz.columns:
-        # Matriz de usuarios vs unidades
         df_heat = df_matriz.set_index('_usuario')
-        # Eliminar columna TOTAL si existe
         df_heat = df_heat.drop(columns=['TOTAL'], errors='ignore')
         
-        # Limitar a top 10 usuarios y top 10 unidades para mejor visualización
         if len(df_heat.index) > 10:
             usuarios_top = df_heat.sum(axis=1).nlargest(10).index
             df_heat = df_heat.loc[usuarios_top]
@@ -1212,10 +1150,8 @@ def graficar_matriz_calor(df_matriz, titulo):
         
         fig, ax = plt.subplots(figsize=(max(10, len(df_heat.columns) * 0.4), max(6, len(df_heat.index) * 0.4)))
         
-        # Crear heatmap
         im = ax.imshow(df_heat.values, cmap='YlOrRd', aspect='auto', interpolation='nearest')
         
-        # Configurar ejes
         ax.set_xticks(np.arange(len(df_heat.columns)))
         ax.set_yticks(np.arange(len(df_heat.index)))
         ax.set_xticklabels(df_heat.columns, rotation=45, ha='right', fontsize=8)
@@ -1225,7 +1161,6 @@ def graficar_matriz_calor(df_matriz, titulo):
         ax.set_ylabel('Usuarios', fontsize=11, fontweight='bold')
         ax.set_title(titulo, fontsize=13, fontweight='bold')
         
-        # Agregar valores en las celdas
         max_valor = df_heat.values.max()
         for i in range(len(df_heat.index)):
             for j in range(len(df_heat.columns)):
@@ -1234,9 +1169,7 @@ def graficar_matriz_calor(df_matriz, titulo):
                     text_color = 'white' if valor > max_valor * 0.6 else 'black'
                     ax.text(j, i, str(int(valor)), ha='center', va='center', fontsize=7, color=text_color)
         
-        # Agregar barra de color
         plt.colorbar(im, ax=ax, label='Cantidad')
-        
         plt.tight_layout()
         return fig
     else:
@@ -1247,14 +1180,12 @@ def obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_
     if df_facturacion_detalle.empty:
         return pd.DataFrame()
     
-    # Filtrar por fechas
     mask_fecha = (df_facturacion_detalle['_fecha_factura'] >= fecha_inicio.date()) & (df_facturacion_detalle['_fecha_factura'] <= fecha_fin.date())
     df_filtrado = df_facturacion_detalle[mask_fecha].copy()
     
     if df_filtrado.empty:
         return pd.DataFrame()
     
-    # Crear columna de período
     df_filtrado['fecha_dt'] = pd.to_datetime(df_filtrado['_fecha_factura'])
     
     if periodo == 'Mensual':
@@ -1264,17 +1195,12 @@ def obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_
     else:
         df_filtrado['Periodo'] = df_filtrado['fecha_dt'].dt.strftime('%Y-%m-%d')
     
-    # Agrupar por usuario y período
     resultado = df_filtrado.groupby(['_usuario', 'Periodo']).size().reset_index(name='Cantidad')
     resultado = resultado.pivot(index='_usuario', columns='Periodo', values='Cantidad').fillna(0).astype(int)
     
-    # Agregar total por usuario
     resultado['TOTAL'] = resultado.sum(axis=1)
-    
-    # Ordenar por total descendente
     resultado = resultado.sort_values('TOTAL', ascending=False)
     
-    # Reordenar columnas cronológicamente
     periodos = [col for col in resultado.columns if col != 'TOTAL']
     periodos_ordenados = sorted(periodos)
     resultado = resultado[periodos_ordenados + ['TOTAL']]
@@ -1282,57 +1208,44 @@ def obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_
     return resultado
 
 def graficar_facturacion_por_usuario_mensual(df_facturacion_detalle, fecha_inicio, fecha_fin, sede):
-    """
-    Gráfica de barras apiladas mostrando la facturación por usuario por mes
-    """
+    """Gráfica de barras apiladas mostrando la facturación por usuario por mes"""
     if df_facturacion_detalle.empty:
         return None
     
-    # Filtrar por fechas
     mask_fecha = (df_facturacion_detalle['_fecha_factura'] >= fecha_inicio.date()) & (df_facturacion_detalle['_fecha_factura'] <= fecha_fin.date())
     df_filtrado = df_facturacion_detalle[mask_fecha].copy()
     
     if df_filtrado.empty:
         return None
     
-    # Crear columna de mes
     df_filtrado['fecha_dt'] = pd.to_datetime(df_filtrado['_fecha_factura'])
     df_filtrado['Mes'] = df_filtrado['fecha_dt'].dt.strftime('%Y-%m')
-    df_filtrado['NombreMes'] = df_filtrado['fecha_dt'].dt.strftime('%B %Y')
     
-    # Crear tabla pivote: usuarios vs meses
     pivot_table = pd.crosstab(df_filtrado['_usuario'], df_filtrado['Mes'])
     
-    # Ordenar por frecuencia total descendente (top 8 usuarios)
     pivot_table['Total'] = pivot_table.sum(axis=1)
     pivot_table = pivot_table.sort_values('Total', ascending=False)
     pivot_table = pivot_table.drop('Total', axis=1)
     
-    # Obtener top 8 usuarios (si hay menos, mostrar todos)
     top_usuarios = pivot_table.head(8)
     
-    # Si no hay usuarios, retornar None
     if top_usuarios.empty:
         return None
     
-    # Reordenar columnas (meses) cronológicamente
     meses_ordenados = sorted(top_usuarios.columns)
     top_usuarios = top_usuarios[meses_ordenados]
     
-    # Crear gráfica de barras apiladas
     fig, ax = plt.subplots(figsize=(14, 6))
     
-    # Colores para diferentes usuarios
-    colores = plt.cm.Set2(np.linspace(0, 1, len(top_usuarios.index)))
+    colores = sns.color_palette("husl", len(top_usuarios.index))
     
     bottom = np.zeros(len(top_usuarios.columns))
     
     for i, usuario in enumerate(top_usuarios.index):
         valores = top_usuarios.loc[usuario].values
-        bars = ax.bar(range(len(top_usuarios.columns)), valores, bottom=bottom, 
-                      label=usuario, color=colores[i], alpha=0.8)
+        ax.bar(range(len(top_usuarios.columns)), valores, bottom=bottom, 
+               label=usuario, color=colores[i], alpha=0.8)
         
-        # Agregar valores en las barras si son significativos
         max_valor = top_usuarios.values.max()
         for j, valor in enumerate(valores):
             if valor > 0 and valor > max_valor * 0.05:
@@ -1349,61 +1262,47 @@ def graficar_facturacion_por_usuario_mensual(df_facturacion_detalle, fecha_inici
     ax.grid(True, alpha=0.3, axis='y')
     
     plt.tight_layout()
-    
     return fig
 
 def graficar_ingresos_por_usuario_mensual(df_ingresos_sin_filtro, fecha_inicio, fecha_fin, sede):
-    """
-    Gráfica de barras apiladas mostrando los ingresos por usuario por mes
-    """
+    """Gráfica de barras apiladas mostrando los ingresos por usuario por mes"""
     if df_ingresos_sin_filtro.empty:
         return None
     
-    # Filtrar por fechas
     mask_fecha = (df_ingresos_sin_filtro['_fecha'] >= fecha_inicio.date()) & (df_ingresos_sin_filtro['_fecha'] <= fecha_fin.date())
     df_filtrado = df_ingresos_sin_filtro[mask_fecha].copy()
     
     if df_filtrado.empty:
         return None
     
-    # Crear columna de mes
     df_filtrado['fecha_dt'] = pd.to_datetime(df_filtrado['_fecha'])
     df_filtrado['Mes'] = df_filtrado['fecha_dt'].dt.strftime('%Y-%m')
-    df_filtrado['NombreMes'] = df_filtrado['fecha_dt'].dt.strftime('%B %Y')
     
-    # Crear tabla pivote: usuarios vs meses
     pivot_table = pd.crosstab(df_filtrado['_usuario'], df_filtrado['Mes'])
     
-    # Ordenar por frecuencia total descendente (top 8 usuarios)
     pivot_table['Total'] = pivot_table.sum(axis=1)
     pivot_table = pivot_table.sort_values('Total', ascending=False)
     pivot_table = pivot_table.drop('Total', axis=1)
     
-    # Obtener top 8 usuarios (si hay menos, mostrar todos)
     top_usuarios = pivot_table.head(8)
     
-    # Si no hay usuarios, retornar None
     if top_usuarios.empty:
         return None
     
-    # Reordenar columnas (meses) cronológicamente
     meses_ordenados = sorted(top_usuarios.columns)
     top_usuarios = top_usuarios[meses_ordenados]
     
-    # Crear gráfica de barras apiladas
     fig, ax = plt.subplots(figsize=(14, 6))
     
-    # Colores para diferentes usuarios
-    colores = plt.cm.Set2(np.linspace(0, 1, len(top_usuarios.index)))
+    colores = sns.color_palette("husl", len(top_usuarios.index))
     
     bottom = np.zeros(len(top_usuarios.columns))
     
     for i, usuario in enumerate(top_usuarios.index):
         valores = top_usuarios.loc[usuario].values
-        bars = ax.bar(range(len(top_usuarios.columns)), valores, bottom=bottom, 
-                      label=usuario, color=colores[i], alpha=0.8)
+        ax.bar(range(len(top_usuarios.columns)), valores, bottom=bottom, 
+               label=usuario, color=colores[i], alpha=0.8)
         
-        # Agregar valores en las barras si son significativos
         max_valor = top_usuarios.values.max()
         for j, valor in enumerate(valores):
             if valor > 0 and valor > max_valor * 0.05:
@@ -1420,10 +1319,101 @@ def graficar_ingresos_por_usuario_mensual(df_ingresos_sin_filtro, fecha_inicio, 
     ax.grid(True, alpha=0.3, axis='y')
     
     plt.tight_layout()
-    
     return fig
 
-# Funciones de gráficas con matplotlib
+# Funciones de gráficas con matplotlib y seaborn
+def graficar_tendencia_ingresos_facturacion(df_tabla, titulo):
+    """
+    Gráfica de tendencia de Ingresos y Facturación usando seaborn y matplotlib
+    """
+    if df_tabla.empty:
+        return None
+    
+    # Preparar datos
+    df_plot = df_tabla.copy()
+    df_plot['Fecha'] = pd.to_datetime(df_plot['Fecha'])
+    
+    # Crear figura con estilo mejorado
+    fig, ax = plt.subplots(figsize=(14, 6))
+    
+    # Usar seaborn para líneas con mejor estilo
+    sns.set_style("whitegrid")
+    
+    # Graficar líneas
+    ax.plot(df_plot['Fecha'], df_plot['ingresos'], 
+            marker='o', linewidth=2.5, markersize=6, 
+            label='Ingresos', color='#2E86C1', alpha=0.9)
+    
+    ax.plot(df_plot['Fecha'], df_plot['facturado total'], 
+            marker='s', linewidth=2.5, markersize=6, 
+            label='Facturación Total', color='#28B463', alpha=0.9)
+    
+    ax.plot(df_plot['Fecha'], df_plot['Novedades'], 
+            marker='^', linewidth=2.5, markersize=6, 
+            label='Novedades', color='#E74C3C', alpha=0.9)
+    
+    # Agregar área sombreada para mejor visualización de tendencia
+    ax.fill_between(df_plot['Fecha'], 0, df_plot['ingresos'], alpha=0.1, color='#2E86C1')
+    ax.fill_between(df_plot['Fecha'], 0, df_plot['facturado total'], alpha=0.1, color='#28B463')
+    ax.fill_between(df_plot['Fecha'], 0, df_plot['Novedades'], alpha=0.1, color='#E74C3C')
+    
+    # Agregar línea de tendencia para facturación
+    z = np.polyfit(range(len(df_plot)), df_plot['facturado total'], 1)
+    p = np.poly1d(z)
+    ax.plot(df_plot['Fecha'], p(range(len(df_plot))), 
+            linestyle='--', linewidth=1.5, color='#1B7A3D', alpha=0.7, 
+            label='Tendencia Facturación')
+    
+    # Agregar línea de tendencia para ingresos
+    z2 = np.polyfit(range(len(df_plot)), df_plot['ingresos'], 1)
+    p2 = np.poly1d(z2)
+    ax.plot(df_plot['Fecha'], p2(range(len(df_plot))), 
+            linestyle='--', linewidth=1.5, color='#1A5276', alpha=0.7, 
+            label='Tendencia Ingresos')
+    
+    # Configurar ejes y estilos
+    ax.set_xlabel('Fecha', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Cantidad', fontsize=12, fontweight='bold')
+    ax.set_title(titulo, fontsize=14, fontweight='bold', pad=15)
+    
+    # Rotar etiquetas del eje X
+    plt.xticks(rotation=45, ha='right')
+    
+    # Formatear el eje X para mostrar fechas
+    import matplotlib.dates as mdates
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(df_plot)//10)))
+    
+    # Personalizar grid
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+    
+    # Agregar leyenda
+    ax.legend(loc='upper left', fontsize=10, framealpha=0.9, shadow=True)
+    
+    # Agregar anotaciones de valores máximos
+    max_ingresos = df_plot['ingresos'].max()
+    max_facturacion = df_plot['facturado total'].max()
+    
+    if max_ingresos > 0:
+        idx_max_ing = df_plot['ingresos'].idxmax()
+        ax.annotate(f'Max: {int(max_ingresos)}', 
+                   xy=(df_plot.iloc[idx_max_ing]['Fecha'], max_ingresos),
+                   xytext=(10, 10), textcoords='offset points',
+                   fontsize=9, fontweight='bold', color='#2E86C1',
+                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+    
+    if max_facturacion > 0:
+        idx_max_fac = df_plot['facturado total'].idxmax()
+        ax.annotate(f'Max: {int(max_facturacion)}', 
+                   xy=(df_plot.iloc[idx_max_fac]['Fecha'], max_facturacion),
+                   xytext=(10, -20), textcoords='offset points',
+                   fontsize=9, fontweight='bold', color='#28B463',
+                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+    
+    plt.tight_layout()
+    return fig
+
 def graficar_novedades_temporales(df_novedades_sede, periodo):
     """Gráfica de novedades generadas por período usando matplotlib"""
     if df_novedades_sede.empty:
@@ -1448,16 +1438,19 @@ def graficar_novedades_temporales(df_novedades_sede, periodo):
         titulo = "Novedades Generadas por Día"
         xlabel = "Día"
     
-    # Crear gráfica con matplotlib
     fig, ax = plt.subplots(figsize=(12, 5))
-    bars = ax.bar(range(len(df_agrupado)), df_agrupado['Cantidad'], color='#FF6B6B', alpha=0.7)
+    
+    # Usar seaborn para estilo
+    sns.set_style("whitegrid")
+    
+    bars = ax.bar(range(len(df_agrupado)), df_agrupado['Cantidad'], 
+                  color=sns.color_palette("Reds", len(df_agrupado)), alpha=0.7)
     ax.set_xlabel(xlabel, fontsize=12)
     ax.set_ylabel('Número de Novedades', fontsize=12)
     ax.set_title(titulo, fontsize=14, fontweight='bold')
     ax.set_xticks(range(len(df_agrupado)))
     ax.set_xticklabels(df_agrupado['Fecha'], rotation=45, ha='right', fontsize=10)
     
-    # Agregar valores en las barras
     for bar, valor in zip(bars, df_agrupado['Cantidad']):
         if valor > 0:
             ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5, 
@@ -1465,7 +1458,6 @@ def graficar_novedades_temporales(df_novedades_sede, periodo):
     
     ax.grid(True, alpha=0.3, axis='y')
     plt.tight_layout()
-    
     return fig
 
 def graficar_facturacion_temporal(df_tabla, periodo):
@@ -1473,12 +1465,10 @@ def graficar_facturacion_temporal(df_tabla, periodo):
     if df_tabla.empty:
         return None
     
-    # Asegurar que Fecha sea datetime
     df_tabla = df_tabla.copy()
     if 'Fecha' in df_tabla.columns and not pd.api.types.is_datetime64_any_dtype(df_tabla['Fecha']):
         df_tabla['Fecha'] = pd.to_datetime(df_tabla['Fecha'])
     
-    # Preparar datos según el período
     if periodo == 'Mensual':
         if 'mes' in df_tabla.columns:
             x_data = df_tabla['mes'].astype(str)
@@ -1498,16 +1488,15 @@ def graficar_facturacion_temporal(df_tabla, periodo):
         titulo = "Facturación por Día"
         xlabel = "Fecha"
     
-    # Crear gráfica
     fig, ax = plt.subplots(figsize=(12, 5))
     
-    # Barras para facturación total
-    bars = ax.bar(range(len(df_tabla)), df_tabla['facturado total'], 
-                  color='#4CAF50', alpha=0.7, label='Facturado Total', width=0.7)
+    sns.set_style("whitegrid")
     
-    # Línea para tendencia
+    bars = ax.bar(range(len(df_tabla)), df_tabla['facturado total'], 
+                  color=sns.color_palette("Greens", len(df_tabla)), alpha=0.7, label='Facturado Total', width=0.7)
+    
     ax.plot(range(len(df_tabla)), df_tabla['facturado total'], 
-            color='#2E7D32', linewidth=2, marker='o', markersize=6, label='Tendencia')
+            color='#1B7A3D', linewidth=2, marker='o', markersize=6, label='Tendencia')
     
     ax.set_xlabel(xlabel, fontsize=12)
     ax.set_ylabel('Cantidad Facturada', fontsize=12)
@@ -1515,7 +1504,6 @@ def graficar_facturacion_temporal(df_tabla, periodo):
     ax.set_xticks(range(len(df_tabla)))
     ax.set_xticklabels(x_data, rotation=45, ha='right', fontsize=9)
     
-    # Agregar valores en las barras
     for bar, valor in zip(bars, df_tabla['facturado total']):
         if valor > 0:
             ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(1, valor*0.02), 
@@ -1524,7 +1512,6 @@ def graficar_facturacion_temporal(df_tabla, periodo):
     ax.grid(True, alpha=0.3, axis='y')
     ax.legend(loc='upper left', fontsize=10)
     plt.tight_layout()
-    
     return fig
 
 def graficar_pareto_novedades(df_novedades_sede):
@@ -1532,11 +1519,9 @@ def graficar_pareto_novedades(df_novedades_sede):
     if df_novedades_sede.empty or '_motivo' not in df_novedades_sede.columns:
         return None
     
-    # Contar motivos
     conteo_motivos = df_novedades_sede['_motivo'].value_counts().reset_index()
     conteo_motivos.columns = ['Motivo', 'Frecuencia']
     
-    # Limitar a top 10 para mejor visualización
     if len(conteo_motivos) > 10:
         otros = pd.DataFrame({
             'Motivo': ['OTROS'],
@@ -1544,47 +1529,41 @@ def graficar_pareto_novedades(df_novedades_sede):
         })
         conteo_motivos = pd.concat([conteo_motivos.iloc[:10], otros], ignore_index=True)
     
-    # Calcular porcentaje acumulado
     total = conteo_motivos['Frecuencia'].sum()
     conteo_motivos['Porcentaje'] = (conteo_motivos['Frecuencia'] / total * 100).round(1)
     conteo_motivos['Porcentaje Acumulado'] = conteo_motivos['Porcentaje'].cumsum()
     
-    # Crear gráfica con dos ejes
     fig, ax1 = plt.subplots(figsize=(14, 6.5))
     
-    # Barras para frecuencias
-    x = range(len(conteo_motivos))
-    bars = ax1.bar(x, conteo_motivos['Frecuencia'], color='#FF6B6B', alpha=0.8, label='Frecuencia', width=0.6)
-    ax1.set_xlabel('Motivos', fontsize=11, fontweight='bold')
-    ax1.set_ylabel('Frecuencia', fontsize=11, fontweight='bold', color='#FF6B6B')
-    ax1.tick_params(axis='y', labelcolor='#FF6B6B', labelsize=10)
+    sns.set_style("whitegrid")
     
-    # Línea para porcentaje acumulado
+    x = range(len(conteo_motivos))
+    bars = ax1.bar(x, conteo_motivos['Frecuencia'], 
+                   color=sns.color_palette("Reds", len(conteo_motivos)), 
+                   alpha=0.8, label='Frecuencia', width=0.6)
+    ax1.set_xlabel('Motivos', fontsize=11, fontweight='bold')
+    ax1.set_ylabel('Frecuencia', fontsize=11, fontweight='bold', color='#E74C3C')
+    ax1.tick_params(axis='y', labelcolor='#E74C3C', labelsize=10)
+    
     ax2 = ax1.twinx()
     ax2.plot(x, conteo_motivos['Porcentaje Acumulado'], color='#2C3E50', 
             marker='o', linewidth=2.5, markersize=7, label='% Acumulado')
     ax2.set_ylabel('Porcentaje Acumulado (%)', fontsize=11, fontweight='bold', color='#2C3E50')
     ax2.tick_params(axis='y', labelcolor='#2C3E50', labelsize=10)
     
-    # Configurar etiquetas del eje X
     ax1.set_xticks(x)
     ax1.set_xticklabels(conteo_motivos['Motivo'], rotation=25, ha='right', fontsize=8.5)
     
-    # Agregar línea del 80%
     ax2.axhline(y=80, color='red', linestyle='--', alpha=0.6, linewidth=1.5)
     
-    # Agregar valores y porcentajes en las barras
     for i, (bar, valor, pct) in enumerate(zip(bars, conteo_motivos['Frecuencia'], conteo_motivos['Porcentaje'])):
         if valor > 0:
-            # Valor de frecuencia sobre la barra
             ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(1, valor*0.02), 
                     f'{int(valor)}', ha='center', va='bottom', fontsize=9, fontweight='bold')
-            # Porcentaje dentro de la barra (si es suficientemente alta)
             if bar.get_height() > max(conteo_motivos['Frecuencia']) * 0.05:
                 ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height()/2, 
                         f'{pct}%', ha='center', va='center', fontsize=9, color='white', fontweight='bold')
     
-    # Agregar porcentajes acumulados en los puntos de la línea
     for i, (x_val, pct_acum) in enumerate(zip(x, conteo_motivos['Porcentaje Acumulado'])):
         ax2.annotate(f'{pct_acum:.1f}%', 
                     xy=(x_val, pct_acum), 
@@ -1595,24 +1574,19 @@ def graficar_pareto_novedades(df_novedades_sede):
                     fontweight='bold',
                     bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
     
-    # Agregar título
     plt.title('Pareto de Motivos de Novedades', fontsize=14, fontweight='bold', pad=15)
     
-    # Leyenda al lado derecho
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=9, framealpha=0.9)
     
-    # Mejorar la cuadrícula
     ax1.grid(True, alpha=0.3, axis='y', linestyle='--')
     ax1.set_axisbelow(True)
     
-    # Ajustar límites para mejor visualización
     ax1.set_ylim(0, max(conteo_motivos['Frecuencia']) * 1.12)
     ax2.set_ylim(0, 105)
     
     plt.tight_layout()
-    
     return fig
 
 def graficar_distribucion_motivos_meses(df_novedades_sede):
@@ -1620,37 +1594,28 @@ def graficar_distribucion_motivos_meses(df_novedades_sede):
     if df_novedades_sede.empty or '_motivo' not in df_novedades_sede.columns:
         return None
     
-    # Extraer mes y año
     df_novedades_sede['Mes'] = pd.to_datetime(df_novedades_sede['_fecha']).dt.strftime('%Y-%m')
     df_novedades_sede['NombreMes'] = pd.to_datetime(df_novedades_sede['_fecha']).dt.strftime('%B %Y')
     
-    # Crear tabla pivote
     pivot_table = pd.crosstab(df_novedades_sede['_motivo'], df_novedades_sede['Mes'])
     
-    # Ordenar por frecuencia total descendente
     pivot_table['Total'] = pivot_table.sum(axis=1)
     pivot_table = pivot_table.sort_values('Total', ascending=False)
     pivot_table = pivot_table.drop('Total', axis=1)
     
-    # Obtener top 8 motivos
     top_motivos = pivot_table.head(8)
-    
-    # Reordenar columnas (meses) cronológicamente
     meses_ordenados = sorted(top_motivos.columns)
     top_motivos = top_motivos[meses_ordenados]
     
-    # Crear gráfica de barras apiladas
     fig, ax = plt.subplots(figsize=(14, 6))
     
-    # Colores para diferentes motivos
-    colores = plt.cm.Set3(np.linspace(0, 1, len(top_motivos.index)))
+    colores = sns.color_palette("Set3", len(top_motivos.index))
     
     bottom = np.zeros(len(top_motivos.columns))
     for i, motivo in enumerate(top_motivos.index):
         valores = top_motivos.loc[motivo].values
         ax.bar(range(len(top_motivos.columns)), valores, bottom=bottom, 
                       label=motivo, color=colores[i], alpha=0.8)
-        # Agregar valores en las barras si son significativos
         for j, valor in enumerate(valores):
             if valor > 0 and valor > max(top_motivos.values.flatten()) * 0.05:
                 ax.text(j, bottom[j] + valor/2, str(valor), 
@@ -1666,24 +1631,17 @@ def graficar_distribucion_motivos_meses(df_novedades_sede):
     ax.grid(True, alpha=0.3, axis='y')
     
     plt.tight_layout()
-    
     return fig
 
 def generar_narrativa_ejecutiva(df_resumen):
-    """
-    Genera una narrativa automática basada en los resultados del análisis
-    """
+    """Genera una narrativa automática basada en los resultados del análisis"""
     if df_resumen.empty:
         return "No hay datos suficientes para generar conclusiones."
     
-    # Crear una copia y calcular ingresos numéricos
     df_temp = df_resumen.copy()
     df_temp['Ingresos_num'] = df_temp['Ingresos'].str.replace(',', '').astype(int)
     
-    # Identificar sedes excluidas
     sedes_excluidas = df_temp[df_temp['Ingresos_num'] == 0]['Sede'].tolist()
-    
-    # Filtrar solo sedes con datos
     df_activas = df_temp[df_temp['Ingresos_num'] > 0].copy()
     
     if df_activas.empty:
@@ -1692,24 +1650,20 @@ def generar_narrativa_ejecutiva(df_resumen):
         else:
             return "No hay sedes con datos válidos para generar el análisis. Todas las sedes tienen 0 ingresos en el período seleccionado."
     
-    # Calcular métricas para sedes activas
     df_activas['%_facturado'] = df_activas['% facturado total / ingresos'].str.replace('%', '').astype(float)
     df_activas['%_novedades'] = df_activas['% novedades / ingresos'].str.replace('%', '').astype(float)
     df_activas['%_bloqueantes'] = df_activas['% novedades bloqueantes / ingresos'].str.replace('%', '').astype(float)
     
-    # Definir objetivos
     OBJETIVO_FACTURACION = 90.0
     OBJETIVO_NOVEDADES = 5.0
     
     narrativa = []
     narrativa.append("## 📋 ANÁLISIS Y CONCLUSIONES EJECUTIVAS\n")
     
-    # Mostrar sedes excluidas si las hay
     if sedes_excluidas:
         narrativa.append(f"**ℹ️ Nota:** Las siguientes sedes no presentan actividad en el período analizado y han sido excluidas del análisis: ")
         narrativa.append(f"{', '.join(sedes_excluidas)}.\n\n")
     
-    # 1. Análisis general de volumen vs objetivos
     total_ingresos = df_activas['Ingresos_num'].sum()
     total_facturado = df_activas['Facturado total'].str.replace(',', '').astype(int).sum()
     eficiencia_total = (total_facturado/total_ingresos*100) if total_ingresos > 0 else 0
@@ -1719,7 +1673,6 @@ def generar_narrativa_ejecutiva(df_resumen):
     narrativa.append(f"Durante el período analizado, se procesaron **{total_ingresos:,} ingresos** en las sedes activas, ")
     narrativa.append(f"de los cuales se han facturado **{total_facturado:,}** ({eficiencia_total:.1f}% del total). ")
     
-    # Evaluar cumplimiento del objetivo de facturación
     if eficiencia_total >= OBJETIVO_FACTURACION:
         narrativa.append(f"✅ **CUMPLE el objetivo de facturación** (meta: >{OBJETIVO_FACTURACION}%). ")
     else:
@@ -1727,7 +1680,6 @@ def generar_narrativa_ejecutiva(df_resumen):
     
     narrativa.append(f"El promedio de novedades sobre ingresos es del **{total_novedades_pct:.1f}%**, ")
     
-    # Evaluar cumplimiento del objetivo de novedades
     if total_novedades_pct <= OBJETIVO_NOVEDADES:
         narrativa.append(f"✅ **CUMPLE el objetivo de novedades** (meta: <{OBJETIVO_NOVEDADES}%). ")
     else:
@@ -1735,7 +1687,6 @@ def generar_narrativa_ejecutiva(df_resumen):
     
     narrativa.append("\n")
     
-    # 2. Evaluación por sede individual
     narrativa.append("### 🏆 EVALUACIÓN POR SEDE\n")
     narrativa.append("| Sede | Facturación | vs Objetivo | Novedades | vs Objetivo |\n")
     narrativa.append("|------|-------------|-------------|-----------|-------------|\n")
@@ -1752,7 +1703,6 @@ def generar_narrativa_ejecutiva(df_resumen):
     
     narrativa.append("\n")
     
-    # 3. Identificar sedes que requieren atención
     sedes_facturacion_baja = df_activas[df_activas['%_facturado'] < OBJETIVO_FACTURACION]['Sede'].tolist()
     sedes_novedades_alta = df_activas[df_activas['%_novedades'] > OBJETIVO_NOVEDADES]['Sede'].tolist()
     
@@ -1773,7 +1723,6 @@ def generar_narrativa_ejecutiva(df_resumen):
             narrativa.append("  - Revisar los motivos más frecuentes en la gráfica de Pareto\n")
             narrativa.append("  - Implementar acciones correctivas inmediatas\n\n")
     
-    # 4. Análisis de novedades bloqueantes
     avg_bloqueantes = df_activas['%_bloqueantes'].mean()
     
     narrativa.append("### 🔒 NOVEDADES BLOQUEANTES\n")
@@ -1787,7 +1736,6 @@ def generar_narrativa_ejecutiva(df_resumen):
     else:
         narrativa.append("lo cual es **BAJO**, indicando que la mayoría de novedades son subsanables sin mayor impacto.\n")
     
-    # 5. Resumen ejecutivo final con evaluación de objetivos
     narrativa.append("\n### 📌 CONCLUSIÓN FINAL\n")
     
     cumple_facturacion = eficiencia_total >= OBJETIVO_FACTURACION
@@ -1847,12 +1795,10 @@ if archivo:
             st.success(f"✅ {len(unidades)} unidades funcionales encontradas")
     
     if st.session_state.unidades_funcionales:
-        # Incluir automáticamente las unidades de CIRCUNVALAR si existen
         default_selection = []
         for u in st.session_state.unidades_funcionales:
             if u in UNIDADES_POR_DEFECTO:
                 default_selection.append(u)
-            # También incluir unidades que contengan "CIRCUNVALAR"
             elif "CIRCUNVALAR" in u.upper():
                 default_selection.append(u)
         
@@ -1864,7 +1810,6 @@ if archivo:
         st.session_state.unidades_seleccionadas = unidades_seleccionadas
         
         if unidades_seleccionadas:
-            # Verificar si CIRCUNVALAR está seleccionada
             tiene_circunvalar = any("CIRCUNVALAR" in u.upper() for u in unidades_seleccionadas)
             if tiene_circunvalar:
                 st.info(f"📌 {len(unidades_seleccionadas)} unidades funcionales seleccionadas - Incluye CIRCUNVALAR")
@@ -1895,7 +1840,6 @@ if st.session_state.datos_cargados:
     df_novedades = st.session_state.dfs.get('NOVEDADES', None)
     fecha_fin = st.session_state.fecha_hasta
     
-    # Filtrar sedes activas
     sedes_activas = [sede for sede, config in SEDES.items() if config.get('activa', True)]
     sedes_lista = sedes_activas
     tabs = st.tabs(["📊 Resumen Ejecutivo"] + sedes_lista)
@@ -1904,13 +1848,11 @@ if st.session_state.datos_cargados:
         st.subheader("📊 Comparativo entre Sedes")
         
         if st.session_state.resumen_ejecutivo is not None and not st.session_state.resumen_ejecutivo.empty:
-            # Filtrar sedes con datos (ingresos > 0)
             df_resumen_filtrado = st.session_state.resumen_ejecutivo.copy()
             df_resumen_filtrado['Ingresos_num'] = df_resumen_filtrado['Ingresos'].str.replace(',', '').astype(int)
             sedes_con_datos = df_resumen_filtrado[df_resumen_filtrado['Ingresos_num'] > 0]
             sedes_sin_datos = df_resumen_filtrado[df_resumen_filtrado['Ingresos_num'] == 0]
             
-            # Mostrar sedes excluidas si las hay
             if not sedes_sin_datos.empty:
                 st.warning(f"⚠️ Las siguientes sedes no presentan actividad en el período seleccionado y han sido excluidas del análisis: {', '.join(sedes_sin_datos['Sede'].tolist())}")
                 st.markdown("---")
@@ -1929,19 +1871,16 @@ if st.session_state.datos_cargados:
                     fecha_fin_str = row['fecha_fin'].strftime('%d/%m/%Y')
                     st.markdown(f"- **{row['Sede']}:** {fecha_inicio_str} al {fecha_fin_str}")
                 
-                # Mostrar objetivos
                 st.markdown("---")
                 st.markdown("### 🎯 OBJETIVOS ESTRATÉGICOS")
                 col1, col2 = st.columns(2)
                 col1.metric("🎯 Facturación Total / Ingresos", "> 90%", delta="Meta", delta_color="normal")
                 col2.metric("🎯 Novedades / Ingresos", "< 5%", delta="Meta", delta_color="normal")
                 
-                # Generar y mostrar narrativa ejecutiva
                 st.markdown("---")
                 narrativa = generar_narrativa_ejecutiva(st.session_state.resumen_ejecutivo)
                 st.markdown(narrativa)
                 
-                # Botón para descargar el análisis
                 st.markdown("---")
                 if st.button("📥 Descargar Análisis Ejecutivo (TXT)"):
                     output = BytesIO()
@@ -1963,7 +1902,6 @@ if st.session_state.datos_cargados:
             config = SEDES[sede]
             fecha_inicio = config['fecha_inicio']
             
-            # Verificar si la fecha de fin es anterior a la fecha de inicio
             if fecha_fin < fecha_inicio:
                 st.warning(f"⚠️ La fecha seleccionada ({fecha_fin.strftime('%d/%m/%Y')}) es anterior a la fecha de inicio de {sede} ({fecha_inicio.strftime('%d/%m/%Y')}). No hay datos disponibles.")
                 continue
@@ -1976,7 +1914,6 @@ if st.session_state.datos_cargados:
             df_novedades_sede = st.session_state.dfs.get(f'NOVEDADES_DETALLE_{sede}', pd.DataFrame())
             
             with st.spinner(f"Calculando {sede}..."):
-                # Tabla principal (inicialmente diaria para cálculos de totales)
                 df_tabla = construir_tabla_sede(
                     sede, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, 'Diario'
                 )
@@ -1995,7 +1932,6 @@ if st.session_state.datos_cargados:
                     pct_novedades = (total_novedades / total_ingresos * 100) if total_ingresos > 0 else 0
                     pct_bloqueantes = (total_novedades_bloqueantes / total_ingresos * 100) if total_ingresos > 0 else 0
                     
-                    # Métricas en la parte superior
                     col1, col2, col3, col4, col5, col6 = st.columns(6)
                     col1.metric("📥 Total Ingresos", f"{total_ingresos:,}")
                     col2.metric("✅ Facturado Modelo", f"{total_facturado_modelo:,}", f"{pct_modelo:.1f}%")
@@ -2006,7 +1942,6 @@ if st.session_state.datos_cargados:
                     
                     st.markdown("---")
                     
-                    # Selector de agrupación (default: Semanal)
                     periodo_key = f"periodo_{sede}"
                     default_periodo = st.session_state.periodos_sedes.get(sede, 'Semanal')
                     periodo = st.selectbox(
@@ -2015,15 +1950,12 @@ if st.session_state.datos_cargados:
                         index=['Diario', 'Semanal', 'Mensual'].index(default_periodo),
                         key=periodo_key
                     )
-                    # Guardar el período seleccionado en session state
                     st.session_state.periodos_sedes[sede] = periodo
                     
-                    # Recalcular tabla con el período seleccionado
                     df_tabla = construir_tabla_sede(
                         sede, config, fecha_inicio, fecha_fin, df_ingresos, df_facturacion, df_novedades, periodo
                     )
                     
-                    # Tabla de datos detallados
                     st.markdown("---")
                     st.subheader("📋 Datos Detallados")
                     
@@ -2039,15 +1971,19 @@ if st.session_state.datos_cargados:
                     
                     st.dataframe(df_display, use_container_width=True, hide_index=True)
                     
-                    # Gráfica 1: Tendencia de Ingresos y Facturación
+                    # Gráfica de Tendencia con seaborn
                     if len(df_tabla) > 1:
                         st.markdown("---")
                         st.subheader("📈 Tendencia de Ingresos y Facturación")
-                        chart_data = df_tabla[['ingresos', 'facturado total', 'Novedades', 'Novedades Bloqueantes']].copy()
-                        chart_data.index = df_tabla['Fecha']
-                        st.line_chart(chart_data)
+                        fig_tendencia = graficar_tendencia_ingresos_facturacion(
+                            df_tabla, 
+                            f'Tendencia de Ingresos y Facturación - {sede}'
+                        )
+                        if fig_tendencia:
+                            st.pyplot(fig_tendencia, use_container_width=True)
+                            plt.close()
                     
-                    # Gráfica 2: Facturación por período
+                    # Gráfica de Facturación por período
                     st.markdown("---")
                     st.subheader("💰 Facturación por Período")
                     fig_facturacion = graficar_facturacion_temporal(df_tabla, periodo)
@@ -2057,13 +1993,12 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos de facturación para mostrar")
                     
-                    # ============ NUEVA SECCIÓN: Ingresos por Usuario vs Unidad Funcional (SIN FILTRO) ============
+                    # SECCIÓN: Ingresos por Usuario vs Unidad Funcional (SIN FILTRO)
                     with st.expander("📥 Ver Ingresos por Usuario vs Unidad Funcional - Todas las Unidades", expanded=False):
                         st.markdown("*Esta sección muestra los ingresos detallados por usuario y unidad funcional, sin aplicar el filtro de unidades funcionales seleccionado.*")
                         st.info("ℹ️ Los datos mostrados aquí incluyen TODAS las unidades funcionales de la ciudad, independientemente del filtro aplicado en el resto del reporte.")
                         
                         if not df_ingresos_sin_filtro.empty:
-                            # Generar matriz mensual de ingresos
                             st.markdown("**📊 Matriz Mensual: Usuario vs Unidad Funcional (Ingresos - Todas las unidades)**")
                             st.markdown("*Esta tabla muestra los ingresos desglosados por mes, usuario y unidad funcional.*")
                             
@@ -2072,10 +2007,8 @@ if st.session_state.datos_cargados:
                             )
                             
                             if not df_matriz_mensual_ingresos.empty:
-                                # Mostrar tabla mensual
                                 st.dataframe(df_matriz_mensual_ingresos, use_container_width=True)
                                 
-                                # Gráfica de calor mensual
                                 st.markdown("---")
                                 st.markdown("**📊 Mapa de Calor - Ingresos Mensuales por Usuario y Unidad Funcional**")
                                 fig_heatmap_mensual = graficar_matriz_calor_mensual(
@@ -2088,7 +2021,6 @@ if st.session_state.datos_cargados:
                                 else:
                                     st.info("No hay suficientes datos para generar el mapa de calor mensual")
                                 
-                                # Gráfica de ingresos por usuario mensual
                                 st.markdown("---")
                                 st.markdown("**📊 Distribución de Ingresos por Usuario (Mensual)**")
                                 fig_ingresos_usuario = graficar_ingresos_por_usuario_mensual(
@@ -2100,7 +2032,6 @@ if st.session_state.datos_cargados:
                                 else:
                                     st.info("No hay datos suficientes para generar la gráfica de ingresos por usuario")
                                 
-                                # Descargar matriz mensual
                                 output_mensual = BytesIO()
                                 with pd.ExcelWriter(output_mensual, engine='openpyxl') as writer:
                                     df_matriz_mensual_export = df_matriz_mensual_ingresos.copy()
@@ -2118,7 +2049,6 @@ if st.session_state.datos_cargados:
                             else:
                                 st.info("No hay datos para generar la matriz mensual de ingresos")
                             
-                            # Generar matrices de resumen
                             df_matriz_usuario_ing, df_matriz_unidad_ing = obtener_matriz_usuario_unidad_sin_filtro_ingresos(
                                 df_ingresos_sin_filtro, fecha_inicio, fecha_fin, config
                             )
@@ -2134,7 +2064,6 @@ if st.session_state.datos_cargados:
                                     st.markdown("**📋 Matriz: Unidades Funcionales vs Usuarios (Ingresos - Totales)**")
                                     st.dataframe(df_matriz_unidad_ing, use_container_width=True)
                                 
-                                # Gráfica de calor total
                                 st.markdown("---")
                                 st.markdown("**📊 Mapa de Calor - Ingresos Totales por Usuario y Unidad Funcional**")
                                 fig_heatmap = graficar_matriz_calor(df_matriz_usuario_ing, f'Distribución de Ingresos - {sede} (Todas las unidades)')
@@ -2144,7 +2073,6 @@ if st.session_state.datos_cargados:
                                 else:
                                     st.info("No hay suficientes datos para generar el mapa de calor")
                                 
-                                # Estadísticas adicionales
                                 st.markdown("---")
                                 st.markdown("**📊 Estadísticas de Ingresos**")
                                 col1, col2, col3 = st.columns(3)
@@ -2157,7 +2085,6 @@ if st.session_state.datos_cargados:
                                 col2.metric("🏢 Total de Unidades Funcionales", total_unidades)
                                 col3.metric("📄 Total de Ingresos", f"{total_ingresos:,}")
                                 
-                                # Botón para descargar matrices completas
                                 output_matrices = BytesIO()
                                 with pd.ExcelWriter(output_matrices, engine='openpyxl') as writer:
                                     df_usuario_export = df_matriz_usuario_ing.copy()
@@ -2169,7 +2096,6 @@ if st.session_state.datos_cargados:
                                     df_usuario_export.to_excel(writer, sheet_name='Usuarios_vs_Unidades', index=False)
                                     df_unidad_export.to_excel(writer, sheet_name='Unidades_vs_Usuarios', index=False)
                                     
-                                    # Agregar la matriz mensual si existe
                                     if not df_matriz_mensual_ingresos.empty:
                                         df_mensual_export = df_matriz_mensual_ingresos.copy()
                                         df_mensual_export.columns = [str(col) for col in df_mensual_export.columns]
@@ -2185,19 +2111,16 @@ if st.session_state.datos_cargados:
                                 st.info("No hay datos de ingresos por usuario y unidad funcional para mostrar en este período")
                         else:
                             st.info("No hay datos de ingresos disponibles para generar las matrices sin filtro")
-                    # ============ FIN SECCIÓN INGRESOS ============
                     
-                    # Tabla de facturación por usuario (con la agrupación seleccionada)
+                    # Tabla de facturación por usuario
                     st.markdown("---")
                     st.subheader("👥 Facturación por Usuario (Facturador)")
                     
                     df_usuario = obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_fin, periodo)
                     
                     if not df_usuario.empty:
-                        # Mostrar tabla
                         st.dataframe(df_usuario, use_container_width=True)
                         
-                        # Gráfica de facturación por usuario (estilo mensual apilado - independiente del selector)
                         st.markdown("---")
                         st.subheader("📊 Distribución de Facturación por Usuario (Mensual)")
                         fig_usuario_mensual = graficar_facturacion_por_usuario_mensual(
@@ -2209,13 +2132,12 @@ if st.session_state.datos_cargados:
                         else:
                             st.info("No hay datos suficientes para generar la gráfica de facturación por usuario")
                         
-                        # ============ SECCIÓN: Matriz Facturación Usuario vs Unidad Funcional (SIN FILTRO) ============
+                        # SECCIÓN: Facturación por Usuario vs Unidad Funcional (SIN FILTRO)
                         with st.expander("🏢 Ver Facturación por Usuario vs Unidad Funcional - Todas las Unidades", expanded=False):
                             st.markdown("*Esta sección muestra la facturación detallada por usuario y unidad funcional, sin aplicar el filtro de unidades funcionales seleccionado.*")
                             st.info("ℹ️ Los datos mostrados aquí incluyen TODAS las unidades funcionales de la ciudad, independientemente del filtro aplicado en el resto del reporte.")
                             
                             if not df_facturacion_sin_filtro.empty:
-                                # Generar matriz mensual de facturación
                                 st.markdown("**📊 Matriz Mensual: Usuario vs Unidad Funcional (Facturación - Todas las unidades)**")
                                 st.markdown("*Esta tabla muestra la facturación desglosada por mes, usuario y unidad funcional.*")
                                 
@@ -2224,10 +2146,8 @@ if st.session_state.datos_cargados:
                                 )
                                 
                                 if not df_matriz_mensual_fact.empty:
-                                    # Mostrar tabla mensual
                                     st.dataframe(df_matriz_mensual_fact, use_container_width=True)
                                     
-                                    # Gráfica de calor mensual
                                     st.markdown("---")
                                     st.markdown("**📊 Mapa de Calor - Facturación Mensual por Usuario y Unidad Funcional**")
                                     fig_heatmap_mensual_fact = graficar_matriz_calor_mensual(
@@ -2240,7 +2160,6 @@ if st.session_state.datos_cargados:
                                     else:
                                         st.info("No hay suficientes datos para generar el mapa de calor mensual")
                                     
-                                    # Descargar matriz mensual
                                     output_mensual_fact = BytesIO()
                                     with pd.ExcelWriter(output_mensual_fact, engine='openpyxl') as writer:
                                         df_matriz_mensual_export = df_matriz_mensual_fact.copy()
@@ -2258,7 +2177,6 @@ if st.session_state.datos_cargados:
                                 else:
                                     st.info("No hay datos para generar la matriz mensual de facturación")
                                 
-                                # Generar matrices de resumen
                                 df_matriz_usuario_fact, df_matriz_unidad_fact = obtener_matriz_usuario_unidad_sin_filtro_facturacion(
                                     df_facturacion_sin_filtro, fecha_inicio, fecha_fin, config
                                 )
@@ -2274,7 +2192,6 @@ if st.session_state.datos_cargados:
                                         st.markdown("**📋 Matriz: Unidades Funcionales vs Usuarios (Facturación - Totales)**")
                                         st.dataframe(df_matriz_unidad_fact, use_container_width=True)
                                     
-                                    # Gráfica de calor total
                                     st.markdown("---")
                                     st.markdown("**📊 Mapa de Calor - Facturación Total por Usuario y Unidad Funcional**")
                                     fig_heatmap_fact = graficar_matriz_calor(df_matriz_usuario_fact, f'Distribución de Facturación - {sede} (Todas las unidades)')
@@ -2284,7 +2201,6 @@ if st.session_state.datos_cargados:
                                     else:
                                         st.info("No hay suficientes datos para generar el mapa de calor")
                                     
-                                    # Estadísticas adicionales
                                     st.markdown("---")
                                     st.markdown("**📊 Estadísticas de Facturación**")
                                     col1, col2, col3 = st.columns(3)
@@ -2297,7 +2213,6 @@ if st.session_state.datos_cargados:
                                     col2.metric("🏢 Total de Unidades Funcionales", total_unidades_fact)
                                     col3.metric("📄 Total de Facturas", f"{total_facturas:,}")
                                     
-                                    # Botón para descargar matrices completas
                                     output_matrices_fact = BytesIO()
                                     with pd.ExcelWriter(output_matrices_fact, engine='openpyxl') as writer:
                                         df_usuario_export = df_matriz_usuario_fact.copy()
@@ -2309,7 +2224,6 @@ if st.session_state.datos_cargados:
                                         df_usuario_export.to_excel(writer, sheet_name='Usuarios_vs_Unidades', index=False)
                                         df_unidad_export.to_excel(writer, sheet_name='Unidades_vs_Usuarios', index=False)
                                         
-                                        # Agregar la matriz mensual si existe
                                         if not df_matriz_mensual_fact.empty:
                                             df_mensual_export = df_matriz_mensual_fact.copy()
                                             df_mensual_export.columns = [str(col) for col in df_mensual_export.columns]
@@ -2325,11 +2239,10 @@ if st.session_state.datos_cargados:
                                     st.info("No hay datos de facturación por usuario y unidad funcional para mostrar en este período")
                             else:
                                 st.info("No hay datos de facturación disponibles para generar las matrices sin filtro")
-                        # ============ FIN SECCIÓN FACTURACIÓN ============
                     else:
                         st.info("No hay datos de facturación por usuario para mostrar")
                     
-                    # Gráfica 3: Novedades generadas (afectada por el período seleccionado)
+                    # Gráfica de Novedades
                     st.markdown("---")
                     st.subheader("📈 Novedades Generadas")
                     fig_novedades_temp = graficar_novedades_temporales(df_novedades_sede, periodo)
@@ -2339,7 +2252,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos de novedades para mostrar en esta sede")
                     
-                    # Gráfica 4: Pareto de novedades (NO afectada por el período)
+                    # Gráfica de Pareto
                     st.markdown("---")
                     st.subheader("📊 Pareto de Motivos de Novedades")
                     fig_pareto = graficar_pareto_novedades(df_novedades_sede)
@@ -2349,7 +2262,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos suficientes para generar el Pareto de novedades")
                     
-                    # Gráfica 5: Distribución por mes (NO afectada por el período)
+                    # Gráfica de Distribución
                     st.markdown("---")
                     st.subheader("📅 Distribución de Motivos por Mes")
                     fig_distribucion = graficar_distribucion_motivos_meses(df_novedades_sede)
@@ -2359,7 +2272,7 @@ if st.session_state.datos_cargados:
                     else:
                         st.info("No hay datos suficientes para generar la distribución por mes")
                     
-                    # Botón de descarga de Excel para esta sede individual (con la agrupación seleccionada)
+                    # Botón de descarga
                     st.markdown("---")
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -2378,7 +2291,7 @@ if st.session_state.datos_cargados:
                 else:
                     st.info(f"📌 No hay datos para {sede} en el período seleccionado (desde {fecha_inicio.strftime('%d/%m/%Y')} hasta {fecha_fin.strftime('%d/%m/%Y')}).")
     
-    # Botón para exportar TODO (datos + gráficas + narrativa)
+    # Botón para exportar TODO
     st.markdown("---")
     st.subheader("📥 Exportar Reporte Completo")
     
@@ -2387,38 +2300,28 @@ if st.session_state.datos_cargados:
             temp_dir = tempfile.mkdtemp()
             
             try:
-                # Crear el archivo Excel con xlsxwriter
                 output = BytesIO()
                 workbook = xlsxwriter.Workbook(output, {'constant_memory': False})
                 
-                # ============ HOJA 1: INGRESOS ============
+                # HOJA 1: INGRESOS
                 worksheet_ingresos = workbook.add_worksheet('Ingresos')
-                
-                # Recopilar todos los ingresos por sede
                 row_ingresos = 0
-                # Escribir encabezados
                 headers_ingresos = ['Sede', 'Fecha_Ingreso', 'Unidad_Funcional', 'Tipo']
                 for col_num, header in enumerate(headers_ingresos):
                     worksheet_ingresos.write(row_ingresos, col_num, header)
                 row_ingresos += 1
                 
-                # Procesar cada sede para obtener los ingresos
                 for sede in SEDES.keys():
                     config = SEDES[sede]
                     if not config.get('activa', True):
                         continue
-                        
                     fecha_inicio = config['fecha_inicio']
                     if fecha_fin < fecha_inicio:
                         continue
-                    
                     df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
-                    
                     if not df_ingresos.empty:
-                        # Filtrar por fechas
                         mask_fecha = (df_ingresos['_fecha'] >= fecha_inicio.date()) & (df_ingresos['_fecha'] <= fecha_fin.date())
                         df_filtrado = df_ingresos[mask_fecha]
-                        
                         for idx, row in df_filtrado.iterrows():
                             worksheet_ingresos.write(row_ingresos, 0, sede)
                             worksheet_ingresos.write(row_ingresos, 1, str(row['_fecha']) if pd.notna(row['_fecha']) else '')
@@ -2426,39 +2329,28 @@ if st.session_state.datos_cargados:
                             worksheet_ingresos.write(row_ingresos, 3, 'Ingreso')
                             row_ingresos += 1
                 
-                # ============ HOJA 2: FACTURADO TOTAL ============
+                # HOJA 2: FACTURADO TOTAL
                 worksheet_facturado = workbook.add_worksheet('Facturado_total')
-                
-                # Recopilar todos los registros facturados por sede
                 row_facturado = 0
-                # Escribir encabezados
                 headers_facturado = ['Sede', 'Fecha_Ingreso', 'Fecha_Factura', 'Unidad_Funcional', 'Usuario_Facturador', 'Tipo_Facturacion']
                 for col_num, header in enumerate(headers_facturado):
                     worksheet_facturado.write(row_facturado, col_num, header)
                 row_facturado += 1
                 
-                # Procesar cada sede para obtener los registros facturados
                 for sede in SEDES.keys():
                     config = SEDES[sede]
                     if not config.get('activa', True):
                         continue
-                        
                     fecha_inicio = config['fecha_inicio']
                     if fecha_fin < fecha_inicio:
                         continue
-                    
                     df_facturacion_detalle = st.session_state.dfs.get(f'FACTURACION_DETALLE_{sede}', pd.DataFrame())
-                    
                     if not df_facturacion_detalle.empty:
-                        # Filtrar por fechas de facturación
                         mask_fecha = (df_facturacion_detalle['_fecha_factura'] >= fecha_inicio.date()) & (df_facturacion_detalle['_fecha_factura'] <= fecha_fin.date())
                         df_filtrado = df_facturacion_detalle[mask_fecha]
-                        
                         for idx, row in df_filtrado.iterrows():
-                            # Determinar tipo de facturación (modelo o fuera de modelo)
                             fecha_ingreso = row['_fecha_ingreso']
                             tipo_facturacion = 'Modelo' if (fecha_ingreso is not None and fecha_ingreso >= fecha_inicio.date()) else 'Fuera de Modelo'
-                            
                             worksheet_facturado.write(row_facturado, 0, sede)
                             worksheet_facturado.write(row_facturado, 1, str(row['_fecha_ingreso']) if pd.notna(row['_fecha_ingreso']) else '')
                             worksheet_facturado.write(row_facturado, 2, str(row['_fecha_factura']) if pd.notna(row['_fecha_factura']) else '')
@@ -2467,7 +2359,7 @@ if st.session_state.datos_cargados:
                             worksheet_facturado.write(row_facturado, 5, tipo_facturacion)
                             row_facturado += 1
                 
-                # ============ HOJA 3: Resumen Ejecutivo (datos) ============
+                # HOJA 3: Resumen Ejecutivo
                 if st.session_state.resumen_ejecutivo is not None and not st.session_state.resumen_ejecutivo.empty:
                     df_resumen_export = st.session_state.resumen_ejecutivo.copy()
                     df_resumen_export['Ingresos_num'] = df_resumen_export['Ingresos'].str.replace(',', '').astype(int)
@@ -2481,26 +2373,20 @@ if st.session_state.datos_cargados:
                         for col_num, value in enumerate(row):
                             worksheet.write(row_num, col_num, value)
                 
-                # ============ HOJA 4: Narrativa Ejecutiva ============
+                # HOJA 4: Narrativa Ejecutiva
                 worksheet_narrativa = workbook.add_worksheet('Narrativa_Ejecutiva')
                 narrativa_texto = generar_narrativa_ejecutiva(st.session_state.resumen_ejecutivo)
-                
-                # Escribir la narrativa línea por línea
                 lineas = narrativa_texto.split('\n')
                 for row_num, linea in enumerate(lineas):
                     linea_limpia = linea.replace('##', '').replace('###', '').replace('**', '').replace('📋', '').replace('📊', '').replace('🏆', '').replace('⚠️', '').replace('🔒', '').replace('💡', '').replace('📌', '').strip()
                     worksheet_narrativa.write(row_num, 0, linea_limpia)
                 
-                # Procesar cada sede con su período seleccionado
+                # Procesar cada sede
                 for sede in SEDES.keys():
                     config = SEDES[sede]
-                    
-                    # Saltar sedes inactivas
                     if not config.get('activa', True):
                         continue
-                        
                     fecha_inicio = config['fecha_inicio']
-                    
                     if fecha_fin >= fecha_inicio:
                         df_ingresos = st.session_state.dfs.get(f'INGRESOS_{sede}', pd.DataFrame())
                         df_facturacion = st.session_state.dfs.get(f'FACTURACION_{sede}', pd.DataFrame())
@@ -2509,10 +2395,8 @@ if st.session_state.datos_cargados:
                         df_facturacion_sin_filtro = st.session_state.dfs.get(f'FACTURACION_DETALLE_SIN_FILTRO_{sede}', pd.DataFrame())
                         df_novedades_sede = st.session_state.dfs.get(f'NOVEDADES_DETALLE_{sede}', pd.DataFrame())
                         
-                        # Obtener el período seleccionado para esta sede (default: Semanal)
                         periodo_export = st.session_state.periodos_sedes.get(sede, 'Semanal')
                         
-                        # Calcular tabla resumen con el período seleccionado
                         df_sede = construir_tabla_sede(
                             sede, config, fecha_inicio, fecha_fin, 
                             df_ingresos, df_facturacion, df_novedades, periodo_export
@@ -2522,12 +2406,10 @@ if st.session_state.datos_cargados:
                             sheet_name = sede.replace(' ', '_')[:31]
                             worksheet = workbook.add_worksheet(sheet_name)
                             
-                            # Asegurar que Fecha sea string para Excel
                             df_export = df_sede.copy()
                             if 'Fecha' in df_export.columns:
                                 df_export['Fecha'] = df_export['Fecha'].dt.strftime('%Y-%m-%d')
                             
-                            # Escribir datos principales
                             for col_num, value in enumerate(df_export.columns.values):
                                 worksheet.write(0, col_num, value)
                             for row_num, row in enumerate(df_export.values, 1):
@@ -2536,9 +2418,8 @@ if st.session_state.datos_cargados:
                             
                             row_start = len(df_export) + 3
                             
-                            # ===== MATRIZ DE INGRESOS (SIN FILTRO) =====
+                            # Matriz de Ingresos (sin filtro)
                             if not df_ingresos_sin_filtro.empty:
-                                # Matriz Mensual de Ingresos
                                 df_matriz_mensual_ing = obtener_matriz_usuario_unidad_mensual_sin_filtro_ingresos(
                                     df_ingresos_sin_filtro, fecha_inicio, fecha_fin, config
                                 )
@@ -2552,7 +2433,6 @@ if st.session_state.datos_cargados:
                                             worksheet.write(row_num, col_num, value)
                                     row_start += len(df_matriz_mensual_ing) + 3
                                 
-                                # Matriz Usuario vs Unidad (Ingresos)
                                 df_matriz_usuario_ing, df_matriz_unidad_ing = obtener_matriz_usuario_unidad_sin_filtro_ingresos(
                                     df_ingresos_sin_filtro, fecha_inicio, fecha_fin, config
                                 )
@@ -2575,9 +2455,8 @@ if st.session_state.datos_cargados:
                                             worksheet.write(row_num, col_num, value)
                                     row_start += len(df_matriz_unidad_ing) + 3
                             
-                            # ===== MATRIZ DE FACTURACIÓN (SIN FILTRO) =====
+                            # Matriz de Facturación (sin filtro)
                             if not df_facturacion_sin_filtro.empty:
-                                # Matriz Mensual de Facturación
                                 df_matriz_mensual_fact = obtener_matriz_usuario_unidad_mensual_sin_filtro_facturacion(
                                     df_facturacion_sin_filtro, fecha_inicio, fecha_fin, config
                                 )
@@ -2591,7 +2470,6 @@ if st.session_state.datos_cargados:
                                             worksheet.write(row_num, col_num, value)
                                     row_start += len(df_matriz_mensual_fact) + 3
                                 
-                                # Matriz Usuario vs Unidad (Facturación)
                                 df_matriz_usuario_fact, df_matriz_unidad_fact = obtener_matriz_usuario_unidad_sin_filtro_facturacion(
                                     df_facturacion_sin_filtro, fecha_inicio, fecha_fin, config
                                 )
@@ -2614,7 +2492,7 @@ if st.session_state.datos_cargados:
                                             worksheet.write(row_num, col_num, value)
                                     row_start += len(df_matriz_unidad_fact) + 3
                             
-                            # Gráfica de Facturación (con el período seleccionado)
+                            # Gráfica de Facturación
                             fig_fact = graficar_facturacion_temporal(df_sede, periodo_export)
                             if fig_fact:
                                 img_path = os.path.join(temp_dir, f"{sede}_facturacion.png")
@@ -2623,18 +2501,24 @@ if st.session_state.datos_cargados:
                                 plt.close(fig_fact)
                                 row_start += 25
                             
-                            # Tabla de facturación por usuario (con el período seleccionado)
+                            # Gráfica de Tendencia
+                            fig_tendencia = graficar_tendencia_ingresos_facturacion(df_sede, f'Tendencia - {sede}')
+                            if fig_tendencia:
+                                img_path = os.path.join(temp_dir, f"{sede}_tendencia.png")
+                                fig_tendencia.savefig(img_path, dpi=100, bbox_inches='tight')
+                                worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
+                                plt.close(fig_tendencia)
+                                row_start += 25
+                            
+                            # Tabla de facturación por usuario
                             df_usuario = obtener_facturacion_por_usuario(df_facturacion_detalle, fecha_inicio, fecha_fin, periodo_export)
                             if not df_usuario.empty:
-                                # Resetear índice para que el nombre del usuario sea una columna
                                 df_usuario_export = df_usuario.reset_index()
                                 df_usuario_export.columns.name = None
                                 
-                                # Escribir título de la tabla
                                 worksheet.write(row_start, 0, f"Facturación por Usuario ({periodo_export})")
                                 row_start += 1
                                 
-                                # Escribir datos de la tabla (incluyendo la columna de usuario)
                                 for col_num, value in enumerate(df_usuario_export.columns.values):
                                     worksheet.write(row_start, col_num, value)
                                 for row_num, row in enumerate(df_usuario_export.values, row_start + 1):
@@ -2643,7 +2527,6 @@ if st.session_state.datos_cargados:
                                 
                                 row_start += len(df_usuario_export) + 3
                                 
-                                # Gráfica de facturación por usuario (mensual apilada - independiente)
                                 fig_usuario_mensual = graficar_facturacion_por_usuario_mensual(
                                     df_facturacion_detalle, fecha_inicio, fecha_fin, sede
                                 )
@@ -2654,7 +2537,7 @@ if st.session_state.datos_cargados:
                                     plt.close(fig_usuario_mensual)
                                     row_start += 25
                             
-                            # Gráfica de ingresos por usuario (mensual apilada)
+                            # Gráfica de ingresos por usuario
                             fig_ingresos_usuario = graficar_ingresos_por_usuario_mensual(
                                 df_ingresos_sin_filtro, fecha_inicio, fecha_fin, sede
                             )
@@ -2665,7 +2548,7 @@ if st.session_state.datos_cargados:
                                 plt.close(fig_ingresos_usuario)
                                 row_start += 25
                             
-                            # Gráfica de Novedades Temporales (con el período seleccionado)
+                            # Gráfica de Novedades
                             fig_nov_temp = graficar_novedades_temporales(df_novedades_sede, periodo_export)
                             if fig_nov_temp:
                                 img_path = os.path.join(temp_dir, f"{sede}_novedades_temp.png")
@@ -2693,7 +2576,6 @@ if st.session_state.datos_cargados:
                 
                 workbook.close()
                 
-                # Limpiar archivos temporales
                 for file in os.listdir(temp_dir):
                     os.remove(os.path.join(temp_dir, file))
                 os.rmdir(temp_dir)
@@ -2711,7 +2593,6 @@ if st.session_state.datos_cargados:
                 import traceback
                 st.code(traceback.format_exc())
                 
-                # Limpiar archivos temporales en caso de error
                 for file in os.listdir(temp_dir):
                     try:
                         os.remove(os.path.join(temp_dir, file))
