@@ -1334,8 +1334,8 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     df_plot = df_tabla.copy()
     df_plot['Fecha'] = pd.to_datetime(df_plot['Fecha'])
     
-    # Crear figura con estilo mejorado - tamaño más grande para mejor visualización
-    fig, ax = plt.subplots(figsize=(16, 8))
+    # Crear figura con estilo mejorado
+    fig, ax = plt.subplots(figsize=(16, 9))
     
     # Usar seaborn para estilo
     sns.set_style("whitegrid")
@@ -1354,9 +1354,9 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
             label='Novedades', color='#E74C3C', alpha=0.9, zorder=3)
     
     # Agregar áreas sombreadas con transparencia
-    ax.fill_between(df_plot['Fecha'], 0, df_plot['ingresos'], alpha=0.15, color='#2E86C1', zorder=1)
-    ax.fill_between(df_plot['Fecha'], 0, df_plot['facturado total'], alpha=0.15, color='#28B463', zorder=1)
-    ax.fill_between(df_plot['Fecha'], 0, df_plot['Novedades'], alpha=0.15, color='#E74C3C', zorder=1)
+    ax.fill_between(df_plot['Fecha'], 0, df_plot['ingresos'], alpha=0.12, color='#2E86C1', zorder=1)
+    ax.fill_between(df_plot['Fecha'], 0, df_plot['facturado total'], alpha=0.12, color='#28B463', zorder=1)
+    ax.fill_between(df_plot['Fecha'], 0, df_plot['Novedades'], alpha=0.12, color='#E74C3C', zorder=1)
     
     # Agregar líneas de tendencia
     if len(df_plot) > 1:
@@ -1380,33 +1380,31 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         df_plot['Novedades'].max() if not df_plot['Novedades'].empty else 0
     ])
     
-    # Función para posicionar etiquetas con offset inteligente
-    def posicionar_etiquetas(x_vals, y_vals, color, label_prefix):
-        for i, (x, y) in enumerate(zip(x_vals, y_vals)):
+    # Determinar el offset basado en la escala general (10% del máximo)
+    base_offset = max_val * 0.08
+    
+    # Función para posicionar etiquetas con offset fijo basado en escala
+    def posicionar_etiquetas_fijo(x_vals, y_vals, color, label_prefix):
+        for x, y in zip(x_vals, y_vals):
             if y > 0:
-                # Calcular offset dinámico basado en el valor (más espacio para valores grandes)
-                offset_y = max(y * 0.04, 50)  # 4% del valor o mínimo 50 unidades
-                
-                # Formatear el número con separadores de miles
                 texto = f'{int(y):,}'
-                
-                # Posicionar la etiqueta con un offset suficiente
+                # Usar offset fijo basado en la escala general
                 ax.annotate(texto, 
                            xy=(x, y), 
-                           xytext=(0, offset_y),
+                           xytext=(0, base_offset),
                            textcoords='offset points',
                            ha='center', 
                            va='bottom',
-                           fontsize=9,
+                           fontsize=10,
                            fontweight='bold',
                            color=color,
                            bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.9, 
-                                    edgecolor=color, linewidth=1.2))
+                                    edgecolor=color, linewidth=1.5))
     
-    # Aplicar etiquetas con espaciado mejorado
-    posicionar_etiquetas(df_plot['Fecha'], df_plot['ingresos'], '#2E86C1', '')
-    posicionar_etiquetas(df_plot['Fecha'], df_plot['facturado total'], '#28B463', '')
-    posicionar_etiquetas(df_plot['Fecha'], df_plot['Novedades'], '#E74C3C', '')
+    # Aplicar etiquetas con offset fijo
+    posicionar_etiquetas_fijo(df_plot['Fecha'], df_plot['ingresos'], '#2E86C1', '')
+    posicionar_etiquetas_fijo(df_plot['Fecha'], df_plot['facturado total'], '#28B463', '')
+    posicionar_etiquetas_fijo(df_plot['Fecha'], df_plot['Novedades'], '#E74C3C', '')
     
     # ===== AJUSTE DEL EJE X SEGÚN PERÍODO =====
     if periodo == 'Diario':
@@ -1416,11 +1414,9 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         else:
             ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
         ax.set_xlabel('Fecha (Día)', fontsize=13, fontweight='bold')
-        # Rotación de etiquetas
         plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
         
     elif periodo == 'Semanal':
-        # Agrupar por semana
         df_plot['Semana'] = df_plot['Fecha'].dt.isocalendar().week
         df_plot['Año'] = df_plot['Fecha'].dt.isocalendar().year
         
@@ -1451,7 +1447,6 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
                 ax.axvline(x=fecha - pd.Timedelta(days=1), color='gray', linestyle='--', alpha=0.3, linewidth=0.8)
     
     else:  # Mensual
-        # Para Mensual: mostrar mes y año con mejor formato
         meses_unicos = df_plot['Fecha'].dt.to_period('M').unique()
         posiciones_meses = []
         etiquetas_meses = []
@@ -1460,10 +1455,8 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
             mask_mes = df_plot['Fecha'].dt.to_period('M') == mes
             fechas_mes = df_plot[mask_mes]['Fecha']
             if not fechas_mes.empty:
-                # Usar la fecha del primer día del mes como posición
                 primer_dia = fechas_mes.iloc[0].replace(day=1)
                 posiciones_meses.append(primer_dia)
-                # Formatear mes en español
                 nombre_mes = mes.strftime('%B').capitalize()
                 etiquetas_meses.append(f"{nombre_mes}\n{mes.strftime('%Y')}")
         
@@ -1485,10 +1478,13 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     # Agregar leyenda con mejor estilo
     ax.legend(loc='upper left', fontsize=11, framealpha=0.95, shadow=True, fancybox=True)
     
-    # ===== AJUSTE CRÍTICO: Escala del eje Y con espacio suficiente =====
+    # ===== AJUSTE CRÍTICO: Escala del eje Y con MUCHO espacio =====
     if max_val > 0:
-        # Agregar 30% de espacio adicional para las etiquetas (20% antes era insuficiente)
-        ax.set_ylim(0, max_val * 1.30)
+        # Calcular el espacio necesario para las etiquetas
+        # Las etiquetas necesitan aproximadamente 8% del máximo + 10% adicional
+        espacio_etiquetas = max_val * 0.10  # 10% para las etiquetas
+        espacio_adicional = max_val * 0.10  # 10% adicional de margen
+        ax.set_ylim(0, max_val + espacio_etiquetas + espacio_adicional)
     
     # Agregar línea base en Y=0
     ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
