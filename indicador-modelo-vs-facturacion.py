@@ -1490,7 +1490,7 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     
     if max_val > 0:
         # 10% de espacio adicional (mínimo necesario)
-        ax.set_ylim(0, max_val * 1.10)
+        ax.set_ylim(0, max_val * 1.05)
     
     # Formato de números con separadores de miles
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
