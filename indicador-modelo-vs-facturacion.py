@@ -1325,7 +1325,7 @@ def graficar_ingresos_por_usuario_mensual(df_ingresos_sin_filtro, fecha_inicio, 
 def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     """
     Gráfica de tendencia de Ingresos, Facturación y Novedades usando seaborn y matplotlib
-    Con etiquetas de datos claras y profesionales
+    Con etiquetas de datos justo encima de los marcadores
     """
     if df_tabla.empty:
         return None
@@ -1358,30 +1358,30 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     
     # ===== 1. GRAFICAR LAS TRES LÍNEAS =====
     # Línea de Ingresos
-    line1, = ax.plot(df_plot['Fecha'], df_plot['ingresos'], 
-                     marker='o', linewidth=3, markersize=10, 
-                     label='Ingresos', color=colores['ingresos'], 
-                     alpha=0.9, zorder=3)
+    ax.plot(df_plot['Fecha'], df_plot['ingresos'], 
+            marker='o', linewidth=3, markersize=10, 
+            label='Ingresos', color=colores['ingresos'], 
+            alpha=0.9, zorder=3)
     
     # Línea de Facturación Total
-    line2, = ax.plot(df_plot['Fecha'], df_plot['facturado total'], 
-                     marker='s', linewidth=3, markersize=10, 
-                     label='Facturación Total', color=colores['facturacion'], 
-                     alpha=0.9, zorder=3)
+    ax.plot(df_plot['Fecha'], df_plot['facturado total'], 
+            marker='s', linewidth=3, markersize=10, 
+            label='Facturación Total', color=colores['facturacion'], 
+            alpha=0.9, zorder=3)
     
     # Línea de Novedades
-    line3, = ax.plot(df_plot['Fecha'], df_plot['Novedades'], 
-                     marker='^', linewidth=3, markersize=10, 
-                     label='Novedades', color=colores['novedades'], 
-                     alpha=0.9, zorder=3)
+    ax.plot(df_plot['Fecha'], df_plot['Novedades'], 
+            marker='^', linewidth=3, markersize=10, 
+            label='Novedades', color=colores['novedades'], 
+            alpha=0.9, zorder=3)
     
     # ===== 2. AGREGAR ÁREAS SOMBREADAS =====
     ax.fill_between(df_plot['Fecha'], 0, df_plot['ingresos'], 
-                    alpha=0.12, color=colores['ingresos'], zorder=1)
+                    alpha=0.10, color=colores['ingresos'], zorder=1)
     ax.fill_between(df_plot['Fecha'], 0, df_plot['facturado total'], 
-                    alpha=0.12, color=colores['facturacion'], zorder=1)
+                    alpha=0.10, color=colores['facturacion'], zorder=1)
     ax.fill_between(df_plot['Fecha'], 0, df_plot['Novedades'], 
-                    alpha=0.12, color=colores['novedades'], zorder=1)
+                    alpha=0.10, color=colores['novedades'], zorder=1)
     
     # ===== 3. LÍNEAS DE TENDENCIA =====
     if len(df_plot) > 2:
@@ -1389,35 +1389,43 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         z_ing = np.polyfit(range(len(df_plot)), df_plot['ingresos'], 1)
         p_ing = np.poly1d(z_ing)
         ax.plot(df_plot['Fecha'], p_ing(range(len(df_plot))), 
-                linestyle='--', linewidth=2.5, color=colores['ingresos'], 
-                alpha=0.5, label='Tendencia Ingresos', zorder=2)
+                linestyle='--', linewidth=2, color=colores['ingresos'], 
+                alpha=0.4, label='Tendencia Ingresos', zorder=2)
         
         # Tendencia Facturación
         z_fac = np.polyfit(range(len(df_plot)), df_plot['facturado total'], 1)
         p_fac = np.poly1d(z_fac)
         ax.plot(df_plot['Fecha'], p_fac(range(len(df_plot))), 
-                linestyle='--', linewidth=2.5, color=colores['facturacion'], 
-                alpha=0.5, label='Tendencia Facturación', zorder=2)
+                linestyle='--', linewidth=2, color=colores['facturacion'], 
+                alpha=0.4, label='Tendencia Facturación', zorder=2)
     
-    # ===== 4. ETIQUETAS DE DATOS =====
-    # Calcular el valor máximo para posicionar etiquetas
+    # ===== 4. ETIQUETAS DE DATOS JUSTO ENCIMA DE LOS MARCADORES =====
+    # Calcular el valor máximo para el offset
     max_val = max([
         df_plot['ingresos'].max() if not df_plot['ingresos'].empty else 0,
         df_plot['facturado total'].max() if not df_plot['facturado total'].empty else 0,
         df_plot['Novedades'].max() if not df_plot['Novedades'].empty else 0
     ])
     
-    # Offset base para etiquetas (6% del máximo)
-    offset_base = max_val * 0.06 if max_val > 0 else 10
+    # Offset pequeño (3% del valor del punto o mínimo 200 unidades)
+    def get_offset(y, max_val):
+        # Offset dinámico: 3% del valor o mínimo 200
+        offset = max(y * 0.03, 200)
+        # Si el valor es muy pequeño, usar un offset fijo
+        if y < 1000:
+            offset = 300
+        return offset
     
-    # Función para agregar etiquetas a una línea
-    def agregar_etiquetas(x_vals, y_vals, color, offset_extra=0):
-        offset_total = offset_base + offset_extra
+    # Función para agregar etiquetas justo encima de los marcadores
+    def agregar_etiquetas_encima(x_vals, y_vals, color, label_prefix=''):
         for x, y in zip(x_vals, y_vals):
             if y > 0:
+                # Offset pequeño justo encima del marcador
+                offset = get_offset(y, max_val)
+                
                 ax.annotate(f'{int(y):,}', 
                            xy=(x, y), 
-                           xytext=(0, offset_total),
+                           xytext=(0, offset),
                            textcoords='offset points',
                            ha='center', 
                            va='bottom',
@@ -1425,16 +1433,16 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
                            fontweight='bold',
                            color=color,
                            bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
-                                    edgecolor=color, linewidth=1.2, alpha=0.9))
+                                    edgecolor=color, linewidth=1, alpha=0.85))
     
-    # Agregar etiquetas para cada línea (con diferentes offsets para evitar solapamiento)
-    agregar_etiquetas(df_plot['Fecha'], df_plot['ingresos'], colores['ingresos'], 0)           # Ingresos
-    agregar_etiquetas(df_plot['Fecha'], df_plot['facturado total'], colores['facturacion'], max_val * 0.02)  # Facturación
-    agregar_etiquetas(df_plot['Fecha'], df_plot['Novedades'], colores['novedades'], max_val * 0.04)          # Novedades
+    # Agregar etiquetas para cada métrica con offset ajustado
+    agregar_etiquetas_encima(df_plot['Fecha'], df_plot['ingresos'], colores['ingresos'])
+    agregar_etiquetas_encima(df_plot['Fecha'], df_plot['facturado total'], colores['facturacion'])
+    agregar_etiquetas_encima(df_plot['Fecha'], df_plot['Novedades'], colores['novedades'])
     
     # ===== 5. CONFIGURACIÓN DEL EJE X =====
     if periodo == 'Mensual':
-        # Crear etiquetas de meses con formato vertical
+        # Crear etiquetas de meses
         etiquetas = []
         for fecha in df_plot['Fecha']:
             nombre_mes = meses_es.get(fecha.strftime('%B'), fecha.strftime('%B'))
@@ -1445,11 +1453,10 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         ax.set_xlabel('Mes', fontsize=12, fontweight='bold')
         
     elif periodo == 'Semanal':
-        # Agrupar por semana para mostrar etiquetas más claras
+        # Agrupar por semana
         df_plot['Semana'] = df_plot['Fecha'].dt.isocalendar().week
-        df_plot['Año'] = df_plot['Fecha'].dt.isocalendar().year
         
-        # Tomar solo algunas semanas para no saturar
+        # Mostrar todas las semanas o un subconjunto
         step = max(1, len(df_plot) // 8)
         indices_mostrar = list(range(0, len(df_plot), step))
         if len(df_plot) - 1 not in indices_mostrar:
@@ -1470,7 +1477,6 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         ax.set_xlabel('Semana', fontsize=12, fontweight='bold')
         
     else:  # Diario
-        # Mostrar días con intervalo
         if len(df_plot) > 15:
             step = max(1, len(df_plot) // 12)
             indices_mostrar = list(range(0, len(df_plot), step))
@@ -1489,10 +1495,9 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         ax.set_xlabel('Fecha', fontsize=12, fontweight='bold')
     
     # ===== 6. CONFIGURACIÓN DEL EJE Y =====
-    # Calcular límite superior con espacio suficiente para etiquetas
     if max_val > 0:
-        # 30% de espacio adicional para todas las etiquetas
-        ax.set_ylim(0, max_val * 1.30)
+        # 20% de espacio adicional para las etiquetas (menos que antes porque ahora están más cerca)
+        ax.set_ylim(0, max_val * 1.20)
     
     # Formato de números con separadores de miles
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
@@ -1506,10 +1511,10 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     # Línea base en Y=0
     ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.3)
     
-    # Leyenda mejorada
+    # Leyenda
     ax.legend(loc='upper left', fontsize=11, framealpha=0.95, shadow=True, fancybox=True)
     
-    # Ajustar layout para evitar cortes
+    # Ajustar layout
     plt.tight_layout()
     return fig
 
