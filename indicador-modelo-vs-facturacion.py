@@ -9,6 +9,7 @@ from io import BytesIO
 import tempfile
 import os
 import seaborn as sns
+import matplotlib.dates as mdates
 
 # Configurar estilo de seaborn
 sns.set_style("whitegrid")
@@ -1321,10 +1322,10 @@ def graficar_ingresos_por_usuario_mensual(df_ingresos_sin_filtro, fecha_inicio, 
     plt.tight_layout()
     return fig
 
-# Funciones de gráficas con matplotlib y seaborn
-def graficar_tendencia_ingresos_facturacion(df_tabla, titulo):
+def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     """
     Gráfica de tendencia de Ingresos y Facturación usando seaborn y matplotlib
+    Con etiquetas de datos y ajuste de fechas según período seleccionado
     """
     if df_tabla.empty:
         return None
@@ -1334,55 +1335,152 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo):
     df_plot['Fecha'] = pd.to_datetime(df_plot['Fecha'])
     
     # Crear figura con estilo mejorado
-    fig, ax = plt.subplots(figsize=(14, 6))
+    fig, ax = plt.subplots(figsize=(14, 7))
     
-    # Usar seaborn para líneas con mejor estilo
+    # Usar seaborn para estilo
     sns.set_style("whitegrid")
     
     # Graficar líneas
-    ax.plot(df_plot['Fecha'], df_plot['ingresos'], 
-            marker='o', linewidth=2.5, markersize=6, 
+    line1, = ax.plot(df_plot['Fecha'], df_plot['ingresos'], 
+            marker='o', linewidth=2.5, markersize=8, 
             label='Ingresos', color='#2E86C1', alpha=0.9)
     
-    ax.plot(df_plot['Fecha'], df_plot['facturado total'], 
-            marker='s', linewidth=2.5, markersize=6, 
+    line2, = ax.plot(df_plot['Fecha'], df_plot['facturado total'], 
+            marker='s', linewidth=2.5, markersize=8, 
             label='Facturación Total', color='#28B463', alpha=0.9)
     
-    ax.plot(df_plot['Fecha'], df_plot['Novedades'], 
-            marker='^', linewidth=2.5, markersize=6, 
+    line3, = ax.plot(df_plot['Fecha'], df_plot['Novedades'], 
+            marker='^', linewidth=2.5, markersize=8, 
             label='Novedades', color='#E74C3C', alpha=0.9)
     
-    # Agregar área sombreada para mejor visualización de tendencia
+    # Agregar áreas sombreadas
     ax.fill_between(df_plot['Fecha'], 0, df_plot['ingresos'], alpha=0.1, color='#2E86C1')
     ax.fill_between(df_plot['Fecha'], 0, df_plot['facturado total'], alpha=0.1, color='#28B463')
     ax.fill_between(df_plot['Fecha'], 0, df_plot['Novedades'], alpha=0.1, color='#E74C3C')
     
-    # Agregar línea de tendencia para facturación
-    z = np.polyfit(range(len(df_plot)), df_plot['facturado total'], 1)
-    p = np.poly1d(z)
-    ax.plot(df_plot['Fecha'], p(range(len(df_plot))), 
-            linestyle='--', linewidth=1.5, color='#1B7A3D', alpha=0.7, 
-            label='Tendencia Facturación')
+    # Agregar líneas de tendencia
+    if len(df_plot) > 1:
+        z = np.polyfit(range(len(df_plot)), df_plot['facturado total'], 1)
+        p = np.poly1d(z)
+        ax.plot(df_plot['Fecha'], p(range(len(df_plot))), 
+                linestyle='--', linewidth=1.5, color='#1B7A3D', alpha=0.7, 
+                label='Tendencia Facturación')
+        
+        z2 = np.polyfit(range(len(df_plot)), df_plot['ingresos'], 1)
+        p2 = np.poly1d(z2)
+        ax.plot(df_plot['Fecha'], p2(range(len(df_plot))), 
+                linestyle='--', linewidth=1.5, color='#1A5276', alpha=0.7, 
+                label='Tendencia Ingresos')
     
-    # Agregar línea de tendencia para ingresos
-    z2 = np.polyfit(range(len(df_plot)), df_plot['ingresos'], 1)
-    p2 = np.poly1d(z2)
-    ax.plot(df_plot['Fecha'], p2(range(len(df_plot))), 
-            linestyle='--', linewidth=1.5, color='#1A5276', alpha=0.7, 
-            label='Tendencia Ingresos')
+    # ===== ETIQUETAS DE DATOS =====
+    # Etiquetas para Ingresos
+    for i, (x, y) in enumerate(zip(df_plot['Fecha'], df_plot['ingresos'])):
+        if y > 0:
+            offset_y = y * 0.02 + 0.5
+            ax.annotate(f'{int(y)}', 
+                       xy=(x, y), 
+                       xytext=(0, offset_y),
+                       textcoords='offset points',
+                       ha='center', 
+                       va='bottom',
+                       fontsize=8,
+                       fontweight='bold',
+                       color='#2E86C1',
+                       bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor='#2E86C1', linewidth=0.5))
     
-    # Configurar ejes y estilos
-    ax.set_xlabel('Fecha', fontsize=12, fontweight='bold')
+    # Etiquetas para Facturación Total
+    for i, (x, y) in enumerate(zip(df_plot['Fecha'], df_plot['facturado total'])):
+        if y > 0:
+            offset_y = y * 0.02 + 0.5
+            ax.annotate(f'{int(y)}', 
+                       xy=(x, y), 
+                       xytext=(0, offset_y),
+                       textcoords='offset points',
+                       ha='center', 
+                       va='bottom',
+                       fontsize=8,
+                       fontweight='bold',
+                       color='#28B463',
+                       bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor='#28B463', linewidth=0.5))
+    
+    # Etiquetas para Novedades
+    for i, (x, y) in enumerate(zip(df_plot['Fecha'], df_plot['Novedades'])):
+        if y > 0:
+            offset_y = y * 0.02 + 0.5
+            ax.annotate(f'{int(y)}', 
+                       xy=(x, y), 
+                       xytext=(0, offset_y),
+                       textcoords='offset points',
+                       ha='center', 
+                       va='bottom',
+                       fontsize=8,
+                       fontweight='bold',
+                       color='#E74C3C',
+                       bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor='#E74C3C', linewidth=0.5))
+    
+    # ===== AJUSTE DEL EJE X SEGÚN PERÍODO =====
+    # Determinar el formato y frecuencia según el período
+    if periodo == 'Diario':
+        # Para Diario: mostrar cada día
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%d-%m'))
+        # Si hay muchos días, mostrar menos etiquetas
+        if len(df_plot) > 20:
+            ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(df_plot)//15)))
+        else:
+            ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+        ax.set_xlabel('Fecha (Día)', fontsize=12, fontweight='bold')
+        
+    elif periodo == 'Semanal':
+        # Para Semanal: mostrar semana y rango de fechas
+        # Crear etiquetas personalizadas con el rango de semana
+        etiquetas_semanas = []
+        fechas_unicas = df_plot['Fecha'].unique()
+        
+        # Agrupar por semana
+        for fecha in fechas_unicas:
+            # Encontrar el inicio y fin de la semana
+            inicio_semana = fecha - pd.Timedelta(days=fecha.weekday())
+            fin_semana = inicio_semana + pd.Timedelta(days=6)
+            # Formatear etiqueta
+            etiqueta = f"Sem {fecha.isocalendar()[1]}\n{inicio_semana.strftime('%d/%m')}-{fin_semana.strftime('%d/%m')}"
+            etiquetas_semanas.append(etiqueta)
+        
+        # Configurar el eje X con las etiquetas personalizadas
+        ax.set_xticks(df_plot['Fecha'])
+        ax.set_xticklabels(etiquetas_semanas, rotation=45, ha='right', fontsize=9)
+        ax.set_xlabel('Semana (Fecha de Inicio-Fin)', fontsize=12, fontweight='bold')
+        
+        # Agregar líneas verticales para separar semanas
+        for i, fecha in enumerate(df_plot['Fecha']):
+            if i > 0 and fecha.isocalendar()[1] != df_plot.iloc[i-1]['Fecha'].isocalendar()[1]:
+                ax.axvline(x=fecha - pd.Timedelta(days=1), color='gray', linestyle='--', alpha=0.3, linewidth=0.8)
+    
+    else:  # Mensual
+        # Para Mensual: mostrar mes y año
+        # Agrupar por mes para mostrar una etiqueta por mes
+        meses_unicos = df_plot['Fecha'].dt.to_period('M').unique()
+        posiciones_meses = []
+        etiquetas_meses = []
+        
+        for mes in meses_unicos:
+            # Encontrar la primera fecha de cada mes
+            mask_mes = df_plot['Fecha'].dt.to_period('M') == mes
+            fechas_mes = df_plot[mask_mes]['Fecha']
+            if not fechas_mes.empty:
+                posiciones_meses.append(fechas_mes.iloc[0])
+                etiquetas_meses.append(mes.strftime('%B %Y'))
+        
+        ax.set_xticks(posiciones_meses)
+        ax.set_xticklabels(etiquetas_meses, rotation=45, ha='right', fontsize=10)
+        ax.set_xlabel('Mes', fontsize=12, fontweight='bold')
+        
+        # Agregar líneas verticales para separar meses
+        for pos in posiciones_meses[1:]:
+            ax.axvline(x=pos, color='gray', linestyle='--', alpha=0.3, linewidth=0.8)
+    
+    # Configurar ejes
     ax.set_ylabel('Cantidad', fontsize=12, fontweight='bold')
     ax.set_title(titulo, fontsize=14, fontweight='bold', pad=15)
-    
-    # Rotar etiquetas del eje X
-    plt.xticks(rotation=45, ha='right')
-    
-    # Formatear el eje X para mostrar fechas
-    import matplotlib.dates as mdates
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-    ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(df_plot)//10)))
     
     # Personalizar grid
     ax.grid(True, alpha=0.3, linestyle='--')
@@ -1391,25 +1489,14 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo):
     # Agregar leyenda
     ax.legend(loc='upper left', fontsize=10, framealpha=0.9, shadow=True)
     
-    # Agregar anotaciones de valores máximos
-    max_ingresos = df_plot['ingresos'].max()
-    max_facturacion = df_plot['facturado total'].max()
-    
-    if max_ingresos > 0:
-        idx_max_ing = df_plot['ingresos'].idxmax()
-        ax.annotate(f'Max: {int(max_ingresos)}', 
-                   xy=(df_plot.iloc[idx_max_ing]['Fecha'], max_ingresos),
-                   xytext=(10, 10), textcoords='offset points',
-                   fontsize=9, fontweight='bold', color='#2E86C1',
-                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
-    
-    if max_facturacion > 0:
-        idx_max_fac = df_plot['facturado total'].idxmax()
-        ax.annotate(f'Max: {int(max_facturacion)}', 
-                   xy=(df_plot.iloc[idx_max_fac]['Fecha'], max_facturacion),
-                   xytext=(10, -20), textcoords='offset points',
-                   fontsize=9, fontweight='bold', color='#28B463',
-                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+    # Ajustar límites del eje Y para dar espacio a las etiquetas
+    max_val = max([
+        df_plot['ingresos'].max() if not df_plot['ingresos'].empty else 0,
+        df_plot['facturado total'].max() if not df_plot['facturado total'].empty else 0,
+        df_plot['Novedades'].max() if not df_plot['Novedades'].empty else 0
+    ])
+    if max_val > 0:
+        ax.set_ylim(0, max_val * 1.15)
     
     plt.tight_layout()
     return fig
@@ -1440,7 +1527,6 @@ def graficar_novedades_temporales(df_novedades_sede, periodo):
     
     fig, ax = plt.subplots(figsize=(12, 5))
     
-    # Usar seaborn para estilo
     sns.set_style("whitegrid")
     
     bars = ax.bar(range(len(df_agrupado)), df_agrupado['Cantidad'], 
@@ -1971,13 +2057,14 @@ if st.session_state.datos_cargados:
                     
                     st.dataframe(df_display, use_container_width=True, hide_index=True)
                     
-                    # Gráfica de Tendencia con seaborn
+                    # Gráfica de Tendencia con seaborn (con etiquetas y ajuste de fechas)
                     if len(df_tabla) > 1:
                         st.markdown("---")
                         st.subheader("📈 Tendencia de Ingresos y Facturación")
                         fig_tendencia = graficar_tendencia_ingresos_facturacion(
                             df_tabla, 
-                            f'Tendencia de Ingresos y Facturación - {sede}'
+                            f'Tendencia de Ingresos y Facturación - {sede}',
+                            periodo  # Pasar el período para ajustar el eje X
                         )
                         if fig_tendencia:
                             st.pyplot(fig_tendencia, use_container_width=True)
@@ -2492,6 +2579,15 @@ if st.session_state.datos_cargados:
                                             worksheet.write(row_num, col_num, value)
                                     row_start += len(df_matriz_unidad_fact) + 3
                             
+                            # Gráfica de Tendencia
+                            fig_tendencia = graficar_tendencia_ingresos_facturacion(df_sede, f'Tendencia - {sede}', periodo_export)
+                            if fig_tendencia:
+                                img_path = os.path.join(temp_dir, f"{sede}_tendencia.png")
+                                fig_tendencia.savefig(img_path, dpi=100, bbox_inches='tight')
+                                worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
+                                plt.close(fig_tendencia)
+                                row_start += 25
+                            
                             # Gráfica de Facturación
                             fig_fact = graficar_facturacion_temporal(df_sede, periodo_export)
                             if fig_fact:
@@ -2499,15 +2595,6 @@ if st.session_state.datos_cargados:
                                 fig_fact.savefig(img_path, dpi=100, bbox_inches='tight')
                                 worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
                                 plt.close(fig_fact)
-                                row_start += 25
-                            
-                            # Gráfica de Tendencia
-                            fig_tendencia = graficar_tendencia_ingresos_facturacion(df_sede, f'Tendencia - {sede}')
-                            if fig_tendencia:
-                                img_path = os.path.join(temp_dir, f"{sede}_tendencia.png")
-                                fig_tendencia.savefig(img_path, dpi=100, bbox_inches='tight')
-                                worksheet.insert_image(row_start, 0, img_path, {'x_scale': 0.7, 'y_scale': 0.7})
-                                plt.close(fig_tendencia)
                                 row_start += 25
                             
                             # Tabla de facturación por usuario
