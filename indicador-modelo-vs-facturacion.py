@@ -1325,7 +1325,7 @@ def graficar_ingresos_por_usuario_mensual(df_ingresos_sin_filtro, fecha_inicio, 
 def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     """
     Gráfica de tendencia de Ingresos, Facturación y Novedades usando seaborn y matplotlib
-    Con etiquetas de datos justo en los marcadores
+    Con etiquetas de datos EXACTAMENTE sobre los marcadores
     """
     if df_tabla.empty:
         return None
@@ -1377,11 +1377,11 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
     
     # ===== 2. AGREGAR ÁREAS SOMBREADAS =====
     ax.fill_between(df_plot['Fecha'], 0, df_plot['ingresos'], 
-                    alpha=0.10, color=colores['ingresos'], zorder=1)
+                    alpha=0.08, color=colores['ingresos'], zorder=1)
     ax.fill_between(df_plot['Fecha'], 0, df_plot['facturado total'], 
-                    alpha=0.10, color=colores['facturacion'], zorder=1)
+                    alpha=0.08, color=colores['facturacion'], zorder=1)
     ax.fill_between(df_plot['Fecha'], 0, df_plot['Novedades'], 
-                    alpha=0.10, color=colores['novedades'], zorder=1)
+                    alpha=0.08, color=colores['novedades'], zorder=1)
     
     # ===== 3. LÍNEAS DE TENDENCIA =====
     if len(df_plot) > 2:
@@ -1399,42 +1399,37 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
                 linestyle='--', linewidth=2, color=colores['facturacion'], 
                 alpha=0.4, label='Tendencia Facturación', zorder=2)
     
-    # ===== 4. ETIQUETAS DE DATOS JUSTO EN LOS MARCADORES =====
-    # Calcular el valor máximo para el offset
-    max_val = max([
-        df_plot['ingresos'].max() if not df_plot['ingresos'].empty else 0,
-        df_plot['facturado total'].max() if not df_plot['facturado total'].empty else 0,
-        df_plot['Novedades'].max() if not df_plot['Novedades'].empty else 0
-    ])
+    # ===== 4. ETIQUETAS DE DATOS EXACTAMENTE SOBRE LOS MARCADORES =====
+    # Calcular el rango del eje Y para determinar el offset en unidades de datos
+    y_min, y_max = ax.get_ylim()
+    rango_y = y_max - y_min
     
-    # Función para agregar etiquetas justo en el marcador
-    def agregar_etiquetas_encima(x_vals, y_vals, color):
+    # Función para agregar etiquetas justo en el marcador usando offset en datos
+    def agregar_etiquetas_exactas(x_vals, y_vals, color):
         for x, y in zip(x_vals, y_vals):
             if y > 0:
-                # Offset muy pequeño: 2% del valor o mínimo 100 unidades
-                # Esto hace que la etiqueta quede CASI pegada al marcador
-                offset = max(y * 0.02, 100)
-                
-                # Si el valor es muy pequeño, usar offset fijo
-                if y < 500:
-                    offset = 150
+                # Usar offset en unidades de datos: 2% del valor
+                offset_data = y * 0.02
+                # Mínimo 20 unidades de datos
+                if offset_data < 20:
+                    offset_data = 20
                 
                 ax.annotate(f'{int(y):,}', 
                            xy=(x, y),  # El punto exacto del marcador
-                           xytext=(0, offset),  # Offset vertical mínimo
+                           xytext=(0, offset_data),  # Offset en unidades de datos
                            textcoords='offset points',
                            ha='center', 
                            va='bottom',
                            fontsize=9,
                            fontweight='bold',
                            color=color,
-                           bbox=dict(boxstyle='round,pad=0.15', facecolor='white', 
-                                    edgecolor=color, linewidth=1, alpha=0.9))
+                           bbox=dict(boxstyle='round,pad=0.1', facecolor='white', 
+                                    edgecolor=color, linewidth=1, alpha=0.85))
     
-    # Agregar etiquetas para cada métrica con offset mínimo
-    agregar_etiquetas_encima(df_plot['Fecha'], df_plot['ingresos'], colores['ingresos'])
-    agregar_etiquetas_encima(df_plot['Fecha'], df_plot['facturado total'], colores['facturacion'])
-    agregar_etiquetas_encima(df_plot['Fecha'], df_plot['Novedades'], colores['novedades'])
+    # Agregar etiquetas para cada métrica
+    agregar_etiquetas_exactas(df_plot['Fecha'], df_plot['ingresos'], colores['ingresos'])
+    agregar_etiquetas_exactas(df_plot['Fecha'], df_plot['facturado total'], colores['facturacion'])
+    agregar_etiquetas_exactas(df_plot['Fecha'], df_plot['Novedades'], colores['novedades'])
     
     # ===== 5. CONFIGURACIÓN DEL EJE X =====
     if periodo == 'Mensual':
@@ -1487,9 +1482,15 @@ def graficar_tendencia_ingresos_facturacion(df_tabla, titulo, periodo):
         ax.set_xlabel('Fecha', fontsize=12, fontweight='bold')
     
     # ===== 6. CONFIGURACIÓN DEL EJE Y =====
+    max_val = max([
+        df_plot['ingresos'].max() if not df_plot['ingresos'].empty else 0,
+        df_plot['facturado total'].max() if not df_plot['facturado total'].empty else 0,
+        df_plot['Novedades'].max() if not df_plot['Novedades'].empty else 0
+    ])
+    
     if max_val > 0:
-        # 15% de espacio adicional (mínimo necesario)
-        ax.set_ylim(0, max_val * 1.15)
+        # 10% de espacio adicional (mínimo necesario)
+        ax.set_ylim(0, max_val * 1.10)
     
     # Formato de números con separadores de miles
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
