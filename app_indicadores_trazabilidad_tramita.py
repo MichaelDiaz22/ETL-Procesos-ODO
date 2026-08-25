@@ -178,36 +178,16 @@ if st.session_state.df is not None:
         else:
             df_filtrado = st.session_state.df_filtrado if st.session_state.df_filtrado is not None else df
         
-        # Estadísticas generales - 5 métricas en una fila
-        col_stats1, col_stats2, col_stats3, col_stats4, col_stats5 = st.columns(5)
-        
-        # Total de registros
-        total_registros = len(df_filtrado)
+        # Estadísticas generales
+        col_stats1, col_stats2, col_stats3, col_stats4 = st.columns(4)
         with col_stats1:
-            st.metric("📊 Total Registros", f"{total_registros:,}")
-        
-        # Entidades
+            st.metric("📊 Total Registros", f"{len(df_filtrado):,}")
         with col_stats2:
             st.metric("🏥 Entidades", f"{df_filtrado['Entidad'].nunique():,}")
-        
-        # Pacientes
         with col_stats3:
             st.metric("👥 Pacientes", f"{df_filtrado['Paciente'].nunique():,}")
-        
-        # Servicios
         with col_stats4:
             st.metric("📋 Servicios", f"{df_filtrado['Servicio'].nunique():,}")
-        
-        # Órdenes gestionadas (total de registros, porque todos son órdenes)
-        with col_stats5:
-            # Calcular el porcentaje respecto al total general (sin filtro)
-            total_general = len(df)
-            porcentaje = (total_registros / total_general * 100) if total_general > 0 else 0
-            st.metric(
-                "📋 Órdenes Gestionadas", 
-                f"{total_registros:,} ({porcentaje:.1f}%)",
-                help=f"Total de órdenes en el rango de fechas seleccionado. Representa el {porcentaje:.1f}% del total de órdenes ({total_general:,})"
-            )
         
         st.divider()
         
