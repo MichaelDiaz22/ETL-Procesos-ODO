@@ -164,9 +164,9 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
             st.session_state.header_row = df.columns.tolist()
             
             # Verificar que las columnas necesarias existan (con los nuevos nombres)
-            columnas_requeridas = ['Etiqueta', 'Solicitado', 'Auditado', 'Sede', 'Doc.', 'Paciente', 
-                                   'Edad', 'Género', 'Diagnóstico', 'Entidad', 'Grupo Atención', 
-                                   'Servicio', 'Tazas', 'Radiación', 'Radicado', 'Autorizado', 
+            columnas_requeridas = ['Tag', 'Solicitado', 'Auditado', 'Sede', 'Doc.', 'Paciente', 
+                                   'Edad', 'Genero', 'Diag.', 'Entidad', 'Grupo Atención', 
+                                   'Servicio', 'CUPS', 'Radicación', 'Radicado', 'Autorizado', 
                                    'Autorización', 'Vence', 'Entregado', 'Servicio proceso tramita', 
                                    'Programado', 'Responsable', 'Estado', 'Observación', 'Prioridad', 
                                    'idOrden', 'idIndigo']
