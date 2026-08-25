@@ -143,7 +143,7 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
     archivo = st.file_uploader(
         "Selecciona un archivo Excel",
         type=['xlsx', 'xls'],
-        help="El archivo debe contener los campos: Etiqueta, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Género, Diagnóstico, Entidad, Grupo Atención, Servicio, Tazas, Radiación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo"
+        help="El archivo debe contener los campos: Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Tazas, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo"
     )
     
     if archivo is not None:
