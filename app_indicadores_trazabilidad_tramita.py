@@ -143,7 +143,7 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
     archivo = st.file_uploader(
         "Selecciona un archivo Excel",
         type=['xlsx', 'xls'],
-        help="El archivo debe contener los campos: Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Tazas, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo"
+        help="El archivo debe contener los campos: Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Cups, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo"
     )
     
     if archivo is not None:
@@ -243,7 +243,7 @@ if st.session_state.df is not None:
         st.stop()
     
     # Crear columna de Área cruzando Cups con el portafolio
-    df['Cups_str'] = df['Tazas'].astype(str).str[:6]
+    df['Cups_str'] = df['Cups'].astype(str).str[:6]
     df_portafolio_base['CUPS_str'] = df_portafolio_base['CUPS'].astype(str).str[:6]
     dict_cups_area = dict(zip(df_portafolio_base['CUPS_str'], df_portafolio_base['UNIDAD EJECUTORA']))
     df['Area'] = df['Cups_str'].map(dict_cups_area)
@@ -466,7 +466,7 @@ if st.session_state.df is not None:
         df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
         
         # Seleccionar columnas para la tabla
-        columnas_tabla = ['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Tazas', 'Servicio', 'Observación']
+        columnas_tabla = ['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']
         # Verificar que las columnas existan
         columnas_existentes = [col for col in columnas_tabla if col in df_filtrado.columns]
         
@@ -489,7 +489,7 @@ if st.session_state.df is not None:
                     "Paciente": st.column_config.TextColumn("Paciente", width="large"),
                     "Entidad": st.column_config.TextColumn("Entidad", width="large"),
                     "Area": st.column_config.TextColumn("Área", width="large"),
-                    "Tazas": st.column_config.TextColumn("Tazas", width="small"),
+                    "Cups": st.column_config.TextColumn("Cups", width="small"),
                     "Servicio": st.column_config.TextColumn("Servicio", width="medium"),
                     "Observación": st.column_config.TextColumn("Observación", width="large"),
                 }
@@ -875,7 +875,7 @@ if st.session_state.df is not None:
         # Preparar datos para exportación
         def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, ordenes_area_data, estados_serv_data, entidad_data):
             # Hoja 1: Datos detallados
-            datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Tazas', 'Servicio', 'Observación']].copy()
+            datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
             datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
             
             # Hoja 2: Resumen de gráficos e interpretaciones
