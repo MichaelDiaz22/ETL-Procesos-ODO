@@ -289,12 +289,10 @@ def generar_resumen_ejecutivo(df):
     total_gestionados = gestionados_prog + gestionados_aut
     total_pendientes = pendientes_prog + pendientes_aut
     
-    # Área con más órdenes
+    # Área con más órdenes (incluyendo "Sin Área")
     top_area = df['Area'].value_counts()
-    # Filtrar "Sin Área"
-    top_area_filtrada = top_area[top_area.index != 'Sin Área']
-    area_top = top_area_filtrada.index[0] if len(top_area_filtrada) > 0 else "N/A"
-    area_top_count = top_area_filtrada.iloc[0] if len(top_area_filtrada) > 0 else 0
+    area_top = top_area.index[0] if len(top_area) > 0 else "N/A"
+    area_top_count = top_area.iloc[0] if len(top_area) > 0 else 0
     
     # Entidad con más órdenes
     top_entidad = df['Entidad'].value_counts()
@@ -309,13 +307,13 @@ def generar_resumen_ejecutivo(df):
     else:
         promedio_dias = 0
     
-    # Construir el resumen ejecutivo
+    # Construir el resumen ejecutivo - AHORA TODO EN UN SOLO STRING
     resumen = f"""
     <div class="executive-summary">
         <h3>📋 Resumen Ejecutivo</h3>
         <p>
             <strong>Visión General:</strong> Se analizaron <span class="stat">{total_ordenes:,}</span> órdenes 
-            correspondientes a <span class="stat">{total_pacientes}</span> pacientes y 
+            correspondientes a <span class="stat">{total_pacientes:,}</span> pacientes y 
             <span class="stat">{total_entidades}</span> entidades diferentes.
         </p>
         <p>
@@ -904,11 +902,9 @@ if st.session_state.df is not None:
             st.subheader("📊 Pendientes de Gestión por Área")
             
             df_pendientes = df_filtrado[df_filtrado['Estado_Gestion'] == "Pendiente gestión desde programación"]
-            # Filtrar "Sin Área" para este gráfico
-            df_pendientes_filtrado = df_pendientes[df_pendientes['Area'] != 'Sin Área']
             
-            if len(df_pendientes_filtrado) > 0:
-                pendientes_por_area = df_pendientes_filtrado['Area'].value_counts().reset_index()
+            if len(df_pendientes) > 0:
+                pendientes_por_area = df_pendientes['Area'].value_counts().reset_index()
                 pendientes_por_area.columns = ['Área', 'Cantidad']
                 
                 # Paleta de colores morados para áreas
@@ -992,38 +988,34 @@ if st.session_state.df is not None:
                 plt.tight_layout()
                 st.pyplot(fig3)
                 
-                # Interpretación del gráfico 3 - CORREGIDO
+                # Interpretación del gráfico 3
                 total_pendientes = pendientes_por_area['Cantidad'].sum()
                 
-                interpretacion_pendientes = f"""
-                    <div class="interpretation-box">
-                        <strong>📝 Interpretación:</strong> Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas.
-                """
-                
                 if len(pendientes_por_area) > 0:
+                    interpretacion_pendientes = f"""
+                        <div class="interpretation-box">
+                            <strong>📝 Interpretación:</strong> Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas.
+                    """
+                    
                     max_area = pendientes_por_area.iloc[0]['Área']
                     max_cantidad = pendientes_por_area.iloc[0]['Cantidad']
                     interpretacion_pendientes += f""" 
                         El área con mayor volumen de pendientes es <strong>"{max_area}"</strong> con <strong>{max_cantidad}</strong> órdenes 
                         ({max_cantidad/total_pendientes*100:.1f}% del total).
                     """
-                
-                if len(pendientes_por_area) > 1:
-                    segunda_area = pendientes_por_area.iloc[1]['Área']
-                    segunda_cantidad = pendientes_por_area.iloc[1]['Cantidad']
-                    interpretacion_pendientes += f""" 
-                        {segunda_area} es la segunda área con <strong>{segunda_cantidad}</strong> órdenes pendientes 
-                        ({segunda_cantidad/total_pendientes*100:.1f}% del total).
-                    """
-                
-                interpretacion_pendientes += "</div>"
-                st.markdown(interpretacion_pendientes, unsafe_allow_html=True)
+                    
+                    if len(pendientes_por_area) > 1:
+                        segunda_area = pendientes_por_area.iloc[1]['Área']
+                        segunda_cantidad = pendientes_por_area.iloc[1]['Cantidad']
+                        interpretacion_pendientes += f""" 
+                            {segunda_area} es la segunda área con <strong>{segunda_cantidad}</strong> órdenes pendientes 
+                            ({segunda_cantidad/total_pendientes*100:.1f}% del total).
+                        """
+                    
+                    interpretacion_pendientes += "</div>"
+                    st.markdown(interpretacion_pendientes, unsafe_allow_html=True)
             else:
-                # Verificar si hay pendientes pero todos son "Sin Área"
-                if len(df_pendientes) > 0:
-                    st.info("⚠️ Todas las órdenes pendientes están clasificadas como 'Sin Área'. Verifica la asignación de áreas en el portafolio base.")
-                else:
-                    st.info("No hay ordenamientos pendientes de gestión desde programación")
+                st.info("No hay ordenamientos pendientes de gestión desde programación")
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICOS EN DOS COLUMNAS ========================
@@ -1034,55 +1026,50 @@ if st.session_state.df is not None:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Órdenes Generadas por Área")
             
-            # Filtrar "Sin Área" para este gráfico
-            df_ordenes_filtrado = df_filtrado[df_filtrado['Area'] != 'Sin Área']
-            ordenes_por_area = df_ordenes_filtrado['Area'].value_counts().reset_index()
+            ordenes_por_area = df_filtrado['Area'].value_counts().reset_index()
             ordenes_por_area.columns = ['Área', 'Cantidad']
             ordenes_por_area = ordenes_por_area.sort_values('Cantidad', ascending=False)
             
+            fig4, ax4 = plt.subplots(figsize=(10, 5))
+            bars4 = ax4.bar(ordenes_por_area['Área'], ordenes_por_area['Cantidad'], color='#7c3aed')
+            
+            ax4.set_xlabel('Área')
+            ax4.set_ylabel('Cantidad')
+            ax4.set_title('Órdenes Generadas por Área')
+            ax4.set_xticklabels(ordenes_por_area['Área'], rotation=30, ha='right', fontsize=9)
+            
+            # Agregar etiquetas de datos
+            for bar in bars4:
+                height = bar.get_height()
+                ax4.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                        f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold', color='black')
+            
+            plt.tight_layout()
+            st.pyplot(fig4)
+            
+            # Interpretación del gráfico 4
             if len(ordenes_por_area) > 0:
-                fig4, ax4 = plt.subplots(figsize=(10, 5))
-                bars4 = ax4.bar(ordenes_por_area['Área'], ordenes_por_area['Cantidad'], color='#7c3aed')
+                total_ordenes = ordenes_por_area['Cantidad'].sum()
+                top_area = ordenes_por_area.iloc[0]['Área']
+                top_cantidad = ordenes_por_area.iloc[0]['Cantidad']
                 
-                ax4.set_xlabel('Área')
-                ax4.set_ylabel('Cantidad')
-                ax4.set_title('Órdenes Generadas por Área')
-                ax4.set_xticklabels(ordenes_por_area['Área'], rotation=30, ha='right', fontsize=9)
+                interpretacion = f"""
+                    <div class="interpretation-box">
+                        <strong>📝 Interpretación:</strong> Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. 
+                        El área con mayor generación de órdenes es <strong>"{top_area}"</strong> con <strong>{top_cantidad}</strong> órdenes 
+                        ({top_cantidad/total_ordenes*100:.1f}% del total).
+                """
                 
-                # Agregar etiquetas de datos
-                for bar in bars4:
-                    height = bar.get_height()
-                    ax4.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                            f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold', color='black')
-                
-                plt.tight_layout()
-                st.pyplot(fig4)
-                
-                # Interpretación del gráfico 4 - CORREGIDO
-                if len(ordenes_por_area) > 0:
-                    total_ordenes = ordenes_por_area['Cantidad'].sum()
-                    top_area = ordenes_por_area.iloc[0]['Área']
-                    top_cantidad = ordenes_por_area.iloc[0]['Cantidad']
-                    
-                    interpretacion = f"""
-                        <div class="interpretation-box">
-                            <strong>📝 Interpretación:</strong> Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. 
-                            El área con mayor generación de órdenes es <strong>"{top_area}"</strong> con <strong>{top_cantidad}</strong> órdenes 
-                            ({top_cantidad/total_ordenes*100:.1f}% del total).
+                if len(ordenes_por_area) > 1:
+                    segunda_area = ordenes_por_area.iloc[1]['Área']
+                    segunda_cantidad = ordenes_por_area.iloc[1]['Cantidad']
+                    interpretacion += f""" 
+                        {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, 
+                        representando el {segunda_cantidad/total_ordenes*100:.1f}% del total.
                     """
-                    
-                    if len(ordenes_por_area) > 1:
-                        segunda_area = ordenes_por_area.iloc[1]['Área']
-                        segunda_cantidad = ordenes_por_area.iloc[1]['Cantidad']
-                        interpretacion += f""" 
-                            {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, 
-                            representando el {segunda_cantidad/total_ordenes*100:.1f}% del total.
-                        """
-                    
-                    interpretacion += "</div>"
-                    st.markdown(interpretacion, unsafe_allow_html=True)
-            else:
-                st.info("No hay órdenes asignadas a áreas (todas son 'Sin Área')")
+                
+                interpretacion += "</div>"
+                st.markdown(interpretacion, unsafe_allow_html=True)
             
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -1153,7 +1140,7 @@ if st.session_state.df is not None:
         plt.tight_layout()
         st.pyplot(fig6)
         
-        # Interpretación del gráfico 6 - CORREGIDO
+        # Interpretación del gráfico 6
         if len(entidad_counts) > 0:
             total_entidad = entidad_counts['Cantidad'].sum()
             top_entidad = entidad_counts.iloc[0]['Entidad']
@@ -1251,7 +1238,7 @@ if st.session_state.df is not None:
                 
                 # Obtener datos de los DataFrames de gráficos
                 estado_gestion_data = estado_gestion_counts.copy()
-                pendientes_data = pendientes_por_area.copy() if len(df_pendientes_filtrado) > 0 else pd.DataFrame()
+                pendientes_data = pendientes_por_area.copy() if len(df_pendientes) > 0 else pd.DataFrame()
                 ordenes_area_data = ordenes_por_area.copy() if len(ordenes_por_area) > 0 else pd.DataFrame()
                 estados_serv_data = estados_counts.copy()
                 entidad_data = entidad_counts.copy()
@@ -1281,8 +1268,7 @@ if st.session_state.df is not None:
                     bottom=Side(style='thin')
                 )
                 
-                # Escribir encabezados y datos
-                for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
+                # Escribir encabezados y datos                for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
                     for c_idx, value in enumerate(row, 1):
                         cell = ws1.cell(row=r_idx, column=c_idx, value=value)
                         if r_idx == 1:
@@ -1373,3 +1359,7 @@ else:
                 "Sede_Portafolio": st.column_config.TextColumn("Sede", width="medium"),
             }
         )
+
+# Mensaje de pie de página
+st.divider()
+st.caption("💡 Dashboard de Gestión de Portafolio - Datos actualizados en tiempo real")
