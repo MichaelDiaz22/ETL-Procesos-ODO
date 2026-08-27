@@ -75,6 +75,33 @@ st.markdown("""
     .interpretation-box strong {
         color: #5b21b6;
     }
+    .executive-summary {
+        background: linear-gradient(135deg, #f8f4ff, #ede9fe);
+        padding: 25px 30px;
+        border-radius: 12px;
+        border: 2px solid #7c3aed;
+        margin: 20px 0 30px 0;
+        color: #2d2d2d;
+        font-size: 15px;
+        line-height: 1.8;
+    }
+    .executive-summary h3 {
+        color: #5b21b6;
+        margin-top: 0;
+        font-size: 20px;
+    }
+    .executive-summary .highlight {
+        background: #7c3aed;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+    }
+    .executive-summary .stat {
+        font-weight: bold;
+        color: #5b21b6;
+        font-size: 16px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -244,6 +271,102 @@ def asignar_area_mejorada(df_data, df_portafolio):
     
     return df_data_copy
 
+# ======================== FUNCIÓN PARA GENERAR RESUMEN EJECUTIVO ========================
+def generar_resumen_ejecutivo(df):
+    """Genera un resumen ejecutivo con los principales hallazgos del análisis"""
+    
+    total_ordenes = len(df)
+    total_entidades = df['Entidad'].nunique()
+    total_pacientes = df['Paciente'].nunique()
+    
+    # Calcular métricas de gestión
+    estados_gestion = df['Estado_Gestion'].value_counts()
+    pendientes_prog = estados_gestion.get('Pendiente gestión desde programación', 0)
+    pendientes_aut = estados_gestion.get('Pendiente gestión desde Autorizaciones', 0)
+    gestionados_prog = estados_gestion.get('Gestionado desde programación', 0)
+    gestionados_aut = estados_gestion.get('Gestionado / En seguimiento desde Autorizaciones', 0)
+    
+    total_gestionados = gestionados_prog + gestionados_aut
+    total_pendientes = pendientes_prog + pendientes_aut
+    
+    # Área con más órdenes
+    top_area = df['Area'].value_counts()
+    # Filtrar "Sin Área"
+    top_area_filtrada = top_area[top_area.index != 'Sin Área']
+    area_top = top_area_filtrada.index[0] if len(top_area_filtrada) > 0 else "N/A"
+    area_top_count = top_area_filtrada.iloc[0] if len(top_area_filtrada) > 0 else 0
+    
+    # Entidad con más órdenes
+    top_entidad = df['Entidad'].value_counts()
+    entidad_top = top_entidad.index[0] if len(top_entidad) > 0 else "N/A"
+    entidad_top_count = top_entidad.iloc[0] if len(top_entidad) > 0 else 0
+    
+    # Calcular promedio de días de entrega
+    if 'dias_entrega' in df.columns:
+        dias_entrega_validos = df['dias_entrega'].dropna()
+        dias_entrega_validos = dias_entrega_validos[dias_entrega_validos >= 0]
+        promedio_dias = dias_entrega_validos.mean() if len(dias_entrega_validos) > 0 else 0
+    else:
+        promedio_dias = 0
+    
+    # Construir el resumen ejecutivo
+    resumen = f"""
+    <div class="executive-summary">
+        <h3>📋 Resumen Ejecutivo</h3>
+        <p>
+            <strong>Visión General:</strong> Se analizaron <span class="stat">{total_ordenes:,}</span> órdenes 
+            correspondientes a <span class="stat">{total_pacientes}</span> pacientes y 
+            <span class="stat">{total_entidades}</span> entidades diferentes.
+        </p>
+        <p>
+            <strong>Gestión de Órdenes:</strong> 
+            Del total de órdenes, <span class="stat">{total_gestionados:,} ({total_gestionados/total_ordenes*100:.1f}%)</span> 
+            ya han sido gestionadas, mientras que <span class="stat">{total_pendientes:,} ({total_pendientes/total_ordenes*100:.1f}%)</span> 
+            se encuentran pendientes de gestión.
+        </p>
+    """
+    
+    if total_pendientes > 0:
+        resumen += f"""
+        <p>
+            <strong>Cuellos de Botella:</strong> 
+            De las órdenes pendientes, <span class="stat">{pendientes_prog:,} ({pendientes_prog/total_pendientes*100:.1f}%)</span> 
+            están pendientes desde programación y <span class="stat">{pendientes_aut:,} ({pendientes_aut/total_pendientes*100:.1f}%)</span> 
+            desde autorizaciones.
+        </p>
+        """
+    
+    if area_top != "N/A":
+        resumen += f"""
+        <p>
+            <strong>Concentración por Área:</strong> 
+            El área con mayor volumen de órdenes es <span class="stat">"{area_top}"</span> con 
+            <span class="stat">{area_top_count:,}</span> órdenes ({area_top_count/total_ordenes*100:.1f}% del total).
+        </p>
+        """
+    
+    resumen += f"""
+        <p>
+            <strong>Concentración por Entidad:</strong> 
+            La entidad con mayor participación es <span class="stat">"{entidad_top}"</span> con 
+            <span class="stat">{entidad_top_count:,}</span> órdenes ({entidad_top_count/total_ordenes*100:.1f}% del total).
+        </p>
+    """
+    
+    if promedio_dias > 0:
+        resumen += f"""
+        <p>
+            <strong>Tiempos de Gestión:</strong> 
+            El tiempo promedio de entrega es de <span class="stat">{promedio_dias:.1f}</span> días.
+        </p>
+        """
+    
+    resumen += """
+    </div>
+    """
+    
+    return resumen
+
 # ======================== CONTENIDO PRINCIPAL ========================
 if st.session_state.df is not None:
     df = st.session_state.df.copy()
@@ -268,6 +391,23 @@ if st.session_state.df is not None:
     
     # Aplicar la asignación de área
     df = asignar_area_mejorada(df, df_portafolio_base)
+    
+    # Clasificar estados de gestión para todo el dataset
+    def clasificar_estado_gestion(estado):
+        if estado == "PROGRAMAR":
+            return "Pendiente gestión desde programación"
+        elif estado == "RADICAR":
+            return "Pendiente gestión desde Autorizaciones"
+        elif estado in ["PROGRAMADO", "PENDIENTE PROGRAMAR"]:
+            return "Gestionado desde programación"
+        else:
+            return "Gestionado / En seguimiento desde Autorizaciones"
+    
+    df['Estado_Gestion'] = df['Estado'].apply(clasificar_estado_gestion)
+    
+    # Calcular días de entrega
+    if 'Entregado' in df.columns:
+        df['dias_entrega'] = (df['Entregado'] - df['Solicitado']).dt.total_seconds() / (24 * 3600)
     
     # Mostrar estadísticas de asignación para depuración
     with st.expander("📊 Estadísticas de Asignación de Áreas", expanded=False):
@@ -398,6 +538,13 @@ if st.session_state.df is not None:
         # Recalcular áreas con el portafolio filtrado
         df_filtrado = asignar_area_mejorada(df_filtrado, df_portafolio_filtrado)
         
+        # Recalcular estado de gestión
+        df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
+        
+        # Recalcular días de entrega
+        if 'Entregado' in df_filtrado.columns:
+            df_filtrado['dias_entrega'] = (df_filtrado['Entregado'] - df_filtrado['Solicitado']).dt.total_seconds() / (24 * 3600)
+        
         st.session_state.df_filtrado = df_filtrado
         st.session_state.filtros_aplicados = True
         
@@ -408,6 +555,14 @@ if st.session_state.df is not None:
     
     df_filtrado = st.session_state.df_filtrado.copy()
     
+    # ======================== RESUMEN EJECUTIVO ========================
+    if len(df_filtrado) > 0:
+        st.markdown("### 📋 Resumen Ejecutivo")
+        resumen_html = generar_resumen_ejecutivo(df_filtrado)
+        st.markdown(resumen_html, unsafe_allow_html=True)
+    else:
+        st.warning("⚠️ No hay datos para mostrar el resumen ejecutivo")
+    
     # ======================== KPI CARDS ========================
     st.markdown("### 📊 Indicadores Clave")
     
@@ -416,7 +571,6 @@ if st.session_state.df is not None:
     total_pacientes = df_filtrado['Paciente'].nunique() if len(df_filtrado) > 0 else 0
     
     if 'Entregado' in df_filtrado.columns and len(df_filtrado) > 0:
-        df_filtrado['dias_entrega'] = (df_filtrado['Entregado'] - df_filtrado['Solicitado']).dt.total_seconds() / (24 * 3600)
         dias_entrega_validos = df_filtrado['dias_entrega'].dropna()
         dias_entrega_validos = dias_entrega_validos[dias_entrega_validos >= 0]
         promedio_dias_entrega = f"{dias_entrega_validos.mean():.1f}" if len(dias_entrega_validos) > 0 else "N/A"
@@ -503,20 +657,6 @@ if st.session_state.df is not None:
     with st.expander("📋 Ver Detalle de Resultados (Datos Filtrados)", expanded=False):
         st.markdown("#### Detalle de órdenes con filtros aplicados")
         
-        # Función para clasificar estado de gestión
-        def clasificar_estado_gestion(estado):
-            if estado == "PROGRAMAR":
-                return "Pendiente gestión desde programación"
-            elif estado == "RADICAR":
-                return "Pendiente gestión desde Autorizaciones"
-            elif estado in ["PROGRAMADO", "PENDIENTE PROGRAMAR"]:
-                return "Gestionado desde programación"
-            else:
-                return "Gestionado / En seguimiento desde Autorizaciones"
-        
-        # Crear columna de estado de gestión
-        df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
-        
         # Seleccionar columnas para la tabla
         columnas_tabla = ['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']
         # Verificar que las columnas existan
@@ -553,18 +693,6 @@ if st.session_state.df is not None:
     # ======================== GRÁFICOS ========================
     if len(df_filtrado) > 0:
         st.markdown("### 📈 Análisis Visual")
-        
-        def clasificar_estado_gestion(estado):
-            if estado == "PROGRAMAR":
-                return "Pendiente gestión desde programación"
-            elif estado == "RADICAR":
-                return "Pendiente gestión desde Autorizaciones"
-            elif estado in ["PROGRAMADO", "PENDIENTE PROGRAMAR"]:
-                return "Gestionado desde programación"
-            else:
-                return "Gestionado / En seguimiento desde Autorizaciones"
-        
-        df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
         
         # Paleta de colores morados
         purple_palette = ['#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#5b21b6', '#4c1d95', '#9b59b6']
@@ -776,8 +904,11 @@ if st.session_state.df is not None:
             st.subheader("📊 Pendientes de Gestión por Área")
             
             df_pendientes = df_filtrado[df_filtrado['Estado_Gestion'] == "Pendiente gestión desde programación"]
-            if len(df_pendientes) > 0:
-                pendientes_por_area = df_pendientes['Area'].value_counts().reset_index()
+            # Filtrar "Sin Área" para este gráfico
+            df_pendientes_filtrado = df_pendientes[df_pendientes['Area'] != 'Sin Área']
+            
+            if len(df_pendientes_filtrado) > 0:
+                pendientes_por_area = df_pendientes_filtrado['Area'].value_counts().reset_index()
                 pendientes_por_area.columns = ['Área', 'Cantidad']
                 
                 # Paleta de colores morados para áreas
@@ -888,7 +1019,11 @@ if st.session_state.df is not None:
                 interpretacion_pendientes += "</div>"
                 st.markdown(interpretacion_pendientes, unsafe_allow_html=True)
             else:
-                st.info("No hay ordenamientos pendientes de gestión desde programación")
+                # Verificar si hay pendientes pero todos son "Sin Área"
+                if len(df_pendientes) > 0:
+                    st.info("⚠️ Todas las órdenes pendientes están clasificadas como 'Sin Área'. Verifica la asignación de áreas en el portafolio base.")
+                else:
+                    st.info("No hay ordenamientos pendientes de gestión desde programación")
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICOS EN DOS COLUMNAS ========================
@@ -899,50 +1034,55 @@ if st.session_state.df is not None:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Órdenes Generadas por Área")
             
-            ordenes_por_area = df_filtrado['Area'].value_counts().reset_index()
+            # Filtrar "Sin Área" para este gráfico
+            df_ordenes_filtrado = df_filtrado[df_filtrado['Area'] != 'Sin Área']
+            ordenes_por_area = df_ordenes_filtrado['Area'].value_counts().reset_index()
             ordenes_por_area.columns = ['Área', 'Cantidad']
             ordenes_por_area = ordenes_por_area.sort_values('Cantidad', ascending=False)
             
-            fig4, ax4 = plt.subplots(figsize=(10, 5))
-            bars4 = ax4.bar(ordenes_por_area['Área'], ordenes_por_area['Cantidad'], color='#7c3aed')
-            
-            ax4.set_xlabel('Área')
-            ax4.set_ylabel('Cantidad')
-            ax4.set_title('Órdenes Generadas por Área')
-            ax4.set_xticklabels(ordenes_por_area['Área'], rotation=30, ha='right', fontsize=9)
-            
-            # Agregar etiquetas de datos
-            for bar in bars4:
-                height = bar.get_height()
-                ax4.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                        f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold', color='black')
-            
-            plt.tight_layout()
-            st.pyplot(fig4)
-            
-            # Interpretación del gráfico 4 - CORREGIDO
             if len(ordenes_por_area) > 0:
-                total_ordenes = ordenes_por_area['Cantidad'].sum()
-                top_area = ordenes_por_area.iloc[0]['Área']
-                top_cantidad = ordenes_por_area.iloc[0]['Cantidad']
+                fig4, ax4 = plt.subplots(figsize=(10, 5))
+                bars4 = ax4.bar(ordenes_por_area['Área'], ordenes_por_area['Cantidad'], color='#7c3aed')
                 
-                interpretacion = f"""
-                    <div class="interpretation-box">
-                        <strong>📝 Interpretación:</strong> Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. 
-                        El área con mayor generación de órdenes es <strong>"{top_area}"</strong> con <strong>{top_cantidad}</strong> órdenes 
-                        ({top_cantidad/total_ordenes*100:.1f}% del total).
-                """
+                ax4.set_xlabel('Área')
+                ax4.set_ylabel('Cantidad')
+                ax4.set_title('Órdenes Generadas por Área')
+                ax4.set_xticklabels(ordenes_por_area['Área'], rotation=30, ha='right', fontsize=9)
                 
-                if len(ordenes_por_area) > 1:
-                    segunda_area = ordenes_por_area.iloc[1]['Área']
-                    segunda_cantidad = ordenes_por_area.iloc[1]['Cantidad']
-                    interpretacion += f""" 
-                        {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, 
-                        representando el {segunda_cantidad/total_ordenes*100:.1f}% del total.
+                # Agregar etiquetas de datos
+                for bar in bars4:
+                    height = bar.get_height()
+                    ax4.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                            f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold', color='black')
+                
+                plt.tight_layout()
+                st.pyplot(fig4)
+                
+                # Interpretación del gráfico 4 - CORREGIDO
+                if len(ordenes_por_area) > 0:
+                    total_ordenes = ordenes_por_area['Cantidad'].sum()
+                    top_area = ordenes_por_area.iloc[0]['Área']
+                    top_cantidad = ordenes_por_area.iloc[0]['Cantidad']
+                    
+                    interpretacion = f"""
+                        <div class="interpretation-box">
+                            <strong>📝 Interpretación:</strong> Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. 
+                            El área con mayor generación de órdenes es <strong>"{top_area}"</strong> con <strong>{top_cantidad}</strong> órdenes 
+                            ({top_cantidad/total_ordenes*100:.1f}% del total).
                     """
-                
-                interpretacion += "</div>"
-                st.markdown(interpretacion, unsafe_allow_html=True)
+                    
+                    if len(ordenes_por_area) > 1:
+                        segunda_area = ordenes_por_area.iloc[1]['Área']
+                        segunda_cantidad = ordenes_por_area.iloc[1]['Cantidad']
+                        interpretacion += f""" 
+                            {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, 
+                            representando el {segunda_cantidad/total_ordenes*100:.1f}% del total.
+                        """
+                    
+                    interpretacion += "</div>"
+                    st.markdown(interpretacion, unsafe_allow_html=True)
+            else:
+                st.info("No hay órdenes asignadas a áreas (todas son 'Sin Área')")
             
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -1111,8 +1251,8 @@ if st.session_state.df is not None:
                 
                 # Obtener datos de los DataFrames de gráficos
                 estado_gestion_data = estado_gestion_counts.copy()
-                pendientes_data = pendientes_por_area.copy() if len(df_pendientes) > 0 else pd.DataFrame()
-                ordenes_area_data = ordenes_por_area.copy()
+                pendientes_data = pendientes_por_area.copy() if len(df_pendientes_filtrado) > 0 else pd.DataFrame()
+                ordenes_area_data = ordenes_por_area.copy() if len(ordenes_por_area) > 0 else pd.DataFrame()
                 estados_serv_data = estados_counts.copy()
                 entidad_data = entidad_counts.copy()
                 
