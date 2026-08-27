@@ -499,12 +499,12 @@ if st.session_state.df is not None:
     df_filtrado = st.session_state.df_filtrado.copy()
     
     # ======================== RESUMEN EJECUTIVO ========================
-if len(df_filtrado) > 0:
-    st.markdown("### 📋 Resumen Ejecutivo")
-    resumen_html = generar_resumen_ejecutivo(df_filtrado)
-    st.markdown(resumen_html, unsafe_allow_html=True)
-else:
-    st.warning("⚠️ No hay datos para mostrar el resumen ejecutivo")
+    if len(df_filtrado) > 0:
+        st.markdown("### 📋 Resumen Ejecutivo")
+        resumen_html = generar_resumen_ejecutivo(df_filtrado)
+        st.markdown(resumen_html, unsafe_allow_html=True)
+    else:
+        st.warning("⚠️ No hay datos para mostrar el resumen ejecutivo")
     
     # ======================== KPI CARDS ========================
     st.markdown("### 📊 Indicadores Clave")
