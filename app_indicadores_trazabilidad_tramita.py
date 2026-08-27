@@ -724,7 +724,7 @@ if st.session_state.df is not None:
         plt.tight_layout()
         st.pyplot(fig1)
         
-        # Interpretación GRÁFICO 1 - CORREGIDA
+        # Interpretación GRÁFICO 1
         total_generadas = df_graf1['Generadas'].sum()
         total_gestionadas = df_graf1['Gestionadas'].sum()
         pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
@@ -732,9 +732,9 @@ if st.session_state.df is not None:
         dia_pico = df_graf1.loc[df_graf1['Generadas'].idxmax(), 'Fecha'] if len(df_graf1) > 0 else "N/A"
         max_generadas = int(df_graf1['Generadas'].max()) if len(df_graf1) > 0 else 0
         
-        texto_interpretacion = f"Se generaron <strong>{int(total_generadas)}</strong> órdenes en total, de las cuales <strong>{int(total_gestionadas)} ({pct_gestionadas:.1f}%)</strong> ya fueron gestionadas y <strong>{int(total_generadas - total_gestionadas)} ({pct_pendientes:.1f}%)</strong> aún se encuentran pendientes de gestión. El día con mayor actividad fue <strong>{dia_pico}</strong> con <strong>{max_generadas}</strong> órdenes generadas."
+        texto_interpretacion1 = f'Se generaron <strong>{int(total_generadas)}</strong> órdenes en total, de las cuales <strong>{int(total_gestionadas)} ({pct_gestionadas:.1f}%)</strong> ya fueron gestionadas y <strong>{int(total_generadas - total_gestionadas)} ({pct_pendientes:.1f}%)</strong> aún se encuentran pendientes de gestión. El día con mayor actividad fue <strong>{dia_pico}</strong> con <strong>{max_generadas}</strong> órdenes generadas.'
         
-        st.markdown(generar_interpretacion("Interpretación", texto_interpretacion), unsafe_allow_html=True)
+        st.markdown(generar_interpretacion("Interpretación", texto_interpretacion1), unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -828,7 +828,7 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig2)
             
-            # Interpretación GRÁFICO 2 - CORREGIDA
+            # Interpretación GRÁFICO 2
             total_estados = estado_gestion_counts['Cantidad'].sum()
             estado_pendientes_prog = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Pendiente gestión desde programación']['Cantidad'].sum() if 'Pendiente gestión desde programación' in estado_gestion_counts['Estado'].values else 0
             estado_pendientes_aut = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Pendiente gestión desde Autorizaciones']['Cantidad'].sum() if 'Pendiente gestión desde Autorizaciones' in estado_gestion_counts['Estado'].values else 0
@@ -837,7 +837,7 @@ if st.session_state.df is not None:
             
             mayor_carga = "Pendiente gestión desde programación" if estado_pendientes_prog == max([estado_pendientes_prog, estado_pendientes_aut, estado_gestionados_prog, estado_gestionados_aut]) else "Pendiente gestión desde Autorizaciones"
             
-            texto_interpretacion2 = f"Del total de <strong>{total_estados}</strong> órdenes, <strong>{estado_pendientes_prog} ({estado_pendientes_prog/total_estados*100:.1f}%)</strong> se encuentran pendientes de gestión desde programación, <strong>{estado_pendientes_aut} ({estado_pendientes_aut/total_estados*100:.1f}%)</strong> pendientes desde autorizaciones, <strong>{estado_gestionados_prog} ({estado_gestionados_prog/total_estados*100:.1f}%)</strong> ya gestionadas desde programación, y <strong>{estado_gestionados_aut} ({estado_gestionados_aut/total_estados*100:.1f}%)</strong> gestionadas o en seguimiento desde autorizaciones. La mayor carga de trabajo se concentra en <strong>{mayor_carga}</strong>."
+            texto_interpretacion2 = f'Del total de <strong>{total_estados}</strong> órdenes, <strong>{estado_pendientes_prog} ({estado_pendientes_prog/total_estados*100:.1f}%)</strong> se encuentran pendientes de gestión desde programación, <strong>{estado_pendientes_aut} ({estado_pendientes_aut/total_estados*100:.1f}%)</strong> pendientes desde autorizaciones, <strong>{estado_gestionados_prog} ({estado_gestionados_prog/total_estados*100:.1f}%)</strong> ya gestionadas desde programación, y <strong>{estado_gestionados_aut} ({estado_gestionados_aut/total_estados*100:.1f}%)</strong> gestionadas o en seguimiento desde autorizaciones. La mayor carga de trabajo se concentra en <strong>{mayor_carga}</strong>.'
             
             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion2), unsafe_allow_html=True)
             
@@ -928,19 +928,19 @@ if st.session_state.df is not None:
                 plt.tight_layout()
                 st.pyplot(fig3)
                 
-                # Interpretación GRÁFICO 3 - CORREGIDA
+                # Interpretación GRÁFICO 3
                 total_pendientes = pendientes_por_area['Cantidad'].sum()
                 
                 if len(pendientes_por_area) > 0:
                     max_area = pendientes_por_area.iloc[0]['Área']
                     max_cantidad = pendientes_por_area.iloc[0]['Cantidad']
                     
-                    texto_interpretacion3 = f"Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas. El área con mayor volumen de pendientes es <strong>"{max_area}"</strong> con <strong>{max_cantidad}</strong> órdenes ({max_cantidad/total_pendientes*100:.1f}% del total)."
+                    texto_interpretacion3 = f'Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas. El área con mayor volumen de pendientes es <strong>"{max_area}"</strong> con <strong>{max_cantidad}</strong> órdenes ({max_cantidad/total_pendientes*100:.1f}% del total).'
                     
                     if len(pendientes_por_area) > 1:
                         segunda_area = pendientes_por_area.iloc[1]['Área']
                         segunda_cantidad = pendientes_por_area.iloc[1]['Cantidad']
-                        texto_interpretacion3 += f" {segunda_area} es la segunda área con <strong>{segunda_cantidad}</strong> órdenes pendientes ({segunda_cantidad/total_pendientes*100:.1f}% del total)."
+                        texto_interpretacion3 += f' {segunda_area} es la segunda área con <strong>{segunda_cantidad}</strong> órdenes pendientes ({segunda_cantidad/total_pendientes*100:.1f}% del total).'
                     
                     st.markdown(generar_interpretacion("Interpretación", texto_interpretacion3), unsafe_allow_html=True)
             else:
@@ -975,18 +975,18 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig4)
             
-            # Interpretación GRÁFICO 4 - CORREGIDA
+            # Interpretación GRÁFICO 4
             if len(ordenes_por_area) > 0:
                 total_ordenes = ordenes_por_area['Cantidad'].sum()
                 top_area = ordenes_por_area.iloc[0]['Área']
                 top_cantidad = ordenes_por_area.iloc[0]['Cantidad']
                 
-                texto_interpretacion4 = f"Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. El área con mayor generación de órdenes es <strong>"{top_area}"</strong> con <strong>{top_cantidad}</strong> órdenes ({top_cantidad/total_ordenes*100:.1f}% del total)."
+                texto_interpretacion4 = f'Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. El área con mayor generación de órdenes es <strong>"{top_area}"</strong> con <strong>{top_cantidad}</strong> órdenes ({top_cantidad/total_ordenes*100:.1f}% del total).'
                 
                 if len(ordenes_por_area) > 1:
                     segunda_area = ordenes_por_area.iloc[1]['Área']
                     segunda_cantidad = ordenes_por_area.iloc[1]['Cantidad']
-                    texto_interpretacion4 += f" {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, representando el {segunda_cantidad/total_ordenes*100:.1f}% del total."
+                    texto_interpretacion4 += f' {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, representando el {segunda_cantidad/total_ordenes*100:.1f}% del total.'
                 
                 st.markdown(generar_interpretacion("Interpretación", texto_interpretacion4), unsafe_allow_html=True)
             
@@ -1017,19 +1017,19 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig5)
             
-            # Interpretación GRÁFICO 5 - CORREGIDA
+            # Interpretación GRÁFICO 5
             total_estados_serv = estados_counts['Cantidad'].sum()
             top_estado = estados_counts.iloc[0]['Estado']
             top_estado_cant = estados_counts.iloc[0]['Cantidad']
             
-            texto_interpretacion5 = f"El estado más frecuente es <strong>"{top_estado}"</strong> con <strong>{top_estado_cant}</strong> órdenes ({top_estado_cant/total_estados_serv*100:.1f}% del total)."
+            texto_interpretacion5 = f'El estado más frecuente es <strong>"{top_estado}"</strong> con <strong>{top_estado_cant}</strong> órdenes ({top_estado_cant/total_estados_serv*100:.1f}% del total).'
             
             if len(estados_counts) > 1:
                 segundo_estado = estados_counts.iloc[1]['Estado']
                 segundo_cantidad = estados_counts.iloc[1]['Cantidad']
-                texto_interpretacion5 += f" {segundo_estado} es el segundo estado con <strong>{segundo_cantidad}</strong> órdenes ({segundo_cantidad/total_estados_serv*100:.1f}% del total)."
+                texto_interpretacion5 += f' {segundo_estado} es el segundo estado con <strong>{segundo_cantidad}</strong> órdenes ({segundo_cantidad/total_estados_serv*100:.1f}% del total).'
             
-            texto_interpretacion5 += f" Esto indica que la mayoría de las órdenes se encuentran en estado "{top_estado}"."
+            texto_interpretacion5 += f' Esto indica que la mayoría de las órdenes se encuentran en estado "{top_estado}".'
             
             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5), unsafe_allow_html=True)
             
@@ -1059,18 +1059,18 @@ if st.session_state.df is not None:
         plt.tight_layout()
         st.pyplot(fig6)
         
-        # Interpretación GRÁFICO 6 - CORREGIDA
+        # Interpretación GRÁFICO 6
         if len(entidad_counts) > 0:
             total_entidad = entidad_counts['Cantidad'].sum()
             top_entidad = entidad_counts.iloc[0]['Entidad']
             top_entidad_cant = entidad_counts.iloc[0]['Cantidad']
             
-            texto_interpretacion6 = f"<strong>{total_entidad}</strong> órdenes están distribuidas entre <strong>{len(entidad_counts)}</strong> entidades. La entidad con mayor volumen es <strong>"{top_entidad}"</strong> con <strong>{top_entidad_cant}</strong> órdenes ({top_entidad_cant/total_entidad*100:.1f}% del total)."
+            texto_interpretacion6 = f'<strong>{total_entidad}</strong> órdenes están distribuidas entre <strong>{len(entidad_counts)}</strong> entidades. La entidad con mayor volumen es <strong>"{top_entidad}"</strong> con <strong>{top_entidad_cant}</strong> órdenes ({top_entidad_cant/total_entidad*100:.1f}% del total).'
             
             if len(entidad_counts) > 1:
                 segunda_entidad = entidad_counts.iloc[1]['Entidad']
                 segunda_cantidad = entidad_counts.iloc[1]['Cantidad']
-                texto_interpretacion6 += f" {segunda_entidad} es la segunda entidad con <strong>{segunda_cantidad}</strong> órdenes ({segunda_cantidad/total_entidad*100:.1f}% del total)."
+                texto_interpretacion6 += f' {segunda_entidad} es la segunda entidad con <strong>{segunda_cantidad}</strong> órdenes ({segunda_cantidad/total_entidad*100:.1f}% del total).'
             
             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion6), unsafe_allow_html=True)
         
