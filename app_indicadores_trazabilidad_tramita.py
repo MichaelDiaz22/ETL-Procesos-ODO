@@ -12,7 +12,7 @@ from matplotlib.patches import Patch
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Dashboard de Portafolio",
+    page_title="Tablero resumen de gestión de Autorizaciones y Programación en Tramita",
     page_icon="📊",
     layout="wide"
 )
