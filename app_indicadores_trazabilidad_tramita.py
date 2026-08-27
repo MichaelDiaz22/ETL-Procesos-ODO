@@ -297,6 +297,24 @@ def generar_resumen_ejecutivo(df):
     else:
         promedio_dias = 0
     
+    # Calcular Ordenamientos/día por sede (solo días laborales)
+    if 'Sede' in df.columns and 'Solicitado' in df.columns:
+        df_laboral = df[df['Solicitado'].dt.weekday < 5].copy()
+        if len(df_laboral) > 0:
+            ordenamientos_por_dia_sede = df_laboral.groupby([df_laboral['Solicitado'].dt.date, 'Sede']).size()
+            promedio_dia_sede = ordenamientos_por_dia_sede.mean() if len(ordenamientos_por_dia_sede) > 0 else 0
+        else:
+            promedio_dia_sede = 0
+    else:
+        promedio_dia_sede = 0
+    
+    # Calcular Ordenamientos/día por paciente
+    if 'Doc.' in df.columns and 'Solicitado' in df.columns:
+        ordenamientos_por_paciente_dia = df.groupby(['Doc.', df['Solicitado'].dt.date]).size()
+        promedio_paciente_dia = ordenamientos_por_paciente_dia.mean() if len(ordenamientos_por_paciente_dia) > 0 else 0
+    else:
+        promedio_paciente_dia = 0
+    
     # Construir el resumen usando comillas simples para evitar conflictos
     resumen = '<div class="executive-summary">'
     resumen += '<h3>📋 Resumen Ejecutivo</h3>'
@@ -313,6 +331,13 @@ def generar_resumen_ejecutivo(df):
     
     if promedio_dias > 0:
         resumen += f'<p><strong>Tiempos de Gestión:</strong> El tiempo promedio de entrega es de <span class="stat">{promedio_dias:.1f}</span> días.</p>'
+    
+    # Agregar métricas de productividad
+    if promedio_dia_sede > 0:
+        resumen += f'<p><strong>Productividad por Sede:</strong> En promedio se generan <span class="stat">{promedio_dia_sede:.1f}</span> órdenes por día hábil por sede.</p>'
+    
+    if promedio_paciente_dia > 0:
+        resumen += f'<p><strong>Productividad por Paciente:</strong> En promedio cada paciente genera <span class="stat">{promedio_paciente_dia:.1f}</span> órdenes por día.</p>'
     
     resumen += '</div>'
     
@@ -1009,18 +1034,22 @@ if st.session_state.df is not None:
         entidad_counts.columns = ['Entidad', 'Cantidad']
         entidad_counts = entidad_counts.sort_values('Cantidad', ascending=False)
         
-        fig6, ax6 = plt.subplots(figsize=(12, 6))
+        # Ajustar tamaño de figura para mejor visualización
+        fig6, ax6 = plt.subplots(figsize=(14, 7))
         bars6 = ax6.bar(entidad_counts['Entidad'], entidad_counts['Cantidad'], color='#6d28d9')
         
-        ax6.set_xlabel('Entidad')
-        ax6.set_ylabel('Cantidad')
-        ax6.set_title('Ordenamientos Distribuidos por Entidad')
-        ax6.set_xticklabels(entidad_counts['Entidad'], rotation=30, ha='right', fontsize=9)
+        ax6.set_xlabel('Entidad', fontsize=12)
+        ax6.set_ylabel('Cantidad', fontsize=12)
+        ax6.set_title('Ordenamientos Distribuidos por Entidad', fontsize=14, fontweight='bold')
         
+        # Rotar etiquetas y ajustar tamaño para mejor legibilidad
+        ax6.set_xticklabels(entidad_counts['Entidad'], rotation=45, ha='right', fontsize=9)
+        
+        # Agregar etiquetas de datos
         for bar in bars6:
             height = bar.get_height()
             ax6.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                    f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold', color='black')
+                    f'{int(height)}', ha='center', va='bottom', fontsize=10, fontweight='bold', color='black')
         
         plt.tight_layout()
         st.pyplot(fig6)
