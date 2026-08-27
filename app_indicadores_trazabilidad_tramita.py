@@ -246,27 +246,21 @@ def asignar_area_mejorada(df_data, df_portafolio):
     dict_cups_area_fallback = {}
     for idx, row in df_portafolio_copy.iterrows():
         key = row['CUPS_clean']
-        # Si ya existe, mantener el primero (o podríamos promediar)
         if key not in dict_cups_area_fallback:
             dict_cups_area_fallback[key] = row['UNIDAD EJECUTORA']
     
     # Función para asignar área
     def get_area(row):
         key = (row['Cups_clean'], row['Sede_clean'])
-        # Intentar buscar por CUPS + Sede
         if key in dict_cups_sede_area:
             return dict_cups_sede_area[key]
         else:
-            # Si no encuentra, intentar buscar solo por CUPS (fallback)
             if row['Cups_clean'] in dict_cups_area_fallback:
                 return dict_cups_area_fallback[row['Cups_clean']]
             else:
                 return 'Sin Área'
     
-    # Aplicar la asignación
     df_data_copy['Area'] = df_data_copy.apply(get_area, axis=1)
-    
-    # Eliminar columnas temporales
     df_data_copy = df_data_copy.drop(['Cups_clean', 'Sede_clean'], axis=1)
     
     return df_data_copy
@@ -279,7 +273,6 @@ def generar_resumen_ejecutivo(df):
     total_entidades = df['Entidad'].nunique()
     total_pacientes = df['Paciente'].nunique()
     
-    # Calcular métricas de gestión
     estados_gestion = df['Estado_Gestion'].value_counts()
     pendientes_prog = estados_gestion.get('Pendiente gestión desde programación', 0)
     pendientes_aut = estados_gestion.get('Pendiente gestión desde Autorizaciones', 0)
@@ -289,17 +282,14 @@ def generar_resumen_ejecutivo(df):
     total_gestionados = gestionados_prog + gestionados_aut
     total_pendientes = pendientes_prog + pendientes_aut
     
-    # Área con más órdenes (incluyendo "Sin Área")
     top_area = df['Area'].value_counts()
     area_top = top_area.index[0] if len(top_area) > 0 else "N/A"
     area_top_count = top_area.iloc[0] if len(top_area) > 0 else 0
     
-    # Entidad con más órdenes
     top_entidad = df['Entidad'].value_counts()
     entidad_top = top_entidad.index[0] if len(top_entidad) > 0 else "N/A"
     entidad_top_count = top_entidad.iloc[0] if len(top_entidad) > 0 else 0
     
-    # Calcular promedio de días de entrega
     if 'dias_entrega' in df.columns:
         dias_entrega_validos = df['dias_entrega'].dropna()
         dias_entrega_validos = dias_entrega_validos[dias_entrega_validos >= 0]
@@ -307,7 +297,6 @@ def generar_resumen_ejecutivo(df):
     else:
         promedio_dias = 0
     
-    # Construir el resumen ejecutivo - AHORA TODO EN UN SOLO STRING
     resumen = f"""
     <div class="executive-summary">
         <h3>📋 Resumen Ejecutivo</h3>
@@ -359,17 +348,19 @@ def generar_resumen_ejecutivo(df):
         </p>
         """
     
-    resumen += """
-    </div>
-    """
+    resumen += "</div>"
     
     return resumen
+
+# ======================== FUNCIÓN PARA GENERAR INTERPRETACIONES ========================
+def generar_interpretacion(titulo, texto):
+    """Genera una interpretación con formato HTML correcto"""
+    return f'<div class="interpretation-box"><strong>📝 {titulo}:</strong> {texto}</div>'
 
 # ======================== CONTENIDO PRINCIPAL ========================
 if st.session_state.df is not None:
     df = st.session_state.df.copy()
     
-    # Verificar columnas datetime
     if not pd.api.types.is_datetime64_any_dtype(df['Solicitado']):
         try:
             df['Solicitado'] = pd.to_datetime(df['Solicitado'])
@@ -387,10 +378,8 @@ if st.session_state.df is not None:
         st.warning("⚠️ El archivo no contiene datos después de la fila de título")
         st.stop()
     
-    # Aplicar la asignación de área
     df = asignar_area_mejorada(df, df_portafolio_base)
     
-    # Clasificar estados de gestión para todo el dataset
     def clasificar_estado_gestion(estado):
         if estado == "PROGRAMAR":
             return "Pendiente gestión desde programación"
@@ -403,11 +392,9 @@ if st.session_state.df is not None:
     
     df['Estado_Gestion'] = df['Estado'].apply(clasificar_estado_gestion)
     
-    # Calcular días de entrega
     if 'Entregado' in df.columns:
         df['dias_entrega'] = (df['Entregado'] - df['Solicitado']).dt.total_seconds() / (24 * 3600)
     
-    # Mostrar estadísticas de asignación para depuración
     with st.expander("📊 Estadísticas de Asignación de Áreas", expanded=False):
         conteo_areas = df['Area'].value_counts()
         total_sin_area = (df['Area'] == 'Sin Área').sum()
@@ -422,7 +409,6 @@ if st.session_state.df is not None:
             st.write("Distribución de áreas:")
             st.dataframe(conteo_areas.reset_index().rename(columns={'index': 'Área', 'Area': 'Cantidad'}))
         
-        # Mostrar algunos ejemplos de CUPS y Sede que no encontraron área
         if total_sin_area > 0:
             st.warning("⚠️ Algunos registros no pudieron ser asignados a un área. Verifica que los CUPS y Sedes coincidan con el portafolio base.")
             ejemplos_sin_area = df[df['Area'] == 'Sin Área'][['Cups', 'Sede']].head(10)
@@ -525,21 +511,14 @@ if st.session_state.df is not None:
         if sedes_seleccionadas:
             df_filtrado = df_filtrado[df_filtrado['Sede'].isin(sedes_seleccionadas)]
         
-        # IMPORTANTE: Recalcular áreas con el portafolio filtrado por sede
-        # Esto asegura que cuando se selecciona una sede, solo se usen los CUPS de esa sede en el portafolio
         if sedes_seleccionadas:
-            # Filtrar el portafolio base por las sedes seleccionadas
             df_portafolio_filtrado = df_portafolio_base[df_portafolio_base['Sede_Portafolio'].isin(sedes_seleccionadas)]
         else:
             df_portafolio_filtrado = df_portafolio_base.copy()
         
-        # Recalcular áreas con el portafolio filtrado
         df_filtrado = asignar_area_mejorada(df_filtrado, df_portafolio_filtrado)
-        
-        # Recalcular estado de gestión
         df_filtrado['Estado_Gestion'] = df_filtrado['Estado'].apply(clasificar_estado_gestion)
         
-        # Recalcular días de entrega
         if 'Entregado' in df_filtrado.columns:
             df_filtrado['dias_entrega'] = (df_filtrado['Entregado'] - df_filtrado['Solicitado']).dt.total_seconds() / (24 * 3600)
         
@@ -575,14 +554,10 @@ if st.session_state.df is not None:
     else:
         promedio_dias_entrega = "N/A"
     
-    # ======================== NUEVA MÉTRICA: Ordenamientos/día por sede (solo días laborales) ========================
     if len(df_filtrado) > 0 and 'Sede' in df_filtrado.columns and 'Solicitado' in df_filtrado.columns:
-        # Filtrar solo días laborales (lunes a viernes)
-        # weekday(): 0=Lunes, 1=Martes, 2=Miércoles, 3=Jueves, 4=Viernes, 5=Sábado, 6=Domingo
         df_laboral = df_filtrado[df_filtrado['Solicitado'].dt.weekday < 5].copy()
         
         if len(df_laboral) > 0:
-            # Agrupar por fecha y sede
             ordenamientos_por_dia_sede = df_laboral.groupby([df_laboral['Solicitado'].dt.date, 'Sede']).size()
             promedio_dia_sede = f"{ordenamientos_por_dia_sede.mean():.1f}" if len(ordenamientos_por_dia_sede) > 0 else "N/A"
         else:
@@ -590,7 +565,6 @@ if st.session_state.df is not None:
     else:
         promedio_dia_sede = "N/A"
     
-    # ======================== Ordenamientos/día por paciente (todos los días) ========================
     if len(df_filtrado) > 0 and 'Doc.' in df_filtrado.columns:
         ordenamientos_por_paciente_dia = df_filtrado.groupby(['Doc.', df_filtrado['Solicitado'].dt.date]).size()
         promedio_paciente_dia = f"{ordenamientos_por_paciente_dia.mean():.1f}" if len(ordenamientos_por_paciente_dia) > 0 else "N/A"
@@ -624,7 +598,6 @@ if st.session_state.df is not None:
                 </div>
             """, unsafe_allow_html=True)
         
-        # Segunda fila de KPI
         col_k4, col_k5, col_k6 = st.columns(3)
         
         with col_k4:
@@ -651,19 +624,16 @@ if st.session_state.df is not None:
                 </div>
             """, unsafe_allow_html=True)
     
-    # ======================== TABLA DE RESULTADOS (COLAPSABLE) ========================
+    # ======================== TABLA DE RESULTADOS ========================
     with st.expander("📋 Ver Detalle de Resultados (Datos Filtrados)", expanded=False):
         st.markdown("#### Detalle de órdenes con filtros aplicados")
         
-        # Seleccionar columnas para la tabla
         columnas_tabla = ['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']
-        # Verificar que las columnas existan
         columnas_existentes = [col for col in columnas_tabla if col in df_filtrado.columns]
         
         if columnas_existentes:
             df_tabla = df_filtrado[columnas_existentes].copy()
             
-            # Formatear fecha
             if 'Solicitado' in df_tabla.columns:
                 df_tabla['Solicitado'] = df_tabla['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
             
@@ -692,10 +662,9 @@ if st.session_state.df is not None:
     if len(df_filtrado) > 0:
         st.markdown("### 📈 Análisis Visual")
         
-        # Paleta de colores morados
         purple_palette = ['#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#5b21b6', '#4c1d95', '#9b59b6']
         
-        # ======================== GRÁFICO 1: Órdenes generadas vs gestionadas ========================
+        # ======================== GRÁFICO 1 ========================
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         st.subheader("📊 Ordenes Generadas vs Gestionadas")
         
@@ -733,7 +702,6 @@ if st.session_state.df is not None:
         df_graf1 = pd.merge(ordenes_generadas, ordenes_gestionadas, on='Fecha', how='outer').fillna(0)
         df_graf1 = df_graf1.sort_values('Fecha')
         
-        # Crear gráfico con matplotlib
         fig1, ax1 = plt.subplots(figsize=(12, 5))
         x = np.arange(len(df_graf1['Fecha']))
         width = 0.35
@@ -748,7 +716,6 @@ if st.session_state.df is not None:
         ax1.set_xticklabels(df_graf1['Fecha'], rotation=45, ha='right', fontsize=9)
         ax1.legend()
         
-        # Agregar etiquetas de datos
         for i, v in enumerate(df_graf1['Generadas']):
             ax1.text(i - width/2, v + 0.5, str(int(v)), ha='center', va='bottom', fontsize=10, fontweight='bold', color='black')
         for i, v in enumerate(df_graf1['Gestionadas']):
@@ -757,25 +724,21 @@ if st.session_state.df is not None:
         plt.tight_layout()
         st.pyplot(fig1)
         
-        # Interpretación del gráfico 1
+        # Interpretación GRÁFICO 1 - CORREGIDA
         total_generadas = df_graf1['Generadas'].sum()
         total_gestionadas = df_graf1['Gestionadas'].sum()
         pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
         pct_pendientes = 100 - pct_gestionadas
+        dia_pico = df_graf1.loc[df_graf1['Generadas'].idxmax(), 'Fecha'] if len(df_graf1) > 0 else "N/A"
+        max_generadas = int(df_graf1['Generadas'].max()) if len(df_graf1) > 0 else 0
         
-        st.markdown(f"""
-            <div class="interpretation-box">
-                <strong>📝 Interpretación:</strong> Se generaron <strong>{int(total_generadas)}</strong> órdenes en total, de las cuales 
-                <strong>{int(total_gestionadas)} ({pct_gestionadas:.1f}%)</strong> ya fueron gestionadas y 
-                <strong>{int(total_generadas - total_gestionadas)} ({pct_pendientes:.1f}%)</strong> aún se encuentran pendientes de gestión. 
-                El día con mayor actividad fue <strong>{df_graf1.loc[df_graf1['Generadas'].idxmax(), 'Fecha']}</strong> con 
-                <strong>{int(df_graf1['Generadas'].max())}</strong> órdenes generadas.
-            </div>
-        """, unsafe_allow_html=True)
+        texto_interpretacion = f"Se generaron <strong>{int(total_generadas)}</strong> órdenes en total, de las cuales <strong>{int(total_gestionadas)} ({pct_gestionadas:.1f}%)</strong> ya fueron gestionadas y <strong>{int(total_generadas - total_gestionadas)} ({pct_pendientes:.1f}%)</strong> aún se encuentran pendientes de gestión. El día con mayor actividad fue <strong>{dia_pico}</strong> con <strong>{max_generadas}</strong> órdenes generadas."
+        
+        st.markdown(generar_interpretacion("Interpretación", texto_interpretacion), unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 2: Gestión de autorizaciones (ANILLO MEJORADO) ========================
+        # ======================== GRÁFICO 2 ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
@@ -783,23 +746,20 @@ if st.session_state.df is not None:
             estado_gestion_counts = df_filtrado['Estado_Gestion'].value_counts().reset_index()
             estado_gestion_counts.columns = ['Estado', 'Cantidad']
             
-            # Definir colores específicos para cada estado
             colores_estados = {
-                'Pendiente gestión desde programación': '#FF6B6B',      # Rojo
-                'Pendiente gestión desde Autorizaciones': '#4ECDC4',    # Verde azulado
-                'Gestionado desde programación': '#45B7D1',             # Azul
-                'Gestionado / En seguimiento desde Autorizaciones': '#96CEB4'  # Verde claro
+                'Pendiente gestión desde programación': '#FF6B6B',
+                'Pendiente gestión desde Autorizaciones': '#4ECDC4',
+                'Gestionado desde programación': '#45B7D1',
+                'Gestionado / En seguimiento desde Autorizaciones': '#96CEB4'
             }
             
-            # Asignar colores según los estados presentes
             colors = [colores_estados.get(estado, '#CCCCCC') for estado in estado_gestion_counts['Estado']]
             
             fig2, ax2 = plt.subplots(figsize=(14, 8))
             
-            # Crear el gráfico de anillo con colores específicos
             wedges, texts, autotexts = ax2.pie(
                 estado_gestion_counts['Cantidad'],
-                labels=None,  # No mostrar etiquetas en el gráfico, usaremos leyenda
+                labels=None,
                 autopct=lambda pct: f'{pct:.1f}%',
                 colors=colors,
                 startangle=90,
@@ -808,7 +768,6 @@ if st.session_state.df is not None:
                 textprops={'fontsize': 12, 'fontweight': 'bold', 'color': 'black'}
             )
             
-            # Ajustar etiquetas de porcentaje
             for autotext in autotexts:
                 autotext.set_color('black')
                 autotext.set_fontsize(13)
@@ -821,21 +780,16 @@ if st.session_state.df is not None:
                     linewidth=1
                 ))
             
-            # Agregar etiquetas de cantidad fuera del gráfico con líneas conectoras
             for i, wedge in enumerate(wedges):
                 ang = (wedge.theta2 + wedge.theta1) / 2
-                # Posición para la etiqueta
                 x = 1.35 * np.cos(np.radians(ang))
                 y = 1.35 * np.sin(np.radians(ang))
                 
-                # Punto de inicio de la línea conectora
                 x_mid = 1.05 * np.cos(np.radians(ang))
                 y_mid = 1.05 * np.sin(np.radians(ang))
                 
-                # Dibujar línea conectora
                 ax2.plot([x_mid, x], [y_mid, y], color='gray', linewidth=1.5, linestyle='-', alpha=0.7)
                 
-                # Agregar cantidad
                 cantidad = estado_gestion_counts['Cantidad'].iloc[i]
                 ax2.text(x, y, f"{cantidad}", 
                         fontsize=14, fontweight='bold', ha='center', va='center', 
@@ -848,7 +802,6 @@ if st.session_state.df is not None:
                             linewidth=1
                         ))
             
-            # Crear leyenda personalizada
             legend_elements = []
             for i, estado in enumerate(estado_gestion_counts['Estado']):
                 legend_elements.append(
@@ -856,7 +809,6 @@ if st.session_state.df is not None:
                           label=f"{estado} ({estado_gestion_counts['Cantidad'].iloc[i]})")
                 )
             
-            # Posicionar la leyenda fuera del gráfico
             ax2.legend(
                 handles=legend_elements,
                 loc='center left',
@@ -876,27 +828,22 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig2)
             
-            # Interpretación del gráfico 2
+            # Interpretación GRÁFICO 2 - CORREGIDA
             total_estados = estado_gestion_counts['Cantidad'].sum()
             estado_pendientes_prog = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Pendiente gestión desde programación']['Cantidad'].sum() if 'Pendiente gestión desde programación' in estado_gestion_counts['Estado'].values else 0
             estado_pendientes_aut = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Pendiente gestión desde Autorizaciones']['Cantidad'].sum() if 'Pendiente gestión desde Autorizaciones' in estado_gestion_counts['Estado'].values else 0
             estado_gestionados_prog = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Gestionado desde programación']['Cantidad'].sum() if 'Gestionado desde programación' in estado_gestion_counts['Estado'].values else 0
             estado_gestionados_aut = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Gestionado / En seguimiento desde Autorizaciones']['Cantidad'].sum() if 'Gestionado / En seguimiento desde Autorizaciones' in estado_gestion_counts['Estado'].values else 0
             
-            st.markdown(f"""
-                <div class="interpretation-box">
-                    <strong>📝 Interpretación:</strong> Del total de <strong>{total_estados}</strong> órdenes, 
-                    <strong>{estado_pendientes_prog} ({estado_pendientes_prog/total_estados*100:.1f}%)</strong> se encuentran pendientes de gestión desde programación, 
-                    <strong>{estado_pendientes_aut} ({estado_pendientes_aut/total_estados*100:.1f}%)</strong> pendientes desde autorizaciones, 
-                    <strong>{estado_gestionados_prog} ({estado_gestionados_prog/total_estados*100:.1f}%)</strong> ya gestionadas desde programación, y 
-                    <strong>{estado_gestionados_aut} ({estado_gestionados_aut/total_estados*100:.1f}%)</strong> gestionadas o en seguimiento desde autorizaciones.
-                    La mayor carga de trabajo se concentra en <strong>{"Pendiente gestión desde programación" if estado_pendientes_prog == max([estado_pendientes_prog, estado_pendientes_aut, estado_gestionados_prog, estado_gestionados_aut]) else "Pendiente gestión desde Autorizaciones"}</strong>.
-                </div>
-            """, unsafe_allow_html=True)
+            mayor_carga = "Pendiente gestión desde programación" if estado_pendientes_prog == max([estado_pendientes_prog, estado_pendientes_aut, estado_gestionados_prog, estado_gestionados_aut]) else "Pendiente gestión desde Autorizaciones"
+            
+            texto_interpretacion2 = f"Del total de <strong>{total_estados}</strong> órdenes, <strong>{estado_pendientes_prog} ({estado_pendientes_prog/total_estados*100:.1f}%)</strong> se encuentran pendientes de gestión desde programación, <strong>{estado_pendientes_aut} ({estado_pendientes_aut/total_estados*100:.1f}%)</strong> pendientes desde autorizaciones, <strong>{estado_gestionados_prog} ({estado_gestionados_prog/total_estados*100:.1f}%)</strong> ya gestionadas desde programación, y <strong>{estado_gestionados_aut} ({estado_gestionados_aut/total_estados*100:.1f}%)</strong> gestionadas o en seguimiento desde autorizaciones. La mayor carga de trabajo se concentra en <strong>{mayor_carga}</strong>."
+            
+            st.markdown(generar_interpretacion("Interpretación", texto_interpretacion2), unsafe_allow_html=True)
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO MEJORADO) ========================
+        # ======================== GRÁFICO 3 ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Pendientes de Gestión por Área")
@@ -907,16 +854,13 @@ if st.session_state.df is not None:
                 pendientes_por_area = df_pendientes['Area'].value_counts().reset_index()
                 pendientes_por_area.columns = ['Área', 'Cantidad']
                 
-                # Paleta de colores morados para áreas
-                purple_palette = ['#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#5b21b6', '#4c1d95', '#9b59b6']
                 colors_area = purple_palette[:len(pendientes_por_area)]
                 
                 fig3, ax3 = plt.subplots(figsize=(14, 8))
                 
-                # Crear gráfico de anillo
                 wedges, texts, autotexts = ax3.pie(
                     pendientes_por_area['Cantidad'],
-                    labels=None,  # No mostrar etiquetas en el gráfico
+                    labels=None,
                     autopct=lambda pct: f'{pct:.1f}%',
                     colors=colors_area,
                     startangle=90,
@@ -925,7 +869,6 @@ if st.session_state.df is not None:
                     textprops={'fontsize': 12, 'fontweight': 'bold', 'color': 'black'}
                 )
                 
-                # Ajustar etiquetas de porcentaje
                 for autotext in autotexts:
                     autotext.set_color('black')
                     autotext.set_fontsize(12)
@@ -938,7 +881,6 @@ if st.session_state.df is not None:
                         linewidth=1
                     ))
                 
-                # Agregar etiquetas de cantidad fuera del gráfico
                 for i, wedge in enumerate(wedges):
                     ang = (wedge.theta2 + wedge.theta1) / 2
                     x = 1.35 * np.cos(np.radians(ang))
@@ -961,7 +903,6 @@ if st.session_state.df is not None:
                                 linewidth=1
                             ))
                 
-                # Crear leyenda personalizada para áreas
                 legend_elements_area = []
                 for i, area in enumerate(pendientes_por_area['Área']):
                     legend_elements_area.append(
@@ -969,7 +910,6 @@ if st.session_state.df is not None:
                               label=f"{area} ({pendientes_por_area['Cantidad'].iloc[i]})")
                     )
                 
-                # Posicionar la leyenda fuera del gráfico
                 ax3.legend(
                     handles=legend_elements_area,
                     loc='center left',
@@ -988,32 +928,21 @@ if st.session_state.df is not None:
                 plt.tight_layout()
                 st.pyplot(fig3)
                 
-                # Interpretación del gráfico 3
+                # Interpretación GRÁFICO 3 - CORREGIDA
                 total_pendientes = pendientes_por_area['Cantidad'].sum()
                 
                 if len(pendientes_por_area) > 0:
-                    interpretacion_pendientes = f"""
-                        <div class="interpretation-box">
-                            <strong>📝 Interpretación:</strong> Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas.
-                    """
-                    
                     max_area = pendientes_por_area.iloc[0]['Área']
                     max_cantidad = pendientes_por_area.iloc[0]['Cantidad']
-                    interpretacion_pendientes += f""" 
-                        El área con mayor volumen de pendientes es <strong>"{max_area}"</strong> con <strong>{max_cantidad}</strong> órdenes 
-                        ({max_cantidad/total_pendientes*100:.1f}% del total).
-                    """
+                    
+                    texto_interpretacion3 = f"Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas. El área con mayor volumen de pendientes es <strong>"{max_area}"</strong> con <strong>{max_cantidad}</strong> órdenes ({max_cantidad/total_pendientes*100:.1f}% del total)."
                     
                     if len(pendientes_por_area) > 1:
                         segunda_area = pendientes_por_area.iloc[1]['Área']
                         segunda_cantidad = pendientes_por_area.iloc[1]['Cantidad']
-                        interpretacion_pendientes += f""" 
-                            {segunda_area} es la segunda área con <strong>{segunda_cantidad}</strong> órdenes pendientes 
-                            ({segunda_cantidad/total_pendientes*100:.1f}% del total).
-                        """
+                        texto_interpretacion3 += f" {segunda_area} es la segunda área con <strong>{segunda_cantidad}</strong> órdenes pendientes ({segunda_cantidad/total_pendientes*100:.1f}% del total)."
                     
-                    interpretacion_pendientes += "</div>"
-                    st.markdown(interpretacion_pendientes, unsafe_allow_html=True)
+                    st.markdown(generar_interpretacion("Interpretación", texto_interpretacion3), unsafe_allow_html=True)
             else:
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1021,7 +950,7 @@ if st.session_state.df is not None:
         # ======================== GRÁFICOS EN DOS COLUMNAS ========================
         col_g3, col_g4 = st.columns(2)
         
-        # ======================== GRÁFICO 4: Ordenes generadas por servicio ========================
+        # ======================== GRÁFICO 4 ========================
         with col_g3:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Órdenes Generadas por Área")
@@ -1038,7 +967,6 @@ if st.session_state.df is not None:
             ax4.set_title('Órdenes Generadas por Área')
             ax4.set_xticklabels(ordenes_por_area['Área'], rotation=30, ha='right', fontsize=9)
             
-            # Agregar etiquetas de datos
             for bar in bars4:
                 height = bar.get_height()
                 ax4.text(bar.get_x() + bar.get_width()/2., height + 0.5,
@@ -1047,33 +975,24 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig4)
             
-            # Interpretación del gráfico 4
+            # Interpretación GRÁFICO 4 - CORREGIDA
             if len(ordenes_por_area) > 0:
                 total_ordenes = ordenes_por_area['Cantidad'].sum()
                 top_area = ordenes_por_area.iloc[0]['Área']
                 top_cantidad = ordenes_por_area.iloc[0]['Cantidad']
                 
-                interpretacion = f"""
-                    <div class="interpretation-box">
-                        <strong>📝 Interpretación:</strong> Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. 
-                        El área con mayor generación de órdenes es <strong>"{top_area}"</strong> con <strong>{top_cantidad}</strong> órdenes 
-                        ({top_cantidad/total_ordenes*100:.1f}% del total).
-                """
+                texto_interpretacion4 = f"Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. El área con mayor generación de órdenes es <strong>"{top_area}"</strong> con <strong>{top_cantidad}</strong> órdenes ({top_cantidad/total_ordenes*100:.1f}% del total)."
                 
                 if len(ordenes_por_area) > 1:
                     segunda_area = ordenes_por_area.iloc[1]['Área']
                     segunda_cantidad = ordenes_por_area.iloc[1]['Cantidad']
-                    interpretacion += f""" 
-                        {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, 
-                        representando el {segunda_cantidad/total_ordenes*100:.1f}% del total.
-                    """
+                    texto_interpretacion4 += f" {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, representando el {segunda_cantidad/total_ordenes*100:.1f}% del total."
                 
-                interpretacion += "</div>"
-                st.markdown(interpretacion, unsafe_allow_html=True)
+                st.markdown(generar_interpretacion("Interpretación", texto_interpretacion4), unsafe_allow_html=True)
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 5: Estados de servicios ========================
+        # ======================== GRÁFICO 5 ========================
         with col_g4:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Estados de Servicios")
@@ -1098,25 +1017,25 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig5)
             
-            # Interpretación del gráfico 5
+            # Interpretación GRÁFICO 5 - CORREGIDA
             total_estados_serv = estados_counts['Cantidad'].sum()
             top_estado = estados_counts.iloc[0]['Estado']
             top_estado_cant = estados_counts.iloc[0]['Cantidad']
             
-            st.markdown(f"""
-                <div class="interpretation-box">
-                    <strong>📝 Interpretación:</strong> El estado más frecuente es <strong>"{top_estado}"</strong> con 
-                    <strong>{top_estado_cant}</strong> órdenes ({top_estado_cant/total_estados_serv*100:.1f}% del total). 
-                    {estados_counts.iloc[1]['Estado'] if len(estados_counts) > 1 else ''} es el segundo estado con 
-                    <strong>{estados_counts.iloc[1]['Cantidad'] if len(estados_counts) > 1 else 0}</strong> órdenes 
-                    ({estados_counts.iloc[1]['Cantidad']/total_estados_serv*100:.1f}% del total) si existe.
-                    Esto indica que la mayoría de las órdenes se encuentran en estado "{top_estado}".
-                </div>
-            """, unsafe_allow_html=True)
+            texto_interpretacion5 = f"El estado más frecuente es <strong>"{top_estado}"</strong> con <strong>{top_estado_cant}</strong> órdenes ({top_estado_cant/total_estados_serv*100:.1f}% del total)."
+            
+            if len(estados_counts) > 1:
+                segundo_estado = estados_counts.iloc[1]['Estado']
+                segundo_cantidad = estados_counts.iloc[1]['Cantidad']
+                texto_interpretacion5 += f" {segundo_estado} es el segundo estado con <strong>{segundo_cantidad}</strong> órdenes ({segundo_cantidad/total_estados_serv*100:.1f}% del total)."
+            
+            texto_interpretacion5 += f" Esto indica que la mayoría de las órdenes se encuentran en estado "{top_estado}"."
+            
+            st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5), unsafe_allow_html=True)
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 6: Distribución por entidad ========================
+        # ======================== GRÁFICO 6 ========================
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         st.subheader("📊 Ordenamientos Distribuidos por Entidad")
         
@@ -1140,200 +1059,168 @@ if st.session_state.df is not None:
         plt.tight_layout()
         st.pyplot(fig6)
         
-        # Interpretación del gráfico 6
+        # Interpretación GRÁFICO 6 - CORREGIDA
         if len(entidad_counts) > 0:
             total_entidad = entidad_counts['Cantidad'].sum()
             top_entidad = entidad_counts.iloc[0]['Entidad']
             top_entidad_cant = entidad_counts.iloc[0]['Cantidad']
             
-            interpretacion_entidad = f"""
-                <div class="interpretation-box">
-                    <strong>📝 Interpretación:</strong> <strong>{total_entidad}</strong> órdenes están distribuidas entre <strong>{len(entidad_counts)}</strong> entidades. 
-                    La entidad con mayor volumen es <strong>"{top_entidad}"</strong> con <strong>{top_entidad_cant}</strong> órdenes 
-                    ({top_entidad_cant/total_entidad*100:.1f}% del total).
-            """
+            texto_interpretacion6 = f"<strong>{total_entidad}</strong> órdenes están distribuidas entre <strong>{len(entidad_counts)}</strong> entidades. La entidad con mayor volumen es <strong>"{top_entidad}"</strong> con <strong>{top_entidad_cant}</strong> órdenes ({top_entidad_cant/total_entidad*100:.1f}% del total)."
             
             if len(entidad_counts) > 1:
                 segunda_entidad = entidad_counts.iloc[1]['Entidad']
                 segunda_cantidad = entidad_counts.iloc[1]['Cantidad']
-                interpretacion_entidad += f""" 
-                    {segunda_entidad} es la segunda entidad con <strong>{segunda_cantidad}</strong> órdenes 
-                    ({segunda_cantidad/total_entidad*100:.1f}% del total).
-                """
+                texto_interpretacion6 += f" {segunda_entidad} es la segunda entidad con <strong>{segunda_cantidad}</strong> órdenes ({segunda_cantidad/total_entidad*100:.1f}% del total)."
             
-            interpretacion_entidad += "</div>"
-            st.markdown(interpretacion_entidad, unsafe_allow_html=True)
+            st.markdown(generar_interpretacion("Interpretación", texto_interpretacion6), unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== EXPORTACIÓN A EXCEL ========================
-st.divider()
-st.markdown("### 📥 Exportar Reporte Completo")
-
-# Preparar datos para exportación
-def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, ordenes_area_data, estados_serv_data, entidad_data):
-    # Hoja 1: Datos detallados
-    datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
-    datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
-    
-    # Hoja 2: Resumen de gráficos e interpretaciones
-    resumen_data = []
-    
-    # Gráfico 1
-    total_generadas = df_graf1_data['Generadas'].sum()
-    total_gestionadas = df_graf1_data['Gestionadas'].sum()
-    pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
-    resumen_data.append(['Gráfico 1', 'Órdenes Generadas vs Gestionadas', f'Total generadas: {int(total_generadas)}', ''])
-    resumen_data.append(['', '', f'Total gestionadas: {int(total_gestionadas)} ({pct_gestionadas:.1f}%)', ''])
-    resumen_data.append(['', '', f'Pendientes: {int(total_generadas - total_gestionadas)} ({100-pct_gestionadas:.1f}%)', ''])
-    if len(df_graf1_data) > 0:
-        resumen_data.append(['', '', f'Día pico: {df_graf1_data.loc[df_graf1_data["Generadas"].idxmax(), "Fecha"]} ({int(df_graf1_data["Generadas"].max())} órdenes)', ''])
-    resumen_data.append(['', '', '', ''])
-    
-    # Gráfico 2
-    if len(estado_gestion_data) > 0:
-        total_estados = estado_gestion_data['Cantidad'].sum()
-        for _, row in estado_gestion_data.iterrows():
-            resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
-    resumen_data.append(['', '', '', ''])
-    
-    # Gráfico 3
-    if len(pendientes_data) > 0:
-        total_pend = pendientes_data['Cantidad'].sum()
-        for _, row in pendientes_data.iterrows():
-            resumen_data.append(['Gráfico 3', 'Pendientes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_pend*100:.1f}%)', ''])
-    else:
-        resumen_data.append(['Gráfico 3', 'Pendientes por Área', 'No hay datos', ''])
-    resumen_data.append(['', '', '', ''])
-    
-    # Gráfico 4
-    if len(ordenes_area_data) > 0:
-        total_ord = ordenes_area_data['Cantidad'].sum()
-        for _, row in ordenes_area_data.iterrows():
-            resumen_data.append(['Gráfico 4', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
-    resumen_data.append(['', '', '', ''])
-    
-    # Gráfico 5
-    if len(estados_serv_data) > 0:
-        total_est = estados_serv_data['Cantidad'].sum()
-        for _, row in estados_serv_data.iterrows():
-            resumen_data.append(['Gráfico 5', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
-    resumen_data.append(['', '', '', ''])
-    
-    # Gráfico 6
-    if len(entidad_data) > 0:
-        total_ent = entidad_data['Cantidad'].sum()
-        for _, row in entidad_data.iterrows():
-            resumen_data.append(['Gráfico 6', 'Distribución por Entidad', f'{row["Entidad"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ent*100:.1f}%)', ''])
-    
-    resumen_df = pd.DataFrame(resumen_data, columns=['Gráfico', 'Categoría', 'Detalle', 'Observación'])
-    
-    return datos_detalle, resumen_df
-
-# Botón de exportación
-if st.button("📥 Exportar Reporte a Excel", use_container_width=True, type="primary"):
-    try:
-        # Preparar datos para exportación
-        df_export = df_filtrado.copy()
+        st.divider()
+        st.markdown("### 📥 Exportar Reporte Completo")
         
-        # Obtener datos de los DataFrames de gráficos
-        estado_gestion_data = estado_gestion_counts.copy()
-        pendientes_data = pendientes_por_area.copy() if len(df_pendientes) > 0 else pd.DataFrame()
-        ordenes_area_data = ordenes_por_area.copy() if len(ordenes_por_area) > 0 else pd.DataFrame()
-        estados_serv_data = estados_counts.copy()
-        entidad_data = entidad_counts.copy()
+        def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, ordenes_area_data, estados_serv_data, entidad_data):
+            datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
+            datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
+            
+            resumen_data = []
+            
+            total_generadas = df_graf1_data['Generadas'].sum()
+            total_gestionadas = df_graf1_data['Gestionadas'].sum()
+            pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
+            resumen_data.append(['Gráfico 1', 'Órdenes Generadas vs Gestionadas', f'Total generadas: {int(total_generadas)}', ''])
+            resumen_data.append(['', '', f'Total gestionadas: {int(total_gestionadas)} ({pct_gestionadas:.1f}%)', ''])
+            resumen_data.append(['', '', f'Pendientes: {int(total_generadas - total_gestionadas)} ({100-pct_gestionadas:.1f}%)', ''])
+            if len(df_graf1_data) > 0:
+                resumen_data.append(['', '', f'Día pico: {df_graf1_data.loc[df_graf1_data["Generadas"].idxmax(), "Fecha"]} ({int(df_graf1_data["Generadas"].max())} órdenes)', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            if len(estado_gestion_data) > 0:
+                total_estados = estado_gestion_data['Cantidad'].sum()
+                for _, row in estado_gestion_data.iterrows():
+                    resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            if len(pendientes_data) > 0:
+                total_pend = pendientes_data['Cantidad'].sum()
+                for _, row in pendientes_data.iterrows():
+                    resumen_data.append(['Gráfico 3', 'Pendientes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_pend*100:.1f}%)', ''])
+            else:
+                resumen_data.append(['Gráfico 3', 'Pendientes por Área', 'No hay datos', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            if len(ordenes_area_data) > 0:
+                total_ord = ordenes_area_data['Cantidad'].sum()
+                for _, row in ordenes_area_data.iterrows():
+                    resumen_data.append(['Gráfico 4', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            if len(estados_serv_data) > 0:
+                total_est = estados_serv_data['Cantidad'].sum()
+                for _, row in estados_serv_data.iterrows():
+                    resumen_data.append(['Gráfico 5', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            if len(entidad_data) > 0:
+                total_ent = entidad_data['Cantidad'].sum()
+                for _, row in entidad_data.iterrows():
+                    resumen_data.append(['Gráfico 6', 'Distribución por Entidad', f'{row["Entidad"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ent*100:.1f}%)', ''])
+            
+            resumen_df = pd.DataFrame(resumen_data, columns=['Gráfico', 'Categoría', 'Detalle', 'Observación'])
+            
+            return datos_detalle, resumen_df
         
-        datos_detalle, resumen_graficos = preparar_datos_exportacion(
-            df_export, df_graf1, estado_gestion_data, pendientes_data, 
-            ordenes_area_data, estados_serv_data, entidad_data
-        )
-        
-        # Crear archivo Excel
-        output = BytesIO()
-        
-        # Crear workbook
-        wb = Workbook()
-        
-        # --- Hoja 1: Datos Detallados ---
-        ws1 = wb.active
-        ws1.title = "Datos Detallados"
-        
-        # Estilo para encabezados
-        header_fill = PatternFill(start_color="7c3aed", end_color="7c3aed", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True)
-        thin_border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
-        
-        # Escribir encabezados y datos
-        for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
-            for c_idx, value in enumerate(row, 1):
-                cell = ws1.cell(row=r_idx, column=c_idx, value=value)
-                if r_idx == 1:
-                    cell.fill = header_fill
-                    cell.font = header_font
-                    cell.alignment = Alignment(horizontal='center', vertical='center')
-                cell.border = thin_border
-        
-        # Ajustar ancho de columnas
-        for column in ws1.columns:
-            max_length = 0
-            column_letter = column[0].column_letter
-            for cell in column:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except:
-                    pass
-            adjusted_length = min(max_length + 2, 50)
-            ws1.column_dimensions[column_letter].width = adjusted_length
-        
-        # --- Hoja 2: Resumen Gráficos ---
-        ws2 = wb.create_sheet("Resumen Gráficos")
-        for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
-            for c_idx, value in enumerate(row, 1):
-                cell = ws2.cell(row=r_idx, column=c_idx, value=value)
-                if r_idx == 1:
-                    cell.fill = header_fill
-                    cell.font = header_font
-                    cell.alignment = Alignment(horizontal='center', vertical='center')
-                cell.border = thin_border
-        
-        # Ajustar ancho de columnas
-        for column in ws2.columns:
-            max_length = 0
-            column_letter = column[0].column_letter
-            for cell in column:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except:
-                    pass
-            adjusted_length = min(max_length + 2, 50)
-            ws2.column_dimensions[column_letter].width = adjusted_length
-        
-        # Guardar workbook en BytesIO
-        wb.save(output)
-        output.seek(0)
-        
-        # Descarga directa
-        st.download_button(
-            label="⬇️ Descargar Excel",
-            data=output,
-            file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-        
-        st.success("✅ Reporte generado correctamente. Haz clic en 'Descargar Excel' para guardar el archivo.")
-        
-    except Exception as e:
-        st.error(f"❌ Error al exportar: {e}")
-        import traceback
-        st.error(traceback.format_exc())
+        if st.button("📥 Exportar Reporte a Excel", use_container_width=True, type="primary"):
+            try:
+                df_export = df_filtrado.copy()
+                
+                estado_gestion_data = estado_gestion_counts.copy()
+                pendientes_data = pendientes_por_area.copy() if len(df_pendientes) > 0 else pd.DataFrame()
+                ordenes_area_data = ordenes_por_area.copy() if len(ordenes_por_area) > 0 else pd.DataFrame()
+                estados_serv_data = estados_counts.copy()
+                entidad_data = entidad_counts.copy()
+                
+                datos_detalle, resumen_graficos = preparar_datos_exportacion(
+                    df_export, df_graf1, estado_gestion_data, pendientes_data, 
+                    ordenes_area_data, estados_serv_data, entidad_data
+                )
+                
+                output = BytesIO()
+                wb = Workbook()
+                
+                ws1 = wb.active
+                ws1.title = "Datos Detallados"
+                
+                header_fill = PatternFill(start_color="7c3aed", end_color="7c3aed", fill_type="solid")
+                header_font = Font(color="FFFFFF", bold=True)
+                thin_border = Border(
+                    left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin')
+                )
+                
+                for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
+                    for c_idx, value in enumerate(row, 1):
+                        cell = ws1.cell(row=r_idx, column=c_idx, value=value)
+                        if r_idx == 1:
+                            cell.fill = header_fill
+                            cell.font = header_font
+                            cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.border = thin_border
+                
+                for column in ws1.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_length = min(max_length + 2, 50)
+                    ws1.column_dimensions[column_letter].width = adjusted_length
+                
+                ws2 = wb.create_sheet("Resumen Gráficos")
+                for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
+                    for c_idx, value in enumerate(row, 1):
+                        cell = ws2.cell(row=r_idx, column=c_idx, value=value)
+                        if r_idx == 1:
+                            cell.fill = header_fill
+                            cell.font = header_font
+                            cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.border = thin_border
+                
+                for column in ws2.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_length = min(max_length + 2, 50)
+                    ws2.column_dimensions[column_letter].width = adjusted_length
+                
+                wb.save(output)
+                output.seek(0)
+                
+                st.download_button(
+                    label="⬇️ Descargar Excel",
+                    data=output,
+                    file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+                
+                st.success("✅ Reporte generado correctamente. Haz clic en 'Descargar Excel' para guardar el archivo.")
+                
+            except Exception as e:
+                st.error(f"❌ Error al exportar: {e}")
+                import traceback
+                st.error(traceback.format_exc())
         
         # ======================== INFORMACIÓN DE FILTROS ========================
         st.divider()
@@ -1341,7 +1228,6 @@ if st.button("📥 Exportar Reporte a Excel", use_container_width=True, type="pr
         st.caption(f"📅 Rango de fechas: {fecha_inicio} - {fecha_fin}")
         
 else:
-    # Mensaje cuando no hay archivo cargado
     st.info("👈 Carga un archivo Excel para comenzar a visualizar el dashboard")
     
     with st.expander("📚 Ver Portafolio Base", expanded=False):
@@ -1361,6 +1247,5 @@ else:
             }
         )
 
-# Mensaje de pie de página
 st.divider()
 st.caption("💡 Dashboard de Gestión de Portafolio - Datos actualizados en tiempo real")
