@@ -84,18 +84,18 @@ plt.rcParams['axes.labelsize'] = 12
 plt.rcParams['axes.titlesize'] = 14
 plt.rcParams['legend.fontsize'] = 11
 
-# Datos estáticos del portafolio base
+# Datos estáticos del portafolio base - ACTUALIZADO CON COLUMNA SEDE
 PORTAFOLIO_BASE = [
-    ("221401","221401","NASOSINUSCOPIA","209_CIRUGÍA OTORRINOLARINGOLOGÍA","VERDADERO","CARDIOLOGIA NO INVASIVA","39"),
-("311401","311401","PUNCIÓN (ASPIRACIÓN) TRANSTRÁQUEAL VÍA PERCUTÁNEA","203_CIRUGÍA GENERAL","VERDADERO","CARDIOLOGIA NO INVASIVA","39"),
-("311402","311402","PUNCIÓN (ASPIRACIÓN) TRANSTRÁQUEAL VÍA ENDOSCÓPICA","203_CIRUGÍA GENERAL","VERDADERO","CARDIOLOGIA NO INVASIVA","39"),
-("332201","332201","BRONCOSCOPIA CON LAVADO BRONQUIAL","203_CIRUGÍA GENERAL","VERDADERO","CARDIOLOGIA NO INVASIVA","39"),
-("332202","332202","BRONCOSCOPIA","203_CIRUGÍA GENERAL","VERDADERO","CARDIOLOGIA NO INVASIVA","39"),
-("332203","332203","BRONCOSCOPIA CON LAVADO BRONCOALVEOLAR","203_CIRUGÍA GENERAL","VERDADERO","CARDIOLOGIA NO INVASIVA","39"),
+    ("221401","221401","NASOSINUSCOPIA","209_CIRUGÍA OTORRINOLARINGOLOGÍA","VERDADERO","CARDIOLOGIA NO INVASIVA","39","SEDE PRINCIPAL"),
+    ("311401","311401","PUNCIÓN (ASPIRACIÓN) TRANSTRÁQUEAL VÍA PERCUTÁNEA","203_CIRUGÍA GENERAL","VERDADERO","CARDIOLOGIA NO INVASIVA","39","SEDE PRINCIPAL"),
+    ("311402","311402","PUNCIÓN (ASPIRACIÓN) TRANSTRÁQUEAL VÍA ENDOSCÓPICA","203_CIRUGÍA GENERAL","VERDADERO","CARDIOLOGIA NO INVASIVA","39","SEDE PRINCIPAL"),
+    ("332201","332201","BRONCOSCOPIA CON LAVADO BRONQUIAL","203_CIRUGÍA GENERAL","VERDADERO","CARDIOLOGIA NO INVASIVA","39","SEDE SECUNDARIA"),
+    ("332202","332202","BRONCOSCOPIA","203_CIRUGÍA GENERAL","VERDADERO","CARDIOLOGIA NO INVASIVA","39","SEDE SECUNDARIA"),
+    ("332203","332203","BRONCOSCOPIA CON LAVADO BRONCOALVEOLAR","203_CIRUGÍA GENERAL","VERDADERO","CARDIOLOGIA NO INVASIVA","39","SEDE PRINCIPAL"),
 ]
 
 # Crear DataFrame del portafolio base
-df_portafolio_base = pd.DataFrame(PORTAFOLIO_BASE, columns=['CUPS', 'codIPS', 'descrCodIPS', 'codREPS', 'A', 'UNIDAD EJECUTORA', 'Codigo unidad'])
+df_portafolio_base = pd.DataFrame(PORTAFOLIO_BASE, columns=['CUPS', 'codIPS', 'descrCodIPS', 'codREPS', 'A', 'UNIDAD EJECUTORA', 'Codigo unidad', 'Sede_Portafolio'])
 
 # Inicializar estado
 if 'df' not in st.session_state:
@@ -212,12 +212,23 @@ if st.session_state.df is not None:
         st.warning("⚠️ El archivo no contiene datos después de la fila de título")
         st.stop()
     
-    # Crear columna de Área cruzando Cups con el portafolio
+    # Crear columna de Área cruzando Cups con el portafolio (considerando sede)
     df['Cups_str'] = df['Cups'].astype(str).str[:6]
     df_portafolio_base['CUPS_str'] = df_portafolio_base['CUPS'].astype(str).str[:6]
-    dict_cups_area = dict(zip(df_portafolio_base['CUPS_str'], df_portafolio_base['UNIDAD EJECUTORA']))
-    df['Area'] = df['Cups_str'].map(dict_cups_area)
-    df['Area'] = df['Area'].fillna('Sin Área')
+    
+    # Crear un diccionario compuesto por CUPS y Sede para hacer match
+    dict_cups_area = {}
+    for idx, row in df_portafolio_base.iterrows():
+        key = (row['CUPS_str'], row['Sede_Portafolio'])
+        dict_cups_area[key] = row['UNIDAD EJECUTORA']
+    
+    # Función para asignar área basada en CUPS y Sede
+    def asignar_area(row):
+        key = (row['Cups_str'], row['Sede'])
+        return dict_cups_area.get(key, 'Sin Área')
+    
+    # Aplicar la asignación de área
+    df['Area'] = df.apply(asignar_area, axis=1)
     
     # ======================== BARRA DE FILTROS ========================
     st.markdown("### 🔍 Panel de Filtros")
@@ -315,6 +326,28 @@ if st.session_state.df is not None:
             df_filtrado = df_filtrado[df_filtrado['Area'].isin(areas_seleccionadas)]
         if sedes_seleccionadas:
             df_filtrado = df_filtrado[df_filtrado['Sede'].isin(sedes_seleccionadas)]
+        
+        # IMPORTANTE: Recalcular áreas con el portafolio filtrado por sede
+        # Esto asegura que cuando se selecciona una sede, solo se usen los CUPS de esa sede en el portafolio
+        if sedes_seleccionadas:
+            # Filtrar el portafolio base por las sedes seleccionadas
+            df_portafolio_filtrado = df_portafolio_base[df_portafolio_base['Sede_Portafolio'].isin(sedes_seleccionadas)]
+        else:
+            df_portafolio_filtrado = df_portafolio_base.copy()
+        
+        # Recrear el diccionario de áreas con el portafolio filtrado
+        dict_cups_area_filtrado = {}
+        for idx, row in df_portafolio_filtrado.iterrows():
+            key = (row['CUPS_str'], row['Sede_Portafolio'])
+            dict_cups_area_filtrado[key] = row['UNIDAD EJECUTORA']
+        
+        # Función para asignar área basada en CUPS y Sede
+        def asignar_area_filtrada(row):
+            key = (row['Cups_str'], row['Sede'])
+            return dict_cups_area_filtrado.get(key, 'Sin Área')
+        
+        # Aplicar la asignación de área con el portafolio filtrado
+        df_filtrado['Area'] = df_filtrado.apply(asignar_area_filtrada, axis=1)
         
         st.session_state.df_filtrado = df_filtrado
         st.session_state.filtros_aplicados = True
@@ -1029,9 +1062,6 @@ else:
                 "A": st.column_config.CheckboxColumn("Activo", width="small"),
                 "UNIDAD EJECUTORA": st.column_config.TextColumn("Unidad Ejecutora", width="medium"),
                 "Codigo unidad": st.column_config.TextColumn("Código Unidad", width="small"),
+                "Sede_Portafolio": st.column_config.TextColumn("Sede", width="medium"),
             }
         )
-
-# Mensaje de pie de página
-st.divider()
-st.caption("💡 Dashboard de Gestión de Portafolio - Datos actualizados en tiempo real")
