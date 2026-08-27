@@ -297,58 +297,24 @@ def generar_resumen_ejecutivo(df):
     else:
         promedio_dias = 0
     
-    resumen = f"""
-    <div class="executive-summary">
-        <h3>📋 Resumen Ejecutivo</h3>
-        <p>
-            <strong>Visión General:</strong> Se analizaron <span class="stat">{total_ordenes:,}</span> órdenes 
-            correspondientes a <span class="stat">{total_pacientes:,}</span> pacientes y 
-            <span class="stat">{total_entidades}</span> entidades diferentes.
-        </p>
-        <p>
-            <strong>Gestión de Órdenes:</strong> 
-            Del total de órdenes, <span class="stat">{total_gestionados:,} ({total_gestionados/total_ordenes*100:.1f}%)</span> 
-            ya han sido gestionadas, mientras que <span class="stat">{total_pendientes:,} ({total_pendientes/total_ordenes*100:.1f}%)</span> 
-            se encuentran pendientes de gestión.
-        </p>
-    """
+    # Construir el resumen usando comillas simples para evitar conflictos
+    resumen = '<div class="executive-summary">'
+    resumen += '<h3>📋 Resumen Ejecutivo</h3>'
+    resumen += f'<p><strong>Visión General:</strong> Se analizaron <span class="stat">{total_ordenes:,}</span> órdenes correspondientes a <span class="stat">{total_pacientes:,}</span> pacientes y <span class="stat">{total_entidades}</span> entidades diferentes.</p>'
+    resumen += f'<p><strong>Gestión de Órdenes:</strong> Del total de órdenes, <span class="stat">{total_gestionados:,} ({total_gestionados/total_ordenes*100:.1f}%)</span> ya han sido gestionadas, mientras que <span class="stat">{total_pendientes:,} ({total_pendientes/total_ordenes*100:.1f}%)</span> se encuentran pendientes de gestión.</p>'
     
     if total_pendientes > 0:
-        resumen += f"""
-        <p>
-            <strong>Cuellos de Botella:</strong> 
-            De las órdenes pendientes, <span class="stat">{pendientes_prog:,} ({pendientes_prog/total_pendientes*100:.1f}%)</span> 
-            están pendientes desde programación y <span class="stat">{pendientes_aut:,} ({pendientes_aut/total_pendientes*100:.1f}%)</span> 
-            desde autorizaciones.
-        </p>
-        """
+        resumen += f'<p><strong>Cuellos de Botella:</strong> De las órdenes pendientes, <span class="stat">{pendientes_prog:,} ({pendientes_prog/total_pendientes*100:.1f}%)</span> están pendientes desde programación y <span class="stat">{pendientes_aut:,} ({pendientes_aut/total_pendientes*100:.1f}%)</span> desde autorizaciones.</p>'
     
     if area_top != "N/A":
-        resumen += f"""
-        <p>
-            <strong>Concentración por Área:</strong> 
-            El área con mayor volumen de órdenes es <span class="stat">"{area_top}"</span> con 
-            <span class="stat">{area_top_count:,}</span> órdenes ({area_top_count/total_ordenes*100:.1f}% del total).
-        </p>
-        """
+        resumen += f'<p><strong>Concentración por Área:</strong> El área con mayor volumen de órdenes es <span class="stat">"{area_top}"</span> con <span class="stat">{area_top_count:,}</span> órdenes ({area_top_count/total_ordenes*100:.1f}% del total).</p>'
     
-    resumen += f"""
-        <p>
-            <strong>Concentración por Entidad:</strong> 
-            La entidad con mayor participación es <span class="stat">"{entidad_top}"</span> con 
-            <span class="stat">{entidad_top_count:,}</span> órdenes ({entidad_top_count/total_ordenes*100:.1f}% del total).
-        </p>
-    """
+    resumen += f'<p><strong>Concentración por Entidad:</strong> La entidad con mayor participación es <span class="stat">"{entidad_top}"</span> con <span class="stat">{entidad_top_count:,}</span> órdenes ({entidad_top_count/total_ordenes*100:.1f}% del total).</p>'
     
     if promedio_dias > 0:
-        resumen += f"""
-        <p>
-            <strong>Tiempos de Gestión:</strong> 
-            El tiempo promedio de entrega es de <span class="stat">{promedio_dias:.1f}</span> días.
-        </p>
-        """
+        resumen += f'<p><strong>Tiempos de Gestión:</strong> El tiempo promedio de entrega es de <span class="stat">{promedio_dias:.1f}</span> días.</p>'
     
-    resumen += "</div>"
+    resumen += '</div>'
     
     return resumen
 
@@ -533,12 +499,12 @@ if st.session_state.df is not None:
     df_filtrado = st.session_state.df_filtrado.copy()
     
     # ======================== RESUMEN EJECUTIVO ========================
-    if len(df_filtrado) > 0:
-        st.markdown("### 📋 Resumen Ejecutivo")
-        resumen_html = generar_resumen_ejecutivo(df_filtrado)
-        st.markdown(resumen_html, unsafe_allow_html=True)
-    else:
-        st.warning("⚠️ No hay datos para mostrar el resumen ejecutivo")
+if len(df_filtrado) > 0:
+    st.markdown("### 📋 Resumen Ejecutivo")
+    resumen_html = generar_resumen_ejecutivo(df_filtrado)
+    st.markdown(resumen_html, unsafe_allow_html=True)
+else:
+    st.warning("⚠️ No hay datos para mostrar el resumen ejecutivo")
     
     # ======================== KPI CARDS ========================
     st.markdown("### 📊 Indicadores Clave")
