@@ -14376,142 +14376,236 @@ if st.session_state.df is not None:
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 2: Gestión de autorizaciones (ANILLO) ========================
-        with st.container():
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
-            
-            estado_gestion_counts = df_filtrado['Estado_Gestion'].value_counts().reset_index()
-            estado_gestion_counts.columns = ['Estado', 'Cantidad']
-            
-            fig2, ax2 = plt.subplots(figsize=(12, 8))
-            colors = ['#6d28d9', '#7c3aed', '#a78bfa', '#c4b5fd']
-            
-            # Gráfico de anillo
-            wedges, texts, autotexts = ax2.pie(
-                estado_gestion_counts['Cantidad'],
-                labels=estado_gestion_counts['Estado'],
-                autopct=lambda pct: f'{pct:.1f}%',
-                colors=colors[:len(estado_gestion_counts)],
-                startangle=90,
-                wedgeprops={'width': 0.4, 'edgecolor': 'white', 'linewidth': 2},
-                textprops={'fontsize': 12, 'fontweight': 'bold', 'color': 'black'},
-                pctdistance=0.65
-            )
-            
-            # Ajustar etiquetas de porcentaje
-            for autotext in autotexts:
-                autotext.set_color('black')
-                autotext.set_fontsize(13)
-                autotext.set_fontweight('bold')
-                autotext.set_bbox(dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.7))
-            
-            # Agregar cantidades fuera del gráfico
-            for i, wedge in enumerate(wedges):
-                ang = (wedge.theta2 + wedge.theta1) / 2
-                x = 1.25 * np.cos(np.radians(ang))
-                y = 1.25 * np.sin(np.radians(ang))
-                
-                x_mid = 1.05 * np.cos(np.radians(ang))
-                y_mid = 1.05 * np.sin(np.radians(ang))
-                
-                ax2.plot([x_mid, x], [y_mid, y], color='gray', linewidth=0.8, linestyle='--')
-                
-                ax2.text(x, y, f"{estado_gestion_counts['Cantidad'].iloc[i]}", 
-                        fontsize=13, fontweight='bold', ha='center', va='center', 
-                        color='black',
-                        bbox=dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.8))
-            
-            ax2.set_title('Gestión de autorizaciones y ordenes disponibles para programación', fontsize=14, fontweight='bold', pad=20)
-            plt.tight_layout()
-            st.pyplot(fig2)
-            
-            # Interpretación del gráfico 2
-            total_estados = estado_gestion_counts['Cantidad'].sum()
-            estado_pendientes_prog = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Pendiente gestión desde programación']['Cantidad'].sum() if 'Pendiente gestión desde programación' in estado_gestion_counts['Estado'].values else 0
-            estado_pendientes_aut = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Pendiente gestión desde Autorizaciones']['Cantidad'].sum() if 'Pendiente gestión desde Autorizaciones' in estado_gestion_counts['Estado'].values else 0
-            estado_gestionados_prog = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Gestionado desde programación']['Cantidad'].sum() if 'Gestionado desde programación' in estado_gestion_counts['Estado'].values else 0
-            estado_gestionados_aut = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Gestionado / En seguimiento desde Autorizaciones']['Cantidad'].sum() if 'Gestionado / En seguimiento desde Autorizaciones' in estado_gestion_counts['Estado'].values else 0
-            
-            st.markdown(f"""
-                <div class="interpretation-box">
-                    <strong>📝 Interpretación:</strong> Del total de <strong>{total_estados}</strong> órdenes, 
-                    <strong>{estado_pendientes_prog} ({estado_pendientes_prog/total_estados*100:.1f}%)</strong> se encuentran pendientes de gestión desde programación, 
-                    <strong>{estado_pendientes_aut} ({estado_pendientes_aut/total_estados*100:.1f}%)</strong> pendientes desde autorizaciones, 
-                    <strong>{estado_gestionados_prog} ({estado_gestionados_prog/total_estados*100:.1f}%)</strong> ya gestionadas desde programación, y 
-                    <strong>{estado_gestionados_aut} ({estado_gestionados_aut/total_estados*100:.1f}%)</strong> gestionadas o en seguimiento desde autorizaciones.
-                    La mayor carga de trabajo se concentra en <strong>{"Pendiente gestión desde programación" if estado_pendientes_prog == max([estado_pendientes_prog, estado_pendientes_aut, estado_gestionados_prog, estado_gestionados_aut]) else "Pendiente gestión desde Autorizaciones"}</strong>.
-                </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+with st.container():
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    st.subheader("📊 Gestión de autorizaciones y ordenes disponibles para programación")
+    
+    estado_gestion_counts = df_filtrado['Estado_Gestion'].value_counts().reset_index()
+    estado_gestion_counts.columns = ['Estado', 'Cantidad']
+    
+    # Definir colores específicos para cada estado
+    colores_estados = {
+        'Pendiente gestión desde programación': '#FF6B6B',      # Rojo
+        'Pendiente gestión desde Autorizaciones': '#4ECDC4',    # Verde azulado
+        'Gestionado desde programación': '#45B7D1',             # Azul
+        'Gestionado / En seguimiento desde Autorizaciones': '#96CEB4'  # Verde claro
+    }
+    
+    # Asignar colores según los estados presentes
+    colors = [colores_estados.get(estado, '#CCCCCC') for estado in estado_gestion_counts['Estado']]
+    
+    fig2, ax2 = plt.subplots(figsize=(14, 8))
+    
+    # Crear el gráfico de anillo con colores específicos
+    wedges, texts, autotexts = ax2.pie(
+        estado_gestion_counts['Cantidad'],
+        labels=None,  # No mostrar etiquetas en el gráfico, usaremos leyenda
+        autopct=lambda pct: f'{pct:.1f}%',
+        colors=colors,
+        startangle=90,
+        wedgeprops={'width': 0.4, 'edgecolor': 'white', 'linewidth': 2},
+        pctdistance=0.75,
+        textprops={'fontsize': 12, 'fontweight': 'bold', 'color': 'black'}
+    )
+    
+    # Ajustar etiquetas de porcentaje
+    for autotext in autotexts:
+        autotext.set_color('black')
+        autotext.set_fontsize(13)
+        autotext.set_fontweight('bold')
+        autotext.set_bbox(dict(
+            boxstyle="round,pad=0.3", 
+            facecolor='white', 
+            edgecolor='gray', 
+            alpha=0.85,
+            linewidth=1
+        ))
+    
+    # Agregar etiquetas de cantidad fuera del gráfico con líneas conectoras
+    for i, wedge in enumerate(wedges):
+        ang = (wedge.theta2 + wedge.theta1) / 2
+        # Posición para la etiqueta
+        x = 1.35 * np.cos(np.radians(ang))
+        y = 1.35 * np.sin(np.radians(ang))
+        
+        # Punto de inicio de la línea conectora
+        x_mid = 1.05 * np.cos(np.radians(ang))
+        y_mid = 1.05 * np.sin(np.radians(ang))
+        
+        # Dibujar línea conectora
+        ax2.plot([x_mid, x], [y_mid, y], color='gray', linewidth=1.5, linestyle='-', alpha=0.7)
+        
+        # Agregar cantidad
+        cantidad = estado_gestion_counts['Cantidad'].iloc[i]
+        ax2.text(x, y, f"{cantidad}", 
+                fontsize=14, fontweight='bold', ha='center', va='center', 
+                color='black',
+                bbox=dict(
+                    boxstyle="round,pad=0.3", 
+                    facecolor='white', 
+                    edgecolor='gray', 
+                    alpha=0.9,
+                    linewidth=1
+                ))
+    
+    # Crear leyenda personalizada
+    from matplotlib.patches import Patch
+    legend_elements = []
+    for i, estado in enumerate(estado_gestion_counts['Estado']):
+        legend_elements.append(
+            Patch(facecolor=colors[i], edgecolor='white', linewidth=2, 
+                  label=f"{estado} ({estado_gestion_counts['Cantidad'].iloc[i]})")
+        )
+    
+    # Posicionar la leyenda fuera del gráfico
+    ax2.legend(
+        handles=legend_elements,
+        loc='center left',
+        bbox_to_anchor=(1.05, 0.5),
+        fontsize=11,
+        title="Estados de Gestión",
+        title_fontsize=13,
+        framealpha=0.95,
+        edgecolor='#7c3aed',
+        facecolor='white',
+        shadow=True,
+        borderpad=1
+    )
+    
+    ax2.set_title('Gestión de autorizaciones y ordenes disponibles para programación', 
+                  fontsize=14, fontweight='bold', pad=20)
+    plt.tight_layout()
+    st.pyplot(fig2)
+    
+    # Interpretación del gráfico 2
+    total_estados = estado_gestion_counts['Cantidad'].sum()
+    estado_pendientes_prog = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Pendiente gestión desde programación']['Cantidad'].sum() if 'Pendiente gestión desde programación' in estado_gestion_counts['Estado'].values else 0
+    estado_pendientes_aut = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Pendiente gestión desde Autorizaciones']['Cantidad'].sum() if 'Pendiente gestión desde Autorizaciones' in estado_gestion_counts['Estado'].values else 0
+    estado_gestionados_prog = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Gestionado desde programación']['Cantidad'].sum() if 'Gestionado desde programación' in estado_gestion_counts['Estado'].values else 0
+    estado_gestionados_aut = estado_gestion_counts[estado_gestion_counts['Estado'] == 'Gestionado / En seguimiento desde Autorizaciones']['Cantidad'].sum() if 'Gestionado / En seguimiento desde Autorizaciones' in estado_gestion_counts['Estado'].values else 0
+    
+    st.markdown(f"""
+        <div class="interpretation-box">
+            <strong>📝 Interpretación:</strong> Del total de <strong>{total_estados}</strong> órdenes, 
+            <strong>{estado_pendientes_prog} ({estado_pendientes_prog/total_estados*100:.1f}%)</strong> se encuentran pendientes de gestión desde programación, 
+            <strong>{estado_pendientes_aut} ({estado_pendientes_aut/total_estados*100:.1f}%)</strong> pendientes desde autorizaciones, 
+            <strong>{estado_gestionados_prog} ({estado_gestionados_prog/total_estados*100:.1f}%)</strong> ya gestionadas desde programación, y 
+            <strong>{estado_gestionados_aut} ({estado_gestionados_aut/total_estados*100:.1f}%)</strong> gestionadas o en seguimiento desde autorizaciones.
+            La mayor carga de trabajo se concentra en <strong>{"Pendiente gestión desde programación" if estado_pendientes_prog == max([estado_pendientes_prog, estado_pendientes_aut, estado_gestionados_prog, estado_gestionados_aut]) else "Pendiente gestión desde Autorizaciones"}</strong>.
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 3: Ordenamientos pendientes de gestión (ANILLO) ========================
-        with st.container():
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.subheader("📊 Pendientes de Gestión por Área")
+with st.container():
+    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+    st.subheader("📊 Pendientes de Gestión por Área")
+    
+    df_pendientes = df_filtrado[df_filtrado['Estado_Gestion'] == "Pendiente gestión desde programación"]
+    if len(df_pendientes) > 0:
+        pendientes_por_area = df_pendientes['Area'].value_counts().reset_index()
+        pendientes_por_area.columns = ['Área', 'Cantidad']
+        
+        # Paleta de colores morados para áreas
+        purple_palette = ['#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c4b5fd', '#5b21b6', '#4c1d95', '#9b59b6']
+        colors_area = purple_palette[:len(pendientes_por_area)]
+        
+        fig3, ax3 = plt.subplots(figsize=(14, 8))
+        
+        # Crear gráfico de anillo
+        wedges, texts, autotexts = ax3.pie(
+            pendientes_por_area['Cantidad'],
+            labels=None,  # No mostrar etiquetas en el gráfico
+            autopct=lambda pct: f'{pct:.1f}%',
+            colors=colors_area,
+            startangle=90,
+            wedgeprops={'width': 0.4, 'edgecolor': 'white', 'linewidth': 2},
+            pctdistance=0.75,
+            textprops={'fontsize': 12, 'fontweight': 'bold', 'color': 'black'}
+        )
+        
+        # Ajustar etiquetas de porcentaje
+        for autotext in autotexts:
+            autotext.set_color('black')
+            autotext.set_fontsize(12)
+            autotext.set_fontweight('bold')
+            autotext.set_bbox(dict(
+                boxstyle="round,pad=0.3", 
+                facecolor='white', 
+                edgecolor='gray', 
+                alpha=0.85,
+                linewidth=1
+            ))
+        
+        # Agregar etiquetas de cantidad fuera del gráfico
+        for i, wedge in enumerate(wedges):
+            ang = (wedge.theta2 + wedge.theta1) / 2
+            x = 1.35 * np.cos(np.radians(ang))
+            y = 1.35 * np.sin(np.radians(ang))
             
-            df_pendientes = df_filtrado[df_filtrado['Estado_Gestion'] == "Pendiente gestión desde programación"]
-            if len(df_pendientes) > 0:
-                pendientes_por_area = df_pendientes['Area'].value_counts().reset_index()
-                pendientes_por_area.columns = ['Área', 'Cantidad']
-                
-                fig3, ax3 = plt.subplots(figsize=(12, 8))
-                colors_area = purple_palette[:len(pendientes_por_area)]
-                
-                wedges, texts, autotexts = ax3.pie(
-                    pendientes_por_area['Cantidad'],
-                    labels=pendientes_por_area['Área'],
-                    autopct=lambda pct: f'{pct:.1f}%',
-                    colors=colors_area,
-                    startangle=90,
-                    wedgeprops={'width': 0.4, 'edgecolor': 'white', 'linewidth': 2},
-                    textprops={'fontsize': 11, 'fontweight': 'bold', 'color': 'black'},
-                    pctdistance=0.65
-                )
-                
-                # Ajustar etiquetas de porcentaje
-                for autotext in autotexts:
-                    autotext.set_color('black')
-                    autotext.set_fontsize(12)
-                    autotext.set_fontweight('bold')
-                    autotext.set_bbox(dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.7))
-                
-                # Agregar cantidades fuera del gráfico
-                for i, wedge in enumerate(wedges):
-                    ang = (wedge.theta2 + wedge.theta1) / 2
-                    x = 1.25 * np.cos(np.radians(ang))
-                    y = 1.25 * np.sin(np.radians(ang))
-                    
-                    x_mid = 1.05 * np.cos(np.radians(ang))
-                    y_mid = 1.05 * np.sin(np.radians(ang))
-                    
-                    ax3.plot([x_mid, x], [y_mid, y], color='gray', linewidth=0.8, linestyle='--')
-                    
-                    ax3.text(x, y, f"{pendientes_por_area['Cantidad'].iloc[i]}", 
-                            fontsize=12, fontweight='bold', ha='center', va='center', 
-                            color='black',
-                            bbox=dict(boxstyle="round,pad=0.3", facecolor='white', edgecolor='gray', alpha=0.8))
-                
-                ax3.set_title('Pendientes de Gestión por Área', fontsize=14, fontweight='bold', pad=20)
-                plt.tight_layout()
-                st.pyplot(fig3)
-                
-                # Interpretación del gráfico 3
-                total_pendientes = pendientes_por_area['Cantidad'].sum()
-                max_area = pendientes_por_area.iloc[0]['Área']
-                max_cantidad = pendientes_por_area.iloc[0]['Cantidad']
-                
-                st.markdown(f"""
-                    <div class="interpretation-box">
-                        <strong>📝 Interpretación:</strong> Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas. 
-                        El área con mayor volumen de pendientes es <strong>"{max_area}"</strong> con <strong>{max_cantidad}</strong> órdenes 
-                        ({max_cantidad/total_pendientes*100:.1f}% del total). 
-                        {pendientes_por_area.iloc[1]['Área'] if len(pendientes_por_area) > 1 else ''} es la segunda área con 
-                        <strong>{pendientes_por_area.iloc[1]['Cantidad'] if len(pendientes_por_area) > 1 else 0}</strong> órdenes pendientes.
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.info("No hay ordenamientos pendientes de gestión desde programación")
+            x_mid = 1.05 * np.cos(np.radians(ang))
+            y_mid = 1.05 * np.sin(np.radians(ang))
+            
+            ax3.plot([x_mid, x], [y_mid, y], color='gray', linewidth=1.5, linestyle='-', alpha=0.7)
+            
+            cantidad = pendientes_por_area['Cantidad'].iloc[i]
+            ax3.text(x, y, f"{cantidad}", 
+                    fontsize=13, fontweight='bold', ha='center', va='center', 
+                    color='black',
+                    bbox=dict(
+                        boxstyle="round,pad=0.3", 
+                        facecolor='white', 
+                        edgecolor='gray', 
+                        alpha=0.9,
+                        linewidth=1
+                    ))
+        
+        # Crear leyenda personalizada para áreas
+        from matplotlib.patches import Patch
+        legend_elements_area = []
+        for i, area in enumerate(pendientes_por_area['Área']):
+            legend_elements_area.append(
+                Patch(facecolor=colors_area[i], edgecolor='white', linewidth=2, 
+                      label=f"{area} ({pendientes_por_area['Cantidad'].iloc[i]})")
+            )
+        
+        # Posicionar la leyenda fuera del gráfico
+        ax3.legend(
+            handles=legend_elements_area,
+            loc='center left',
+            bbox_to_anchor=(1.05, 0.5),
+            fontsize=11,
+            title="Áreas",
+            title_fontsize=13,
+            framealpha=0.95,
+            edgecolor='#7c3aed',
+            facecolor='white',
+            shadow=True,
+            borderpad=1
+        )
+        
+        ax3.set_title('Pendientes de Gestión por Área', fontsize=14, fontweight='bold', pad=20)
+        plt.tight_layout()
+        st.pyplot(fig3)
+        
+        # Interpretación del gráfico 3
+        total_pendientes = pendientes_por_area['Cantidad'].sum()
+        max_area = pendientes_por_area.iloc[0]['Área']
+        max_cantidad = pendientes_por_area.iloc[0]['Cantidad']
+        
+        st.markdown(f"""
+            <div class="interpretation-box">
+                <strong>📝 Interpretación:</strong> Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas. 
+                El área con mayor volumen de pendientes es <strong>"{max_area}"</strong> con <strong>{max_cantidad}</strong> órdenes 
+                ({max_cantidad/total_pendientes*100:.1f}% del total). 
+                {pendientes_por_area.iloc[1]['Área'] if len(pendientes_por_area) > 1 else ''} es la segunda área con 
+                <strong>{pendientes_por_area.iloc[1]['Cantidad'] if len(pendientes_por_area) > 1 else 0}</strong> órdenes pendientes.
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("No hay ordenamientos pendientes de gestión desde programación")
+    st.markdown('</div>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICOS EN DOS COLUMNAS ========================
