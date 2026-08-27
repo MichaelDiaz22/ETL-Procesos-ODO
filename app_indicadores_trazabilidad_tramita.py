@@ -1167,172 +1167,173 @@ if st.session_state.df is not None:
         st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== EXPORTACIÓN A EXCEL ========================
-        st.divider()
-        st.markdown("### 📥 Exportar Reporte Completo")
-        
+st.divider()
+st.markdown("### 📥 Exportar Reporte Completo")
+
+# Preparar datos para exportación
+def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, ordenes_area_data, estados_serv_data, entidad_data):
+    # Hoja 1: Datos detallados
+    datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
+    datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
+    
+    # Hoja 2: Resumen de gráficos e interpretaciones
+    resumen_data = []
+    
+    # Gráfico 1
+    total_generadas = df_graf1_data['Generadas'].sum()
+    total_gestionadas = df_graf1_data['Gestionadas'].sum()
+    pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
+    resumen_data.append(['Gráfico 1', 'Órdenes Generadas vs Gestionadas', f'Total generadas: {int(total_generadas)}', ''])
+    resumen_data.append(['', '', f'Total gestionadas: {int(total_gestionadas)} ({pct_gestionadas:.1f}%)', ''])
+    resumen_data.append(['', '', f'Pendientes: {int(total_generadas - total_gestionadas)} ({100-pct_gestionadas:.1f}%)', ''])
+    if len(df_graf1_data) > 0:
+        resumen_data.append(['', '', f'Día pico: {df_graf1_data.loc[df_graf1_data["Generadas"].idxmax(), "Fecha"]} ({int(df_graf1_data["Generadas"].max())} órdenes)', ''])
+    resumen_data.append(['', '', '', ''])
+    
+    # Gráfico 2
+    if len(estado_gestion_data) > 0:
+        total_estados = estado_gestion_data['Cantidad'].sum()
+        for _, row in estado_gestion_data.iterrows():
+            resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
+    resumen_data.append(['', '', '', ''])
+    
+    # Gráfico 3
+    if len(pendientes_data) > 0:
+        total_pend = pendientes_data['Cantidad'].sum()
+        for _, row in pendientes_data.iterrows():
+            resumen_data.append(['Gráfico 3', 'Pendientes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_pend*100:.1f}%)', ''])
+    else:
+        resumen_data.append(['Gráfico 3', 'Pendientes por Área', 'No hay datos', ''])
+    resumen_data.append(['', '', '', ''])
+    
+    # Gráfico 4
+    if len(ordenes_area_data) > 0:
+        total_ord = ordenes_area_data['Cantidad'].sum()
+        for _, row in ordenes_area_data.iterrows():
+            resumen_data.append(['Gráfico 4', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
+    resumen_data.append(['', '', '', ''])
+    
+    # Gráfico 5
+    if len(estados_serv_data) > 0:
+        total_est = estados_serv_data['Cantidad'].sum()
+        for _, row in estados_serv_data.iterrows():
+            resumen_data.append(['Gráfico 5', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
+    resumen_data.append(['', '', '', ''])
+    
+    # Gráfico 6
+    if len(entidad_data) > 0:
+        total_ent = entidad_data['Cantidad'].sum()
+        for _, row in entidad_data.iterrows():
+            resumen_data.append(['Gráfico 6', 'Distribución por Entidad', f'{row["Entidad"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ent*100:.1f}%)', ''])
+    
+    resumen_df = pd.DataFrame(resumen_data, columns=['Gráfico', 'Categoría', 'Detalle', 'Observación'])
+    
+    return datos_detalle, resumen_df
+
+# Botón de exportación
+if st.button("📥 Exportar Reporte a Excel", use_container_width=True, type="primary"):
+    try:
         # Preparar datos para exportación
-        def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, ordenes_area_data, estados_serv_data, entidad_data):
-            # Hoja 1: Datos detallados
-            datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
-            datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
-            
-            # Hoja 2: Resumen de gráficos e interpretaciones
-            resumen_data = []
-            
-            # Gráfico 1
-            total_generadas = df_graf1_data['Generadas'].sum()
-            total_gestionadas = df_graf1_data['Gestionadas'].sum()
-            pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
-            resumen_data.append(['Gráfico 1', 'Órdenes Generadas vs Gestionadas', f'Total generadas: {int(total_generadas)}', ''])
-            resumen_data.append(['', '', f'Total gestionadas: {int(total_gestionadas)} ({pct_gestionadas:.1f}%)', ''])
-            resumen_data.append(['', '', f'Pendientes: {int(total_generadas - total_gestionadas)} ({100-pct_gestionadas:.1f}%)', ''])
-            if len(df_graf1_data) > 0:
-                resumen_data.append(['', '', f'Día pico: {df_graf1_data.loc[df_graf1_data["Generadas"].idxmax(), "Fecha"]} ({int(df_graf1_data["Generadas"].max())} órdenes)', ''])
-            resumen_data.append(['', '', '', ''])
-            
-            # Gráfico 2
-            if len(estado_gestion_data) > 0:
-                total_estados = estado_gestion_data['Cantidad'].sum()
-                for _, row in estado_gestion_data.iterrows():
-                    resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
-            resumen_data.append(['', '', '', ''])
-            
-            # Gráfico 3
-            if len(pendientes_data) > 0:
-                total_pend = pendientes_data['Cantidad'].sum()
-                for _, row in pendientes_data.iterrows():
-                    resumen_data.append(['Gráfico 3', 'Pendientes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_pend*100:.1f}%)', ''])
-            else:
-                resumen_data.append(['Gráfico 3', 'Pendientes por Área', 'No hay datos', ''])
-            resumen_data.append(['', '', '', ''])
-            
-            # Gráfico 4
-            if len(ordenes_area_data) > 0:
-                total_ord = ordenes_area_data['Cantidad'].sum()
-                for _, row in ordenes_area_data.iterrows():
-                    resumen_data.append(['Gráfico 4', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
-            resumen_data.append(['', '', '', ''])
-            
-            # Gráfico 5
-            if len(estados_serv_data) > 0:
-                total_est = estados_serv_data['Cantidad'].sum()
-                for _, row in estados_serv_data.iterrows():
-                    resumen_data.append(['Gráfico 5', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
-            resumen_data.append(['', '', '', ''])
-            
-            # Gráfico 6
-            if len(entidad_data) > 0:
-                total_ent = entidad_data['Cantidad'].sum()
-                for _, row in entidad_data.iterrows():
-                    resumen_data.append(['Gráfico 6', 'Distribución por Entidad', f'{row["Entidad"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ent*100:.1f}%)', ''])
-            
-            resumen_df = pd.DataFrame(resumen_data, columns=['Gráfico', 'Categoría', 'Detalle', 'Observación'])
-            
-            return datos_detalle, resumen_df
+        df_export = df_filtrado.copy()
         
-        # Botón de exportación
-        if st.button("📥 Exportar Reporte a Excel", use_container_width=True, type="primary"):
-            try:
-                # Preparar datos para exportación
-                df_export = df_filtrado.copy()
-                
-                # Obtener datos de los DataFrames de gráficos
-                estado_gestion_data = estado_gestion_counts.copy()
-                pendientes_data = pendientes_por_area.copy() if len(df_pendientes) > 0 else pd.DataFrame()
-                ordenes_area_data = ordenes_por_area.copy() if len(ordenes_por_area) > 0 else pd.DataFrame()
-                estados_serv_data = estados_counts.copy()
-                entidad_data = entidad_counts.copy()
-                
-                datos_detalle, resumen_graficos = preparar_datos_exportacion(
-                    df_export, df_graf1, estado_gestion_data, pendientes_data, 
-                    ordenes_area_data, estados_serv_data, entidad_data
-                )
-                
-                # Crear archivo Excel
-                output = BytesIO()
-                
-                # Crear workbook
-                wb = Workbook()
-                
-                # --- Hoja 1: Datos Detallados ---
-                ws1 = wb.active
-                ws1.title = "Datos Detallados"
-                
-                # Estilo para encabezados
-                header_fill = PatternFill(start_color="7c3aed", end_color="7c3aed", fill_type="solid")
-                header_font = Font(color="FFFFFF", bold=True)
-                thin_border = Border(
-                    left=Side(style='thin'),
-                    right=Side(style='thin'),
-                    top=Side(style='thin'),
-                    bottom=Side(style='thin')
-                )
-                
-                # Escribir encabezados y datos                for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
-                    for c_idx, value in enumerate(row, 1):
-                        cell = ws1.cell(row=r_idx, column=c_idx, value=value)
-                        if r_idx == 1:
-                            cell.fill = header_fill
-                            cell.font = header_font
-                            cell.alignment = Alignment(horizontal='center', vertical='center')
-                        cell.border = thin_border
-                
-                # Ajustar ancho de columnas
-                for column in ws1.columns:
-                    max_length = 0
-                    column_letter = column[0].column_letter
-                    for cell in column:
-                        try:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                        except:
-                            pass
-                    adjusted_length = min(max_length + 2, 50)
-                    ws1.column_dimensions[column_letter].width = adjusted_length
-                
-                # --- Hoja 2: Resumen Gráficos ---
-                ws2 = wb.create_sheet("Resumen Gráficos")
-                for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
-                    for c_idx, value in enumerate(row, 1):
-                        cell = ws2.cell(row=r_idx, column=c_idx, value=value)
-                        if r_idx == 1:
-                            cell.fill = header_fill
-                            cell.font = header_font
-                            cell.alignment = Alignment(horizontal='center', vertical='center')
-                        cell.border = thin_border
-                
-                # Ajustar ancho de columnas
-                for column in ws2.columns:
-                    max_length = 0
-                    column_letter = column[0].column_letter
-                    for cell in column:
-                        try:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                        except:
-                            pass
-                    adjusted_length = min(max_length + 2, 50)
-                    ws2.column_dimensions[column_letter].width = adjusted_length
-                
-                # Guardar workbook en BytesIO
-                wb.save(output)
-                output.seek(0)
-                
-                # Descarga directa
-                st.download_button(
-                    label="⬇️ Descargar Excel",
-                    data=output,
-                    file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-                
-                st.success("✅ Reporte generado correctamente. Haz clic en 'Descargar Excel' para guardar el archivo.")
-                
-            except Exception as e:
-                st.error(f"❌ Error al exportar: {e}")
-                import traceback
-                st.error(traceback.format_exc())
+        # Obtener datos de los DataFrames de gráficos
+        estado_gestion_data = estado_gestion_counts.copy()
+        pendientes_data = pendientes_por_area.copy() if len(df_pendientes) > 0 else pd.DataFrame()
+        ordenes_area_data = ordenes_por_area.copy() if len(ordenes_por_area) > 0 else pd.DataFrame()
+        estados_serv_data = estados_counts.copy()
+        entidad_data = entidad_counts.copy()
+        
+        datos_detalle, resumen_graficos = preparar_datos_exportacion(
+            df_export, df_graf1, estado_gestion_data, pendientes_data, 
+            ordenes_area_data, estados_serv_data, entidad_data
+        )
+        
+        # Crear archivo Excel
+        output = BytesIO()
+        
+        # Crear workbook
+        wb = Workbook()
+        
+        # --- Hoja 1: Datos Detallados ---
+        ws1 = wb.active
+        ws1.title = "Datos Detallados"
+        
+        # Estilo para encabezados
+        header_fill = PatternFill(start_color="7c3aed", end_color="7c3aed", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True)
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        # Escribir encabezados y datos
+        for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
+            for c_idx, value in enumerate(row, 1):
+                cell = ws1.cell(row=r_idx, column=c_idx, value=value)
+                if r_idx == 1:
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.border = thin_border
+        
+        # Ajustar ancho de columnas
+        for column in ws1.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_length = min(max_length + 2, 50)
+            ws1.column_dimensions[column_letter].width = adjusted_length
+        
+        # --- Hoja 2: Resumen Gráficos ---
+        ws2 = wb.create_sheet("Resumen Gráficos")
+        for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
+            for c_idx, value in enumerate(row, 1):
+                cell = ws2.cell(row=r_idx, column=c_idx, value=value)
+                if r_idx == 1:
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.border = thin_border
+        
+        # Ajustar ancho de columnas
+        for column in ws2.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_length = min(max_length + 2, 50)
+            ws2.column_dimensions[column_letter].width = adjusted_length
+        
+        # Guardar workbook en BytesIO
+        wb.save(output)
+        output.seek(0)
+        
+        # Descarga directa
+        st.download_button(
+            label="⬇️ Descargar Excel",
+            data=output,
+            file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+        
+        st.success("✅ Reporte generado correctamente. Haz clic en 'Descargar Excel' para guardar el archivo.")
+        
+    except Exception as e:
+        st.error(f"❌ Error al exportar: {e}")
+        import traceback
+        st.error(traceback.format_exc())
         
         # ======================== INFORMACIÓN DE FILTROS ========================
         st.divider()
