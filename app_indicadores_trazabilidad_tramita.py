@@ -273,6 +273,9 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                                     # Eliminar puntos y comas
                                     df_externas['ciudad_norm'] = df_externas['ciudad_norm'].str.replace('.', '').str.replace(',', '')
                                     
+                                    # Normalizar estado para comparación
+                                    df_externas['estado_norm'] = df_externas['estado'].astype(str).str.strip().str.upper()
+                                    
                                     st.session_state.df_externas = df_externas
                                 
                                 st.session_state.archivo_cargado = True
@@ -343,6 +346,19 @@ def asignar_area_mejorada(df_data, df_portafolio):
     df_data_copy = df_data_copy.drop(['Cups_clean', 'Sede_clean'], axis=1)
     
     return df_data_copy
+
+# ======================== FUNCIÓN PARA CLASIFICAR GESTIÓN DE EXTERNAS ========================
+def clasificar_gestion_externa(estado):
+    """
+    Clasifica si una solicitud externa está gestionada o pendiente.
+    Solo "PENDIENTE / REGISTRADA" se considera pendiente.
+    Todos los demás estados se consideran gestionados.
+    """
+    estado_norm = str(estado).strip().upper()
+    if estado_norm == "PENDIENTE / REGISTRADA":
+        return "Pendiente"
+    else:
+        return "Gestionado"
 
 # ======================== FUNCIÓN PARA GENERAR RESUMEN EJECUTIVO ========================
 def generar_resumen_ejecutivo(df, df_externas_filtrado):
@@ -421,19 +437,15 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
     if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
         total_externas = len(df_externas_filtrado)
         
-        # Calcular gestionados vs no gestionados
+        # Calcular gestionados vs no gestionados usando la nueva función
         df_ext_temp = df_externas_filtrado.copy()
-        df_ext_temp['estado_norm'] = df_ext_temp['estado'].astype(str).str.strip().str.upper()
+        df_ext_temp['gestion_clasificacion'] = df_ext_temp['estado'].apply(clasificar_gestion_externa)
         
-        # Estados considerados como "gestionados" (diferentes a pendiente/registrada)
-        gestionados = df_ext_temp[~df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
-        no_gestionados = df_ext_temp[df_ext_temp['estado_norm'].isin(['PENDIENTE / REGISTRADA', 'REGISTRADA', 'EN REVISIÓN'])]
-        
-        total_gestionados_ext = len(gestionados)
-        total_no_gestionados_ext = len(no_gestionados)
+        total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
+        total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
         
         resumen += f'<p><strong>Solicitudes Externas:</strong> Se identificaron <span class="stat">{total_externas:,}</span> solicitudes externas para las ciudades seleccionadas.'
-        resumen += f' De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión.</p>'
+        resumen += f' De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión (estado "PENDIENTE / REGISTRADA").</p>'
         
         # Calcular días de entrega para registros con estado "Entregado a proceso"
         entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
@@ -874,6 +886,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 if 'fechaRegistroFormulario' in df_ext_tabla.columns:
                     df_ext_tabla['fechaRegistroFormulario'] = pd.to_datetime(df_ext_tabla['fechaRegistroFormulario']).dt.strftime('%Y-%m-%d')
                 
+                # Agregar columna de clasificación
+                df_ext_tabla['Clasificación'] = df_ext_tabla['estado'].apply(clasificar_gestion_externa)
+                
                 st.dataframe(
                     df_ext_tabla,
                     use_container_width=True,
@@ -886,6 +901,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         "nombrePaciente": st.column_config.TextColumn("Paciente", width="large"),
                         "entidad": st.column_config.TextColumn("Entidad", width="large"),
                         "estado": st.column_config.TextColumn("Estado", width="medium"),
+                        "Clasificación": st.column_config.TextColumn("Clasificación", width="medium"),
                     }
                 )
                 st.caption(f"📊 Mostrando {len(df_ext_tabla)} registros de solicitudes externas")
@@ -893,14 +909,12 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             # Mostrar estadísticas adicionales
             total_externas = len(df_externas_filtrado)
             
-            # Calcular gestionados vs no gestionados
+            # Calcular gestionados vs no gestionados usando la nueva función
             df_ext_temp = df_externas_filtrado.copy()
-            df_ext_temp['estado_norm'] = df_ext_temp['estado'].astype(str).str.strip().str.upper()
-            gestionados = df_ext_temp[~df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
-            no_gestionados = df_ext_temp[df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
+            df_ext_temp['gestion_clasificacion'] = df_ext_temp['estado'].apply(clasificar_gestion_externa)
             
-            total_gestionados_ext = len(gestionados)
-            total_no_gestionados_ext = len(no_gestionados)
+            total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
+            total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
             
             col_ext1, col_ext2, col_ext3, col_ext4 = st.columns(4)
             with col_ext1:
@@ -908,7 +922,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             with col_ext2:
                 st.metric("Gestionadas", f"{total_gestionados_ext:,}", delta=f"{total_gestionados_ext/total_externas*100:.1f}%")
             with col_ext3:
-                st.metric("Pendientes", f"{total_no_gestionados_ext:,}", delta=f"{total_no_gestionados_ext/total_externas*100:.1f}%")
+                st.metric("Pendientes (PENDIENTE / REGISTRADA)", f"{total_no_gestionados_ext:,}", delta=f"{total_no_gestionados_ext/total_externas*100:.1f}%")
             with col_ext4:
                 # Calcular días de entrega promedio para entregados
                 entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
@@ -1317,15 +1331,12 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     max_estado = externas_por_estado.iloc[0]['Estado']
                     max_cantidad = externas_por_estado.iloc[0]['Cantidad']
                     
-                    # Calcular gestionados vs no gestionados
+                    # Calcular gestionados vs no gestionados usando la nueva función
                     df_ext_temp = df_externas_filtrado.copy()
-                    df_ext_temp['estado_norm'] = df_ext_temp['estado'].astype(str).str.strip().str.upper()
+                    df_ext_temp['gestion_clasificacion'] = df_ext_temp['estado'].apply(clasificar_gestion_externa)
                     
-                    gestionados_ext = df_ext_temp[~df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
-                    no_gestionados_ext = df_ext_temp[df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
-                    
-                    total_gestionados_ext = len(gestionados_ext)
-                    total_no_gestionados_ext = len(no_gestionados_ext)
+                    total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
+                    total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
                     
                     texto_interpretacion4 = f'Se registraron <strong>{int(total_externas)}</strong> solicitudes externas en total, distribuidas en <strong>{len(externas_por_estado)}</strong> estados. El estado con mayor volumen es <strong>"{max_estado}"</strong> con <strong>{int(max_cantidad)}</strong> solicitudes ({max_cantidad/total_externas*100:.1f}% del total).'
                     
@@ -1334,7 +1345,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         segunda_cantidad = externas_por_estado.iloc[1]['Cantidad']
                         texto_interpretacion4 += f' {segundo_estado} es el segundo estado con <strong>{int(segunda_cantidad)}</strong> solicitudes ({segunda_cantidad/total_externas*100:.1f}% del total).'
                     
-                    texto_interpretacion4 += f' De estas, <strong>{total_gestionados_ext} ({total_gestionados_ext/total_externas*100:.1f}%)</strong> ya han sido gestionadas y <strong>{total_no_gestionados_ext} ({total_no_gestionados_ext/total_externas*100:.1f}%)</strong> se encuentran pendientes de gestión.'
+                    texto_interpretacion4 += f' De estas, <strong>{total_gestionados_ext} ({total_gestionados_ext/total_externas*100:.1f}%)</strong> ya han sido gestionadas y <strong>{total_no_gestionados_ext} ({total_no_gestionados_ext/total_externas*100:.1f}%)</strong> se encuentran pendientes de gestión (estado "PENDIENTE / REGISTRADA").'
                     
                     # Calcular días de entrega para entregados a proceso
                     entregados_ext = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
@@ -1729,11 +1740,12 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
                     ws3 = wb.create_sheet("Solicitudes Externas")
                     columnas_ext_export = ['fechaRegistroFormulario', 'ciudad', 'proceso', 'idPaciente', 
-                                          'nombrePaciente', 'entidad', 'estado']
-                    columnas_ext_export_existentes = [col for col in columnas_ext_export if col in df_externas_filtrado.columns]
+                                          'nombrePaciente', 'entidad', 'estado', 'Clasificación']
                     
-                    if columnas_ext_export_existentes:
-                        df_ext_export = df_externas_filtrado[columnas_ext_export_existentes].copy()
+                    # Crear DataFrame con clasificación
+                    df_ext_export = df_externas_filtrado[columnas_ext_export[:-1]].copy() if all(col in df_externas_filtrado.columns for col in columnas_ext_export[:-1]) else pd.DataFrame()
+                    if not df_ext_export.empty:
+                        df_ext_export['Clasificación'] = df_ext_export['estado'].apply(clasificar_gestion_externa)
                         
                         # Formatear fechas
                         if 'fechaRegistroFormulario' in df_ext_export.columns:
