@@ -445,7 +445,7 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
         total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
         
         resumen += f'<p><strong>Solicitudes Externas:</strong> Se identificaron <span class="stat">{total_externas:,}</span> solicitudes externas para las ciudades seleccionadas.'
-        resumen += f' De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión (estado "PENDIENTE / REGISTRADA").</p>'
+        resumen += f' De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión.</p>'
         
         # Calcular días de entrega para registros con estado "Entregado a proceso"
         entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
@@ -1345,7 +1345,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         segunda_cantidad = externas_por_estado.iloc[1]['Cantidad']
                         texto_interpretacion4 += f' {segundo_estado} es el segundo estado con <strong>{int(segunda_cantidad)}</strong> solicitudes ({segunda_cantidad/total_externas*100:.1f}% del total).'
                     
-                    texto_interpretacion4 += f' De estas, <strong>{total_gestionados_ext} ({total_gestionados_ext/total_externas*100:.1f}%)</strong> ya han sido gestionadas y <strong>{total_no_gestionados_ext} ({total_no_gestionados_ext/total_externas*100:.1f}%)</strong> se encuentran pendientes de gestión (estado "PENDIENTE / REGISTRADA").'
+                    texto_interpretacion4 += f' De estas, <strong>{total_gestionados_ext} ({total_gestionados_ext/total_externas*100:.1f}%)</strong> ya han sido gestionadas y <strong>{total_no_gestionados_ext} ({total_no_gestionados_ext/total_externas*100:.1f}%)</strong> se encuentran pendientes de gestión.'
                     
                     # Calcular días de entrega para entregados a proceso
                     entregados_ext = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
