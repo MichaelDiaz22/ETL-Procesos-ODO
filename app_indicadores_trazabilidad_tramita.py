@@ -445,8 +445,9 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
         total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
         
         resumen += f'<p><strong>Solicitudes Externas:</strong> Se identificaron <span class="stat">{total_externas:,}</span> solicitudes externas para las ciudades seleccionadas.'
-        resumen += f' De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión.</p>'
+        resumen += f' De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión (estado "PENDIENTE / REGISTRADA").</p>'
         
+        # ======================== CÁLCULO DE DÍAS DE ENTREGA PARA EXTERNAS ========================
         # Calcular días de entrega para registros con estado "Entregado a proceso"
         entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
         if len(entregados) > 0:
@@ -456,7 +457,11 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
             
             if len(entregados_validos) > 0:
                 promedio_dias_entrega_ext = entregados_validos['dias_entrega_ext'].mean()
-                resumen += f'<p><strong>Tiempos de Entrega (Externas):</strong> Para las solicitudes entregadas a proceso, el tiempo promedio de entrega es de <span class="stat">{promedio_dias_entrega_ext:.1f}</span> días.</p>'
+                resumen += f'<p><strong>Tiempos de Entrega (Externas):</strong> Para las solicitudes entregadas a proceso, el tiempo promedio de entrega es de <span class="stat">{promedio_dias_entrega_ext:.1f}</span> días, calculado sobre <span class="stat">{len(entregados_validos)}</span> registros con fechas válidas.</p>'
+            else:
+                resumen += f'<p><strong>Tiempos de Entrega (Externas):</strong> No se encontraron registros con fechas válidas para calcular el tiempo promedio de entrega.</p>'
+        else:
+            resumen += '<p><strong>Tiempos de Entrega (Externas):</strong> No hay registros con estado "Entregado a proceso" para calcular el tiempo promedio de entrega.</p>'
     elif df_externas_filtrado is not None and len(df_externas_filtrado) == 0:
         resumen += '<p><strong>Solicitudes Externas:</strong> No se encontraron solicitudes externas para las ciudades seleccionadas.</p>'
     else:
@@ -930,7 +935,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
                     entregados_validos = entregados[entregados['dias_entrega_ext'].notna() & (entregados['dias_entrega_ext'] >= 0)]
                     if len(entregados_validos) > 0:
-                        st.metric("Promedio Días Entrega", f"{entregados_validos['dias_entrega_ext'].mean():.1f}")
+                        st.metric("Promedio Días Entrega", f"{entregados_validos['dias_entrega_ext'].mean():.1f}", 
+                                 delta=f"({len(entregados_validos)} registros)")
                     else:
                         st.metric("Promedio Días Entrega", "N/A")
                 else:
@@ -1345,7 +1351,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         segunda_cantidad = externas_por_estado.iloc[1]['Cantidad']
                         texto_interpretacion4 += f' {segundo_estado} es el segundo estado con <strong>{int(segunda_cantidad)}</strong> solicitudes ({segunda_cantidad/total_externas*100:.1f}% del total).'
                     
-                    texto_interpretacion4 += f' De estas, <strong>{total_gestionados_ext} ({total_gestionados_ext/total_externas*100:.1f}%)</strong> ya han sido gestionadas y <strong>{total_no_gestionados_ext} ({total_no_gestionados_ext/total_externas*100:.1f}%)</strong> se encuentran pendientes de gestión.'
+                    texto_interpretacion4 += f' De estas, <strong>{total_gestionados_ext} ({total_gestionados_ext/total_externas*100:.1f}%)</strong> ya han sido gestionadas y <strong>{total_no_gestionados_ext} ({total_no_gestionados_ext/total_externas*100:.1f}%)</strong> se encuentran pendientes de gestión (estado "PENDIENTE / REGISTRADA").'
                     
                     # Calcular días de entrega para entregados a proceso
                     entregados_ext = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
@@ -1353,7 +1359,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         entregados_ext['dias_entrega_ext'] = (entregados_ext['fechaEntregaProceso'] - entregados_ext['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
                         entregados_validos = entregados_ext[entregados_ext['dias_entrega_ext'].notna() & (entregados_ext['dias_entrega_ext'] >= 0)]
                         if len(entregados_validos) > 0:
-                            texto_interpretacion4 += f' Para las solicitudes entregadas a proceso, el tiempo promedio de entrega es de <strong>{entregados_validos["dias_entrega_ext"].mean():.1f}</strong> días.'
+                            texto_interpretacion4 += f' Para las solicitudes entregadas a proceso, el tiempo promedio de entrega es de <strong>{entregados_validos["dias_entrega_ext"].mean():.1f}</strong> días, calculado sobre <strong>{len(entregados_validos)}</strong> registros con fechas válidas.'
+                        else:
+                            texto_interpretacion4 += f' No se encontraron registros con fechas válidas para calcular el tiempo promedio de entrega de las solicitudes entregadas a proceso.'
                     
                     st.markdown(generar_interpretacion("Interpretación", texto_interpretacion4), unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
