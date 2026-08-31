@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
+import seaborn as snf
 import numpy as np
 from datetime import datetime
 from io import BytesIO
@@ -449,7 +449,7 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
         
         # ======================== CÁLCULO DE DÍAS DE ENTREGA PARA EXTERNAS ========================
         # Calcular días de entrega para registros con estado "Entregado a proceso"
-        entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
+        entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA A PROCESO'].copy()
         if len(entregados) > 0:
             # Calcular días de entrega solo para registros que tienen ambas fechas
             entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
@@ -930,7 +930,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 st.metric("Pendientes (PENDIENTE / REGISTRADA)", f"{total_no_gestionados_ext:,}", delta=f"{total_no_gestionados_ext/total_externas*100:.1f}%")
             with col_ext4:
                 # Calcular días de entrega promedio para entregados
-                entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
+                entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA A PROCESO'].copy()
                 if len(entregados) > 0:
                     entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
                     entregados_validos = entregados[entregados['dias_entrega_ext'].notna() & (entregados['dias_entrega_ext'] >= 0)]
@@ -1354,7 +1354,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     texto_interpretacion4 += f' De estas, <strong>{total_gestionados_ext} ({total_gestionados_ext/total_externas*100:.1f}%)</strong> ya han sido gestionadas y <strong>{total_no_gestionados_ext} ({total_no_gestionados_ext/total_externas*100:.1f}%)</strong> se encuentran pendientes de gestión (estado "PENDIENTE / REGISTRADA").'
                     
                     # Calcular días de entrega para entregados a proceso
-                    entregados_ext = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
+                    entregados_ext = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA A PROCESO'].copy()
                     if len(entregados_ext) > 0:
                         entregados_ext['dias_entrega_ext'] = (entregados_ext['fechaEntregaProceso'] - entregados_ext['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
                         entregados_validos = entregados_ext[entregados_ext['dias_entrega_ext'].notna() & (entregados_ext['dias_entrega_ext'] >= 0)]
