@@ -9,6 +9,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from matplotlib.patches import Patch
+import unicodedata
 
 # Configuración de la página
 st.set_page_config(
@@ -269,6 +270,8 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                                     
                                     # Normalizar ciudad para comparación (mayúsculas y sin espacios)
                                     df_externas['ciudad_norm'] = df_externas['ciudad'].astype(str).str.strip().str.upper()
+                                    # Eliminar puntos y comas
+                                    df_externas['ciudad_norm'] = df_externas['ciudad_norm'].str.replace('.', '').str.replace(',', '')
                                     
                                     st.session_state.df_externas = df_externas
                                 
@@ -634,32 +637,71 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             
             # Normalizar ciudades de las sedes seleccionadas
             if sedes_seleccionadas:
-                # Crear lista de ciudades normalizadas
-                sedes_norm = []
+                # Crear lista de palabras clave para coincidencia desde la segunda palabra
+                palabras_clave = []
                 for sede in sedes_seleccionadas:
-                    # Intentar con diferentes formatos
+                    # Limpiar y normalizar la sede
                     sede_clean = str(sede).strip().upper()
-                    sedes_norm.append(sede_clean)
-                    # También agregar versión sin tildes (por si acaso)
-                    import unicodedata
-                    sede_sin_tildes = ''.join(c for c in unicodedata.normalize('NFD', sede_clean) if unicodedata.category(c) != 'Mn')
-                    sedes_norm.append(sede_sin_tildes)
+                    # Eliminar puntos y comas
+                    sede_clean = sede_clean.replace('.', '').replace(',', '')
+                    
+                    # Dividir por espacios y tomar desde la segunda palabra
+                    partes = sede_clean.split()
+                    if len(partes) > 1:
+                        # Tomar desde la segunda palabra en adelante
+                        palabra_clave = ' '.join(partes[1:])
+                        if len(palabra_clave) > 0:
+                            palabras_clave.append(palabra_clave)
+                    else:
+                        # Si solo tiene una palabra, usar toda
+                        palabras_clave.append(sede_clean)
+                    
+                    # También agregar la sede completa como respaldo
+                    palabras_clave.append(sede_clean)
+                    
+                    # Agregar la primera palabra también como respaldo
+                    if len(partes) > 0:
+                        palabras_clave.append(partes[0])
                 
-                # Eliminar duplicados
-                sedes_norm = list(set(sedes_norm))
+                # Eliminar duplicados y palabras muy cortas
+                palabras_clave = list(set([p for p in palabras_clave if len(p) > 1]))
                 
-                # Filtrar por ciudad normalizada
-                df_externas_filtrado = df_externas_filtrado[df_externas_filtrado['ciudad_norm'].isin(sedes_norm)]
+                # Función para determinar si la ciudad coincide con la sede (desde la segunda palabra)
+                def ciudad_coincide(ciudad_norm):
+                    if pd.isna(ciudad_norm):
+                        return False
+                    ciudad_str = str(ciudad_norm).strip().upper()
+                    # Eliminar puntos y comas
+                    ciudad_str = ciudad_str.replace('.', '').replace(',', '')
+                    
+                    for palabra in palabras_clave:
+                        # Verificar si la palabra clave está contenida en la ciudad
+                        if palabra in ciudad_str:
+                            return True
+                        # Verificar si la ciudad está contenida en la palabra clave
+                        if len(palabra) > 3 and ciudad_str in palabra:
+                            return True
+                    return False
                 
-                # Si no hay resultados con la búsqueda exacta, intentar búsqueda parcial
-                if len(df_externas_filtrado) == 0:
-                    st.warning("⚠️ No se encontraron coincidencias exactas para las ciudades seleccionadas. Intentando búsqueda parcial...")
-                    # Buscar coincidencias parciales
-                    mask = pd.Series([False] * len(df_externas_filtrado))
-                    for sede_norm in sedes_norm:
-                        # Buscar si la sede normalizada está contenida en la ciudad o viceversa
-                        mask = mask | df_externas_filtrado['ciudad_norm'].str.contains(sede_norm[:3], na=False)
-                    df_externas_filtrado = df_externas_filtrado[mask]
+                # Aplicar el filtro
+                mask = df_externas_filtrado['ciudad_norm'].apply(ciudad_coincide)
+                df_externas_filtrado = df_externas_filtrado[mask]
+                
+                # Si no hay resultados, intentar con búsqueda más flexible
+                if len(df_externas_filtrado) == 0 and len(palabras_clave) > 0:
+                    # Buscar coincidencias con palabras individuales
+                    for palabra in palabras_clave:
+                        if len(palabra) > 2:
+                            # Dividir la palabra clave en partes
+                            partes_palabra = palabra.split()
+                            for parte in partes_palabra:
+                                if len(parte) > 2:
+                                    mask = df_externas_filtrado['ciudad_norm'].str.contains(parte, na=False)
+                                    if mask.any():
+                                        df_externas_filtrado = df_externas_filtrado[mask]
+                                        break
+                            if len(df_externas_filtrado) > 0:
+                                break
             
             # Filtrar por fecha si es posible
             if fecha_inicio and fecha_fin and 'fechaRegistroFormulario' in df_externas_filtrado.columns:
@@ -671,7 +713,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 ]
             
             # Limpiar datos vacíos
-            df_externas_filtrado = df_externas_filtrado.dropna(how='all')
+            if df_externas_filtrado is not None:
+                df_externas_filtrado = df_externas_filtrado.dropna(how='all')
         
         st.session_state.df_filtrado = df_filtrado
         st.session_state.df_externas_filtrado = df_externas_filtrado
