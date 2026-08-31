@@ -148,9 +148,14 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                 st.session_state.df_portafolio = None
                 st.session_state.archivo_cargado = False
             else:
-                # Leer hoja de datos
+                # Leer hoja de datos - CORREGIDO
                 df = pd.read_excel(archivo, sheet_name='Datos', header=1)
-                df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+                
+                # Filtrar columnas no nombradas de manera segura
+                # Verificar si hay columnas 'Unnamed'
+                unnamed_cols = [col for col in df.columns if 'Unnamed' in str(col)]
+                if unnamed_cols:
+                    df = df.drop(columns=unnamed_cols)
                 
                 cols = df.columns.tolist()
                 servicio_count = 0
@@ -173,8 +178,8 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                                        'idOrden', 'idIndigo']
                 
                 # Normalizar nombres de columnas para comparación
-                columnas_df = [col.strip() for col in df.columns]
-                columnas_requeridas_norm = [col.strip() for col in columnas_requeridas]
+                columnas_df = [str(col).strip() for col in df.columns]
+                columnas_requeridas_norm = [str(col).strip() for col in columnas_requeridas]
                 
                 # Verificar columnas faltantes
                 columnas_faltantes = []
@@ -248,6 +253,8 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                     
         except Exception as e:
             st.error(f"⚠️ Error al leer el archivo: {e}")
+            import traceback
+            st.error(f"Detalles del error: {traceback.format_exc()}")
             st.session_state.df = None
             st.session_state.df_portafolio = None
             st.session_state.archivo_cargado = False
@@ -1293,3 +1300,6 @@ else:
         **Hoja 2: 'Portafolio'** - Debe contener las siguientes columnas:
         - CUPS, codIPS, descrCodIPS, codREPS, A, UNIDAD EJECUTORA, Codigo unidad, Sede_Portafolio
         """)
+
+st.divider()
+st.caption("💡 Dashboard de Gestión de Portafolio - Datos actualizados en tiempo real")
