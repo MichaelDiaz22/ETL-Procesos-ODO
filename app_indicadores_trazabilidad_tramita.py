@@ -420,9 +420,9 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
         resumen += f'<p><strong>Cuellos de Botella:</strong> De las órdenes pendientes, <span class="stat">{pendientes_prog:,} ({pendientes_prog/total_pendientes*100:.1f}%)</span> están pendientes desde programación y <span class="stat">{pendientes_aut:,} ({pendientes_aut/total_pendientes*100:.1f}%)</span> desde autorizaciones.</p>'
     
     if area_top != "N/A":
-        resumen += f'<p><strong>Concentración por Área:</strong> El área con mayor volumen de órdenes es <span class="stat">"{area_top}"</span> con <span class="stat">{area_top_count:,}</span> órdenes ({area_top_count/total_ordenes*100:.1f}% del total).</p>'
+        resumen += f'<p><strong>Concentración por Área:</strong> El área con mayor volumen de órdenes es <span class="stat">"{area_top}"</span> con <span class="stat">{area_top_count:,}</span> órdenes (<span class="stat">{area_top_count/total_ordenes*100:.1f}%</span> del total).</p>'
     
-    resumen += f'<p><strong>Concentración por Entidad:</strong> La entidad con mayor participación es <span class="stat">"{entidad_top}"</span> con <span class="stat">{entidad_top_count:,}</span> órdenes ({entidad_top_count/total_ordenes*100:.1f}% del total).</p>'
+    resumen += f'<p><strong>Concentración por Entidad:</strong> La entidad con mayor participación es <span class="stat">"{entidad_top}"</span> con <span class="stat">{entidad_top_count:,}</span> órdenes (<span class="stat">{entidad_top_count/total_ordenes*100:.1f}%</span> del total).</p>'
     
     if promedio_dias > 0:
         resumen += f'<p><strong>Tiempos de Gestión:</strong> El tiempo promedio de entrega es de <span class="stat">{promedio_dias:.1f}</span> días.</p>'
@@ -1104,7 +1104,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         dia_pico = df_graf1.loc[df_graf1['Generadas'].idxmax(), 'Fecha'] if len(df_graf1) > 0 else "N/A"
         max_generadas = int(df_graf1['Generadas'].max()) if len(df_graf1) > 0 else 0
         
-        texto_interpretacion1 = f'Se generaron <strong>{int(total_generadas)}</strong> órdenes en total, de las cuales <strong>{int(total_gestionadas)} ({pct_gestionadas:.1f}%)</strong> ya fueron gestionadas y <strong>{int(total_generadas - total_gestionadas)} ({pct_pendientes:.1f}%)</strong> aún se encuentran pendientes de gestión. El día con mayor actividad fue <strong>{dia_pico}</strong> con <strong>{max_generadas}</strong> órdenes generadas.'
+        texto_interpretacion1 = f'Se generaron <strong>{int(total_generadas)}</strong> órdenes en total, de las cuales <strong>{int(total_gestionadas)} (<span class="stat">{pct_gestionadas:.1f}%</span>)</strong> ya fueron gestionadas y <strong>{int(total_generadas - total_gestionadas)} (<span class="stat">{pct_pendientes:.1f}%</span>)</strong> aún se encuentran pendientes de gestión. El día con mayor actividad fue <strong>{dia_pico}</strong> con <strong>{max_generadas}</strong> órdenes generadas.'
         
         st.markdown(generar_interpretacion("Interpretación", texto_interpretacion1), unsafe_allow_html=True)
         
@@ -1209,7 +1209,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             
             mayor_carga = "Pendiente gestión desde programación" if estado_pendientes_prog == max([estado_pendientes_prog, estado_pendientes_aut, estado_gestionados_prog, estado_gestionados_aut]) else "Pendiente gestión desde Autorizaciones"
             
-            texto_interpretacion2 = f'Del total de <strong>{total_estados}</strong> órdenes, <strong>{estado_pendientes_prog} ({estado_pendientes_prog/total_estados*100:.1f}%)</strong> se encuentran pendientes de gestión desde programación, <strong>{estado_pendientes_aut} ({estado_pendientes_aut/total_estados*100:.1f}%)</strong> pendientes desde autorizaciones, <strong>{estado_gestionados_prog} ({estado_gestionados_prog/total_estados*100:.1f}%)</strong> ya gestionadas desde programación, y <strong>{estado_gestionados_aut} ({estado_gestionados_aut/total_estados*100:.1f}%)</strong> gestionadas o en seguimiento desde autorizaciones. La mayor carga de trabajo se concentra en <strong>{mayor_carga}</strong>.'
+            texto_interpretacion2 = f'Del total de <strong>{total_estados}</strong> órdenes, <strong>{estado_pendientes_prog} (<span class="stat">{estado_pendientes_prog/total_estados*100:.1f}%</span>)</strong> se encuentran pendientes de gestión desde programación, <strong>{estado_pendientes_aut} (<span class="stat">{estado_pendientes_aut/total_estados*100:.1f}%</span>)</strong> pendientes desde autorizaciones, <strong>{estado_gestionados_prog} (<span class="stat">{estado_gestionados_prog/total_estados*100:.1f}%</span>)</strong> ya gestionadas desde programación, y <strong>{estado_gestionados_aut} (<span class="stat">{estado_gestionados_aut/total_estados*100:.1f}%</span>)</strong> gestionadas o en seguimiento desde autorizaciones. La mayor carga de trabajo se concentra en <strong>{mayor_carga}</strong>.'
             
             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion2), unsafe_allow_html=True)
             
@@ -1308,12 +1308,12 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     max_area = pendientes_por_area.iloc[0]['Área']
                     max_cantidad = pendientes_por_area.iloc[0]['Cantidad']
                     
-                    texto_interpretacion3 = f'Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas. El área con mayor volumen de pendientes es <strong>"{max_area}"</strong> con <strong>{max_cantidad}</strong> órdenes ({max_cantidad/total_pendientes*100:.1f}% del total).'
+                    texto_interpretacion3 = f'Hay <strong>{total_pendientes}</strong> órdenes pendientes de gestión desde programación, distribuidas en <strong>{len(pendientes_por_area)}</strong> áreas. El área con mayor volumen de pendientes es <span class="stat">"{max_area}"</span> con <strong>{max_cantidad}</strong> órdenes (<span class="stat">{max_cantidad/total_pendientes*100:.1f}%</span> del total).'
                     
                     if len(pendientes_por_area) > 1:
                         segunda_area = pendientes_por_area.iloc[1]['Área']
                         segunda_cantidad = pendientes_por_area.iloc[1]['Cantidad']
-                        texto_interpretacion3 += f' {segunda_area} es la segunda área con <strong>{segunda_cantidad}</strong> órdenes pendientes ({segunda_cantidad/total_pendientes*100:.1f}% del total).'
+                        texto_interpretacion3 += f' {segunda_area} es la segunda área con <strong>{segunda_cantidad}</strong> órdenes pendientes (<span class="stat">{segunda_cantidad/total_pendientes*100:.1f}%</span> del total).'
                     
                     st.markdown(generar_interpretacion("Interpretación", texto_interpretacion3), unsafe_allow_html=True)
             else:
@@ -1420,14 +1420,14 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
                     total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
                     
-                    texto_interpretacion4 = f'Se registraron <strong>{int(total_externas)}</strong> solicitudes externas en total, distribuidas en <strong>{len(externas_por_estado)}</strong> estados. El estado con mayor volumen es <strong>"{max_estado}"</strong> con <strong>{int(max_cantidad)}</strong> solicitudes ({max_cantidad/total_externas*100:.1f}% del total).'
+                    texto_interpretacion4 = f'Se registraron <strong>{int(total_externas)}</strong> solicitudes externas en total, distribuidas en <strong>{len(externas_por_estado)}</strong> estados. El estado con mayor volumen es <span class="stat">"{max_estado}"</span> con <strong>{int(max_cantidad)}</strong> solicitudes (<span class="stat">{max_cantidad/total_externas*100:.1f}%</span> del total).'
                     
                     if len(externas_por_estado) > 1:
                         segundo_estado = externas_por_estado.iloc[1]['Estado']
                         segunda_cantidad = externas_por_estado.iloc[1]['Cantidad']
-                        texto_interpretacion4 += f' {segundo_estado} es el segundo estado con <strong>{int(segunda_cantidad)}</strong> solicitudes ({segunda_cantidad/total_externas*100:.1f}% del total).'
+                        texto_interpretacion4 += f' {segundo_estado} es el segundo estado con <strong>{int(segunda_cantidad)}</strong> solicitudes (<span class="stat">{segunda_cantidad/total_externas*100:.1f}%</span> del total).'
                     
-                    texto_interpretacion4 += f' De estas, <strong>{total_gestionados_ext} ({total_gestionados_ext/total_externas*100:.1f}%)</strong> ya han sido gestionadas y <strong>{total_no_gestionados_ext} ({total_no_gestionados_ext/total_externas*100:.1f}%)</strong> se encuentran pendientes de gestión.'
+                    texto_interpretacion4 += f' De estas, <strong>{total_gestionados_ext} (<span class="stat">{total_gestionados_ext/total_externas*100:.1f}%</span>)</strong> ya han sido gestionadas y <strong>{total_no_gestionados_ext} (<span class="stat">{total_no_gestionados_ext/total_externas*100:.1f}%</span>)</strong> se encuentran pendientes de gestión.'
                     
                     # Calcular días de entrega para entregados a proceso
                     entregados_ext = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA A PROCESO'].copy()
@@ -1435,7 +1435,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         entregados_ext['dias_entrega_ext'] = (entregados_ext['fechaEntregaProceso'] - entregados_ext['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
                         entregados_validos = entregados_ext[entregados_ext['dias_entrega_ext'].notna() & (entregados_ext['dias_entrega_ext'] >= 0)]
                         if len(entregados_validos) > 0:
-                            texto_interpretacion4 += f' Para las solicitudes entregadas a proceso, el tiempo promedio de entrega es de <strong>{entregados_validos["dias_entrega_ext"].mean():.1f}</strong> días, calculado sobre <strong>{len(entregados_validos)}</strong> registros con fechas válidas.'
+                            texto_interpretacion4 += f' Para las solicitudes entregadas a proceso, el tiempo promedio de entrega es de <span class="stat">{entregados_validos["dias_entrega_ext"].mean():.1f}</span> días, calculado sobre <strong>{len(entregados_validos)}</strong> registros con fechas válidas.'
                         else:
                             texto_interpretacion4 += f' No se encontraron registros con fechas válidas para calcular el tiempo promedio de entrega de las solicitudes entregadas a proceso.'
                     
@@ -1491,12 +1491,12 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         top_proceso = externas_por_proceso.iloc[0]['Proceso']
                         top_cantidad = externas_por_proceso.iloc[0]['Cantidad']
                         
-                        texto_interpretacion5 = f'Se registraron <strong>{int(total_procesos)}</strong> solicitudes externas distribuidas en <strong>{len(externas_por_proceso)}</strong> procesos. El proceso con mayor volumen es <strong>"{top_proceso}"</strong> con <strong>{int(top_cantidad)}</strong> solicitudes ({top_cantidad/total_procesos*100:.1f}% del total).'
+                        texto_interpretacion5 = f'Se registraron <strong>{int(total_procesos)}</strong> solicitudes externas distribuidas en <strong>{len(externas_por_proceso)}</strong> procesos. El proceso con mayor volumen es <span class="stat">"{top_proceso}"</span> con <strong>{int(top_cantidad)}</strong> solicitudes (<span class="stat">{top_cantidad/total_procesos*100:.1f}%</span> del total).'
                         
                         if len(externas_por_proceso) > 1:
                             segundo_proceso = externas_por_proceso.iloc[1]['Proceso']
                             segunda_cantidad = externas_por_proceso.iloc[1]['Cantidad']
-                            texto_interpretacion5 += f' {segundo_proceso} es el segundo proceso con <strong>{int(segunda_cantidad)}</strong> solicitudes ({segunda_cantidad/total_procesos*100:.1f}% del total).'
+                            texto_interpretacion5 += f' {segundo_proceso} es el segundo proceso con <strong>{int(segunda_cantidad)}</strong> solicitudes (<span class="stat">{segunda_cantidad/total_procesos*100:.1f}%</span> del total).'
                         
                         st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5), unsafe_allow_html=True)
                 else:
@@ -1546,12 +1546,12 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 top_area = ordenes_por_area.iloc[0]['Área']
                 top_cantidad = ordenes_por_area.iloc[0]['Cantidad']
                 
-                texto_interpretacion6 = f'Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. El área con mayor generación de órdenes es <strong>"{top_area}"</strong> con <strong>{top_cantidad}</strong> órdenes ({top_cantidad/total_ordenes*100:.1f}% del total).'
+                texto_interpretacion6 = f'Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. El área con mayor generación de órdenes es <span class="stat">"{top_area}"</span> con <strong>{top_cantidad}</strong> órdenes (<span class="stat">{top_cantidad/total_ordenes*100:.1f}%</span> del total).'
                 
                 if len(ordenes_por_area) > 1:
                     segunda_area = ordenes_por_area.iloc[1]['Área']
                     segunda_cantidad = ordenes_por_area.iloc[1]['Cantidad']
-                    texto_interpretacion6 += f' {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, representando el {segunda_cantidad/total_ordenes*100:.1f}% del total.'
+                    texto_interpretacion6 += f' {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, representando el <span class="stat">{segunda_cantidad/total_ordenes*100:.1f}%</span> del total.'
                 
                 st.markdown(generar_interpretacion("Interpretación", texto_interpretacion6), unsafe_allow_html=True)
             
@@ -1587,14 +1587,14 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             top_estado = estados_counts.iloc[0]['Estado']
             top_estado_cant = estados_counts.iloc[0]['Cantidad']
             
-            texto_interpretacion7 = f'El estado más frecuente es <strong>"{top_estado}"</strong> con <strong>{top_estado_cant}</strong> órdenes ({top_estado_cant/total_estados_serv*100:.1f}% del total).'
+            texto_interpretacion7 = f'El estado más frecuente es <span class="stat">"{top_estado}"</span> con <strong>{top_estado_cant}</strong> órdenes (<span class="stat">{top_estado_cant/total_estados_serv*100:.1f}%</span> del total).'
             
             if len(estados_counts) > 1:
                 segundo_estado = estados_counts.iloc[1]['Estado']
                 segundo_cantidad = estados_counts.iloc[1]['Cantidad']
-                texto_interpretacion7 += f' {segundo_estado} es el segundo estado con <strong>{segundo_cantidad}</strong> órdenes ({segundo_cantidad/total_estados_serv*100:.1f}% del total).'
+                texto_interpretacion7 += f' {segundo_estado} es el segundo estado con <strong>{segundo_cantidad}</strong> órdenes (<span class="stat">{segundo_cantidad/total_estados_serv*100:.1f}%</span> del total).'
             
-            texto_interpretacion7 += f' Esto indica que la mayoría de las órdenes se encuentran en estado "{top_estado}".'
+            texto_interpretacion7 += f' Esto indica que la mayoría de las órdenes se encuentran en estado <span class="stat">"{top_estado}"</span>.'
             
             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion7), unsafe_allow_html=True)
             
@@ -1630,12 +1630,12 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             top_entidad = entidad_counts.iloc[0]['Entidad']
             top_entidad_cant = entidad_counts.iloc[0]['Cantidad']
             
-            texto_interpretacion8 = f'<strong>{total_entidad}</strong> órdenes están distribuidas entre <strong>{len(entidad_counts)}</strong> entidades. La entidad con mayor volumen es <strong>"{top_entidad}"</strong> con <strong>{top_entidad_cant}</strong> órdenes ({top_entidad_cant/total_entidad*100:.1f}% del total).'
+            texto_interpretacion8 = f'<strong>{total_entidad}</strong> órdenes están distribuidas entre <strong>{len(entidad_counts)}</strong> entidades. La entidad con mayor volumen es <span class="stat">"{top_entidad}"</span> con <strong>{top_entidad_cant}</strong> órdenes (<span class="stat">{top_entidad_cant/total_entidad*100:.1f}%</span> del total).'
             
             if len(entidad_counts) > 1:
                 segunda_entidad = entidad_counts.iloc[1]['Entidad']
                 segunda_cantidad = entidad_counts.iloc[1]['Cantidad']
-                texto_interpretacion8 += f' {segunda_entidad} es la segunda entidad con <strong>{segunda_cantidad}</strong> órdenes ({segunda_cantidad/total_entidad*100:.1f}% del total).'
+                texto_interpretacion8 += f' {segunda_entidad} es la segunda entidad con <strong>{segunda_cantidad}</strong> órdenes (<span class="stat">{segunda_cantidad/total_entidad*100:.1f}%</span> del total).'
             
             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion8), unsafe_allow_html=True)
         
