@@ -267,7 +267,7 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                                     df_externas['fechaRegistroFormulario'] = pd.to_datetime(df_externas['fechaRegistroFormulario'], errors='coerce')
                                     df_externas['fechaEntregaProceso'] = pd.to_datetime(df_externas['fechaEntregaProceso'], errors='coerce')
                                     
-                                    # Normalizar ciudad para comparación (mayúsculas)
+                                    # Normalizar ciudad para comparación (mayúsculas y sin espacios)
                                     df_externas['ciudad_norm'] = df_externas['ciudad'].astype(str).str.strip().str.upper()
                                     
                                     st.session_state.df_externas = df_externas
@@ -419,15 +419,12 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
         total_externas = len(df_externas_filtrado)
         
         # Calcular gestionados vs no gestionados
+        df_ext_temp = df_externas_filtrado.copy()
+        df_ext_temp['estado_norm'] = df_ext_temp['estado'].astype(str).str.strip().str.upper()
+        
         # Estados considerados como "gestionados" (diferentes a pendiente/registrada)
-        estados_gestionados = ['Entregado a proceso', 'Cancelado', 'Anulado', 'Completado', 'Finalizado']
-        estados_no_gestionados = ['Pendiente', 'Registrada', 'En revisión']
-        
-        # Normalizar estados para comparación
-        df_externas_filtrado['estado_norm'] = df_externas_filtrado['estado'].astype(str).str.strip().str.upper()
-        
-        gestionados = df_externas_filtrado[~df_externas_filtrado['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
-        no_gestionados = df_externas_filtrado[df_externas_filtrado['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
+        gestionados = df_ext_temp[~df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
+        no_gestionados = df_ext_temp[df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
         
         total_gestionados_ext = len(gestionados)
         total_no_gestionados_ext = len(no_gestionados)
@@ -436,7 +433,7 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
         resumen += f' De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión.</p>'
         
         # Calcular días de entrega para registros con estado "Entregado a proceso"
-        entregados = df_externas_filtrado[df_externas_filtrado['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
+        entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
         if len(entregados) > 0:
             # Calcular días de entrega solo para registros que tienen ambas fechas
             entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
@@ -445,6 +442,10 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
             if len(entregados_validos) > 0:
                 promedio_dias_entrega_ext = entregados_validos['dias_entrega_ext'].mean()
                 resumen += f'<p><strong>Tiempos de Entrega (Externas):</strong> Para las solicitudes entregadas a proceso, el tiempo promedio de entrega es de <span class="stat">{promedio_dias_entrega_ext:.1f}</span> días.</p>'
+    elif df_externas_filtrado is not None and len(df_externas_filtrado) == 0:
+        resumen += '<p><strong>Solicitudes Externas:</strong> No se encontraron solicitudes externas para las ciudades seleccionadas.</p>'
+    else:
+        resumen += '<p><strong>Solicitudes Externas:</strong> No hay datos disponibles.</p>'
     
     resumen += '</div>'
     
@@ -633,8 +634,32 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             
             # Normalizar ciudades de las sedes seleccionadas
             if sedes_seleccionadas:
-                sedes_norm = [str(sede).strip().upper() for sede in sedes_seleccionadas]
+                # Crear lista de ciudades normalizadas
+                sedes_norm = []
+                for sede in sedes_seleccionadas:
+                    # Intentar con diferentes formatos
+                    sede_clean = str(sede).strip().upper()
+                    sedes_norm.append(sede_clean)
+                    # También agregar versión sin tildes (por si acaso)
+                    import unicodedata
+                    sede_sin_tildes = ''.join(c for c in unicodedata.normalize('NFD', sede_clean) if unicodedata.category(c) != 'Mn')
+                    sedes_norm.append(sede_sin_tildes)
+                
+                # Eliminar duplicados
+                sedes_norm = list(set(sedes_norm))
+                
+                # Filtrar por ciudad normalizada
                 df_externas_filtrado = df_externas_filtrado[df_externas_filtrado['ciudad_norm'].isin(sedes_norm)]
+                
+                # Si no hay resultados con la búsqueda exacta, intentar búsqueda parcial
+                if len(df_externas_filtrado) == 0:
+                    st.warning("⚠️ No se encontraron coincidencias exactas para las ciudades seleccionadas. Intentando búsqueda parcial...")
+                    # Buscar coincidencias parciales
+                    mask = pd.Series([False] * len(df_externas_filtrado))
+                    for sede_norm in sedes_norm:
+                        # Buscar si la sede normalizada está contenida en la ciudad o viceversa
+                        mask = mask | df_externas_filtrado['ciudad_norm'].str.contains(sede_norm[:3], na=False)
+                    df_externas_filtrado = df_externas_filtrado[mask]
             
             # Filtrar por fecha si es posible
             if fecha_inicio and fecha_fin and 'fechaRegistroFormulario' in df_externas_filtrado.columns:
@@ -656,6 +681,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             st.success(f"✅ Filtros aplicados: {len(df_filtrado)} registros encontrados")
             if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
                 st.info(f"📊 Solicitudes externas filtradas: {len(df_externas_filtrado)} registros encontrados para las ciudades seleccionadas")
+            elif df_externas_filtrado is not None:
+                st.info("📊 Solicitudes externas filtradas: No se encontraron registros para las ciudades seleccionadas")
         else:
             st.warning("⚠️ No hay datos con los filtros seleccionados")
     
@@ -824,9 +851,10 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             total_externas = len(df_externas_filtrado)
             
             # Calcular gestionados vs no gestionados
-            df_externas_filtrado['estado_norm'] = df_externas_filtrado['estado'].astype(str).str.strip().str.upper()
-            gestionados = df_externas_filtrado[~df_externas_filtrado['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
-            no_gestionados = df_externas_filtrado[df_externas_filtrado['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
+            df_ext_temp = df_externas_filtrado.copy()
+            df_ext_temp['estado_norm'] = df_ext_temp['estado'].astype(str).str.strip().str.upper()
+            gestionados = df_ext_temp[~df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
+            no_gestionados = df_ext_temp[df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
             
             total_gestionados_ext = len(gestionados)
             total_no_gestionados_ext = len(no_gestionados)
@@ -840,7 +868,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 st.metric("Pendientes", f"{total_no_gestionados_ext:,}", delta=f"{total_no_gestionados_ext/total_externas*100:.1f}%")
             with col_ext4:
                 # Calcular días de entrega promedio para entregados
-                entregados = df_externas_filtrado[df_externas_filtrado['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
+                entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADO A PROCESO'].copy()
                 if len(entregados) > 0:
                     entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
                     entregados_validos = entregados[entregados['dias_entrega_ext'].notna() & (entregados['dias_entrega_ext'] >= 0)]
@@ -1247,9 +1275,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     max_cantidad = externas_por_estado.iloc[0]['Cantidad']
                     
                     # Calcular gestionados vs no gestionados
-                    estados_gestionados_ext = ['Entregado a proceso', 'Cancelado', 'Anulado', 'Completado', 'Finalizado']
-                    estados_no_gestionados_ext = ['Pendiente', 'Registrada', 'En revisión']
-                    
                     df_ext_temp = df_externas_filtrado.copy()
                     df_ext_temp['estado_norm'] = df_ext_temp['estado'].astype(str).str.strip().str.upper()
                     
@@ -1277,6 +1302,15 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             texto_interpretacion4 += f' Para las solicitudes entregadas a proceso, el tiempo promedio de entrega es de <strong>{entregados_validos["dias_entrega_ext"].mean():.1f}</strong> días.'
                     
                     st.markdown(generar_interpretacion("Interpretación", texto_interpretacion4), unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            with st.container():
+                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                st.subheader("📊 Gestión de órdenes externas por Estado")
+                if df_externas is not None and len(df_externas) > 0:
+                    st.info("No se encontraron solicitudes externas para las ciudades seleccionadas. Verifica que los nombres de las ciudades coincidan con las sedes.")
+                else:
+                    st.info("No hay datos de solicitudes externas disponibles.")
                 st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 5: Solicitudes Externas por Proceso ========================
@@ -1329,6 +1363,15 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5), unsafe_allow_html=True)
                 else:
                     st.info("No hay datos de procesos para mostrar")
+                st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            with st.container():
+                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                st.subheader("📊 Solicitudes Externas por Proceso")
+                if df_externas is not None and len(df_externas) > 0:
+                    st.info("No se encontraron solicitudes externas para las ciudades seleccionadas.")
+                else:
+                    st.info("No hay datos de solicitudes externas disponibles.")
                 st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICOS EN DOS COLUMNAS ========================
