@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as snf
+import seaborn as sns
 import numpy as np
 from datetime import datetime
 from io import BytesIO
@@ -448,7 +448,7 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
         resumen += f' De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión (estado "PENDIENTE / REGISTRADA").</p>'
         
         # ======================== CÁLCULO DE DÍAS DE ENTREGA PARA EXTERNAS ========================
-        # Calcular días de entrega para registros con estado "Entregado a proceso"
+        # Calcular días de entrega para registros con estado "ENTREGADA A PROCESO"
         entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA A PROCESO'].copy()
         if len(entregados) > 0:
             # Calcular días de entrega solo para registros que tienen ambas fechas
@@ -461,7 +461,7 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
             else:
                 resumen += f'<p><strong>Tiempos de Entrega (Externas):</strong> No se encontraron registros con fechas válidas para calcular el tiempo promedio de entrega.</p>'
         else:
-            resumen += '<p><strong>Tiempos de Entrega (Externas):</strong> No hay registros con estado "Entregado a proceso" para calcular el tiempo promedio de entrega.</p>'
+            resumen += '<p><strong>Tiempos de Entrega (Externas):</strong> No hay registros con estado "ENTREGADA A PROCESO" para calcular el tiempo promedio de entrega.</p>'
     elif df_externas_filtrado is not None and len(df_externas_filtrado) == 0:
         resumen += '<p><strong>Solicitudes Externas:</strong> No se encontraron solicitudes externas para las ciudades seleccionadas.</p>'
     else:
