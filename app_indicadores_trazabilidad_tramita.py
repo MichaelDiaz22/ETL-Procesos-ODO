@@ -427,7 +427,7 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
         
         # Estados considerados como "gestionados" (diferentes a pendiente/registrada)
         gestionados = df_ext_temp[~df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
-        no_gestionados = df_ext_temp[df_ext_temp['estado_norm'].isin(['PENDIENTE', 'REGISTRADA', 'EN REVISIÓN'])]
+        no_gestionados = df_ext_temp[df_ext_temp['estado_norm'].isin(['PENDIENTE / REGISTRADA', 'REGISTRADA', 'EN REVISIÓN'])]
         
         total_gestionados_ext = len(gestionados)
         total_no_gestionados_ext = len(no_gestionados)
