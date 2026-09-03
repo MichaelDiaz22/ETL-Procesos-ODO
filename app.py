@@ -149,6 +149,13 @@ def crear_dataframes_particion(df_filtered, asignacion, num_partitions):
     partitioned_dfs = []
     
     for i in range(num_partitions):
+        # Obtener las unidades asignadas a esta partición
+        unidades_en_particion = list(asignacion[i].keys())
+        
+        if not unidades_en_particion:
+            partitioned_dfs.append(pd.DataFrame())
+            continue
+        
         # Recolectar todos los pacientes asignados a esta partición
         pacientes_particion = []
         for unidad, pacientes in asignacion[i].items():
@@ -157,13 +164,12 @@ def crear_dataframes_particion(df_filtered, asignacion, num_partitions):
         if len(pacientes_particion) > 0:
             # Eliminar duplicados de pacientes
             pacientes_unicos = list(set(pacientes_particion))
-            partition_df = df_filtered[df_filtered['Identificación'].isin(pacientes_unicos)]
             
-            # Filtrar para mantener SOLO los registros de las unidades 
-            # que fueron asignadas a esta partición
-            unidades_en_particion = list(asignacion[i].keys())
-            if unidades_en_particion:
-                partition_df = partition_df[partition_df['Unidad Funcional'].isin(unidades_en_particion)]
+            # CORRECCIÓN: Filtrar por AMBAS condiciones: paciente Y unidad funcional
+            partition_df = df_filtered[
+                (df_filtered['Identificación'].isin(pacientes_unicos)) & 
+                (df_filtered['Unidad Funcional'].isin(unidades_en_particion))
+            ]
             
             partition_df = partition_df.sort_values(by=['Entidad', 'Identificación'])
             partitioned_dfs.append(partition_df)
