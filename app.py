@@ -295,20 +295,12 @@ if df_loaded and unidades_disponibles:
                 
                 # ELIMINAR REGISTROS DONDE 'Nom. Actividad' SEA 'ADMINISTRACION RADIOTERAPIA'
                 if 'Nom. Actividad' in df_filtered.columns:
-                    registros_antes = len(df_filtered)
-                    
                     mask_radioterapia = (
                         df_filtered['Nom. Actividad'].str.contains('ADMINISTRACION RADIOTERAPIA', case=False, na=False) |
                         df_filtered['Nom. Actividad'].str.contains('CONSULTA DE TERMINACION DE RADIOTERAPIA', case=False, na=False)
                     )
                     
                     df_filtered = df_filtered[~mask_radioterapia]
-                    
-                    registros_despues = len(df_filtered)
-                    registros_eliminados = registros_antes - registros_despues
-                    
-                    if registros_eliminados > 0:
-                        st.success(f"✅ Se eliminaron {registros_eliminados} registros relacionados con RADIOTERAPIA")
                 
                 # Aplicar filtro de estado de cita
                 df_filtered['Estado'] = ''
@@ -325,8 +317,6 @@ if df_loaded and unidades_disponibles:
                     
                     # Seleccionar método de partición
                     if tipo_particion == "Partición equitativa por paciente":
-                        st.info("📊 Generando particiones equitativas por paciente...")
-                        st.info("Cada paciente aparecerá en UNA SOLA partición con TODOS sus registros.")
                         partitioned_dfs, pacientes_por_particion = particion_equitativa_por_paciente(
                             df_estado_filtered, num_partitions, unidades_seleccionadas
                         )
@@ -342,8 +332,6 @@ if df_loaded and unidades_disponibles:
                             st.error(f"No se puede procesar. Las siguientes unidades no están asignadas: {', '.join(unidades_no_asignadas_proc)}")
                             st.stop()
                         
-                        st.info("🔧 Generando partición personalizada...")
-                        st.info("Distribuyendo pacientes equitativamente por unidad funcional entre las particiones asignadas.")
                         partitioned_dfs, pacientes_por_particion = procesar_particion_personalizada(
                             df_estado_filtered, num_partitions, unidades_seleccionadas, st.session_state.configuracion_personalizada
                         )
@@ -415,26 +403,6 @@ if df_loaded and unidades_disponibles:
                     
                     # Nota aclaratoria debajo de la tabla
                     st.caption("📌 **Nota:** El valor **fuera del paréntesis** corresponde a la cantidad de **pacientes**, y el valor **dentro del paréntesis** corresponde a la cantidad de **registros (CUPS)**.")
-                    
-                    # Verificar que no haya pacientes duplicados entre particiones
-                    todos_pacientes = []
-                    pacientes_duplicados = []
-                    for i, df_part in enumerate(partitioned_dfs):
-                        if len(df_part) > 0:
-                            pacientes_part = set(df_part['Identificación'].unique())
-                            for paciente in pacientes_part:
-                                if paciente in todos_pacientes:
-                                    pacientes_duplicados.append(paciente)
-                                todos_pacientes.append(paciente)
-                    
-                    if pacientes_duplicados:
-                        st.error(f"⚠️ ERROR: {len(set(pacientes_duplicados))} pacientes aparecen en múltiples particiones. Esto no debería ocurrir.")
-                    else:
-                        st.success(f"✅ Verificación exitosa: Ningún paciente aparece en múltiples particiones.")
-                    
-                    # Mostrar total de registros procesados
-                    st.write(f"**Total de registros procesados:** {total_registros_general}")
-                    st.write(f"**Total de pacientes únicos:** {len(set(todos_pacientes))}")
 
                     # Generate Excel file in memory
                     output_buffer = io.BytesIO()
