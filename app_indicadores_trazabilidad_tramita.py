@@ -355,7 +355,7 @@ def clasificar_gestion_externa(estado):
     Todos los demás estados se consideran gestionados.
     """
     estado_norm = str(estado).strip().upper()
-    if estado_norm == "PENDIENTE / REGISTRADA":
+    if estado_norm == "PENDIENTE":
         return "Pendiente"
     else:
         return "Gestionado"
