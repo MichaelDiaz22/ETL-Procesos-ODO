@@ -457,7 +457,7 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
                 promedio_dias_entrega_ext = entregados_validos['dias_entrega_ext'].mean()
         
         # Construir la narrativa combinada
-        resumen += f'<p><strong>Solicitudes Externas:</strong> Se identificaron <span class="stat">{total_externas:,}</span> solicitudes externas para las ciudades seleccionadas.'
+        resumen += f'<p><strong>Solicitudes Externas:</strong> Se identificaron <span class="stat">{total_externas:,}</span> solicitudes externas para la sede.'
         resumen += f' De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión.'
         
         if promedio_dias_entrega_ext is not None and num_entregados_validos > 0:
