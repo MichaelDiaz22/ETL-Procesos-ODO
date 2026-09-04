@@ -413,7 +413,7 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
     # Construir el resumen
     resumen = '<div class="executive-summary">'
     resumen += '<h3>📋 Resumen Ejecutivo</h3>'
-    resumen += f'<p><strong>Visión General:</strong> Se analizaron <span class="stat">{total_ordenes:,}</span> órdenes correspondientes a <span class="stat">{total_pacientes:,}</span> pacientes y <span class="stat">{total_entidades}</span> entidades diferentes.</p>'
+    resumen += f'<p><strong>Visión General:</strong> Se identificaron <span class="stat">{total_ordenes:,}</span> órdenes correspondientes a <span class="stat">{total_pacientes:,}</span> pacientes y <span class="stat">{total_entidades}</span> entidades diferentes.</p>'
     resumen += f'<p><strong>Gestión de Órdenes:</strong> Del total de órdenes, <span class="stat">{total_gestionados:,} ({total_gestionados/total_ordenes*100:.1f}%)</span> ya han sido gestionadas, mientras que <span class="stat">{total_pendientes:,} ({total_pendientes/total_ordenes*100:.1f}%)</span> se encuentran pendientes de gestión.</p>'
     
     if total_pendientes > 0:
@@ -425,10 +425,10 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
     resumen += f'<p><strong>Concentración por Entidad:</strong> La entidad con mayor participación es <span class="stat">"{entidad_top}"</span> con <span class="stat">{entidad_top_count:,}</span> órdenes (<span class="stat">{entidad_top_count/total_ordenes*100:.1f}%</span> del total).</p>'
     
     if promedio_dias > 0:
-        resumen += f'<p><strong>Tiempos de Gestión:</strong> El tiempo promedio de entrega es de <span class="stat">{promedio_dias:.1f}</span> días.</p>'
+        resumen += f'<p><strong>Tiempos de Gestión:</strong> El tiempo promedio de entrega de Autorizaciones a Programación es de <span class="stat">{promedio_dias:.1f}</span> días.</p>'
     
     if promedio_dia_sede > 0:
-        resumen += f'<p><strong>Productividad por Sede:</strong> En promedio se generan <span class="stat">{promedio_dia_sede:.1f}</span> órdenes por día hábil por sede.</p>'
+        resumen += f'<p><strong>Productividad por Sede:</strong> En promedio se generan <span class="stat">{promedio_dia_sede:.1f}</span> órdenes por día hábil en la sede.</p>'
     
     if promedio_paciente_dia > 0:
         resumen += f'<p><strong>Productividad por Paciente:</strong> En promedio cada paciente genera <span class="stat">{promedio_paciente_dia:.1f}</span> órdenes por día.</p>'
