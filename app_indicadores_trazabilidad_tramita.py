@@ -1067,7 +1067,17 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         ordenes_generadas = df_temp.groupby('Fecha_Agrupada').size().reset_index()
         ordenes_generadas.columns = ['Fecha', 'Generadas']
         
-        df_gestionadas = df_temp[df_temp['Estado'] != "RADICAR"]
+        # ✅ CORRECCIÓN: Usar Estado_Gestion para consistencia con el Resumen Ejecutivo
+        # Se consideran "Gestionadas" las órdenes que NO están pendientes, es decir:
+        # - "Gestionado desde programación"
+        # - "Gestionado / En seguimiento desde Autorizaciones"
+        # Las "Pendientes" son:
+        # - "Pendiente gestión desde programación"
+        # - "Pendiente gestión desde Autorizaciones"
+        df_gestionadas = df_temp[df_temp['Estado_Gestion'].isin([
+            "Gestionado desde programación",
+            "Gestionado / En seguimiento desde Autorizaciones"
+        ])]
         ordenes_gestionadas = df_gestionadas.groupby('Fecha_Agrupada').size().reset_index()
         ordenes_gestionadas.columns = ['Fecha', 'Gestionadas']
         
