@@ -455,6 +455,10 @@ if uploaded_file is not None:
             # ============================================================
             # NUEVA LÓGICA: Condición especial para ODO / Procedimiento /
             # CLINICA DE ALTA TECNOLOGIA MARAYA PEREIRA
+            # Si un paciente tiene al menos un registro de
+            # "PROCEDIMIENTOS DE ECOGRAFIAS Y DOPPLER" el mismo día y
+            # en la misma sede, se ajustan TODOS sus registros de ese
+            # día/sede que caigan en los rangos horarios definidos.
             # ============================================================
             condicion_especial = (
                 'ODO' in file_filters['empresas'] and
@@ -462,8 +466,14 @@ if uploaded_file is not None:
                 'CLINICA DE ALTA TECNOLOGIA MARAYA PEREIRA' in file_filters['sedes']
             )
 
-            if condicion_especial and 'Actividad Médica' in filtered_df.columns:
-                # Normalizar para comparar sin distinguir mayúsculas/acentos básicos
+            if (condicion_especial 
+                and 'Actividad Médica' in filtered_df.columns 
+                and 'Hora Cita Formatted' in filtered_df.columns
+                and 'Numero de Identificación' in filtered_df.columns
+                and 'Sede' in filtered_df.columns
+                and 'Fecha Programación Formateada' in filtered_df.columns):
+
+                # Normalizar actividad médica
                 actividad_norm = (
                     filtered_df['Actividad Médica']
                     .fillna('')
@@ -471,33 +481,29 @@ if uploaded_file is not None:
                     .str.upper()
                     .str.strip()
                 )
-                # Búsqueda tolerante: sin tilde en ECOGRAFIAS
+
+                # Máscara de ecografías/doppler (tolerante a tilde)
                 mascara_eco = actividad_norm.str.contains(
                     'PROCEDIMIENTOS DE ECOGRAFIAS Y DOPPLER',
-                    na=False,
-                    regex=False
+                    na=False, regex=False
                 )
-                # Fallback por si los datos traen tilde (ECOGRAFÍAS)
                 if not mascara_eco.any():
                     mascara_eco = actividad_norm.str.contains(
                         'PROCEDIMIENTOS DE ECOGRAFÍAS Y DOPPLER',
-                        na=False,
-                        regex=False
+                        na=False, regex=False
                     )
 
-                if mascara_eco.any() and 'Hora Cita Formatted' in filtered_df.columns:
-                    # Convertir la hora formateada a un valor numérico (horas decimales) para comparar
+                if mascara_eco.any():
+                    # Convertir Hora Cita Formatted a horas decimales
                     def hora_formateada_a_decimal(hora_str):
                         if pd.isna(hora_str) or str(hora_str).strip() in ('', 'nan', 'NaT', '-'):
                             return None
                         hora_str = str(hora_str).strip()
                         try:
-                            # Intentar formato 12h con AM/PM
                             hora_dt = pd.to_datetime(hora_str, format='%I:%M %p')
                             return hora_dt.hour + hora_dt.minute / 60.0
                         except Exception:
                             try:
-                                # Intentar formato 24h o mixto
                                 hora_dt = pd.to_datetime(hora_str)
                                 return hora_dt.hour + hora_dt.minute / 60.0
                             except Exception:
@@ -505,15 +511,28 @@ if uploaded_file is not None:
 
                     horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
 
+                    # Construir clave de grupo: paciente + sede + fecha
+                    clave_grupo = (
+                        filtered_df['Numero de Identificación'].astype(str).str.strip()
+                        + '|' + filtered_df['Sede'].astype(str).str.strip()
+                        + '|' + filtered_df['Fecha Programación Formateada'].astype(str).str.strip()
+                    )
+
+                    # Grupos (claves) donde existe al menos un registro de ecografía/doppler
+                    claves_con_eco = set(clave_grupo[mascara_eco].unique())
+
+                    # Máscara: registros que pertenecen a un grupo con ecografía
+                    mascara_mismo_grupo = clave_grupo.isin(claves_con_eco)
+
                     # Rango 11:00 am - 12:00 pm  ->  11.0 a 12.0
-                    mascara_11_12 = mascara_eco & horas_decimales.between(11.0, 12.0, inclusive='both')
+                    mascara_11_12 = mascara_mismo_grupo & horas_decimales.between(11.0, 12.0, inclusive='both')
                     filtered_df.loc[mascara_11_12, 'Hora Cita Formatted'] = '10:00:00'
 
                     # Rango 4:00 pm - 5:00 pm  ->  16.0 a 17.0
-                    mascara_16_17 = mascara_eco & horas_decimales.between(16.0, 17.0, inclusive='both')
-                    filtered_df.loc[mascara_16_17, 'Hora Cita Formatted'] = '15:30:00'
+                    mascara_16_17 = mascara_mismo_grupo & horas_decimales.between(16.0, 17.0, inclusive='both')
+                    filtered_df.loc[mascara_16_17, 'Hora Cita Formatted'] = '15:00:00'
 
-                    # Reconstruir VARIABLE con las horas actualizadas para que el cambio se refleje en el Excel
+                    # Reconstruir VARIABLE con las horas actualizadas
                     filtered_df['VARIABLE'] = filtered_df.apply(
                         lambda row: f"{row.get('Nombres','') } {row.get('Apellidos','')}|{row.get('Actividad Médica','')}|{row.get('Fecha Programación Formateada','')}|{row.get('Hora Cita Formatted','')}|{row.get('Especialista','')}|{row.get('Direccion Final','')}",
                         axis=1
