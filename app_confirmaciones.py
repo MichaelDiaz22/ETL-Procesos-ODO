@@ -507,11 +507,11 @@ if uploaded_file is not None:
 
                     # Rango 11:00 am - 12:00 pm  ->  11.0 a 12.0
                     mascara_11_12 = mascara_eco & horas_decimales.between(11.0, 12.0, inclusive='both')
-                    filtered_df.loc[mascara_11_12, 'Hora Cita Formatted'] = '10:00 am'
+                    filtered_df.loc[mascara_11_12, 'Hora Cita Formatted'] = '10:00:00'
 
                     # Rango 4:00 pm - 5:00 pm  ->  16.0 a 17.0
                     mascara_16_17 = mascara_eco & horas_decimales.between(16.0, 17.0, inclusive='both')
-                    filtered_df.loc[mascara_16_17, 'Hora Cita Formatted'] = '3:30 pm'
+                    filtered_df.loc[mascara_16_17, 'Hora Cita Formatted'] = '15:30:00'
 
                     # Reconstruir VARIABLE con las horas actualizadas para que el cambio se refleje en el Excel
                     filtered_df['VARIABLE'] = filtered_df.apply(
