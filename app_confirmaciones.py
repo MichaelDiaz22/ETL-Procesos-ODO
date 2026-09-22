@@ -451,7 +451,77 @@ if uploaded_file is not None:
             logs_placeholder.info(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
             
             filtered_df = identificar_primer_servicio(filtered_df)
-            
+
+            # ============================================================
+            # NUEVA LÓGICA: Condición especial para ODO / Procedimiento /
+            # CLINICA DE ALTA TECNOLOGIA MARAYA PEREIRA
+            # ============================================================
+            condicion_especial = (
+                'ODO' in file_filters['empresas'] and
+                'Procedimiento' in file_filters['ubicaciones'] and
+                'CLINICA DE ALTA TECNOLOGIA MARAYA PEREIRA' in file_filters['sedes']
+            )
+
+            if condicion_especial and 'Actividad Médica' in filtered_df.columns:
+                # Normalizar para comparar sin distinguir mayúsculas/acentos básicos
+                actividad_norm = (
+                    filtered_df['Actividad Médica']
+                    .fillna('')
+                    .astype(str)
+                    .str.upper()
+                    .str.strip()
+                )
+                # Búsqueda tolerante: sin tilde en ECOGRAFIAS
+                mascara_eco = actividad_norm.str.contains(
+                    'PROCEDIMIENTOS DE ECOGRAFIAS Y DOPPLER',
+                    na=False,
+                    regex=False
+                )
+                # Fallback por si los datos traen tilde (ECOGRAFÍAS)
+                if not mascara_eco.any():
+                    mascara_eco = actividad_norm.str.contains(
+                        'PROCEDIMIENTOS DE ECOGRAFÍAS Y DOPPLER',
+                        na=False,
+                        regex=False
+                    )
+
+                if mascara_eco.any() and 'Hora Cita Formatted' in filtered_df.columns:
+                    # Convertir la hora formateada a un valor numérico (horas decimales) para comparar
+                    def hora_formateada_a_decimal(hora_str):
+                        if pd.isna(hora_str) or str(hora_str).strip() in ('', 'nan', 'NaT', '-'):
+                            return None
+                        hora_str = str(hora_str).strip()
+                        try:
+                            # Intentar formato 12h con AM/PM
+                            hora_dt = pd.to_datetime(hora_str, format='%I:%M %p')
+                            return hora_dt.hour + hora_dt.minute / 60.0
+                        except Exception:
+                            try:
+                                # Intentar formato 24h o mixto
+                                hora_dt = pd.to_datetime(hora_str)
+                                return hora_dt.hour + hora_dt.minute / 60.0
+                            except Exception:
+                                return None
+
+                    horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
+
+                    # Rango 11:00 am - 12:00 pm  ->  11.0 a 12.0
+                    mascara_11_12 = mascara_eco & horas_decimales.between(11.0, 12.0, inclusive='both')
+                    filtered_df.loc[mascara_11_12, 'Hora Cita Formatted'] = '10:00 am'
+
+                    # Rango 4:00 pm - 5:00 pm  ->  16.0 a 17.0
+                    mascara_16_17 = mascara_eco & horas_decimales.between(16.0, 17.0, inclusive='both')
+                    filtered_df.loc[mascara_16_17, 'Hora Cita Formatted'] = '3:30 pm'
+
+                    # Reconstruir VARIABLE con las horas actualizadas para que el cambio se refleje en el Excel
+                    filtered_df['VARIABLE'] = filtered_df.apply(
+                        lambda row: f"{row.get('Nombres','') } {row.get('Apellidos','')}|{row.get('Actividad Médica','')}|{row.get('Fecha Programación Formateada','')}|{row.get('Hora Cita Formatted','')}|{row.get('Especialista','')}|{row.get('Direccion Final','')}",
+                        axis=1
+                    )
+            # ============================================================
+            # FIN NUEVA LÓGICA
+            # ============================================================
+
             if 'Fecha Programación_dt' in filtered_df.columns:
                 filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
             
@@ -503,8 +573,3 @@ if uploaded_file is not None:
                 )
 
                 buffer.close()
-
-# Eliminar estas líneas que causan el error:
-# with open("app_fixed.py", "w", encoding="utf-8") as f:
-#     f.write(code)
-# print("Saved app_fixed.py correctly.")
