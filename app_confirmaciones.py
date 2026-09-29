@@ -525,11 +525,11 @@ if uploaded_file is not None:
                     mascara_mismo_grupo = clave_grupo.isin(claves_con_eco)
 
                     # Rango 11:00 am - 12:00 pm  ->  11.0 a 12.0
-                    mascara_11_12 = mascara_mismo_grupo & horas_decimales.between(11.0, 12.0, inclusive='both')
+                    mascara_11_12 = mascara_mismo_grupo & horas_decimales.between(10.9, 12.0, inclusive='both')
                     filtered_df.loc[mascara_11_12, 'Hora Cita Formatted'] = '10:00:00'
 
                     # Rango 4:00 pm - 5:00 pm  ->  16.0 a 17.0
-                    mascara_16_17 = mascara_mismo_grupo & horas_decimales.between(16.0, 17.0, inclusive='both')
+                    mascara_16_17 = mascara_mismo_grupo & horas_decimales.between(15.9, 17.0, inclusive='both')
                     filtered_df.loc[mascara_16_17, 'Hora Cita Formatted'] = '15:00:00'
 
                     # Reconstruir VARIABLE con las horas actualizadas
