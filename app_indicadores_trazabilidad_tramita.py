@@ -142,10 +142,8 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
     
     if archivo is not None:
         try:
-            # Leer el archivo Excel
             excel_file = pd.ExcelFile(archivo)
             
-            # Verificar que exista la hoja 'Datos'
             if 'Datos' not in excel_file.sheet_names:
                 st.error("⚠️ El archivo no contiene una hoja llamada 'Datos'")
                 st.info(f"📋 Hojas disponibles: {', '.join(excel_file.sheet_names)}")
@@ -154,10 +152,8 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                 st.session_state.df_externas = None
                 st.session_state.archivo_cargado = False
             else:
-                # Leer hoja de datos
                 df = pd.read_excel(archivo, sheet_name='Datos', header=1)
                 
-                # Filtrar columnas no nombradas de manera segura
                 unnamed_cols = [col for col in df.columns if 'Unnamed' in str(col)]
                 if unnamed_cols:
                     df = df.drop(columns=unnamed_cols)
@@ -171,10 +167,8 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                             cols[i] = 'Servicio proceso tramita'
                 df.columns = cols
                 
-                # Guardar el nombre de las columnas
                 st.session_state.header_row = df.columns.tolist()
                 
-                # Verificar que las columnas necesarias existan
                 columnas_requeridas = ['Tag', 'Solicitado', 'Auditado', 'Sede', 'Doc.', 'Paciente', 
                                        'Edad', 'Genero', 'Diag.', 'Entidad', 'Grupo Atención', 
                                        'Servicio', 'Cups', 'Radicación', 'Radicado', 'Autorizado', 
@@ -182,11 +176,9 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                                        'Programado', 'Responsable', 'Estado', 'Observación', 'Prioridad', 
                                        'idOrden', 'idIndigo']
                 
-                # Normalizar nombres de columnas para comparación
                 columnas_df = [str(col).strip() for col in df.columns]
                 columnas_requeridas_norm = [str(col).strip() for col in columnas_requeridas]
                 
-                # Verificar columnas faltantes
                 columnas_faltantes = []
                 for i, col in enumerate(columnas_requeridas_norm):
                     if col not in columnas_df:
@@ -207,19 +199,14 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                     st.session_state.df_externas = None
                     st.session_state.archivo_cargado = False
                 else:
-                    # Limpiar datos vacíos
                     df = df.dropna(how='all')
-                    
-                    # Convertir 'Solicitado' a datetime
                     df['Solicitado'] = pd.to_datetime(df['Solicitado'])
                     
-                    # Convertir 'Entregado' a datetime si existe
                     if 'Entregado' in df.columns:
                         df['Entregado'] = pd.to_datetime(df['Entregado'])
                     
                     st.session_state.df = df
                     
-                    # ======================== LEER PORTAFOLIO ========================
                     if 'Portafolio' not in excel_file.sheet_names:
                         st.error("⚠️ El archivo no contiene una hoja llamada 'Portafolio'")
                         st.info(f"📋 Hojas disponibles: {', '.join(excel_file.sheet_names)}")
@@ -242,7 +229,6 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                             df_portafolio = df_portafolio.dropna(how='all')
                             st.session_state.df_portafolio = df_portafolio
                             
-                            # ======================== LEER SOLICITUDES EXTERNAS ========================
                             if 'Solicitudes Externas' not in excel_file.sheet_names:
                                 st.warning("⚠️ El archivo no contiene una hoja llamada 'Solicitudes Externas'. Esta hoja es opcional.")
                                 st.session_state.df_externas = None
@@ -250,7 +236,6 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                             else:
                                 df_externas = pd.read_excel(archivo, sheet_name='Solicitudes Externas')
                                 
-                                # Verificar columnas necesarias
                                 columnas_externas = ['fechaRegistroFormulario', 'ciudad', 'proceso', 'idPaciente', 
                                                     'nombrePaciente', 'entidad', 'servicio', 'cups', 'estado', 
                                                     'fechaEntregaProceso', 'motivoCancelacion']
@@ -261,19 +246,14 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                                     st.info(f"📋 Columnas faltantes: {', '.join(columnas_externas_faltantes)}")
                                     st.session_state.df_externas = None
                                 else:
-                                    # Limpiar datos
                                     df_externas = df_externas.dropna(how='all')
                                     
-                                    # Convertir fechas
                                     df_externas['fechaRegistroFormulario'] = pd.to_datetime(df_externas['fechaRegistroFormulario'], errors='coerce')
                                     df_externas['fechaEntregaProceso'] = pd.to_datetime(df_externas['fechaEntregaProceso'], errors='coerce')
                                     
-                                    # Normalizar ciudad para comparación (mayúsculas y sin espacios)
                                     df_externas['ciudad_norm'] = df_externas['ciudad'].astype(str).str.strip().str.upper()
-                                    # Eliminar puntos y comas
                                     df_externas['ciudad_norm'] = df_externas['ciudad_norm'].str.replace('.', '').str.replace(',', '')
                                     
-                                    # Normalizar estado para comparación
                                     df_externas['estado_norm'] = df_externas['estado'].astype(str).str.strip().str.upper()
                                     
                                     st.session_state.df_externas = df_externas
@@ -308,10 +288,6 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
 
 # ======================== FUNCIÓN PARA ASIGNAR ÁREA ========================
 def asignar_area_mejorada(df_data, df_portafolio):
-    """
-    Asigna el área a cada registro basándose en el CUPS y la Sede.
-    Maneja diferentes formatos de CUPS y normaliza los nombres de sedes.
-    """
     df_data_copy = df_data.copy()
     df_portafolio_copy = df_portafolio.copy()
     
@@ -349,11 +325,6 @@ def asignar_area_mejorada(df_data, df_portafolio):
 
 # ======================== FUNCIÓN PARA CLASIFICAR GESTIÓN DE EXTERNAS ========================
 def clasificar_gestion_externa(estado):
-    """
-    Clasifica si una solicitud externa está gestionada o pendiente.
-    Solo "PENDIENTE / REGISTRADA" se considera pendiente.
-    Todos los demás estados se consideran gestionados.
-    """
     estado_norm = str(estado).strip().upper()
     if estado_norm == "PENDIENTE":
         return "Pendiente"
@@ -362,9 +333,6 @@ def clasificar_gestion_externa(estado):
 
 # ======================== FUNCIÓN PARA OBTENER SUFIJO DE SEDE ========================
 def obtener_sufijo_sede(sedes_seleccionadas, df_filtrado):
-    """
-    Genera un sufijo corto para usar en títulos de gráficos.
-    """
     if sedes_seleccionadas and len(sedes_seleccionadas) > 0:
         if len(sedes_seleccionadas) == 1:
             return f"Sede: {sedes_seleccionadas[0]}"
@@ -385,8 +353,6 @@ def obtener_sufijo_sede(sedes_seleccionadas, df_filtrado):
 
 # ======================== FUNCIÓN PARA GENERAR RESUMEN EJECUTIVO ========================
 def generar_resumen_ejecutivo(df, df_externas_filtrado):
-    """Genera un resumen ejecutivo con los principales hallazgos del análisis"""
-    
     total_ordenes = len(df)
     total_entidades = df['Entidad'].nunique()
     total_pacientes = df['Paciente'].nunique()
@@ -496,7 +462,6 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
 
 # ======================== FUNCIÓN PARA GENERAR INTERPRETACIONES ========================
 def generar_interpretacion(titulo, texto):
-    """Genera una interpretación con formato HTML correcto"""
     return f'<div class="interpretation-box"><strong>📝 {titulo}:</strong> {texto}</div>'
 
 # ======================== CONTENIDO PRINCIPAL ========================
@@ -667,7 +632,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         if 'Entregado' in df_filtrado.columns:
             df_filtrado['dias_entrega'] = (df_filtrado['Entregado'] - df_filtrado['Solicitado']).dt.total_seconds() / (24 * 3600)
         
-        # ======================== FILTRAR SOLICITUDES EXTERNAS ========================
         df_externas_filtrado = None
         if df_externas is not None and len(df_externas) > 0:
             df_externas_filtrado = df_externas.copy()
@@ -1336,7 +1300,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         colores_procesos = colores_procesos + colores_diferenciados
                     colores_procesos = colores_procesos[:len(procesos_unicos)]
                     
-                    # Gráfico de barras apiladas CON ETIQUETAS DE DATOS DENTRO DE CADA SEGMENTO
                     bottom = np.zeros(len(datos_pivot))
                     for i, proceso in enumerate(procesos_unicos):
                         if proceso in datos_pivot.columns:
@@ -1344,7 +1307,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             bars = ax5b.bar(range(len(datos_pivot)), valores, bottom=bottom, 
                                            label=str(proceso)[:40], color=colores_procesos[i], 
                                            edgecolor='white', linewidth=1.5)
-                            # ✅ ETIQUETAS DE DATOS DENTRO DE CADA SEGMENTO
                             for j, v in enumerate(valores):
                                 if v > 0:
                                     text_color = 'white' if v > 5 else 'black'
@@ -1361,7 +1323,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     ax5b.set_xticks(range(len(datos_pivot.index)))
                     ax5b.set_xticklabels([m.strftime('%Y-%m') for m in datos_pivot.index], rotation=45, ha='right')
                     
-                    # Total en la parte superior
                     for i, total in enumerate(bottom):
                         if total > 0:
                             ax5b.text(i, total + 0.3, f'{int(total)}', ha='center', va='bottom', 
@@ -1482,7 +1443,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
                 st.subheader("📊 Distribución de Estados por Proceso")
                 
-                # ✅ Selector de agrupación temporal
                 agrupacion_ep = st.radio(
                     "Agrupar por:",
                     options=["Total", "Día", "Semana", "Mes"],
@@ -1493,20 +1453,16 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 
                 df_ext_ep = df_externas_filtrado.copy()
                 
-                # Tomar top 10 procesos por volumen
                 top_procesos_ep = df_ext_ep['proceso'].value_counts().head(10).index.tolist()
                 df_ext_ep_top = df_ext_ep[df_ext_ep['proceso'].isin(top_procesos_ep)].copy()
                 
                 if len(df_ext_ep_top) > 0:
-                    # ✅ Si se agrupa por tiempo, se crea una columna temporal y se usa como sub-filas
                     if agrupacion_ep == "Total":
-                        # Sin agrupación temporal: proceso x estado
                         pivot_ep = df_ext_ep_top.groupby(['proceso', 'estado']).size().unstack(fill_value=0)
                         pivot_ep = pivot_ep.loc[pivot_ep.sum(axis=1).sort_values(ascending=True).index]
                         etiquetas_y = [f"{str(p)[:50]}{'...' if len(str(p)) > 50 else ''}" for p in pivot_ep.index]
                         titulo_periodo = "Total"
                     else:
-                        # Con agrupación temporal: (proceso + periodo) x estado
                         if agrupacion_ep == "Día":
                             df_ext_ep_top['periodo'] = df_ext_ep_top['fechaRegistroFormulario'].dt.date
                             fmt = '%Y-%m-%d'
@@ -1519,14 +1475,10 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         
                         pivot_ep = df_ext_ep_top.groupby(['proceso', 'periodo', 'estado']).size().unstack(fill_value=0)
                         
-                        # Crear etiquetas combinadas proceso + periodo
                         nuevas_etiquetas = []
                         for idx in pivot_ep.index:
                             proceso, periodo = idx
-                            if agrupacion_ep == "Mes":
-                                periodo_str = periodo.strftime(fmt) if hasattr(periodo, 'strftime') else str(periodo)
-                            else:
-                                periodo_str = periodo.strftime(fmt) if hasattr(periodo, 'strftime') else str(periodo)
+                            periodo_str = periodo.strftime(fmt) if hasattr(periodo, 'strftime') else str(periodo)
                             nuevas_etiquetas.append(f"{str(proceso)[:35]} | {periodo_str}")
                         
                         pivot_ep.index = nuevas_etiquetas
@@ -1654,82 +1606,90 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     st.info("No hay datos suficientes para mostrar la matriz de calor")
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # ======================== GRÁFICO 5F: DISTRIBUCIÓN DE ESTADOS POR ÁREA (NUEVO - COMBINACIÓN) ========================
-        with st.container():
+        # ======================== GRÁFICOS EN DOS COLUMNAS ========================
+        col_g3, col_g4 = st.columns(2)
+        
+        # ======================== GRÁFICO 6: ÓRDENES GENERADAS POR ÁREA (RESTAURADO) ========================
+        with col_g3:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.subheader("📊 Distribución de Estados por Área")
+            st.subheader("📊 Órdenes Generadas por Área")
             
-            df_area_estado = df_filtrado.copy()
+            ordenes_por_area = df_filtrado['Area'].value_counts().reset_index()
+            ordenes_por_area.columns = ['Área', 'Cantidad']
+            ordenes_por_area = ordenes_por_area.sort_values('Cantidad', ascending=False)
             
-            if len(df_area_estado) > 0:
-                # Crear tabla pivote: área (Y) x estado (columnas apiladas)
-                pivot_ae = df_area_estado.groupby(['Area', 'Estado']).size().unstack(fill_value=0)
-                pivot_ae = pivot_ae.loc[pivot_ae.sum(axis=1).sort_values(ascending=True).index]
+            fig6, ax6 = plt.subplots(figsize=(10, 5))
+            bars6 = ax6.bar(ordenes_por_area['Área'], ordenes_por_area['Cantidad'], color='#7c3aed')
+            
+            ax6.set_xlabel('Área')
+            ax6.set_ylabel('Cantidad')
+            ax6.set_title(f'Órdenes Generadas por Área - {sufijo_sede}')
+            ax6.set_xticklabels(ordenes_por_area['Área'], rotation=30, ha='right', fontsize=9)
+            
+            for bar in bars6:
+                height = bar.get_height()
+                ax6.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                        f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold', color='black')
+            
+            plt.tight_layout()
+            st.pyplot(fig6)
+            
+            if len(ordenes_por_area) > 0:
+                total_ordenes = ordenes_por_area['Cantidad'].sum()
+                top_area = ordenes_por_area.iloc[0]['Área']
+                top_cantidad = ordenes_por_area.iloc[0]['Cantidad']
                 
-                fig5f, ax5f = plt.subplots(figsize=(14, max(7, len(pivot_ae) * 0.6)))
+                texto_interpretacion6 = f'Se generaron <strong>{total_ordenes}</strong> órdenes distribuidas en <strong>{len(ordenes_por_area)}</strong> áreas. El área con mayor generación de órdenes es <span class="stat">"{top_area}"</span> con <strong>{top_cantidad}</strong> órdenes (<span class="stat">{top_cantidad/total_ordenes*100:.1f}%</span> del total).'
                 
-                estados_unicos_ae = pivot_ae.columns.tolist()
-                colores_estados_ae = colores_diferenciados[:len(estados_unicos_ae)]
-                while len(colores_estados_ae) < len(estados_unicos_ae):
-                    colores_estados_ae = colores_estados_ae + colores_diferenciados
-                colores_estados_ae = colores_estados_ae[:len(estados_unicos_ae)]
+                if len(ordenes_por_area) > 1:
+                    segunda_area = ordenes_por_area.iloc[1]['Área']
+                    segunda_cantidad = ordenes_por_area.iloc[1]['Cantidad']
+                    texto_interpretacion6 += f' {segunda_area} generó <strong>{segunda_cantidad}</strong> órdenes, representando el <span class="stat">{segunda_cantidad/total_ordenes*100:.1f}%</span> del total.'
                 
-                left = np.zeros(len(pivot_ae))
-                y_pos = np.arange(len(pivot_ae))
-                
-                for i, estado in enumerate(estados_unicos_ae):
-                    valores = pivot_ae[estado].values
-                    bars = ax5f.barh(y_pos, valores, left=left, 
-                                    label=str(estado)[:35], color=colores_estados_ae[i],
-                                    edgecolor='white', linewidth=1.2)
-                    for j, v in enumerate(valores):
-                        if v > 0:
-                            ax5f.text(left[j] + v/2, y_pos[j], f'{int(v)}', 
-                                     ha='center', va='center', fontsize=9, 
-                                     fontweight='bold', color='white')
-                    left += valores
-                
-                etiquetas_area = [f"{str(a)[:50]}{'...' if len(str(a)) > 50 else ''}" for a in pivot_ae.index]
-                ax5f.set_yticks(y_pos)
-                ax5f.set_yticklabels(etiquetas_area, fontsize=10)
-                
-                for j, total in enumerate(left):
-                    ax5f.text(total + 0.3, y_pos[j], f'{int(total)}', 
-                             ha='left', va='center', fontsize=10, 
-                             fontweight='bold', color='black')
-                
-                ax5f.set_xlabel('Cantidad de Órdenes', fontsize=12)
-                ax5f.set_ylabel('Área', fontsize=12)
-                ax5f.set_title(f'Distribución de Estados por Área - {sufijo_sede}', 
-                              fontsize=14, fontweight='bold')
-                
-                ax5f.legend(loc='lower right', fontsize=10, title='Estados', title_fontsize=11,
-                           framealpha=0.95, edgecolor='#7c3aed')
-                
-                max_total_ae = left.max() if len(left) > 0 else 1
-                ax5f.set_xlim(0, max_total_ae * 1.12)
-                
-                plt.tight_layout()
-                st.pyplot(fig5f)
-                
-                total_ae = int(pivot_ae.values.sum())
-                n_areas = len(pivot_ae)
-                
-                texto_interpretacion5f = f'El gráfico muestra la distribución de estados para las <strong>{n_areas}</strong> áreas con órdenes, que representan <strong>{total_ae}</strong> órdenes en total. '
-                
-                if n_areas > 0:
-                    area_top = pivot_ae.sum(axis=1).idxmax()
-                    cantidad_top = int(pivot_ae.sum(axis=1).max())
-                    texto_interpretacion5f += f'El área con mayor volumen es <span class="stat">"{str(area_top)[:60]}"</span> con <strong>{cantidad_top}</strong> órdenes. '
-                
-                if len(df_area_estado) > 0:
-                    estado_comun = df_area_estado['Estado'].value_counts()
-                    if len(estado_comun) > 0:
-                        texto_interpretacion5f += f'El estado más común es <span class="stat">"{estado_comun.index[0]}"</span> con <strong>{estado_comun.iloc[0]}</strong> órdenes (<span class="stat">{estado_comun.iloc[0]/len(df_area_estado)*100:.1f}%</span>).'
-                
-                st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5f), unsafe_allow_html=True)
-            else:
-                st.info("No hay datos de áreas para mostrar")
+                st.markdown(generar_interpretacion("Interpretación", texto_interpretacion6), unsafe_allow_html=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # ======================== GRÁFICO 7: ESTADOS DE SERVICIOS (RESTAURADO) ========================
+        with col_g4:
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.subheader("📊 Estados de Servicios")
+            
+            estados_counts = df_filtrado['Estado'].value_counts().reset_index()
+            estados_counts.columns = ['Estado', 'Cantidad']
+            estados_counts = estados_counts.sort_values('Cantidad', ascending=False)
+            
+            fig7, ax7 = plt.subplots(figsize=(10, 5))
+            bars7 = ax7.bar(estados_counts['Estado'], estados_counts['Cantidad'], color='#8b5cf6')
+            
+            ax7.set_xlabel('Estado')
+            ax7.set_ylabel('Cantidad')
+            ax7.set_title(f'Estados de Servicios - {sufijo_sede}')
+            ax7.set_xticklabels(estados_counts['Estado'], rotation=30, ha='right', fontsize=9)
+            
+            for bar in bars7:
+                height = bar.get_height()
+                ax7.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                        f'{int(height)}', ha='center', va='bottom', fontsize=11, fontweight='bold', color='black')
+            
+            plt.tight_layout()
+            st.pyplot(fig7)
+            
+            total_estados_serv = estados_counts['Cantidad'].sum()
+            top_estado = estados_counts.iloc[0]['Estado']
+            top_estado_cant = estados_counts.iloc[0]['Cantidad']
+            
+            texto_interpretacion7 = f'El estado más frecuente es <span class="stat">"{top_estado}"</span> con <strong>{top_estado_cant}</strong> órdenes (<span class="stat">{top_estado_cant/total_estados_serv*100:.1f}%</span> del total).'
+            
+            if len(estados_counts) > 1:
+                segundo_estado = estados_counts.iloc[1]['Estado']
+                segundo_cantidad = estados_counts.iloc[1]['Cantidad']
+                texto_interpretacion7 += f' {segundo_estado} es el segundo estado con <strong>{segundo_cantidad}</strong> órdenes (<span class="stat">{segundo_cantidad/total_estados_serv*100:.1f}%</span> del total).'
+            
+            texto_interpretacion7 += f' Esto indica que la mayoría de las órdenes se encuentran en estado <span class="stat">"{top_estado}"</span>.'
+            
+            st.markdown(generar_interpretacion("Interpretación", texto_interpretacion7), unsafe_allow_html=True)
+            
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 8: ORDENAMIENTOS POR ENTIDAD ========================
@@ -1777,7 +1737,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         st.markdown("### 📥 Exportar Reporte Completo")
         
         def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, 
-                                       entidad_data, 
+                                       ordenes_area_data, estados_serv_data, entidad_data, 
                                        df_externas_export, df_externas_proceso,
                                        df_ext_proceso_mes_export, df_ext_top_serv_export, 
                                        df_ext_estado_proceso_export):
@@ -1824,6 +1784,18 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                         f'{row["estado"]}: {row["Cantidad"]}', ''])
                 resumen_data.append(['', '', '', ''])
             
+            if len(ordenes_area_data) > 0:
+                total_ord = ordenes_area_data['Cantidad'].sum()
+                for _, row in ordenes_area_data.iterrows():
+                    resumen_data.append(['Gráfico 6', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
+            resumen_data.append(['', '', '', ''])
+            
+            if len(estados_serv_data) > 0:
+                total_est = estados_serv_data['Cantidad'].sum()
+                for _, row in estados_serv_data.iterrows():
+                    resumen_data.append(['Gráfico 7', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
+            resumen_data.append(['', '', '', ''])
+            
             if len(entidad_data) > 0:
                 total_ent = entidad_data['Cantidad'].sum()
                 for _, row in entidad_data.iterrows():
@@ -1839,6 +1811,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 
                 estado_gestion_data = estado_gestion_counts.copy()
                 pendientes_data = pendientes_por_area.copy() if pendientes_por_area is not None and len(pendientes_por_area) > 0 else pd.DataFrame()
+                ordenes_area_data = ordenes_por_area.copy() if len(ordenes_por_area) > 0 else pd.DataFrame()
+                estados_serv_data = estados_counts.copy()
                 entidad_data = entidad_counts.copy()
                 
                 df_externas_export = None
@@ -1887,7 +1861,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 
                 datos_detalle, resumen_graficos = preparar_datos_exportacion(
                     df_export, df_graf1, estado_gestion_data, pendientes_data, 
-                    entidad_data,
+                    ordenes_area_data, estados_serv_data, entidad_data,
                     df_externas_export, df_externas_proceso,
                     df_ext_proceso_mes_export, df_ext_top_serv_export, df_ext_estado_proceso_export
                 )
