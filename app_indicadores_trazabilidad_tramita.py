@@ -1457,69 +1457,118 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 df_ext_ep_top = df_ext_ep[df_ext_ep['proceso'].isin(top_procesos_ep)].copy()
                 
                 if len(df_ext_ep_top) > 0:
-                    # ✅ CASO ESPECIAL: AGRUPACIÓN POR MES CON BARRAS AGRUPADAS (NO APILADAS)
+                    # ============================================================
+                    # CASO ESPECIAL: AGRUPACIÓN POR MES
+                    # Cada proceso en el eje Y, y para cada proceso se dibujan N barras
+                    # (una por mes) LADO A LADO. Cada barra individual está APILADA por estados.
+                    # ============================================================
                     if agrupacion_ep == "Mes":
                         df_ext_ep_top['periodo'] = df_ext_ep_top['fechaRegistroFormulario'].dt.to_period('M').dt.start_time
                         
-                        # Pivot: índice = proceso, columnas = mes, valores = total de solicitudes (sumando todos los estados)
-                        pivot_mes = df_ext_ep_top.groupby(['proceso', 'periodo']).size().unstack(fill_value=0)
+                        # Obtener meses únicos y estados únicos
+                        meses_unicos_ep = sorted(df_ext_ep_top['periodo'].dropna().unique())
+                        estados_unicos_mes = sorted(df_ext_ep_top['estado'].dropna().unique())
                         
-                        # Ordenar procesos por total descendente
-                        pivot_mes['_total'] = pivot_mes.sum(axis=1)
-                        pivot_mes = pivot_mes.sort_values('_total', ascending=True).drop(columns='_total')
+                        # Ordenar los procesos por total descendente
+                        totales_por_proceso = df_ext_ep_top.groupby('proceso').size().sort_values(ascending=True)
+                        procesos_ordenados = totales_por_proceso.index.tolist()
                         
-                        # Obtener los meses únicos ordenados
-                        meses_ordenados = sorted(pivot_mes.columns)
+                        n_procesos = len(procesos_ordenados)
+                        n_meses = len(meses_unicos_ep)
                         
-                        fig5d, ax5d = plt.subplots(figsize=(14, max(7, len(pivot_mes) * 0.7)))
+                        # Ancho de barra: si hay varios meses, se divide el espacio para que quepan lado a lado
+                        altura_total_disponible = 0.8
+                        ancho_barra = altura_total_disponible / n_meses if n_meses > 0 else altura_total_disponible
                         
-                        # Colores para cada mes
-                        colores_meses = colores_diferenciados[:len(meses_ordenados)]
-                        while len(colores_meses) < len(meses_ordenados):
-                            colores_meses = colores_meses + colores_diferenciados
-                        colores_meses = colores_meses[:len(meses_ordenados)]
+                        # Colores para estados
+                        colores_estados_mes = colores_diferenciados[:len(estados_unicos_mes)]
+                        while len(colores_estados_mes) < len(estados_unicos_mes):
+                            colores_estados_mes = colores_estados_mes + colores_diferenciados
+                        colores_estados_mes = colores_estados_mes[:len(estados_unicos_mes)]
+                        dict_color_estado = {estado: colores_estados_mes[i] for i, estado in enumerate(estados_unicos_mes)}
                         
-                        n_meses = len(meses_ordenados)
-                        n_procesos = len(pivot_mes)
-                        altura_barra = 0.8 / n_meses if n_meses > 0 else 0.8
+                        fig5d, ax5d = plt.subplots(figsize=(14, max(7, n_procesos * 0.7)))
                         
                         y_pos = np.arange(n_procesos)
                         
-                        for i, mes in enumerate(meses_ordenados):
-                            valores = pivot_mes[mes].values
-                            offset = (i - (n_meses - 1) / 2) * altura_barra
-                            bars = ax5d.barh(y_pos + offset, valores, height=altura_barra,
-                                            label=mes.strftime('%Y-%m'), color=colores_meses[i],
-                                            edgecolor='white', linewidth=1)
-                            for j, v in enumerate(valores):
-                                if v > 0:
-                                    ax5d.text(v + 0.2, y_pos[j] + offset, f'{int(v)}', 
+                        # Para cada proceso, dibujamos N barras (una por mes), cada una apilada por estados
+                        for p_idx, proceso in enumerate(procesos_ordenados):
+                            df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
+                            
+                            for m_idx, mes in enumerate(meses_unicos_ep):
+                                df_celda = df_proceso[df_proceso['periodo'] == mes]
+                                if len(df_celda) == 0:
+                                    continue
+                                
+                                # Offset vertical para poner las barras de cada mes una al lado de la otra
+                                offset = (m_idx - (n_meses - 1) / 2) * ancho_barra
+                                left = 0
+                                for estado in estados_unicos_mes:
+                                    valor = (df_celda['estado'] == estado).sum()
+                                    if valor > 0:
+                                        ax5d.barh(p_idx + offset, valor, left=left, height=ancho_barra,
+                                                 color=dict_color_estado[estado], edgecolor='white', linewidth=0.8)
+                                        # Etiqueta dentro del segmento si es suficientemente grande
+                                        if valor >= 2:
+                                            ax5d.text(left + valor/2, p_idx + offset, f'{int(valor)}',
+                                                     ha='center', va='center', fontsize=7, 
+                                                     fontweight='bold', color='white')
+                                        left += valor
+                                
+                                # Mostrar el total al final de la barra (por mes)
+                                total_celda = len(df_celda)
+                                if total_celda > 0:
+                                    ax5d.text(total_celda + 0.3, p_idx + offset, f'{total_celda}',
                                              ha='left', va='center', fontsize=8, 
                                              fontweight='bold', color='black')
                         
-                        etiquetas_proc = [f"{str(p)[:50]}{'...' if len(str(p)) > 50 else ''}" for p in pivot_mes.index]
+                        # Etiquetas del eje Y (procesos)
+                        etiquetas_proc = [f"{str(p)[:45]}{'...' if len(str(p)) > 45 else ''}" for p in procesos_ordenados]
                         ax5d.set_yticks(y_pos)
                         ax5d.set_yticklabels(etiquetas_proc, fontsize=10)
                         
                         ax5d.set_xlabel('Cantidad de Solicitudes', fontsize=12)
                         ax5d.set_ylabel('Proceso', fontsize=12)
-                        ax5d.set_title(f'Solicitudes Externas: Distribución de Estados por Proceso - Agrupado por Mes - {sufijo_sede}', 
+                        ax5d.set_title(f'Solicitudes Externas: Distribución de Estados por Proceso - Agrupado por Mes - {sufijo_sede}',
                                       fontsize=14, fontweight='bold')
                         
-                        ax5d.legend(loc='lower right', fontsize=10, title='Mes', title_fontsize=11,
-                                   framealpha=0.95, edgecolor='#7c3aed')
+                        # Leyenda 1: Estados (colores)
+                        legend_estados = [Patch(facecolor=dict_color_estado[estado], edgecolor='white', 
+                                                label=str(estado)[:35])
+                                          for estado in estados_unicos_mes]
+                        legend1 = ax5d.legend(handles=legend_estados, loc='upper left', 
+                                             bbox_to_anchor=(1.02, 1), fontsize=9, 
+                                             title='Estados', title_fontsize=10,
+                                             framealpha=0.95, edgecolor='#7c3aed')
+                        ax5d.add_artist(legend1)
                         
-                        max_total = pivot_mes.values.max() if len(pivot_mes) > 0 else 1
-                        ax5d.set_xlim(0, max_total * 1.15)
+                        # Leyenda 2: Meses (orden de las barras de arriba a abajo dentro de cada proceso)
+                        # Como las barras no tienen un color único por mes, mostramos el orden en una leyenda explicativa
+                        texto_leyenda_meses = "Orden de meses por proceso (arriba → abajo):\n" + "\n".join(
+                            [f"{i+1}. {m.strftime('%Y-%m')}" for i, m in enumerate(meses_unicos_ep)]
+                        )
+                        ax5d.text(1.02, 0.55, texto_leyenda_meses, transform=ax5d.transAxes,
+                                 fontsize=9, va='top', ha='left',
+                                 bbox=dict(boxstyle="round,pad=0.5", facecolor='#f8f4ff', 
+                                          edgecolor='#7c3aed', alpha=0.95))
+                        
+                        max_total = 0
+                        for p_idx, proceso in enumerate(procesos_ordenados):
+                            df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
+                            for mes in meses_unicos_ep:
+                                total_celda = (df_proceso['periodo'] == mes).sum()
+                                if total_celda > max_total:
+                                    max_total = total_celda
+                        
+                        ax5d.set_xlim(0, max_total * 1.15 if max_total > 0 else 10)
                         
                         plt.tight_layout()
                         st.pyplot(fig5d)
                         
-                        total_analizado = int(pivot_mes.values.sum())
+                        total_analizado = len(df_ext_ep_top)
                         total_general = len(df_externas_filtrado)
-                        n_procesos_unicos = len(pivot_mes)
                         
-                        texto_interpretacion5d = f'El gráfico muestra la <strong>distribución de estados por proceso agrupado por mes</strong> (barras agrupadas por mes) para los <strong>{n_procesos_unicos}</strong> procesos más relevantes, que representan <strong>{total_analizado}</strong> de <strong>{total_general}</strong> solicitudes externas (<span class="stat">{total_analizado/total_general*100:.1f}%</span> del total). '
+                        texto_interpretacion5d = f'El gráfico muestra la <strong>distribución de estados por proceso agrupado por mes</strong> en <strong>solicitudes externas</strong>. Para cada uno de los <strong>{n_procesos}</strong> procesos más relevantes, se muestran <strong>{n_meses}</strong> barras (una por mes) <strong>lado a lado</strong>, y cada barra está <strong>apilada por estados</strong>. Se analizaron <strong>{total_analizado}</strong> de <strong>{total_general}</strong> solicitudes externas (<span class="stat">{total_analizado/total_general*100:.1f}%</span> del total). '
                         
                         if len(df_ext_ep_top) > 0:
                             estado_comun = df_ext_ep_top['estado'].value_counts()
@@ -1528,7 +1577,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         
                         st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5d), unsafe_allow_html=True)
                     
-                    # ✅ OTROS CASOS: TOTAL / DÍA / SEMANA (BARRAS APILADAS)
+                    # ============================================================
+                    # OTROS CASOS: TOTAL / DÍA / SEMANA (BARRAS APILADAS HORIZONTALES)
+                    # ============================================================
                     else:
                         if agrupacion_ep == "Total":
                             pivot_ep = df_ext_ep_top.groupby(['proceso', 'estado']).size().unstack(fill_value=0)
