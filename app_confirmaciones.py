@@ -9,6 +9,106 @@ import numpy as np
 
 st.set_page_config(page_title="Excel Data Filtering", layout="wide")
 
+# ============================================================
+# BARRA LATERAL: PASO A PASO Y REGLAS PARAMETRIZADAS
+# ============================================================
+with st.sidebar:
+    st.header("📘 Guía de uso")
+
+    # ---------------- PASO A PASO ----------------
+    with st.expander("📝 Paso a paso: cómo usar la app", expanded=False):
+        st.markdown("""
+        **1. Cargar el archivo Excel**
+        - Sube tu archivo `.xlsx` con el botón **Upload your Excel file**.
+        - La app mostrará cuántas filas y columnas se cargaron.
+
+        **2. Revisar información general**
+        - Aparecerá el rango de fechas detectado en los datos.
+
+        **3. Seleccionar cantidad de archivos a generar**
+        - Usa **Number of output files to generate** para definir cuántos Excel quieres producir (cada uno con filtros independientes).
+
+        **4. Configurar los filtros por archivo**
+        - **Empresa(s)**: filtra por empresa.
+        - **Sede(s)**: filtra por sede (opciones dependen de la empresa).
+        - **Ubicación(es)**: Consulta / Procedimiento.
+        - **Unidad Funcional(es)**: filtra por unidad funcional.
+        - **Fecha inicio / Fecha fin**: rango de fechas de programación.
+
+        **5. Generar los archivos**
+        - Haz clic en **Generate and Download Files**.
+        - La app procesa cada archivo, aplica las reglas y muestra los botones de descarga.
+
+        **6. Descargar los Excel**
+        - Cada archivo generado tendrá dos hojas:
+          - **Base confirmación**: con `TELEFONO CONFIRMACIÓN` y `VARIABLE`.
+          - **Pacientes**: con los datos detallados del paciente.
+        """)
+
+    # ---------------- REGLAS PARAMETRIZADAS ----------------
+    with st.expander("⚙️ Reglas parametrizadas en el código", expanded=False):
+        st.markdown("""
+        ### 🔹 Reglas generales (aplican a toda la app)
+
+        **R0. Creación de `Ubicación`**
+        - Si `Actividad Médica` empieza por "consulta" → `Consulta`.
+        - En caso contrario → `Procedimiento`.
+
+        **R1. Citas duplicadas**
+        - Se eliminan duplicados por `Numero de Identificación + Sede + Fecha`,
+          conservando el primer registro según hora.
+
+        **R2. Dirección final**
+        - Se asigna según `Sede` (tabla interna).
+        - Si `Modalidad == 'Teleconsulta'` → `Direccion Final = 'Teleconsulta'`.
+
+        **R3. Teléfono de confirmación**
+        - Si `Telefono Movil` está vacío y `Telefono Fijo` es válido
+          (no empieza por "60") → se usa `+57` + `Telefono Fijo`.
+        - Si `Telefono Movil` empieza por "3" y no por "60" → `+57` + `Telefono Movil`.
+        - En caso contrario → `"sin número para enviar mensaje"`.
+
+        ---
+        ### 🔹 Reglas para la sede MARAYA
+        *(Solo se aplican cuando la sede contiene "MARAYA")*
+
+        **R4. Exclusión**
+        - Si `Especialista` contiene `HECTOR ARTURO JAIMES`
+          y `Unidad Funcional == 'IMAGENES DIAGNOSTICAS MARAYA'`
+          → el registro se elimina del archivo resultante.
+
+        **R5. CUPS con "CONTRASTE"**
+        - Si el `CUPS` contiene "CONTRASTE" → `Hora Cita = 07:00:00`.
+
+        **R6. Ecografías y Doppler**
+        - Si un paciente tiene al menos un registro con
+          `PROCEDIMIENTOS DE ECOGRAFIAS Y DOPPLER` el mismo día y sede:
+          - Registros entre **11:00 y 12:00** → `10:00:00`.
+          - Registros entre **16:00 y 17:00** → `15:30:00`.
+
+        **R7. Rayos X**
+        - Si `Actividad Médica` contiene `PROCEDIMIENTOS DE RAYOS X`
+          y la hora está entre **16:00 y 17:00** → `15:30:00`.
+
+        **R8. CUPS sin "CONTRASTE"**
+        - Si el `CUPS` NO contiene "CONTRASTE"
+          y la hora está entre **16:00 y 17:00** → `16:00:00`.
+
+        **R9. Hora más temprana por paciente/sede/fecha**
+        - Para cada grupo `Numero de Identificación + Sede + Fecha`:
+          - Se toma la **hora más temprana** entre todas las horas resultantes
+            (después de aplicar R5–R8).
+          - Se asigna esa hora a **todos** los registros del mismo grupo.
+
+        ---
+        ### 🔹 Formato de horas
+        - Todas las horas ajustadas se escriben en formato `HH:MM:SS`
+          (por ejemplo `07:00:00`, `10:00:00`, `15:30:00`, `16:00:00`).
+        """)
+
+# ============================================================
+# CONTENIDO PRINCIPAL
+# ============================================================
 st.title("Excel Data Filtering and Export App")
 
 uploaded_file = st.file_uploader("Upload your Excel file", type=".xlsx")
@@ -23,7 +123,6 @@ if uploaded_file is not None:
     if 'Numero de Identificación' in df.columns:
         df = df.sort_values(by='Numero de Identificación', ascending=True).reset_index(drop=True)
 
-    # Crear columna 'Ubicación' basada en 'Actividad Médica'
     if 'Actividad Médica' in df.columns:
         df['Actividad Médica_clean'] = df['Actividad Médica'].fillna('').astype(str).str.strip().str.lower()
         df['Ubicación'] = df['Actividad Médica_clean'].apply(
@@ -33,7 +132,6 @@ if uploaded_file is not None:
     else:
         df['Ubicación'] = 'Desconocido'
 
-    # Parseo robusto de fechas
     date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%d-%m-%Y', '%m-%d-%Y']
     time_formats = ['%H:%M:%S', '%H:%M', '%I:%M %p']
 
@@ -408,7 +506,6 @@ if uploaded_file is not None:
             # ============================================================
             es_maraya = any('MARAYA' in str(s).upper() for s in file_filters['sedes'])
             
-            # REGLA 5 (exclusión): HECTOR ARTURO JAIMES + IMAGENES DIAGNOSTICAS MARAYA
             if ('Especialista' in filtered_df.columns 
                 and 'Unidad Funcional' in filtered_df.columns
                 and len(filtered_df) > 0):
@@ -466,17 +563,13 @@ if uploaded_file is not None:
                 else:
                     horas_decimales = pd.Series([None] * len(filtered_df), index=filtered_df.index)
                 
-                # ------------------------------------------------------------
-                # REGLA 2: CUPS contiene "CONTRASTE" -> 7 am
-                # ------------------------------------------------------------
+                # REGLA 2: CUPS contiene "CONTRASTE" -> 07:00:00
                 mascara_contraste = cups_norm.str.contains('CONTRASTE', na=False, regex=False)
                 if mascara_contraste.any():
                     filtered_df.loc[mascara_contraste, 'Hora Cita Formatted'] = '07:00:00'
                     horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
                 
-                # ------------------------------------------------------------
                 # REGLA 1: ECOGRAFIAS Y DOPPLER
-                # ------------------------------------------------------------
                 mascara_eco = actividad_norm.str.contains(
                     'PROCEDIMIENTOS DE ECOGRAFIAS Y DOPPLER', na=False, regex=False
                 )
@@ -506,9 +599,7 @@ if uploaded_file is not None:
                     
                     horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
                 
-                # ------------------------------------------------------------
                 # REGLA 3: PROCEDIMIENTOS DE RAYOS X
-                # ------------------------------------------------------------
                 mascara_rayos = actividad_norm.str.contains(
                     'PROCEDIMIENTOS DE RAYOS X', na=False, regex=False
                 )
@@ -517,20 +608,13 @@ if uploaded_file is not None:
                     filtered_df.loc[mascara_16_17_rayos, 'Hora Cita Formatted'] = '15:30:00'
                     horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
                 
-                # ------------------------------------------------------------
                 # REGLA 4: CUPS SIN "CONTRASTE" y hora entre 16:00-17:00 -> 16:00:00
-                # ------------------------------------------------------------
                 mascara_sin_contraste = ~cups_norm.str.contains('CONTRASTE', na=False, regex=False)
                 mascara_16_17_general = mascara_sin_contraste & horas_decimales.between(16.0, 17.0, inclusive='both')
                 if mascara_16_17_general.any():
                     filtered_df.loc[mascara_16_17_general, 'Hora Cita Formatted'] = '16:00:00'
                 
-                # ------------------------------------------------------------
-                # REGLA 6 (NUEVA): Para cada grupo (paciente + sede + fecha),
-                # tomar la hora MÁS TEMPRANA entre las horas resultantes
-                # (excluyendo vacíos, "nan", "NaT", "-") y asignarla a TODOS
-                # los registros del grupo.
-                # ------------------------------------------------------------
+                # REGLA 6: Hora más temprana por grupo paciente + sede + fecha
                 if ('Numero de Identificación' in filtered_df.columns 
                     and 'Sede' in filtered_df.columns 
                     and 'Fecha Programación Formateada' in filtered_df.columns
@@ -544,7 +628,6 @@ if uploaded_file is not None:
                         + '|' + filtered_df['Fecha Programación Formateada'].astype(str).str.strip()
                     )
                     
-                    # Solo consideramos horas válidas (no None) para calcular el mínimo
                     temp_horas = pd.DataFrame({
                         'clave': clave_grupo_final,
                         'hora_dec': horas_decimales
@@ -553,17 +636,13 @@ if uploaded_file is not None:
                     
                     if len(temp_horas_validas) > 0:
                         minimos_por_grupo = temp_horas_validas.groupby('clave')['hora_dec'].min().to_dict()
-                        
-                        # Asignar la hora mínima a TODOS los registros del grupo
                         nueva_hora_dec = clave_grupo_final.map(minimos_por_grupo)
-                        
-                        # Aplicar solo donde exista un mínimo definido para el grupo
                         mascara_con_minimo = nueva_hora_dec.notna()
                         filtered_df.loc[mascara_con_minimo, 'Hora Cita Formatted'] = (
                             nueva_hora_dec[mascara_con_minimo].apply(decimal_a_hora_formateada).values
                         )
                 
-                # Reconstruir VARIABLE con las horas actualizadas
+                # Reconstruir VARIABLE
                 filtered_df['VARIABLE'] = filtered_df.apply(
                     lambda row: f"{row.get('Nombres','') } {row.get('Apellidos','')}|{row.get('Actividad Médica','')}|{row.get('Fecha Programación Formateada','')}|{row.get('Hora Cita Formatted','')}|{row.get('Especialista','')}|{row.get('Direccion Final','')}",
                     axis=1
