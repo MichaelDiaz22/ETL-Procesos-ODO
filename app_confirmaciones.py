@@ -502,7 +502,7 @@ if uploaded_file is not None:
                     filtered_df.loc[mascara_11_12, 'Hora Cita Formatted'] = '10:00:00'
                     
                     mascara_16_17_eco = mascara_mismo_grupo & horas_decimales.between(16.0, 17.0, inclusive='both')
-                    filtered_df.loc[mascara_16_17_eco, 'Hora Cita Formatted'] = '15:00:00'
+                    filtered_df.loc[mascara_16_17_eco, 'Hora Cita Formatted'] = '15:30:00'
                     
                     horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
                 
@@ -514,7 +514,7 @@ if uploaded_file is not None:
                 )
                 if mascara_rayos.any():
                     mascara_16_17_rayos = mascara_rayos & horas_decimales.between(16.0, 17.0, inclusive='both')
-                    filtered_df.loc[mascara_16_17_rayos, 'Hora Cita Formatted'] = '15:00:00'
+                    filtered_df.loc[mascara_16_17_rayos, 'Hora Cita Formatted'] = '15:30:00'
                     horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
                 
                 # ------------------------------------------------------------
