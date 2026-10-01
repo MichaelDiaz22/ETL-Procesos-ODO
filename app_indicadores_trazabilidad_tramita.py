@@ -438,7 +438,6 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
     total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
     total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
     
-    # Calcular días de entrega para entregados a proceso
     entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA'].copy()
     promedio_dias_entrega_ext = None
     num_entregados_validos = 0
@@ -450,7 +449,6 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
         if num_entregados_validos > 0:
             promedio_dias_entrega_ext = entregados_validos['dias_entrega_ext'].mean()
     
-    # Top proceso
     top_proceso_txt = ""
     if 'proceso' in df_externas_filtrado.columns:
         top_procesos = df_externas_filtrado['proceso'].value_counts()
@@ -459,7 +457,6 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
             top_proceso_count = top_procesos.iloc[0]
             top_proceso_txt = f' El proceso más frecuente es <span class="stat">"{str(top_proceso)[:60]}"</span> con <span class="stat">{top_proceso_count:,}</span> solicitudes (<span class="stat">{top_proceso_count/total_externas*100:.1f}%</span> del total).'
     
-    # Top servicio
     top_servicio_txt = ""
     if 'servicio' in df_externas_filtrado.columns:
         top_servicios = df_externas_filtrado['servicio'].value_counts()
@@ -468,7 +465,6 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
             top_servicio_count = top_servicios.iloc[0]
             top_servicio_txt = f' El servicio más solicitado es <span class="stat">"{str(top_servicio)[:60]}"</span> con <span class="stat">{top_servicio_count:,}</span> solicitudes (<span class="stat">{top_servicio_count/total_externas*100:.1f}%</span> del total).'
     
-    # Top estado
     top_estado_txt = ""
     top_estados = df_externas_filtrado['estado'].value_counts()
     if len(top_estados) > 0:
@@ -788,7 +784,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         promedio_paciente_dia = "N/A"
     
     if len(df_filtrado) > 0:
-        # Solo 6 tarjetas generales (las de externas se movieron a su propia sección)
         col_k1, col_k2, col_k3 = st.columns(3)
         
         with col_k1:
@@ -1718,7 +1713,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                      bbox=dict(boxstyle="round,pad=0.5", facecolor='#f8f4ff', 
                                               edgecolor='#7c3aed', alpha=0.95))
                             
-                            max_total = 0                            for p_idx, proceso in enumerate(procesos_ordenados):
+                            max_total = 0
+                            for p_idx, proceso in enumerate(procesos_ordenados):
                                 df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
                                 for mes in meses_unicos_ep:
                                     total_celda = (df_proceso['periodo'] == mes).sum()
