@@ -351,8 +351,9 @@ def obtener_sufijo_sede(sedes_seleccionadas, df_filtrado):
                 return f"Todas las sedes ({len(sedes_unicas)})"
         return "Todas las sedes"
 
-# ======================== FUNCIÓN PARA GENERAR RESUMEN EJECUTIVO ========================
-def generar_resumen_ejecutivo(df, df_externas_filtrado):
+# ======================== FUNCIÓN PARA GENERAR RESUMEN EJECUTIVO GENERAL ========================
+def generar_resumen_ejecutivo(df):
+    """Genera un resumen ejecutivo general (sin la parte de solicitudes externas)"""
     total_ordenes = len(df)
     total_entidades = df['Entidad'].nunique()
     total_pacientes = df['Paciente'].nunique()
@@ -419,42 +420,76 @@ def generar_resumen_ejecutivo(df, df_externas_filtrado):
     if promedio_paciente_dia > 0:
         resumen += f'<p><strong>Productividad por Paciente:</strong> En promedio cada paciente genera <span class="stat">{promedio_paciente_dia:.1f}</span> órdenes por día.</p>'
     
-    if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
-        total_externas = len(df_externas_filtrado)
-        
-        df_ext_temp = df_externas_filtrado.copy()
-        df_ext_temp['gestion_clasificacion'] = df_ext_temp['estado'].apply(clasificar_gestion_externa)
-        
-        total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
-        total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
-        
-        entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA'].copy()
-        promedio_dias_entrega_ext = None
-        num_entregados_validos = 0
-        
-        if len(entregados) > 0:
-            entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
-            entregados_validos = entregados[entregados['dias_entrega_ext'].notna() & (entregados['dias_entrega_ext'] >= 0)]
-            num_entregados_validos = len(entregados_validos)
-            if num_entregados_validos > 0:
-                promedio_dias_entrega_ext = entregados_validos['dias_entrega_ext'].mean()
-        
-        resumen += f'<p><strong>Solicitudes Externas:</strong> Se identificaron <span class="stat">{total_externas:,}</span> solicitudes externas para la sede.'
-        resumen += f' De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión.'
-        
-        if promedio_dias_entrega_ext is not None and num_entregados_validos > 0:
-            resumen += f' Para las solicitudes entregadas a proceso, el tiempo promedio de entrega es de <span class="stat">{promedio_dias_entrega_ext:.1f}</span> días, calculado sobre <span class="stat">{num_entregados_validos}</span> registros con fechas válidas.'
-        elif len(entregados) > 0:
-            resumen += f' No se encontraron registros con fechas válidas para calcular el tiempo promedio de entrega de las solicitudes entregadas a proceso.'
-        else:
-            resumen += f' No hay registros con estado "ENTREGADA" para calcular el tiempo promedio de entrega.'
-        
-        resumen += '</p>'
-        
-    elif df_externas_filtrado is not None and len(df_externas_filtrado) == 0:
-        resumen += '<p><strong>Solicitudes Externas:</strong> No se encontraron solicitudes externas para las ciudades seleccionadas.</p>'
+    resumen += '</div>'
+    
+    return resumen
+
+# ======================== FUNCIÓN PARA GENERAR RESUMEN EJECUTIVO DE EXTERNAS ========================
+def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
+    """Genera un resumen ejecutivo específico para solicitudes externas"""
+    if df_externas_filtrado is None or len(df_externas_filtrado) == 0:
+        return '<div class="executive-summary"><h3>📋 Resumen Ejecutivo - Solicitudes Externas</h3><p>No se encontraron solicitudes externas para las ciudades seleccionadas.</p></div>'
+    
+    total_externas = len(df_externas_filtrado)
+    
+    df_ext_temp = df_externas_filtrado.copy()
+    df_ext_temp['gestion_clasificacion'] = df_ext_temp['estado'].apply(clasificar_gestion_externa)
+    
+    total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
+    total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
+    
+    # Calcular días de entrega para entregados a proceso
+    entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA'].copy()
+    promedio_dias_entrega_ext = None
+    num_entregados_validos = 0
+    
+    if len(entregados) > 0:
+        entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
+        entregados_validos = entregados[entregados['dias_entrega_ext'].notna() & (entregados['dias_entrega_ext'] >= 0)]
+        num_entregados_validos = len(entregados_validos)
+        if num_entregados_validos > 0:
+            promedio_dias_entrega_ext = entregados_validos['dias_entrega_ext'].mean()
+    
+    # Top proceso
+    top_proceso_txt = ""
+    if 'proceso' in df_externas_filtrado.columns:
+        top_procesos = df_externas_filtrado['proceso'].value_counts()
+        if len(top_procesos) > 0:
+            top_proceso = top_procesos.index[0]
+            top_proceso_count = top_procesos.iloc[0]
+            top_proceso_txt = f' El proceso más frecuente es <span class="stat">"{str(top_proceso)[:60]}"</span> con <span class="stat">{top_proceso_count:,}</span> solicitudes (<span class="stat">{top_proceso_count/total_externas*100:.1f}%</span> del total).'
+    
+    # Top servicio
+    top_servicio_txt = ""
+    if 'servicio' in df_externas_filtrado.columns:
+        top_servicios = df_externas_filtrado['servicio'].value_counts()
+        if len(top_servicios) > 0:
+            top_servicio = top_servicios.index[0]
+            top_servicio_count = top_servicios.iloc[0]
+            top_servicio_txt = f' El servicio más solicitado es <span class="stat">"{str(top_servicio)[:60]}"</span> con <span class="stat">{top_servicio_count:,}</span> solicitudes (<span class="stat">{top_servicio_count/total_externas*100:.1f}%</span> del total).'
+    
+    # Top estado
+    top_estado_txt = ""
+    top_estados = df_externas_filtrado['estado'].value_counts()
+    if len(top_estados) > 0:
+        top_estado = top_estados.index[0]
+        top_estado_count = top_estados.iloc[0]
+        top_estado_txt = f' El estado más frecuente es <span class="stat">"{top_estado}"</span> con <span class="stat">{top_estado_count:,}</span> solicitudes (<span class="stat">{top_estado_count/total_externas*100:.1f}%</span> del total).'
+    
+    resumen = '<div class="executive-summary">'
+    resumen += '<h3>📋 Resumen Ejecutivo - Solicitudes Externas</h3>'
+    resumen += f'<p><strong>Visión General ({sufijo_sede}):</strong> Se identificaron <span class="stat">{total_externas:,}</span> solicitudes externas en total.</p>'
+    resumen += f'<p><strong>Gestión de Solicitudes:</strong> De estas, <span class="stat">{total_gestionados_ext:,} ({total_gestionados_ext/total_externas*100:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({total_no_gestionados_ext/total_externas*100:.1f}%)</span> se encuentran pendientes de gestión.</p>'
+    
+    if promedio_dias_entrega_ext is not None and num_entregados_validos > 0:
+        resumen += f'<p><strong>Tiempos de Entrega:</strong> Para las solicitudes entregadas a proceso, el tiempo promedio de entrega es de <span class="stat">{promedio_dias_entrega_ext:.1f}</span> días, calculado sobre <span class="stat">{num_entregados_validos}</span> registros con fechas válidas.</p>'
+    elif len(entregados) > 0:
+        resumen += f'<p><strong>Tiempos de Entrega:</strong> No se encontraron registros con fechas válidas para calcular el tiempo promedio de entrega de las solicitudes entregadas a proceso.</p>'
     else:
-        resumen += '<p><strong>Solicitudes Externas:</strong> No hay datos disponibles.</p>'
+        resumen += f'<p><strong>Tiempos de Entrega:</strong> No hay registros con estado "ENTREGADA" para calcular el tiempo promedio de entrega.</p>'
+    
+    if top_proceso_txt or top_servicio_txt or top_estado_txt:
+        resumen += f'<p><strong>Hallazgos Principales:</strong>{top_proceso_txt}{top_servicio_txt}{top_estado_txt}</p>'
     
     resumen += '</div>'
     
@@ -713,15 +748,15 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
     df_filtrado = st.session_state.df_filtrado.copy()
     df_externas_filtrado = st.session_state.df_externas_filtrado.copy() if st.session_state.df_externas_filtrado is not None else None
     
-    # ======================== RESUMEN EJECUTIVO ========================
+    # ======================== RESUMEN EJECUTIVO GENERAL ========================
     if len(df_filtrado) > 0:
         st.markdown("### 📋 Resumen Ejecutivo")
-        resumen_html = generar_resumen_ejecutivo(df_filtrado, df_externas_filtrado)
+        resumen_html = generar_resumen_ejecutivo(df_filtrado)
         st.markdown(resumen_html, unsafe_allow_html=True)
     else:
         st.warning("⚠️ No hay datos para mostrar el resumen ejecutivo")
     
-    # ======================== KPI CARDS ========================
+    # ======================== KPI CARDS GENERALES ========================
     st.markdown("### 📊 Indicadores Clave")
     
     total_registros = len(df_filtrado)
@@ -752,28 +787,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
     else:
         promedio_paciente_dia = "N/A"
     
-    total_externas = 0
-    total_gestionados_ext = 0
-    pct_gestionados_ext = 0
-    promedio_dias_entrega_ext = None
-    num_entregados_validos = 0
-    
-    if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
-        total_externas = len(df_externas_filtrado)
-        df_ext_temp = df_externas_filtrado.copy()
-        df_ext_temp['gestion_clasificacion'] = df_ext_temp['estado'].apply(clasificar_gestion_externa)
-        total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
-        pct_gestionados_ext = (total_gestionados_ext / total_externas * 100) if total_externas > 0 else 0
-        
-        entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA'].copy()
-        if len(entregados) > 0:
-            entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
-            entregados_validos = entregados[entregados['dias_entrega_ext'].notna() & (entregados['dias_entrega_ext'] >= 0)]
-            num_entregados_validos = len(entregados_validos)
-            if num_entregados_validos > 0:
-                promedio_dias_entrega_ext = entregados_validos['dias_entrega_ext'].mean()
-    
     if len(df_filtrado) > 0:
+        # Solo 6 tarjetas generales (las de externas se movieron a su propia sección)
         col_k1, col_k2, col_k3 = st.columns(3)
         
         with col_k1:
@@ -825,48 +840,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     <p class="metric-value">{promedio_paciente_dia}</p>
                 </div>
             """, unsafe_allow_html=True)
-        
-        col_k7, col_k8, col_k9 = st.columns(3)
-        
-        with col_k7:
-            st.markdown(f"""
-                <div class="metric-card-small">
-                    <p class="metric-label">📋 Solicitudes Externas</p>
-                    <p class="metric-value">{total_externas:,}</p>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with col_k8:
-            if total_externas > 0:
-                st.markdown(f"""
-                    <div class="metric-card-small">
-                        <p class="metric-label">✅ % Gestionado (Externas)</p>
-                        <p class="metric-value">{pct_gestionados_ext:.1f}%</p>
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                    <div class="metric-card-small">
-                        <p class="metric-label">✅ % Gestionado (Externas)</p>
-                        <p class="metric-value">N/A</p>
-                    </div>
-                """, unsafe_allow_html=True)
-        
-        with col_k9:
-            if promedio_dias_entrega_ext is not None and num_entregados_validos > 0:
-                st.markdown(f"""
-                    <div class="metric-card-small">
-                        <p class="metric-label">⏱️ Días entrega (Externas)</p>
-                        <p class="metric-value">{promedio_dias_entrega_ext:.1f}</p>
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                    <div class="metric-card-small">
-                        <p class="metric-label">⏱️ Días entrega (Externas)</p>
-                        <p class="metric-value">N/A</p>
-                    </div>
-                """, unsafe_allow_html=True)
     
     # ======================== TABLA DE RESULTADOS ========================
     with st.expander("📋 Ver Detalle de Resultados (Datos Filtrados)", expanded=False):
@@ -901,69 +874,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             st.caption(f"📊 Mostrando {len(df_tabla)} registros")
         else:
             st.warning("No se encontraron las columnas necesarias para mostrar la tabla")
-        
-        if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
-            st.markdown("---")
-            st.markdown("#### 📋 Resumen de Solicitudes Externas")
-            
-            columnas_ext = ['fechaRegistroFormulario', 'ciudad', 'proceso', 'idPaciente', 'nombrePaciente', 'entidad', 'servicio', 'estado']
-            columnas_ext_existentes = [col for col in columnas_ext if col in df_externas_filtrado.columns]
-            
-            if columnas_ext_existentes:
-                df_ext_tabla = df_externas_filtrado[columnas_ext_existentes].copy()
-                
-                if 'fechaRegistroFormulario' in df_ext_tabla.columns:
-                    df_ext_tabla['fechaRegistroFormulario'] = pd.to_datetime(df_ext_tabla['fechaRegistroFormulario']).dt.strftime('%Y-%m-%d')
-                
-                df_ext_tabla['Clasificación'] = df_ext_tabla['estado'].apply(clasificar_gestion_externa)
-                
-                st.dataframe(
-                    df_ext_tabla,
-                    use_container_width=True,
-                    height=300,
-                    column_config={
-                        "fechaRegistroFormulario": st.column_config.TextColumn("Fecha Registro", width="medium"),
-                        "ciudad": st.column_config.TextColumn("Ciudad", width="medium"),
-                        "proceso": st.column_config.TextColumn("Proceso", width="large"),
-                        "idPaciente": st.column_config.TextColumn("ID Paciente", width="small"),
-                        "nombrePaciente": st.column_config.TextColumn("Paciente", width="large"),
-                        "entidad": st.column_config.TextColumn("Entidad", width="large"),
-                        "servicio": st.column_config.TextColumn("Servicio", width="large"),
-                        "estado": st.column_config.TextColumn("Estado", width="medium"),
-                        "Clasificación": st.column_config.TextColumn("Clasificación", width="medium"),
-                    }
-                )
-                st.caption(f"📊 Mostrando {len(df_ext_tabla)} registros de solicitudes externas")
-            
-            total_externas = len(df_externas_filtrado)
-            
-            df_ext_temp = df_externas_filtrado.copy()
-            df_ext_temp['gestion_clasificacion'] = df_ext_temp['estado'].apply(clasificar_gestion_externa)
-            
-            total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
-            total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
-            
-            col_ext1, col_ext2, col_ext3, col_ext4 = st.columns(4)
-            with col_ext1:
-                st.metric("Total Solicitudes Externas", f"{total_externas:,}")
-            with col_ext2:
-                st.metric("Gestionadas", f"{total_gestionados_ext:,}", delta=f"{total_gestionados_ext/total_externas*100:.1f}%")
-            with col_ext3:
-                st.metric("Pendientes", f"{total_no_gestionados_ext:,}", delta=f"{total_no_gestionados_ext/total_externas*100:.1f}%")
-            with col_ext4:
-                entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA'].copy()
-                if len(entregados) > 0:
-                    entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
-                    entregados_validos = entregados[entregados['dias_entrega_ext'].notna() & (entregados['dias_entrega_ext'] >= 0)]
-                    if len(entregados_validos) > 0:
-                        st.metric("Promedio Días Entrega", f"{entregados_validos['dias_entrega_ext'].mean():.1f}", 
-                                 delta=f"({len(entregados_validos)} registros)")
-                    else:
-                        st.metric("Promedio Días Entrega", "N/A")
-                else:
-                    st.metric("Promedio Días Entrega", "N/A")
     
-    # ======================== GRÁFICOS ========================
+    # ======================== GRÁFICOS GENERALES ========================
     if len(df_filtrado) > 0:
         st.markdown("### 📈 Análisis Visual")
         
@@ -1275,462 +1187,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 st.info("No hay ordenamientos pendientes de gestión desde programación")
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 5B: PROCESOS POR MES (SOLICITUDES EXTERNAS) ========================
-        if df_externas_filtrado is not None and len(df_externas_filtrado) > 0 and 'proceso' in df_externas_filtrado.columns:
-            with st.container():
-                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                st.subheader("📊 Solicitudes Externas: Procesos por Mes")
-                
-                df_ext_mes = df_externas_filtrado.copy()
-                df_ext_mes['mes'] = df_ext_mes['fechaRegistroFormulario'].dt.to_period('M').dt.start_time
-                
-                procesos_por_mes = df_ext_mes.groupby(['mes', 'proceso']).size().reset_index(name='Cantidad')
-                procesos_por_mes = procesos_por_mes.sort_values('mes')
-                
-                if len(procesos_por_mes) > 0:
-                    fig5b, ax5b = plt.subplots(figsize=(14, 7))
-                    
-                    meses_unicos = sorted(procesos_por_mes['mes'].unique())
-                    procesos_unicos = sorted(procesos_por_mes['proceso'].unique())
-                    
-                    datos_pivot = procesos_por_mes.pivot(index='mes', columns='proceso', values='Cantidad').fillna(0)
-                    
-                    colores_procesos = colores_diferenciados[:len(procesos_unicos)]
-                    while len(colores_procesos) < len(procesos_unicos):
-                        colores_procesos = colores_procesos + colores_diferenciados
-                    colores_procesos = colores_procesos[:len(procesos_unicos)]
-                    
-                    bottom = np.zeros(len(datos_pivot))
-                    for i, proceso in enumerate(procesos_unicos):
-                        if proceso in datos_pivot.columns:
-                            valores = datos_pivot[proceso].values
-                            bars = ax5b.bar(range(len(datos_pivot)), valores, bottom=bottom, 
-                                           label=str(proceso)[:40], color=colores_procesos[i], 
-                                           edgecolor='white', linewidth=1.5)
-                            for j, v in enumerate(valores):
-                                if v > 0:
-                                    text_color = 'white' if v > 5 else 'black'
-                                    ax5b.text(j, bottom[j] + v/2, f'{int(v)}', 
-                                             ha='center', va='center', 
-                                             fontsize=9, fontweight='bold', color=text_color)
-                            bottom += valores
-                    
-                    ax5b.set_xlabel('Mes', fontsize=12)
-                    ax5b.set_ylabel('Cantidad de Solicitudes', fontsize=12)
-                    ax5b.set_title(f"Solicitudes Externas: Procesos por Mes - {sufijo_sede}", 
-                                  fontsize=14, fontweight='bold')
-                    
-                    ax5b.set_xticks(range(len(datos_pivot.index)))
-                    ax5b.set_xticklabels([m.strftime('%Y-%m') for m in datos_pivot.index], rotation=45, ha='right')
-                    
-                    for i, total in enumerate(bottom):
-                        if total > 0:
-                            ax5b.text(i, total + 0.3, f'{int(total)}', ha='center', va='bottom', 
-                                     fontsize=11, fontweight='bold', color='black')
-                    
-                    ax5b.legend(loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10, 
-                               title='Procesos', title_fontsize=11)
-                    
-                    plt.tight_layout()
-                    st.pyplot(fig5b)
-                    
-                    total_solicitudes = procesos_por_mes['Cantidad'].sum()
-                    mes_pico = procesos_por_mes.groupby('mes')['Cantidad'].sum().idxmax()
-                    cantidad_pico = procesos_por_mes.groupby('mes')['Cantidad'].sum().max()
-                    
-                    texto_interpretacion5b = f'Se registraron <strong>{int(total_solicitudes)}</strong> solicitudes externas distribuidas en <strong>{len(meses_unicos)}</strong> meses. El mes con mayor volumen fue <span class="stat">{mes_pico.strftime("%Y-%m")}</span> con <strong>{int(cantidad_pico)}</strong> solicitudes. '
-                    
-                    if len(procesos_unicos) > 0:
-                        proceso_top = procesos_por_mes.groupby('proceso')['Cantidad'].sum().idxmax()
-                        cantidad_top = procesos_por_mes.groupby('proceso')['Cantidad'].sum().max()
-                        texto_interpretacion5b += f'El proceso más frecuente en el período es <span class="stat">"{proceso_top}"</span> con <strong>{int(cantidad_top)}</strong> solicitudes.'
-                    
-                    st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5b), unsafe_allow_html=True)
-                else:
-                    st.info("No hay datos de procesos para mostrar por mes")
-                st.markdown('</div>', unsafe_allow_html=True)
-
-        # ======================== GRÁFICO 5C: TOP 10 SERVICIOS POR MES (SOLICITUDES EXTERNAS) ========================
-        if df_externas_filtrado is not None and len(df_externas_filtrado) > 0 and 'servicio' in df_externas_filtrado.columns:
-            with st.container():
-                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                st.subheader("📊 Solicitudes Externas: Top 10 Servicios más Solicitados por Mes")
-                
-                df_ext_serv = df_externas_filtrado.copy()
-                df_ext_serv['mes'] = df_ext_serv['fechaRegistroFormulario'].dt.to_period('M').dt.start_time
-                df_ext_serv = df_ext_serv.dropna(subset=['mes', 'servicio'])
-                
-                meses_unicos_serv = sorted(df_ext_serv['mes'].dropna().unique())
-                
-                if len(meses_unicos_serv) > 0:
-                    opciones_mes = ["Todos los meses (Top 10 global)"] + [m.strftime('%Y-%m') for m in meses_unicos_serv]
-                    mes_seleccionado = st.selectbox(
-                        "Selecciona un mes para ver su Top 10 de servicios:",
-                        options=opciones_mes,
-                        index=0,
-                        key="selector_mes_top_servicios"
-                    )
-                    
-                    if mes_seleccionado == "Todos los meses (Top 10 global)":
-                        df_top10 = df_ext_serv.copy()
-                        titulo_mes = "Todos los meses"
-                        total_periodo = len(df_top10)
-                    else:
-                        mes_dt = pd.to_datetime(mes_seleccionado + "-01")
-                        df_top10 = df_ext_serv[df_ext_serv['mes'] == mes_dt].copy()
-                        titulo_mes = mes_seleccionado
-                        total_periodo = len(df_top10)
-                    
-                    if len(df_top10) > 0:
-                        conteo_servicios = df_top10['servicio'].value_counts().head(10).reset_index()
-                        conteo_servicios.columns = ['Servicio', 'Cantidad']
-                        conteo_servicios['Porcentaje'] = (conteo_servicios['Cantidad'] / total_periodo * 100).round(1)
-                        
-                        fig5c, ax5c = plt.subplots(figsize=(14, 8))
-                        
-                        colores_barras = plt.cm.viridis(np.linspace(0.15, 0.85, len(conteo_servicios)))
-                        
-                        y_pos = range(len(conteo_servicios))
-                        bars = ax5c.barh(y_pos, conteo_servicios['Cantidad'], 
-                                        color=colores_barras, edgecolor='white', linewidth=1.5)
-                        
-                        etiquetas_y = [f"{str(s)[:55]}{'...' if len(str(s)) > 55 else ''}" 
-                                      for s in conteo_servicios['Servicio']]
-                        ax5c.set_yticks(y_pos)
-                        ax5c.set_yticklabels(etiquetas_y, fontsize=10)
-                        ax5c.invert_yaxis()
-                        
-                        ax5c.set_xlabel('Cantidad de Solicitudes', fontsize=12)
-                        ax5c.set_ylabel('Servicio', fontsize=12)
-                        ax5c.set_title(f"Solicitudes Externas: Top 10 Servicios más Solicitados - {titulo_mes} - {sufijo_sede}", 
-                                      fontsize=14, fontweight='bold')
-                        
-                        max_cant = conteo_servicios['Cantidad'].max() if len(conteo_servicios) > 0 else 1
-                        for i, (bar, row) in enumerate(zip(bars, conteo_servicios.itertuples())):
-                            width = bar.get_width()
-                            ax5c.text(width + max_cant * 0.01, 
-                                     bar.get_y() + bar.get_height()/2,
-                                     f'{int(width)} ({row.Porcentaje:.1f}%)', 
-                                     ha='left', va='center', fontsize=10, fontweight='bold')
-                        
-                        ax5c.set_xlim(0, max_cant * 1.15)
-                        
-                        plt.tight_layout()
-                        st.pyplot(fig5c)
-                        
-                        texto_interpretacion5c = f'Mostrando el <strong>Top 10</strong> de servicios más solicitados en <strong>solicitudes externas</strong> para <span class="stat">{titulo_mes}</span>, sobre un total de <strong>{total_periodo}</strong> solicitudes en el período. '
-                        
-                        if len(conteo_servicios) > 0:
-                            top_servicio = conteo_servicios.iloc[0]['Servicio']
-                            top_cant = conteo_servicios.iloc[0]['Cantidad']
-                            top_pct = conteo_servicios.iloc[0]['Porcentaje']
-                            texto_interpretacion5c += f'El servicio más solicitado es <span class="stat">"{str(top_servicio)[:60]}"</span> con <strong>{int(top_cant)}</strong> solicitudes (<span class="stat">{top_pct:.1f}%</span> del total). '
-                            
-                            total_top10 = conteo_servicios['Cantidad'].sum()
-                            pct_top10 = (total_top10 / total_periodo * 100) if total_periodo > 0 else 0
-                            texto_interpretacion5c += f'Los 10 servicios más solicitados concentran el <span class="stat">{pct_top10:.1f}%</span> de las solicitudes del período.'
-                        
-                        st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5c), unsafe_allow_html=True)
-                    else:
-                        st.info(f"No hay datos de servicios para el mes {titulo_mes}")
-                else:
-                    st.info("No hay datos de servicios para mostrar por mes")
-                st.markdown('</div>', unsafe_allow_html=True)
-
-        # ======================== GRÁFICO 5D: DISTRIBUCIÓN DE ESTADOS POR PROCESO (SOLICITUDES EXTERNAS) ========================
-        if df_externas_filtrado is not None and len(df_externas_filtrado) > 0 and 'proceso' in df_externas_filtrado.columns and 'estado' in df_externas_filtrado.columns:
-            with st.container():
-                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                st.subheader("📊 Solicitudes Externas: Distribución de Estados por Proceso")
-                
-                agrupacion_ep = st.radio(
-                    "Agrupar por:",
-                    options=["Total", "Día", "Semana", "Mes"],
-                    horizontal=True,
-                    index=0,
-                    key="agrupacion_estado_proceso"
-                )
-                
-                df_ext_ep = df_externas_filtrado.copy()
-                
-                top_procesos_ep = df_ext_ep['proceso'].value_counts().head(10).index.tolist()
-                df_ext_ep_top = df_ext_ep[df_ext_ep['proceso'].isin(top_procesos_ep)].copy()
-                
-                if len(df_ext_ep_top) > 0:
-                    # ============================================================
-                    # CASO ESPECIAL: AGRUPACIÓN POR MES
-                    # Cada proceso en el eje Y, y para cada proceso se dibujan N barras
-                    # (una por mes) LADO A LADO. Cada barra individual está APILADA por estados.
-                    # ============================================================
-                    if agrupacion_ep == "Mes":
-                        df_ext_ep_top['periodo'] = df_ext_ep_top['fechaRegistroFormulario'].dt.to_period('M').dt.start_time
-                        
-                        # Obtener meses únicos y estados únicos
-                        meses_unicos_ep = sorted(df_ext_ep_top['periodo'].dropna().unique())
-                        estados_unicos_mes = sorted(df_ext_ep_top['estado'].dropna().unique())
-                        
-                        # Ordenar los procesos por total descendente
-                        totales_por_proceso = df_ext_ep_top.groupby('proceso').size().sort_values(ascending=True)
-                        procesos_ordenados = totales_por_proceso.index.tolist()
-                        
-                        n_procesos = len(procesos_ordenados)
-                        n_meses = len(meses_unicos_ep)
-                        
-                        # Ancho de barra: si hay varios meses, se divide el espacio para que quepan lado a lado
-                        altura_total_disponible = 0.8
-                        ancho_barra = altura_total_disponible / n_meses if n_meses > 0 else altura_total_disponible
-                        
-                        # Colores para estados
-                        colores_estados_mes = colores_diferenciados[:len(estados_unicos_mes)]
-                        while len(colores_estados_mes) < len(estados_unicos_mes):
-                            colores_estados_mes = colores_estados_mes + colores_diferenciados
-                        colores_estados_mes = colores_estados_mes[:len(estados_unicos_mes)]
-                        dict_color_estado = {estado: colores_estados_mes[i] for i, estado in enumerate(estados_unicos_mes)}
-                        
-                        fig5d, ax5d = plt.subplots(figsize=(14, max(7, n_procesos * 0.7)))
-                        
-                        y_pos = np.arange(n_procesos)
-                        
-                        # Para cada proceso, dibujamos N barras (una por mes), cada una apilada por estados
-                        for p_idx, proceso in enumerate(procesos_ordenados):
-                            df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
-                            
-                            for m_idx, mes in enumerate(meses_unicos_ep):
-                                df_celda = df_proceso[df_proceso['periodo'] == mes]
-                                if len(df_celda) == 0:
-                                    continue
-                                
-                                # Offset vertical para poner las barras de cada mes una al lado de la otra
-                                offset = (m_idx - (n_meses - 1) / 2) * ancho_barra
-                                left = 0
-                                for estado in estados_unicos_mes:
-                                    valor = (df_celda['estado'] == estado).sum()
-                                    if valor > 0:
-                                        ax5d.barh(p_idx + offset, valor, left=left, height=ancho_barra,
-                                                 color=dict_color_estado[estado], edgecolor='white', linewidth=0.8)
-                                        # Etiqueta dentro del segmento si es suficientemente grande
-                                        if valor >= 2:
-                                            ax5d.text(left + valor/2, p_idx + offset, f'{int(valor)}',
-                                                     ha='center', va='center', fontsize=7, 
-                                                     fontweight='bold', color='white')
-                                        left += valor
-                                
-                                # Mostrar el total al final de la barra (por mes)
-                                total_celda = len(df_celda)
-                                if total_celda > 0:
-                                    ax5d.text(total_celda + 0.3, p_idx + offset, f'{total_celda}',
-                                             ha='left', va='center', fontsize=8, 
-                                             fontweight='bold', color='black')
-                        
-                        # Etiquetas del eje Y (procesos)
-                        etiquetas_proc = [f"{str(p)[:45]}{'...' if len(str(p)) > 45 else ''}" for p in procesos_ordenados]
-                        ax5d.set_yticks(y_pos)
-                        ax5d.set_yticklabels(etiquetas_proc, fontsize=10)
-                        
-                        ax5d.set_xlabel('Cantidad de Solicitudes', fontsize=12)
-                        ax5d.set_ylabel('Proceso', fontsize=12)
-                        ax5d.set_title(f'Solicitudes Externas: Distribución de Estados por Proceso - Agrupado por Mes - {sufijo_sede}',
-                                      fontsize=14, fontweight='bold')
-                        
-                        # Leyenda 1: Estados (colores)
-                        legend_estados = [Patch(facecolor=dict_color_estado[estado], edgecolor='white', 
-                                                label=str(estado)[:35])
-                                          for estado in estados_unicos_mes]
-                        legend1 = ax5d.legend(handles=legend_estados, loc='upper left', 
-                                             bbox_to_anchor=(1.02, 1), fontsize=9, 
-                                             title='Estados', title_fontsize=10,
-                                             framealpha=0.95, edgecolor='#7c3aed')
-                        ax5d.add_artist(legend1)
-                        
-                        # Leyenda 2: Meses (orden de las barras de arriba a abajo dentro de cada proceso)
-                        # Como las barras no tienen un color único por mes, mostramos el orden en una leyenda explicativa
-                        texto_leyenda_meses = "Orden de meses por proceso (arriba → abajo):\n" + "\n".join(
-                            [f"{i+1}. {m.strftime('%Y-%m')}" for i, m in enumerate(meses_unicos_ep)]
-                        )
-                        ax5d.text(1.02, 0.55, texto_leyenda_meses, transform=ax5d.transAxes,
-                                 fontsize=9, va='top', ha='left',
-                                 bbox=dict(boxstyle="round,pad=0.5", facecolor='#f8f4ff', 
-                                          edgecolor='#7c3aed', alpha=0.95))
-                        
-                        max_total = 0
-                        for p_idx, proceso in enumerate(procesos_ordenados):
-                            df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
-                            for mes in meses_unicos_ep:
-                                total_celda = (df_proceso['periodo'] == mes).sum()
-                                if total_celda > max_total:
-                                    max_total = total_celda
-                        
-                        ax5d.set_xlim(0, max_total * 1.15 if max_total > 0 else 10)
-                        
-                        plt.tight_layout()
-                        st.pyplot(fig5d)
-                        
-                        total_analizado = len(df_ext_ep_top)
-                        total_general = len(df_externas_filtrado)
-                        
-                        texto_interpretacion5d = f'El gráfico muestra la <strong>distribución de estados por proceso agrupado por mes</strong> en <strong>solicitudes externas</strong>. Para cada uno de los <strong>{n_procesos}</strong> procesos más relevantes, se muestran <strong>{n_meses}</strong> barras (una por mes) <strong>lado a lado</strong>, y cada barra está <strong>apilada por estados</strong>. Se analizaron <strong>{total_analizado}</strong> de <strong>{total_general}</strong> solicitudes externas (<span class="stat">{total_analizado/total_general*100:.1f}%</span> del total). '
-                        
-                        if len(df_ext_ep_top) > 0:
-                            estado_comun = df_ext_ep_top['estado'].value_counts()
-                            if len(estado_comun) > 0:
-                                texto_interpretacion5d += f'El estado más común en estos procesos es <span class="stat">"{estado_comun.index[0]}"</span> con <strong>{estado_comun.iloc[0]}</strong> registros (<span class="stat">{estado_comun.iloc[0]/len(df_ext_ep_top)*100:.1f}%</span>).'
-                        
-                        st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5d), unsafe_allow_html=True)
-                    
-                    # ============================================================
-                    # OTROS CASOS: TOTAL / DÍA / SEMANA (BARRAS APILADAS HORIZONTALES)
-                    # ============================================================
-                    else:
-                        if agrupacion_ep == "Total":
-                            pivot_ep = df_ext_ep_top.groupby(['proceso', 'estado']).size().unstack(fill_value=0)
-                            pivot_ep = pivot_ep.loc[pivot_ep.sum(axis=1).sort_values(ascending=True).index]
-                            etiquetas_y = [f"{str(p)[:50]}{'...' if len(str(p)) > 50 else ''}" for p in pivot_ep.index]
-                            titulo_periodo = "Total"
-                        elif agrupacion_ep == "Día":
-                            df_ext_ep_top['periodo'] = df_ext_ep_top['fechaRegistroFormulario'].dt.date
-                            pivot_ep = df_ext_ep_top.groupby(['proceso', 'periodo', 'estado']).size().unstack(fill_value=0)
-                            nuevas_etiquetas = []
-                            for idx in pivot_ep.index:
-                                proceso, periodo = idx
-                                periodo_str = periodo.strftime('%Y-%m-%d') if hasattr(periodo, 'strftime') else str(periodo)
-                                nuevas_etiquetas.append(f"{str(proceso)[:35]} | {periodo_str}")
-                            pivot_ep.index = nuevas_etiquetas
-                            pivot_ep = pivot_ep.loc[pivot_ep.sum(axis=1).sort_values(ascending=True).index]
-                            etiquetas_y = [f"{str(e)[:65]}{'...' if len(str(e)) > 65 else ''}" for e in pivot_ep.index]
-                            titulo_periodo = "Agrupado por Día"
-                        elif agrupacion_ep == "Semana":
-                            df_ext_ep_top['periodo'] = df_ext_ep_top['fechaRegistroFormulario'].dt.to_period('W').dt.start_time
-                            pivot_ep = df_ext_ep_top.groupby(['proceso', 'periodo', 'estado']).size().unstack(fill_value=0)
-                            nuevas_etiquetas = []
-                            for idx in pivot_ep.index:
-                                proceso, periodo = idx
-                                periodo_str = periodo.strftime('%Y-%m-%d') if hasattr(periodo, 'strftime') else str(periodo)
-                                nuevas_etiquetas.append(f"{str(proceso)[:35]} | {periodo_str}")
-                            pivot_ep.index = nuevas_etiquetas
-                            pivot_ep = pivot_ep.loc[pivot_ep.sum(axis=1).sort_values(ascending=True).index]
-                            etiquetas_y = [f"{str(e)[:65]}{'...' if len(str(e)) > 65 else ''}" for e in pivot_ep.index]
-                            titulo_periodo = "Agrupado por Semana"
-                        
-                        fig5d, ax5d = plt.subplots(figsize=(14, max(7, len(pivot_ep) * 0.55)))
-                        
-                        estados_unicos_ep = pivot_ep.columns.tolist()
-                        colores_estados_ep = colores_diferenciados[:len(estados_unicos_ep)]
-                        while len(colores_estados_ep) < len(estados_unicos_ep):
-                            colores_estados_ep = colores_estados_ep + colores_diferenciados
-                        colores_estados_ep = colores_estados_ep[:len(estados_unicos_ep)]
-                        
-                        left = np.zeros(len(pivot_ep))
-                        y_pos = np.arange(len(pivot_ep))
-                        
-                        for i, estado in enumerate(estados_unicos_ep):
-                            valores = pivot_ep[estado].values
-                            bars = ax5d.barh(y_pos, valores, left=left, 
-                                            label=str(estado)[:35], color=colores_estados_ep[i],
-                                            edgecolor='white', linewidth=1.2)
-                            for j, v in enumerate(valores):
-                                if v > 0:
-                                    ax5d.text(left[j] + v/2, y_pos[j], f'{int(v)}', 
-                                             ha='center', va='center', fontsize=8, 
-                                             fontweight='bold', color='white')
-                            left += valores
-                        
-                        ax5d.set_yticks(y_pos)
-                        ax5d.set_yticklabels(etiquetas_y, fontsize=9)
-                        
-                        for j, total in enumerate(left):
-                            ax5d.text(total + 0.3, y_pos[j], f'{int(total)}', 
-                                     ha='left', va='center', fontsize=9, 
-                                     fontweight='bold', color='black')
-                        
-                        ax5d.set_xlabel('Cantidad de Solicitudes', fontsize=12)
-                        ax5d.set_ylabel('Proceso', fontsize=12)
-                        ax5d.set_title(f'Solicitudes Externas: Distribución de Estados por Proceso - {titulo_periodo} - {sufijo_sede}', 
-                                      fontsize=14, fontweight='bold')
-                        
-                        ax5d.legend(loc='lower right', fontsize=10, title='Estados', title_fontsize=11,
-                                   framealpha=0.95, edgecolor='#7c3aed')
-                        
-                        max_total = left.max() if len(left) > 0 else 1
-                        ax5d.set_xlim(0, max_total * 1.12)
-                        
-                        plt.tight_layout()
-                        st.pyplot(fig5d)
-                        
-                        total_analizado = int(pivot_ep.values.sum())
-                        total_general = len(df_externas_filtrado)
-                        n_filas = len(pivot_ep)
-                        
-                        texto_interpretacion5d = f'El gráfico muestra la <strong>distribución de estados por proceso</strong> en <strong>solicitudes externas</strong> para los <strong>{n_filas}</strong> registros (proceso{" + periodo" if agrupacion_ep != "Total" else ""}) más relevantes, que representan <strong>{total_analizado}</strong> de <strong>{total_general}</strong> solicitudes (<span class="stat">{total_analizado/total_general*100:.1f}%</span> del total). '
-                        
-                        if len(df_ext_ep_top) > 0:
-                            estado_comun = df_ext_ep_top['estado'].value_counts()
-                            if len(estado_comun) > 0:
-                                texto_interpretacion5d += f'El estado más común en estos procesos es <span class="stat">"{estado_comun.index[0]}"</span> con <strong>{estado_comun.iloc[0]}</strong> registros (<span class="stat">{estado_comun.iloc[0]/len(df_ext_ep_top)*100:.1f}%</span>).'
-                        
-                        st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5d), unsafe_allow_html=True)
-                else:
-                    st.info("No hay datos de procesos para mostrar")
-                st.markdown('</div>', unsafe_allow_html=True)
-
-        # ======================== GRÁFICO 5E: MATRIZ DE CALOR - PROCESO vs MES (SOLICITUDES EXTERNAS) ========================
-        if df_externas_filtrado is not None and len(df_externas_filtrado) > 0 and 'proceso' in df_externas_filtrado.columns:
-            with st.container():
-                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                st.subheader("📊 Solicitudes Externas: Matriz de Calor - Procesos vs Meses")
-                
-                df_ext_hm = df_externas_filtrado.copy()
-                df_ext_hm['mes_str'] = df_ext_hm['fechaRegistroFormulario'].dt.to_period('M').dt.strftime('%Y-%m')
-                
-                top_procesos_hm = df_ext_hm['proceso'].value_counts().head(10).index.tolist()
-                df_hm = df_ext_hm[df_ext_hm['proceso'].isin(top_procesos_hm)]
-                
-                pivot_hm = df_hm.groupby(['proceso', 'mes_str']).size().unstack(fill_value=0)
-                
-                if len(pivot_hm) > 0:
-                    fig5e, ax5e = plt.subplots(figsize=(14, max(6, len(pivot_hm) * 0.5)))
-                    
-                    im = ax5e.imshow(pivot_hm.values, cmap='YlOrRd', aspect='auto')
-                    
-                    ax5e.set_xticks(range(len(pivot_hm.columns)))
-                    ax5e.set_xticklabels(pivot_hm.columns, rotation=45, ha='right', fontsize=9)
-                    
-                    ax5e.set_yticks(range(len(pivot_hm.index)))
-                    etiquetas_y_hm = [f"{str(p)[:50]}{'...' if len(str(p)) > 50 else ''}" for p in pivot_hm.index]
-                    ax5e.set_yticklabels(etiquetas_y_hm, fontsize=9)
-                    
-                    ax5e.set_xlabel('Mes', fontsize=12)
-                    ax5e.set_ylabel('Proceso', fontsize=12)
-                    ax5e.set_title(f"Solicitudes Externas: Matriz de Calor - Procesos vs Meses - {sufijo_sede}", 
-                                  fontsize=14, fontweight='bold')
-                    
-                    for i in range(len(pivot_hm.index)):
-                        for j in range(len(pivot_hm.columns)):
-                            valor = pivot_hm.values[i, j]
-                            if valor > 0:
-                                text_color = 'white' if valor > pivot_hm.values.max() * 0.6 else 'black'
-                                ax5e.text(j, i, f'{int(valor)}', ha='center', va='center', 
-                                         fontsize=9, fontweight='bold', color=text_color)
-                    
-                    cbar = plt.colorbar(im, ax=ax5e, shrink=0.8)
-                    cbar.set_label('Cantidad de Solicitudes', fontsize=10)
-                    
-                    plt.tight_layout()
-                    st.pyplot(fig5e)
-                    
-                    total_hm = pivot_hm.values.sum()
-                    max_valor = pivot_hm.values.max()
-                    idx_max = np.unravel_index(pivot_hm.values.argmax(), pivot_hm.values.shape)
-                    proceso_max = pivot_hm.index[idx_max[0]]
-                    mes_max = pivot_hm.columns[idx_max[1]]
-                    
-                    texto_interpretacion5e = f'La matriz de calor muestra la distribución de <strong>{int(total_hm)}</strong> solicitudes externas en los <strong>{len(pivot_hm.index)}</strong> procesos más relevantes a lo largo de <strong>{len(pivot_hm.columns)}</strong> meses. '
-                    texto_interpretacion5e += f'La mayor concentración se observa en el proceso <span class="stat">"{str(proceso_max)[:50]}"</span> durante el mes <span class="stat">{mes_max}</span> con <strong>{int(max_valor)}</strong> solicitudes.'
-                    
-                    st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5e), unsafe_allow_html=True)
-                else:
-                    st.info("No hay datos suficientes para mostrar la matriz de calor")
-                st.markdown('</div>', unsafe_allow_html=True)
-
         # ======================== GRÁFICOS EN DOS COLUMNAS ========================
         col_g3, col_g4 = st.columns(2)
         
@@ -1856,254 +1312,824 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion8), unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
+    
+    # ======================== SECCIÓN COMPRIMIBLE: SOLICITUDES EXTERNAS ========================
+    st.divider()
+    
+    with st.expander("📂 Solicitudes Externas - Análisis Completo", expanded=False):
+        # Calcular métricas de externas
+        total_externas = 0
+        total_gestionados_ext = 0
+        pct_gestionados_ext = 0
+        promedio_dias_entrega_ext = None
+        num_entregados_validos = 0
         
-        # ======================== EXPORTACIÓN A EXCEL ========================
-        st.divider()
-        st.markdown("### 📥 Exportar Reporte Completo")
+        if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
+            total_externas = len(df_externas_filtrado)
+            df_ext_temp = df_externas_filtrado.copy()
+            df_ext_temp['gestion_clasificacion'] = df_ext_temp['estado'].apply(clasificar_gestion_externa)
+            total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
+            pct_gestionados_ext = (total_gestionados_ext / total_externas * 100) if total_externas > 0 else 0
+            
+            entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA'].copy()
+            if len(entregados) > 0:
+                entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
+                entregados_validos = entregados[entregados['dias_entrega_ext'].notna() & (entregados['dias_entrega_ext'] >= 0)]
+                num_entregados_validos = len(entregados_validos)
+                if num_entregados_validos > 0:
+                    promedio_dias_entrega_ext = entregados_validos['dias_entrega_ext'].mean()
         
-        def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, 
-                                       ordenes_area_data, estados_serv_data, entidad_data, 
-                                       df_externas_export, df_externas_proceso,
-                                       df_ext_proceso_mes_export, df_ext_top_serv_export, 
-                                       df_ext_estado_proceso_export):
-            datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
-            datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
-            
-            resumen_data = []
-            
-            total_generadas = df_graf1_data['Generadas'].sum()
-            total_gestionadas = df_graf1_data['Gestionadas'].sum()
-            pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
-            resumen_data.append(['Gráfico 1', 'Órdenes Generadas vs Gestionadas', f'Total generadas: {int(total_generadas)}', ''])
-            resumen_data.append(['', '', f'Total gestionadas: {int(total_gestionadas)} ({pct_gestionadas:.1f}%)', ''])
-            resumen_data.append(['', '', f'Pendientes: {int(total_generadas - total_gestionadas)} ({100-pct_gestionadas:.1f}%)', ''])
-            resumen_data.append(['', '', '', ''])
-            
-            if len(estado_gestion_data) > 0:
-                total_estados = estado_gestion_data['Cantidad'].sum()
-                for _, row in estado_gestion_data.iterrows():
-                    resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
-            resumen_data.append(['', '', '', ''])
-            
-            if pendientes_data is not None and len(pendientes_data) > 0:
-                total_pend = pendientes_data['Cantidad'].sum()
-                for _, row in pendientes_data.iterrows():
-                    resumen_data.append(['Gráfico 3', 'Pendientes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_pend*100:.1f}%)', ''])
-            resumen_data.append(['', '', '', ''])
-            
-            if df_ext_proceso_mes_export is not None and len(df_ext_proceso_mes_export) > 0:
-                for _, row in df_ext_proceso_mes_export.iterrows():
-                    resumen_data.append(['Gráfico 5B', f'Solicitudes Externas: Procesos por Mes - {row["mes_str"]}', 
-                                        f'{row["proceso"]}: {row["Cantidad"]}', ''])
-                resumen_data.append(['', '', '', ''])
-            
-            if df_ext_top_serv_export is not None and len(df_ext_top_serv_export) > 0:
-                for _, row in df_ext_top_serv_export.iterrows():
-                    resumen_data.append(['Gráfico 5C', f'Solicitudes Externas: Top 10 Servicios - {row["mes_str"]}', 
-                                        f'{row["servicio"]}: {row["cantidad"]} ({row["porcentaje"]:.1f}%)', ''])
-                resumen_data.append(['', '', '', ''])
-            
-            if df_ext_estado_proceso_export is not None and len(df_ext_estado_proceso_export) > 0:
-                for _, row in df_ext_estado_proceso_export.iterrows():
-                    resumen_data.append(['Gráfico 5D', f'Solicitudes Externas: Estados por Proceso - {str(row["proceso"])[:40]}', 
-                                        f'{row["estado"]}: {row["Cantidad"]}', ''])
-                resumen_data.append(['', '', '', ''])
-            
-            if len(ordenes_area_data) > 0:
-                total_ord = ordenes_area_data['Cantidad'].sum()
-                for _, row in ordenes_area_data.iterrows():
-                    resumen_data.append(['Gráfico 6', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
-            resumen_data.append(['', '', '', ''])
-            
-            if len(estados_serv_data) > 0:
-                total_est = estados_serv_data['Cantidad'].sum()
-                for _, row in estados_serv_data.iterrows():
-                    resumen_data.append(['Gráfico 7', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
-            resumen_data.append(['', '', '', ''])
-            
-            if len(entidad_data) > 0:
-                total_ent = entidad_data['Cantidad'].sum()
-                for _, row in entidad_data.iterrows():
-                    resumen_data.append(['Gráfico 8', 'Distribución por Entidad', f'{row["Entidad"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ent*100:.1f}%)', ''])
-            
-            resumen_df = pd.DataFrame(resumen_data, columns=['Gráfico', 'Categoría', 'Detalle', 'Observación'])
-            
-            return datos_detalle, resumen_df
+        sufijo_sede_ext = obtener_sufijo_sede(sedes_seleccionadas, df_filtrado)
         
-        if st.button("📥 Exportar Reporte a Excel", use_container_width=True, type="primary"):
-            try:
-                df_export = df_filtrado.copy()
+        # ======================== INDICADORES CLAVE DE SOLICITUDES EXTERNAS ========================
+        st.markdown("#### 📊 Indicadores clave de solicitudes externas")
+        
+        col_ext_k1, col_ext_k2, col_ext_k3 = st.columns(3)
+        
+        with col_ext_k1:
+            st.markdown(f"""
+                <div class="metric-card">
+                    <p class="metric-label">📋 Solicitudes Externas</p>
+                    <p class="metric-value">{total_externas:,}</p>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        with col_ext_k2:
+            if total_externas > 0:
+                st.markdown(f"""
+                    <div class="metric-card">
+                        <p class="metric-label">✅ % Gestionado (Externas)</p>
+                        <p class="metric-value">{pct_gestionados_ext:.1f}%</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                    <div class="metric-card">
+                        <p class="metric-label">✅ % Gestionado (Externas)</p>
+                        <p class="metric-value">N/A</p>
+                    </div>
+                """, unsafe_allow_html=True)
+        
+        with col_ext_k3:
+            if promedio_dias_entrega_ext is not None and num_entregados_validos > 0:
+                st.markdown(f"""
+                    <div class="metric-card">
+                        <p class="metric-label">⏱️ Días entrega (Externas)</p>
+                        <p class="metric-value">{promedio_dias_entrega_ext:.1f}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                    <div class="metric-card">
+                        <p class="metric-label">⏱️ Días entrega (Externas)</p>
+                        <p class="metric-value">N/A</p>
+                    </div>
+                """, unsafe_allow_html=True)
+        
+        # ======================== RESUMEN EJECUTIVO DE SOLICITUDES EXTERNAS ========================
+        st.markdown("#### 📋 Resumen Ejecutivo - Solicitudes Externas")
+        resumen_ext_html = generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede_ext)
+        st.markdown(resumen_ext_html, unsafe_allow_html=True)
+        
+        # ======================== TABLA DE SOLICITUDES EXTERNAS ========================
+        with st.expander("📋 Ver Detalle de Solicitudes Externas", expanded=False):
+            if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
+                columnas_ext = ['fechaRegistroFormulario', 'ciudad', 'proceso', 'idPaciente', 'nombrePaciente', 'entidad', 'servicio', 'estado']
+                columnas_ext_existentes = [col for col in columnas_ext if col in df_externas_filtrado.columns]
                 
-                estado_gestion_data = estado_gestion_counts.copy()
-                pendientes_data = pendientes_por_area.copy() if pendientes_por_area is not None and len(pendientes_por_area) > 0 else pd.DataFrame()
-                ordenes_area_data = ordenes_por_area.copy() if len(ordenes_por_area) > 0 else pd.DataFrame()
-                estados_serv_data = estados_counts.copy()
-                entidad_data = entidad_counts.copy()
-                
-                df_externas_export = None
-                df_externas_proceso = None
-                df_ext_proceso_mes_export = None
-                df_ext_top_serv_export = None
-                df_ext_estado_proceso_export = None
-                
-                if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
-                    externas_estado = df_externas_filtrado['estado'].value_counts().reset_index()
-                    externas_estado.columns = ['Estado', 'Cantidad']
-                    df_externas_export = externas_estado
+                if columnas_ext_existentes:
+                    df_ext_tabla = df_externas_filtrado[columnas_ext_existentes].copy()
                     
-                    if 'proceso' in df_externas_filtrado.columns:
-                        externas_proceso = df_externas_filtrado['proceso'].value_counts().reset_index()
-                        externas_proceso.columns = ['Proceso', 'Cantidad']
-                        df_externas_proceso = externas_proceso
+                    if 'fechaRegistroFormulario' in df_ext_tabla.columns:
+                        df_ext_tabla['fechaRegistroFormulario'] = pd.to_datetime(df_ext_tabla['fechaRegistroFormulario']).dt.strftime('%Y-%m-%d')
                     
-                    if 'proceso' in df_externas_filtrado.columns and 'fechaRegistroFormulario' in df_externas_filtrado.columns:
-                        df_ext_mes_exp = df_externas_filtrado.copy()
-                        df_ext_mes_exp['mes_str'] = df_ext_mes_exp['fechaRegistroFormulario'].dt.to_period('M').dt.strftime('%Y-%m')
-                        df_ext_proceso_mes_export = df_ext_mes_exp.groupby(['mes_str', 'proceso']).size().reset_index(name='Cantidad')
+                    df_ext_tabla['Clasificación'] = df_ext_tabla['estado'].apply(clasificar_gestion_externa)
                     
-                    if 'servicio' in df_externas_filtrado.columns and 'fechaRegistroFormulario' in df_externas_filtrado.columns:
-                        df_ext_serv_exp = df_externas_filtrado.copy()
-                        df_ext_serv_exp['mes_str'] = df_ext_serv_exp['fechaRegistroFormulario'].dt.to_period('M').dt.strftime('%Y-%m')
-                        top_serv_rows = []
-                        for mes in sorted(df_ext_serv_exp['mes_str'].dropna().unique()):
-                            df_mes_serv = df_ext_serv_exp[df_ext_serv_exp['mes_str'] == mes]
-                            if len(df_mes_serv) > 0:
-                                conteo = df_mes_serv['servicio'].value_counts().head(10)
-                                for servicio, cantidad in conteo.items():
-                                    top_serv_rows.append({
-                                        'mes_str': mes,
-                                        'servicio': servicio,
-                                        'cantidad': cantidad,
-                                        'porcentaje': (cantidad / len(df_mes_serv) * 100) if len(df_mes_serv) > 0 else 0
-                                    })
-                        if len(top_serv_rows) > 0:
-                            df_ext_top_serv_export = pd.DataFrame(top_serv_rows)
+                    st.dataframe(
+                        df_ext_tabla,
+                        use_container_width=True,
+                        height=300,
+                        column_config={
+                            "fechaRegistroFormulario": st.column_config.TextColumn("Fecha Registro", width="medium"),
+                            "ciudad": st.column_config.TextColumn("Ciudad", width="medium"),
+                            "proceso": st.column_config.TextColumn("Proceso", width="large"),
+                            "idPaciente": st.column_config.TextColumn("ID Paciente", width="small"),
+                            "nombrePaciente": st.column_config.TextColumn("Paciente", width="large"),
+                            "entidad": st.column_config.TextColumn("Entidad", width="large"),
+                            "servicio": st.column_config.TextColumn("Servicio", width="large"),
+                            "estado": st.column_config.TextColumn("Estado", width="medium"),
+                            "Clasificación": st.column_config.TextColumn("Clasificación", width="medium"),
+                        }
+                    )
+                    st.caption(f"📊 Mostrando {len(df_ext_tabla)} registros de solicitudes externas")
+                
+                total_externas = len(df_externas_filtrado)
+                
+                df_ext_temp = df_externas_filtrado.copy()
+                df_ext_temp['gestion_clasificacion'] = df_ext_temp['estado'].apply(clasificar_gestion_externa)
+                
+                total_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Gestionado').sum()
+                total_no_gestionados_ext = (df_ext_temp['gestion_clasificacion'] == 'Pendiente').sum()
+                
+                col_ext1, col_ext2, col_ext3, col_ext4 = st.columns(4)
+                with col_ext1:
+                    st.metric("Total Solicitudes Externas", f"{total_externas:,}")
+                with col_ext2:
+                    st.metric("Gestionadas", f"{total_gestionados_ext:,}", delta=f"{total_gestionados_ext/total_externas*100:.1f}%")
+                with col_ext3:
+                    st.metric("Pendientes", f"{total_no_gestionados_ext:,}", delta=f"{total_no_gestionados_ext/total_externas*100:.1f}%")
+                with col_ext4:
+                    entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA'].copy()
+                    if len(entregados) > 0:
+                        entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
+                        entregados_validos = entregados[entregados['dias_entrega_ext'].notna() & (entregados['dias_entrega_ext'] >= 0)]
+                        if len(entregados_validos) > 0:
+                            st.metric("Promedio Días Entrega", f"{entregados_validos['dias_entrega_ext'].mean():.1f}", 
+                                     delta=f"({len(entregados_validos)} registros)")
+                        else:
+                            st.metric("Promedio Días Entrega", "N/A")
+                    else:
+                        st.metric("Promedio Días Entrega", "N/A")
+            else:
+                st.info("No hay datos de solicitudes externas para mostrar")
+        
+        # ======================== GRÁFICOS DE SOLICITUDES EXTERNAS ========================
+        if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
+            st.markdown("#### 📈 Análisis Visual - Solicitudes Externas")
+            
+            # ======================== GRÁFICO 5B: PROCESOS POR MES ========================
+            if 'proceso' in df_externas_filtrado.columns:
+                with st.container():
+                    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                    st.subheader("📊 Solicitudes Externas: Procesos por Mes")
                     
-                    if 'proceso' in df_externas_filtrado.columns and 'estado' in df_externas_filtrado.columns:
-                        top_procesos_exp = df_externas_filtrado['proceso'].value_counts().head(10).index.tolist()
-                        df_ext_ep_exp = df_externas_filtrado[df_externas_filtrado['proceso'].isin(top_procesos_exp)]
-                        df_ext_estado_proceso_export = df_ext_ep_exp.groupby(['proceso', 'estado']).size().reset_index(name='Cantidad')
-                
-                datos_detalle, resumen_graficos = preparar_datos_exportacion(
-                    df_export, df_graf1, estado_gestion_data, pendientes_data, 
-                    ordenes_area_data, estados_serv_data, entidad_data,
-                    df_externas_export, df_externas_proceso,
-                    df_ext_proceso_mes_export, df_ext_top_serv_export, df_ext_estado_proceso_export
-                )
-                
-                output = BytesIO()
-                wb = Workbook()
-                
-                ws1 = wb.active
-                ws1.title = "Datos Detallados"
-                
-                header_fill = PatternFill(start_color="7c3aed", end_color="7c3aed", fill_type="solid")
-                header_font = Font(color="FFFFFF", bold=True)
-                thin_border = Border(
-                    left=Side(style='thin'),
-                    right=Side(style='thin'),
-                    top=Side(style='thin'),
-                    bottom=Side(style='thin')
-                )
-                
-                for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
-                    for c_idx, value in enumerate(row, 1):
-                        cell = ws1.cell(row=r_idx, column=c_idx, value=value)
-                        if r_idx == 1:
-                            cell.fill = header_fill
-                            cell.font = header_font
-                            cell.alignment = Alignment(horizontal='center', vertical='center')
-                        cell.border = thin_border
-                
-                for column in ws1.columns:
-                    max_length = 0
-                    column_letter = column[0].column_letter
-                    for cell in column:
-                        try:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                        except:
-                            pass
-                    adjusted_length = min(max_length + 2, 50)
-                    ws1.column_dimensions[column_letter].width = adjusted_length
-                
-                ws2 = wb.create_sheet("Resumen Gráficos")
-                for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
-                    for c_idx, value in enumerate(row, 1):
-                        cell = ws2.cell(row=r_idx, column=c_idx, value=value)
-                        if r_idx == 1:
-                            cell.fill = header_fill
-                            cell.font = header_font
-                            cell.alignment = Alignment(horizontal='center', vertical='center')
-                        cell.border = thin_border
-                
-                for column in ws2.columns:
-                    max_length = 0
-                    column_letter = column[0].column_letter
-                    for cell in column:
-                        try:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                        except:
-                            pass
-                    adjusted_length = min(max_length + 2, 50)
-                    ws2.column_dimensions[column_letter].width = adjusted_length
-                
-                if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
-                    ws3 = wb.create_sheet("Solicitudes Externas")
-                    columnas_ext_export = ['fechaRegistroFormulario', 'ciudad', 'proceso', 'idPaciente', 
-                                          'nombrePaciente', 'entidad', 'servicio', 'estado', 'Clasificación']
+                    df_ext_mes = df_externas_filtrado.copy()
+                    df_ext_mes['mes'] = df_ext_mes['fechaRegistroFormulario'].dt.to_period('M').dt.start_time
                     
-                    cols_disponibles = [c for c in columnas_ext_export[:-1] if c in df_externas_filtrado.columns]
-                    if len(cols_disponibles) > 0:
-                        df_ext_export_sheet = df_externas_filtrado[cols_disponibles].copy()
-                        df_ext_export_sheet['Clasificación'] = df_ext_export_sheet['estado'].apply(clasificar_gestion_externa) if 'estado' in df_ext_export_sheet.columns else ''
+                    procesos_por_mes = df_ext_mes.groupby(['mes', 'proceso']).size().reset_index(name='Cantidad')
+                    procesos_por_mes = procesos_por_mes.sort_values('mes')
+                    
+                    if len(procesos_por_mes) > 0:
+                        fig5b, ax5b = plt.subplots(figsize=(14, 7))
                         
-                        if 'fechaRegistroFormulario' in df_ext_export_sheet.columns:
-                            df_ext_export_sheet['fechaRegistroFormulario'] = pd.to_datetime(df_ext_export_sheet['fechaRegistroFormulario']).dt.strftime('%Y-%m-%d')
+                        meses_unicos = sorted(procesos_por_mes['mes'].unique())
+                        procesos_unicos = sorted(procesos_por_mes['proceso'].unique())
                         
-                        for r_idx, row in enumerate(dataframe_to_rows(df_ext_export_sheet, index=False, header=True), 1):
-                            for c_idx, value in enumerate(row, 1):
-                                cell = ws3.cell(row=r_idx, column=c_idx, value=value)
-                                if r_idx == 1:
-                                    cell.fill = header_fill
-                                    cell.font = header_font
-                                    cell.alignment = Alignment(horizontal='center', vertical='center')
-                                cell.border = thin_border
+                        datos_pivot = procesos_por_mes.pivot(index='mes', columns='proceso', values='Cantidad').fillna(0)
                         
-                        for column in ws3.columns:
-                            max_length = 0
-                            column_letter = column[0].column_letter
-                            for cell in column:
-                                try:
-                                    if len(str(cell.value)) > max_length:
-                                        max_length = len(str(cell.value))
-                                except:
-                                    pass
-                            adjusted_length = min(max_length + 2, 50)
-                            ws3.column_dimensions[column_letter].width = adjusted_length
-                
-                wb.save(output)
-                output.seek(0)
-                
-                st.download_button(
-                    label="⬇️ Descargar Excel",
-                    data=output,
-                    file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-                
-                st.success("✅ Reporte generado correctamente. Haz clic en 'Descargar Excel' para guardar el archivo.")
-                
-            except Exception as e:
-                st.error(f"❌ Error al exportar: {e}")
-                import traceback
-                st.error(traceback.format_exc())
+                        colores_procesos = colores_diferenciados[:len(procesos_unicos)]
+                        while len(colores_procesos) < len(procesos_unicos):
+                            colores_procesos = colores_procesos + colores_diferenciados
+                        colores_procesos = colores_procesos[:len(procesos_unicos)]
+                        
+                        bottom = np.zeros(len(datos_pivot))
+                        for i, proceso in enumerate(procesos_unicos):
+                            if proceso in datos_pivot.columns:
+                                valores = datos_pivot[proceso].values
+                                bars = ax5b.bar(range(len(datos_pivot)), valores, bottom=bottom, 
+                                               label=str(proceso)[:40], color=colores_procesos[i], 
+                                               edgecolor='white', linewidth=1.5)
+                                for j, v in enumerate(valores):
+                                    if v > 0:
+                                        text_color = 'white' if v > 5 else 'black'
+                                        ax5b.text(j, bottom[j] + v/2, f'{int(v)}', 
+                                                 ha='center', va='center', 
+                                                 fontsize=9, fontweight='bold', color=text_color)
+                                bottom += valores
+                        
+                        ax5b.set_xlabel('Mes', fontsize=12)
+                        ax5b.set_ylabel('Cantidad de Solicitudes', fontsize=12)
+                        ax5b.set_title(f"Solicitudes Externas: Procesos por Mes - {sufijo_sede}", 
+                                      fontsize=14, fontweight='bold')
+                        
+                        ax5b.set_xticks(range(len(datos_pivot.index)))
+                        ax5b.set_xticklabels([m.strftime('%Y-%m') for m in datos_pivot.index], rotation=45, ha='right')
+                        
+                        for i, total in enumerate(bottom):
+                            if total > 0:
+                                ax5b.text(i, total + 0.3, f'{int(total)}', ha='center', va='bottom', 
+                                         fontsize=11, fontweight='bold', color='black')
+                        
+                        ax5b.legend(loc='upper left', bbox_to_anchor=(1.02, 1), fontsize=10, 
+                                   title='Procesos', title_fontsize=11)
+                        
+                        plt.tight_layout()
+                        st.pyplot(fig5b)
+                        
+                        total_solicitudes = procesos_por_mes['Cantidad'].sum()
+                        mes_pico = procesos_por_mes.groupby('mes')['Cantidad'].sum().idxmax()
+                        cantidad_pico = procesos_por_mes.groupby('mes')['Cantidad'].sum().max()
+                        
+                        texto_interpretacion5b = f'Se registraron <strong>{int(total_solicitudes)}</strong> solicitudes externas distribuidas en <strong>{len(meses_unicos)}</strong> meses. El mes con mayor volumen fue <span class="stat">{mes_pico.strftime("%Y-%m")}</span> con <strong>{int(cantidad_pico)}</strong> solicitudes. '
+                        
+                        if len(procesos_unicos) > 0:
+                            proceso_top = procesos_por_mes.groupby('proceso')['Cantidad'].sum().idxmax()
+                            cantidad_top = procesos_por_mes.groupby('proceso')['Cantidad'].sum().max()
+                            texto_interpretacion5b += f'El proceso más frecuente en el período es <span class="stat">"{proceso_top}"</span> con <strong>{int(cantidad_top)}</strong> solicitudes.'
+                        
+                        st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5b), unsafe_allow_html=True)
+                    else:
+                        st.info("No hay datos de procesos para mostrar por mes")
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+            # ======================== GRÁFICO 5C: TOP 10 SERVICIOS POR MES ========================
+            if 'servicio' in df_externas_filtrado.columns:
+                with st.container():
+                    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                    st.subheader("📊 Solicitudes Externas: Top 10 Servicios más Solicitados por Mes")
+                    
+                    df_ext_serv = df_externas_filtrado.copy()
+                    df_ext_serv['mes'] = df_ext_serv['fechaRegistroFormulario'].dt.to_period('M').dt.start_time
+                    df_ext_serv = df_ext_serv.dropna(subset=['mes', 'servicio'])
+                    
+                    meses_unicos_serv = sorted(df_ext_serv['mes'].dropna().unique())
+                    
+                    if len(meses_unicos_serv) > 0:
+                        opciones_mes = ["Todos los meses (Top 10 global)"] + [m.strftime('%Y-%m') for m in meses_unicos_serv]
+                        mes_seleccionado = st.selectbox(
+                            "Selecciona un mes para ver su Top 10 de servicios:",
+                            options=opciones_mes,
+                            index=0,
+                            key="selector_mes_top_servicios"
+                        )
+                        
+                        if mes_seleccionado == "Todos los meses (Top 10 global)":
+                            df_top10 = df_ext_serv.copy()
+                            titulo_mes = "Todos los meses"
+                            total_periodo = len(df_top10)
+                        else:
+                            mes_dt = pd.to_datetime(mes_seleccionado + "-01")
+                            df_top10 = df_ext_serv[df_ext_serv['mes'] == mes_dt].copy()
+                            titulo_mes = mes_seleccionado
+                            total_periodo = len(df_top10)
+                        
+                        if len(df_top10) > 0:
+                            conteo_servicios = df_top10['servicio'].value_counts().head(10).reset_index()
+                            conteo_servicios.columns = ['Servicio', 'Cantidad']
+                            conteo_servicios['Porcentaje'] = (conteo_servicios['Cantidad'] / total_periodo * 100).round(1)
+                            
+                            fig5c, ax5c = plt.subplots(figsize=(14, 8))
+                            
+                            colores_barras = plt.cm.viridis(np.linspace(0.15, 0.85, len(conteo_servicios)))
+                            
+                            y_pos = range(len(conteo_servicios))
+                            bars = ax5c.barh(y_pos, conteo_servicios['Cantidad'], 
+                                            color=colores_barras, edgecolor='white', linewidth=1.5)
+                            
+                            etiquetas_y = [f"{str(s)[:55]}{'...' if len(str(s)) > 55 else ''}" 
+                                          for s in conteo_servicios['Servicio']]
+                            ax5c.set_yticks(y_pos)
+                            ax5c.set_yticklabels(etiquetas_y, fontsize=10)
+                            ax5c.invert_yaxis()
+                            
+                            ax5c.set_xlabel('Cantidad de Solicitudes', fontsize=12)
+                            ax5c.set_ylabel('Servicio', fontsize=12)
+                            ax5c.set_title(f"Solicitudes Externas: Top 10 Servicios más Solicitados - {titulo_mes} - {sufijo_sede}", 
+                                          fontsize=14, fontweight='bold')
+                            
+                            max_cant = conteo_servicios['Cantidad'].max() if len(conteo_servicios) > 0 else 1
+                            for i, (bar, row) in enumerate(zip(bars, conteo_servicios.itertuples())):
+                                width = bar.get_width()
+                                ax5c.text(width + max_cant * 0.01, 
+                                         bar.get_y() + bar.get_height()/2,
+                                         f'{int(width)} ({row.Porcentaje:.1f}%)', 
+                                         ha='left', va='center', fontsize=10, fontweight='bold')
+                            
+                            ax5c.set_xlim(0, max_cant * 1.15)
+                            
+                            plt.tight_layout()
+                            st.pyplot(fig5c)
+                            
+                            texto_interpretacion5c = f'Mostrando el <strong>Top 10</strong> de servicios más solicitados en <strong>solicitudes externas</strong> para <span class="stat">{titulo_mes}</span>, sobre un total de <strong>{total_periodo}</strong> solicitudes en el período. '
+                            
+                            if len(conteo_servicios) > 0:
+                                top_servicio = conteo_servicios.iloc[0]['Servicio']
+                                top_cant = conteo_servicios.iloc[0]['Cantidad']
+                                top_pct = conteo_servicios.iloc[0]['Porcentaje']
+                                texto_interpretacion5c += f'El servicio más solicitado es <span class="stat">"{str(top_servicio)[:60]}"</span> con <strong>{int(top_cant)}</strong> solicitudes (<span class="stat">{top_pct:.1f}%</span> del total). '
+                                
+                                total_top10 = conteo_servicios['Cantidad'].sum()
+                                pct_top10 = (total_top10 / total_periodo * 100) if total_periodo > 0 else 0
+                                texto_interpretacion5c += f'Los 10 servicios más solicitados concentran el <span class="stat">{pct_top10:.1f}%</span> de las solicitudes del período.'
+                            
+                            st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5c), unsafe_allow_html=True)
+                        else:
+                            st.info(f"No hay datos de servicios para el mes {titulo_mes}")
+                    else:
+                        st.info("No hay datos de servicios para mostrar por mes")
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+            # ======================== GRÁFICO 5D: DISTRIBUCIÓN DE ESTADOS POR PROCESO ========================
+            if 'proceso' in df_externas_filtrado.columns and 'estado' in df_externas_filtrado.columns:
+                with st.container():
+                    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                    st.subheader("📊 Solicitudes Externas: Distribución de Estados por Proceso")
+                    
+                    agrupacion_ep = st.radio(
+                        "Agrupar por:",
+                        options=["Total", "Día", "Semana", "Mes"],
+                        horizontal=True,
+                        index=0,
+                        key="agrupacion_estado_proceso"
+                    )
+                    
+                    df_ext_ep = df_externas_filtrado.copy()
+                    
+                    top_procesos_ep = df_ext_ep['proceso'].value_counts().head(10).index.tolist()
+                    df_ext_ep_top = df_ext_ep[df_ext_ep['proceso'].isin(top_procesos_ep)].copy()
+                    
+                    if len(df_ext_ep_top) > 0:
+                        # CASO ESPECIAL: AGRUPACIÓN POR MES (BARRAS LADO A LADO POR MES, APILADAS POR ESTADO)
+                        if agrupacion_ep == "Mes":
+                            df_ext_ep_top['periodo'] = df_ext_ep_top['fechaRegistroFormulario'].dt.to_period('M').dt.start_time
+                            
+                            meses_unicos_ep = sorted(df_ext_ep_top['periodo'].dropna().unique())
+                            estados_unicos_mes = sorted(df_ext_ep_top['estado'].dropna().unique())
+                            
+                            totales_por_proceso = df_ext_ep_top.groupby('proceso').size().sort_values(ascending=True)
+                            procesos_ordenados = totales_por_proceso.index.tolist()
+                            
+                            n_procesos = len(procesos_ordenados)
+                            n_meses = len(meses_unicos_ep)
+                            
+                            altura_total_disponible = 0.8
+                            ancho_barra = altura_total_disponible / n_meses if n_meses > 0 else altura_total_disponible
+                            
+                            colores_estados_mes = colores_diferenciados[:len(estados_unicos_mes)]
+                            while len(colores_estados_mes) < len(estados_unicos_mes):
+                                colores_estados_mes = colores_estados_mes + colores_diferenciados
+                            colores_estados_mes = colores_estados_mes[:len(estados_unicos_mes)]
+                            dict_color_estado = {estado: colores_estados_mes[i] for i, estado in enumerate(estados_unicos_mes)}
+                            
+                            fig5d, ax5d = plt.subplots(figsize=(14, max(7, n_procesos * 0.7)))
+                            
+                            y_pos = np.arange(n_procesos)
+                            
+                            for p_idx, proceso in enumerate(procesos_ordenados):
+                                df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
+                                
+                                for m_idx, mes in enumerate(meses_unicos_ep):
+                                    df_celda = df_proceso[df_proceso['periodo'] == mes]
+                                    if len(df_celda) == 0:
+                                        continue
+                                    
+                                    offset = (m_idx - (n_meses - 1) / 2) * ancho_barra
+                                    left = 0
+                                    for estado in estados_unicos_mes:
+                                        valor = (df_celda['estado'] == estado).sum()
+                                        if valor > 0:
+                                            ax5d.barh(p_idx + offset, valor, left=left, height=ancho_barra,
+                                                     color=dict_color_estado[estado], edgecolor='white', linewidth=0.8)
+                                            if valor >= 2:
+                                                ax5d.text(left + valor/2, p_idx + offset, f'{int(valor)}',
+                                                         ha='center', va='center', fontsize=7, 
+                                                         fontweight='bold', color='white')
+                                            left += valor
+                                    
+                                    total_celda = len(df_celda)
+                                    if total_celda > 0:
+                                        ax5d.text(total_celda + 0.3, p_idx + offset, f'{total_celda}',
+                                                 ha='left', va='center', fontsize=8, 
+                                                 fontweight='bold', color='black')
+                            
+                            etiquetas_proc = [f"{str(p)[:45]}{'...' if len(str(p)) > 45 else ''}" for p in procesos_ordenados]
+                            ax5d.set_yticks(y_pos)
+                            ax5d.set_yticklabels(etiquetas_proc, fontsize=10)
+                            
+                            ax5d.set_xlabel('Cantidad de Solicitudes', fontsize=12)
+                            ax5d.set_ylabel('Proceso', fontsize=12)
+                            ax5d.set_title(f'Solicitudes Externas: Distribución de Estados por Proceso - Agrupado por Mes - {sufijo_sede}',
+                                          fontsize=14, fontweight='bold')
+                            
+                            legend_estados = [Patch(facecolor=dict_color_estado[estado], edgecolor='white', 
+                                                    label=str(estado)[:35])
+                                              for estado in estados_unicos_mes]
+                            legend1 = ax5d.legend(handles=legend_estados, loc='upper left', 
+                                                 bbox_to_anchor=(1.02, 1), fontsize=9, 
+                                                 title='Estados', title_fontsize=10,
+                                                 framealpha=0.95, edgecolor='#7c3aed')
+                            ax5d.add_artist(legend1)
+                            
+                            texto_leyenda_meses = "Orden de meses por proceso (arriba → abajo):\n" + "\n".join(
+                                [f"{i+1}. {m.strftime('%Y-%m')}" for i, m in enumerate(meses_unicos_ep)]
+                            )
+                            ax5d.text(1.02, 0.55, texto_leyenda_meses, transform=ax5d.transAxes,
+                                     fontsize=9, va='top', ha='left',
+                                     bbox=dict(boxstyle="round,pad=0.5", facecolor='#f8f4ff', 
+                                              edgecolor='#7c3aed', alpha=0.95))
+                            
+                            max_total = 0                            for p_idx, proceso in enumerate(procesos_ordenados):
+                                df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
+                                for mes in meses_unicos_ep:
+                                    total_celda = (df_proceso['periodo'] == mes).sum()
+                                    if total_celda > max_total:
+                                        max_total = total_celda
+                            
+                            ax5d.set_xlim(0, max_total * 1.15 if max_total > 0 else 10)
+                            
+                            plt.tight_layout()
+                            st.pyplot(fig5d)
+                            
+                            total_analizado = len(df_ext_ep_top)
+                            total_general = len(df_externas_filtrado)
+                            
+                            texto_interpretacion5d = f'El gráfico muestra la <strong>distribución de estados por proceso agrupado por mes</strong> en <strong>solicitudes externas</strong>. Para cada uno de los <strong>{n_procesos}</strong> procesos más relevantes, se muestran <strong>{n_meses}</strong> barras (una por mes) <strong>lado a lado</strong>, y cada barra está <strong>apilada por estados</strong>. Se analizaron <strong>{total_analizado}</strong> de <strong>{total_general}</strong> solicitudes externas (<span class="stat">{total_analizado/total_general*100:.1f}%</span> del total). '
+                            
+                            if len(df_ext_ep_top) > 0:
+                                estado_comun = df_ext_ep_top['estado'].value_counts()
+                                if len(estado_comun) > 0:
+                                    texto_interpretacion5d += f'El estado más común en estos procesos es <span class="stat">"{estado_comun.index[0]}"</span> con <strong>{estado_comun.iloc[0]}</strong> registros (<span class="stat">{estado_comun.iloc[0]/len(df_ext_ep_top)*100:.1f}%</span>).'
+                            
+                            st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5d), unsafe_allow_html=True)
+                        
+                        # OTROS CASOS: TOTAL / DÍA / SEMANA (BARRAS APILADAS HORIZONTALES)
+                        else:
+                            if agrupacion_ep == "Total":
+                                pivot_ep = df_ext_ep_top.groupby(['proceso', 'estado']).size().unstack(fill_value=0)
+                                pivot_ep = pivot_ep.loc[pivot_ep.sum(axis=1).sort_values(ascending=True).index]
+                                etiquetas_y = [f"{str(p)[:50]}{'...' if len(str(p)) > 50 else ''}" for p in pivot_ep.index]
+                                titulo_periodo = "Total"
+                            elif agrupacion_ep == "Día":
+                                df_ext_ep_top['periodo'] = df_ext_ep_top['fechaRegistroFormulario'].dt.date
+                                pivot_ep = df_ext_ep_top.groupby(['proceso', 'periodo', 'estado']).size().unstack(fill_value=0)
+                                nuevas_etiquetas = []
+                                for idx in pivot_ep.index:
+                                    proceso, periodo = idx
+                                    periodo_str = periodo.strftime('%Y-%m-%d') if hasattr(periodo, 'strftime') else str(periodo)
+                                    nuevas_etiquetas.append(f"{str(proceso)[:35]} | {periodo_str}")
+                                pivot_ep.index = nuevas_etiquetas
+                                pivot_ep = pivot_ep.loc[pivot_ep.sum(axis=1).sort_values(ascending=True).index]
+                                etiquetas_y = [f"{str(e)[:65]}{'...' if len(str(e)) > 65 else ''}" for e in pivot_ep.index]
+                                titulo_periodo = "Agrupado por Día"
+                            elif agrupacion_ep == "Semana":
+                                df_ext_ep_top['periodo'] = df_ext_ep_top['fechaRegistroFormulario'].dt.to_period('W').dt.start_time
+                                pivot_ep = df_ext_ep_top.groupby(['proceso', 'periodo', 'estado']).size().unstack(fill_value=0)
+                                nuevas_etiquetas = []
+                                for idx in pivot_ep.index:
+                                    proceso, periodo = idx
+                                    periodo_str = periodo.strftime('%Y-%m-%d') if hasattr(periodo, 'strftime') else str(periodo)
+                                    nuevas_etiquetas.append(f"{str(proceso)[:35]} | {periodo_str}")
+                                pivot_ep.index = nuevas_etiquetas
+                                pivot_ep = pivot_ep.loc[pivot_ep.sum(axis=1).sort_values(ascending=True).index]
+                                etiquetas_y = [f"{str(e)[:65]}{'...' if len(str(e)) > 65 else ''}" for e in pivot_ep.index]
+                                titulo_periodo = "Agrupado por Semana"
+                            
+                            fig5d, ax5d = plt.subplots(figsize=(14, max(7, len(pivot_ep) * 0.55)))
+                            
+                            estados_unicos_ep = pivot_ep.columns.tolist()
+                            colores_estados_ep = colores_diferenciados[:len(estados_unicos_ep)]
+                            while len(colores_estados_ep) < len(estados_unicos_ep):
+                                colores_estados_ep = colores_estados_ep + colores_diferenciados
+                            colores_estados_ep = colores_estados_ep[:len(estados_unicos_ep)]
+                            
+                            left = np.zeros(len(pivot_ep))
+                            y_pos = np.arange(len(pivot_ep))
+                            
+                            for i, estado in enumerate(estados_unicos_ep):
+                                valores = pivot_ep[estado].values
+                                bars = ax5d.barh(y_pos, valores, left=left, 
+                                                label=str(estado)[:35], color=colores_estados_ep[i],
+                                                edgecolor='white', linewidth=1.2)
+                                for j, v in enumerate(valores):
+                                    if v > 0:
+                                        ax5d.text(left[j] + v/2, y_pos[j], f'{int(v)}', 
+                                                 ha='center', va='center', fontsize=8, 
+                                                 fontweight='bold', color='white')
+                                left += valores
+                            
+                            ax5d.set_yticks(y_pos)
+                            ax5d.set_yticklabels(etiquetas_y, fontsize=9)
+                            
+                            for j, total in enumerate(left):
+                                ax5d.text(total + 0.3, y_pos[j], f'{int(total)}', 
+                                         ha='left', va='center', fontsize=9, 
+                                         fontweight='bold', color='black')
+                            
+                            ax5d.set_xlabel('Cantidad de Solicitudes', fontsize=12)
+                            ax5d.set_ylabel('Proceso', fontsize=12)
+                            ax5d.set_title(f'Solicitudes Externas: Distribución de Estados por Proceso - {titulo_periodo} - {sufijo_sede}', 
+                                          fontsize=14, fontweight='bold')
+                            
+                            ax5d.legend(loc='lower right', fontsize=10, title='Estados', title_fontsize=11,
+                                       framealpha=0.95, edgecolor='#7c3aed')
+                            
+                            max_total = left.max() if len(left) > 0 else 1
+                            ax5d.set_xlim(0, max_total * 1.12)
+                            
+                            plt.tight_layout()
+                            st.pyplot(fig5d)
+                            
+                            total_analizado = int(pivot_ep.values.sum())
+                            total_general = len(df_externas_filtrado)
+                            n_filas = len(pivot_ep)
+                            
+                            texto_interpretacion5d = f'El gráfico muestra la <strong>distribución de estados por proceso</strong> en <strong>solicitudes externas</strong> para los <strong>{n_filas}</strong> registros (proceso{" + periodo" if agrupacion_ep != "Total" else ""}) más relevantes, que representan <strong>{total_analizado}</strong> de <strong>{total_general}</strong> solicitudes (<span class="stat">{total_analizado/total_general*100:.1f}%</span> del total). '
+                            
+                            if len(df_ext_ep_top) > 0:
+                                estado_comun = df_ext_ep_top['estado'].value_counts()
+                                if len(estado_comun) > 0:
+                                    texto_interpretacion5d += f'El estado más común en estos procesos es <span class="stat">"{estado_comun.index[0]}"</span> con <strong>{estado_comun.iloc[0]}</strong> registros (<span class="stat">{estado_comun.iloc[0]/len(df_ext_ep_top)*100:.1f}%</span>).'
+                            
+                            st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5d), unsafe_allow_html=True)
+                    else:
+                        st.info("No hay datos de procesos para mostrar")
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+            # ======================== GRÁFICO 5E: MATRIZ DE CALOR ========================
+            if 'proceso' in df_externas_filtrado.columns:
+                with st.container():
+                    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                    st.subheader("📊 Solicitudes Externas: Matriz de Calor - Procesos vs Meses")
+                    
+                    df_ext_hm = df_externas_filtrado.copy()
+                    df_ext_hm['mes_str'] = df_ext_hm['fechaRegistroFormulario'].dt.to_period('M').dt.strftime('%Y-%m')
+                    
+                    top_procesos_hm = df_ext_hm['proceso'].value_counts().head(10).index.tolist()
+                    df_hm = df_ext_hm[df_ext_hm['proceso'].isin(top_procesos_hm)]
+                    
+                    pivot_hm = df_hm.groupby(['proceso', 'mes_str']).size().unstack(fill_value=0)
+                    
+                    if len(pivot_hm) > 0:
+                        fig5e, ax5e = plt.subplots(figsize=(14, max(6, len(pivot_hm) * 0.5)))
+                        
+                        im = ax5e.imshow(pivot_hm.values, cmap='YlOrRd', aspect='auto')
+                        
+                        ax5e.set_xticks(range(len(pivot_hm.columns)))
+                        ax5e.set_xticklabels(pivot_hm.columns, rotation=45, ha='right', fontsize=9)
+                        
+                        ax5e.set_yticks(range(len(pivot_hm.index)))
+                        etiquetas_y_hm = [f"{str(p)[:50]}{'...' if len(str(p)) > 50 else ''}" for p in pivot_hm.index]
+                        ax5e.set_yticklabels(etiquetas_y_hm, fontsize=9)
+                        
+                        ax5e.set_xlabel('Mes', fontsize=12)
+                        ax5e.set_ylabel('Proceso', fontsize=12)
+                        ax5e.set_title(f"Solicitudes Externas: Matriz de Calor - Procesos vs Meses - {sufijo_sede}", 
+                                      fontsize=14, fontweight='bold')
+                        
+                        for i in range(len(pivot_hm.index)):
+                            for j in range(len(pivot_hm.columns)):
+                                valor = pivot_hm.values[i, j]
+                                if valor > 0:
+                                    text_color = 'white' if valor > pivot_hm.values.max() * 0.6 else 'black'
+                                    ax5e.text(j, i, f'{int(valor)}', ha='center', va='center', 
+                                             fontsize=9, fontweight='bold', color=text_color)
+                        
+                        cbar = plt.colorbar(im, ax=ax5e, shrink=0.8)
+                        cbar.set_label('Cantidad de Solicitudes', fontsize=10)
+                        
+                        plt.tight_layout()
+                        st.pyplot(fig5e)
+                        
+                        total_hm = pivot_hm.values.sum()
+                        max_valor = pivot_hm.values.max()
+                        idx_max = np.unravel_index(pivot_hm.values.argmax(), pivot_hm.values.shape)
+                        proceso_max = pivot_hm.index[idx_max[0]]
+                        mes_max = pivot_hm.columns[idx_max[1]]
+                        
+                        texto_interpretacion5e = f'La matriz de calor muestra la distribución de <strong>{int(total_hm)}</strong> solicitudes externas en los <strong>{len(pivot_hm.index)}</strong> procesos más relevantes a lo largo de <strong>{len(pivot_hm.columns)}</strong> meses. '
+                        texto_interpretacion5e += f'La mayor concentración se observa en el proceso <span class="stat">"{str(proceso_max)[:50]}"</span> durante el mes <span class="stat">{mes_max}</span> con <strong>{int(max_valor)}</strong> solicitudes.'
+                        
+                        st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5e), unsafe_allow_html=True)
+                    else:
+                        st.info("No hay datos suficientes para mostrar la matriz de calor")
+                    st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("No hay datos de solicitudes externas disponibles para las ciudades seleccionadas.")
+    
+    # ======================== EXPORTACIÓN A EXCEL ========================
+    st.divider()
+    st.markdown("### 📥 Exportar Reporte Completo")
+    
+    def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, 
+                                   ordenes_area_data, estados_serv_data, entidad_data, 
+                                   df_ext_proceso_mes_export, df_ext_top_serv_export, 
+                                   df_ext_estado_proceso_export):
+        datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
+        datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
         
-        st.divider()
-        st.caption(f"🔍 Filtros aplicados: {len(estados_seleccionados)} estados, {len(entidades_seleccionadas)} entidades, {len(areas_seleccionadas)} áreas, {len(sedes_seleccionadas)} sedes")
-        st.caption(f"📅 Rango de fechas: {fecha_inicio} - {fecha_fin}")
+        resumen_data = []
+        
+        total_generadas = df_graf1_data['Generadas'].sum()
+        total_gestionadas = df_graf1_data['Gestionadas'].sum()
+        pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
+        resumen_data.append(['Gráfico 1', 'Órdenes Generadas vs Gestionadas', f'Total generadas: {int(total_generadas)}', ''])
+        resumen_data.append(['', '', f'Total gestionadas: {int(total_gestionadas)} ({pct_gestionadas:.1f}%)', ''])
+        resumen_data.append(['', '', f'Pendientes: {int(total_generadas - total_gestionadas)} ({100-pct_gestionadas:.1f}%)', ''])
+        resumen_data.append(['', '', '', ''])
+        
+        if len(estado_gestion_data) > 0:
+            total_estados = estado_gestion_data['Cantidad'].sum()
+            for _, row in estado_gestion_data.iterrows():
+                resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
+        resumen_data.append(['', '', '', ''])
+        
+        if pendientes_data is not None and len(pendientes_data) > 0:
+            total_pend = pendientes_data['Cantidad'].sum()
+            for _, row in pendientes_data.iterrows():
+                resumen_data.append(['Gráfico 3', 'Pendientes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_pend*100:.1f}%)', ''])
+        resumen_data.append(['', '', '', ''])
+        
+        if df_ext_proceso_mes_export is not None and len(df_ext_proceso_mes_export) > 0:
+            for _, row in df_ext_proceso_mes_export.iterrows():
+                resumen_data.append(['Gráfico 5B', f'Solicitudes Externas: Procesos por Mes - {row["mes_str"]}', 
+                                    f'{row["proceso"]}: {row["Cantidad"]}', ''])
+            resumen_data.append(['', '', '', ''])
+        
+        if df_ext_top_serv_export is not None and len(df_ext_top_serv_export) > 0:
+            for _, row in df_ext_top_serv_export.iterrows():
+                resumen_data.append(['Gráfico 5C', f'Solicitudes Externas: Top 10 Servicios - {row["mes_str"]}', 
+                                    f'{row["servicio"]}: {row["cantidad"]} ({row["porcentaje"]:.1f}%)', ''])
+            resumen_data.append(['', '', '', ''])
+        
+        if df_ext_estado_proceso_export is not None and len(df_ext_estado_proceso_export) > 0:
+            for _, row in df_ext_estado_proceso_export.iterrows():
+                resumen_data.append(['Gráfico 5D', f'Solicitudes Externas: Estados por Proceso - {str(row["proceso"])[:40]}', 
+                                    f'{row["estado"]}: {row["Cantidad"]}', ''])
+            resumen_data.append(['', '', '', ''])
+        
+        if len(ordenes_area_data) > 0:
+            total_ord = ordenes_area_data['Cantidad'].sum()
+            for _, row in ordenes_area_data.iterrows():
+                resumen_data.append(['Gráfico 6', 'Órdenes por Área', f'{row["Área"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ord*100:.1f}%)', ''])
+        resumen_data.append(['', '', '', ''])
+        
+        if len(estados_serv_data) > 0:
+            total_est = estados_serv_data['Cantidad'].sum()
+            for _, row in estados_serv_data.iterrows():
+                resumen_data.append(['Gráfico 7', 'Estados de Servicios', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_est*100:.1f}%)', ''])
+        resumen_data.append(['', '', '', ''])
+        
+        if len(entidad_data) > 0:
+            total_ent = entidad_data['Cantidad'].sum()
+            for _, row in entidad_data.iterrows():
+                resumen_data.append(['Gráfico 8', 'Distribución por Entidad', f'{row["Entidad"]}: {row["Cantidad"]} ({row["Cantidad"]/total_ent*100:.1f}%)', ''])
+        
+        resumen_df = pd.DataFrame(resumen_data, columns=['Gráfico', 'Categoría', 'Detalle', 'Observación'])
+        
+        return datos_detalle, resumen_df
+    
+    if st.button("📥 Exportar Reporte a Excel", use_container_width=True, type="primary"):
+        try:
+            df_export = df_filtrado.copy()
+            
+            estado_gestion_data = estado_gestion_counts.copy()
+            pendientes_data = pendientes_por_area.copy() if pendientes_por_area is not None and len(pendientes_por_area) > 0 else pd.DataFrame()
+            ordenes_area_data = ordenes_por_area.copy() if len(ordenes_por_area) > 0 else pd.DataFrame()
+            estados_serv_data = estados_counts.copy()
+            entidad_data = entidad_counts.copy()
+            
+            df_ext_proceso_mes_export = None
+            df_ext_top_serv_export = None
+            df_ext_estado_proceso_export = None
+            
+            if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
+                if 'proceso' in df_externas_filtrado.columns and 'fechaRegistroFormulario' in df_externas_filtrado.columns:
+                    df_ext_mes_exp = df_externas_filtrado.copy()
+                    df_ext_mes_exp['mes_str'] = df_ext_mes_exp['fechaRegistroFormulario'].dt.to_period('M').dt.strftime('%Y-%m')
+                    df_ext_proceso_mes_export = df_ext_mes_exp.groupby(['mes_str', 'proceso']).size().reset_index(name='Cantidad')
+                
+                if 'servicio' in df_externas_filtrado.columns and 'fechaRegistroFormulario' in df_externas_filtrado.columns:
+                    df_ext_serv_exp = df_externas_filtrado.copy()
+                    df_ext_serv_exp['mes_str'] = df_ext_serv_exp['fechaRegistroFormulario'].dt.to_period('M').dt.strftime('%Y-%m')
+                    top_serv_rows = []
+                    for mes in sorted(df_ext_serv_exp['mes_str'].dropna().unique()):
+                        df_mes_serv = df_ext_serv_exp[df_ext_serv_exp['mes_str'] == mes]
+                        if len(df_mes_serv) > 0:
+                            conteo = df_mes_serv['servicio'].value_counts().head(10)
+                            for servicio, cantidad in conteo.items():
+                                top_serv_rows.append({
+                                    'mes_str': mes,
+                                    'servicio': servicio,
+                                    'cantidad': cantidad,
+                                    'porcentaje': (cantidad / len(df_mes_serv) * 100) if len(df_mes_serv) > 0 else 0
+                                })
+                    if len(top_serv_rows) > 0:
+                        df_ext_top_serv_export = pd.DataFrame(top_serv_rows)
+                
+                if 'proceso' in df_externas_filtrado.columns and 'estado' in df_externas_filtrado.columns:
+                    top_procesos_exp = df_externas_filtrado['proceso'].value_counts().head(10).index.tolist()
+                    df_ext_ep_exp = df_externas_filtrado[df_externas_filtrado['proceso'].isin(top_procesos_exp)]
+                    df_ext_estado_proceso_export = df_ext_ep_exp.groupby(['proceso', 'estado']).size().reset_index(name='Cantidad')
+            
+            datos_detalle, resumen_graficos = preparar_datos_exportacion(
+                df_export, df_graf1, estado_gestion_data, pendientes_data, 
+                ordenes_area_data, estados_serv_data, entidad_data,
+                df_ext_proceso_mes_export, df_ext_top_serv_export, df_ext_estado_proceso_export
+            )
+            
+            output = BytesIO()
+            wb = Workbook()
+            
+            ws1 = wb.active
+            ws1.title = "Datos Detallados"
+            
+            header_fill = PatternFill(start_color="7c3aed", end_color="7c3aed", fill_type="solid")
+            header_font = Font(color="FFFFFF", bold=True)
+            thin_border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+            for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
+                for c_idx, value in enumerate(row, 1):
+                    cell = ws1.cell(row=r_idx, column=c_idx, value=value)
+                    if r_idx == 1:
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                    cell.border = thin_border
+            
+            for column in ws1.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_length = min(max_length + 2, 50)
+                ws1.column_dimensions[column_letter].width = adjusted_length
+            
+            ws2 = wb.create_sheet("Resumen Gráficos")
+            for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
+                for c_idx, value in enumerate(row, 1):
+                    cell = ws2.cell(row=r_idx, column=c_idx, value=value)
+                    if r_idx == 1:
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                    cell.border = thin_border
+            
+            for column in ws2.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_length = min(max_length + 2, 50)
+                ws2.column_dimensions[column_letter].width = adjusted_length
+            
+            if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
+                ws3 = wb.create_sheet("Solicitudes Externas")
+                columnas_ext_export = ['fechaRegistroFormulario', 'ciudad', 'proceso', 'idPaciente', 
+                                      'nombrePaciente', 'entidad', 'servicio', 'estado', 'Clasificación']
+                
+                cols_disponibles = [c for c in columnas_ext_export[:-1] if c in df_externas_filtrado.columns]
+                if len(cols_disponibles) > 0:
+                    df_ext_export_sheet = df_externas_filtrado[cols_disponibles].copy()
+                    df_ext_export_sheet['Clasificación'] = df_ext_export_sheet['estado'].apply(clasificar_gestion_externa) if 'estado' in df_ext_export_sheet.columns else ''
+                    
+                    if 'fechaRegistroFormulario' in df_ext_export_sheet.columns:
+                        df_ext_export_sheet['fechaRegistroFormulario'] = pd.to_datetime(df_ext_export_sheet['fechaRegistroFormulario']).dt.strftime('%Y-%m-%d')
+                    
+                    for r_idx, row in enumerate(dataframe_to_rows(df_ext_export_sheet, index=False, header=True), 1):
+                        for c_idx, value in enumerate(row, 1):
+                            cell = ws3.cell(row=r_idx, column=c_idx, value=value)
+                            if r_idx == 1:
+                                cell.fill = header_fill
+                                cell.font = header_font
+                                cell.alignment = Alignment(horizontal='center', vertical='center')
+                            cell.border = thin_border
+                    
+                    for column in ws3.columns:
+                        max_length = 0
+                        column_letter = column[0].column_letter
+                        for cell in column:
+                            try:
+                                if len(str(cell.value)) > max_length:
+                                    max_length = len(str(cell.value))
+                            except:
+                                pass
+                        adjusted_length = min(max_length + 2, 50)
+                        ws3.column_dimensions[column_letter].width = adjusted_length
+            
+            wb.save(output)
+            output.seek(0)
+            
+            st.download_button(
+                label="⬇️ Descargar Excel",
+                data=output,
+                file_name=f"Reporte_Portafolio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+            
+            st.success("✅ Reporte generado correctamente. Haz clic en 'Descargar Excel' para guardar el archivo.")
+            
+        except Exception as e:
+            st.error(f"❌ Error al exportar: {e}")
+            import traceback
+            st.error(traceback.format_exc())
+    
+    st.divider()
+    st.caption(f"🔍 Filtros aplicados: {len(estados_seleccionados)} estados, {len(entidades_seleccionadas)} entidades, {len(areas_seleccionadas)} áreas, {len(sedes_seleccionadas)} sedes")
+    st.caption(f"📅 Rango de fechas: {fecha_inicio} - {fecha_fin}")
         
 else:
     st.info("👈 Carga un archivo Excel que contenga las hojas 'Datos', 'Portafolio' y 'Solicitudes Externas' para comenzar a visualizar el dashboard")
