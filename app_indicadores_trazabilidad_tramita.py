@@ -1729,7 +1729,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         st.info("No hay datos de procesos para mostrar por mes")
                     st.markdown('</div>', unsafe_allow_html=True)
 
-            # ======================== GRÁFICO 5C: TOP 10 SERVICIOS POR MES ========================
+                        # ======================== GRÁFICO 5C: TOP 10 SERVICIOS POR MES ========================
             if 'servicio' in df_externas_filtrado.columns:
                 with st.container():
                     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -1761,11 +1761,27 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             total_periodo = len(df_top10)
                         
                         if len(df_top10) > 0:
-                            conteo_servicios = df_top10['servicio'].value_counts().head(10).reset_index()
-                            conteo_servicios.columns = ['Servicio', 'Cantidad']
+                            # ✅ MODIFICACIÓN: Agrupar por servicio Y proceso para incluir el proceso en la etiqueta
+                            tiene_proceso = 'proceso' in df_top10.columns
+                            
+                            if tiene_proceso:
+                                # Agrupar por (servicio, proceso) para contar combinaciones
+                                conteo_servicios = df_top10.groupby(['servicio', 'proceso']).size().reset_index(name='Cantidad')
+                                conteo_servicios = conteo_servicios.sort_values('Cantidad', ascending=False).head(10).reset_index(drop=True)
+                                # Crear etiqueta combinada: "SERVICIO - PROCESO"
+                                conteo_servicios['Etiqueta'] = conteo_servicios.apply(
+                                    lambda row: f"{str(row['servicio']).strip()} - {str(row['proceso']).strip()}", 
+                                    axis=1
+                                )
+                            else:
+                                # Si no hay proceso, usar solo el servicio
+                                conteo_servicios = df_top10['servicio'].value_counts().head(10).reset_index()
+                                conteo_servicios.columns = ['servicio', 'Cantidad']
+                                conteo_servicios['Etiqueta'] = conteo_servicios['servicio'].astype(str)
+                            
                             conteo_servicios['Porcentaje'] = (conteo_servicios['Cantidad'] / total_periodo * 100).round(1)
                             
-                            fig5c, ax5c = plt.subplots(figsize=(14, 8))
+                            fig5c, ax5c = plt.subplots(figsize=(16, 9))
                             
                             colores_barras = plt.cm.viridis(np.linspace(0.15, 0.85, len(conteo_servicios)))
                             
@@ -1773,14 +1789,15 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             bars = ax5c.barh(y_pos, conteo_servicios['Cantidad'], 
                                             color=colores_barras, edgecolor='white', linewidth=1.5)
                             
-                            etiquetas_y = [f"{str(s)[:55]}{'...' if len(str(s)) > 55 else ''}" 
-                                          for s in conteo_servicios['Servicio']]
+                            # ✅ MODIFICACIÓN: Usar la etiqueta combinada (Servicio - Proceso), truncada a 75 caracteres
+                            etiquetas_y = [f"{str(e)[:75]}{'...' if len(str(e)) > 75 else ''}" 
+                                          for e in conteo_servicios['Etiqueta']]
                             ax5c.set_yticks(y_pos)
-                            ax5c.set_yticklabels(etiquetas_y, fontsize=10)
+                            ax5c.set_yticklabels(etiquetas_y, fontsize=9)
                             ax5c.invert_yaxis()
                             
                             ax5c.set_xlabel('Cantidad de Solicitudes', fontsize=12)
-                            ax5c.set_ylabel('Servicio', fontsize=12)
+                            ax5c.set_ylabel('Servicio - Proceso', fontsize=12)
                             ax5c.set_title(f"Solicitudes Externas: Top 10 Servicios más Solicitados - {titulo_mes} - {sufijo_sede}", 
                                           fontsize=14, fontweight='bold')
                             
@@ -1792,7 +1809,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                          f'{int(width)} ({row.Porcentaje:.1f}%)', 
                                          ha='left', va='center', fontsize=10, fontweight='bold')
                             
-                            ax5c.set_xlim(0, max_cant * 1.15)
+                            ax5c.set_xlim(0, max_cant * 1.18)
                             
                             plt.tight_layout()
                             st.pyplot(fig5c)
@@ -1804,11 +1821,11 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             )
                             
                             if len(conteo_servicios) > 0:
-                                top_servicio = conteo_servicios.iloc[0]['Servicio']
+                                top_etiqueta = conteo_servicios.iloc[0]['Etiqueta']
                                 top_cant = conteo_servicios.iloc[0]['Cantidad']
                                 top_pct = conteo_servicios.iloc[0]['Porcentaje']
                                 texto_interpretacion5c += (
-                                    f'El servicio más solicitado es <span class="stat">"{str(top_servicio)[:60]}"</span> con '
+                                    f'El servicio más solicitado es <span class="stat">"{str(top_etiqueta)[:80]}"</span> con '
                                     f'<strong>{int(top_cant)}</strong> solicitudes (<span class="stat">{top_pct:.1f}%</span> del total). '
                                 )
                                 
