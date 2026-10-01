@@ -1573,14 +1573,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         <p class="metric-value">N/A</p>
                     </div>
                 """, unsafe_allow_html=True)
-        
-        with col_ext_k6:
-            st.markdown(f"""
-                <div class="metric-card-small">
-                    <p class="metric-label">🔀 Procesos Distintos</p>
-                    <p class="metric-value">{total_procesos:,}</p>
-                </div>
-            """, unsafe_allow_html=True)
+
         
         # ======================== RESUMEN EJECUTIVO DE SOLICITUDES EXTERNAS ========================
         st.markdown("#### 📋 Resumen Ejecutivo - Solicitudes Externas")
