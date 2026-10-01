@@ -1716,7 +1716,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             variabilidad_txt = f'La <strong>baja variabilidad mensual (CV: {cv_mensual:.1f}%)</strong> indica una demanda relativamente estable y predecible.'
                         
                         texto_interpretacion5b = (
-                            f'<strong>Volumen y distribución temporal:</strong> Se registraron <strong>{int(total_solicitudes)}</strong> solicitudes externas en <strong>{len(meses_unicos)}</strong> meses. '
+                            f'Se registraron <strong>{int(total_solicitudes)}</strong> solicitudes externas en <strong>{len(meses_unicos)}</strong> meses. '
                             f'El mes de mayor actividad fue <span class="stat">{mes_pico.strftime("%Y-%m")}</span> con <strong>{int(cantidad_pico)}</strong> solicitudes, mientras que el mes más bajo fue <span class="stat">{mes_bajo.strftime("%Y-%m")}</span> con <strong>{int(cantidad_baja)}</strong>. '
                             f'El promedio mensual es de <strong>{promedio_mes:.1f}</strong> solicitudes. {variabilidad_txt} {tendencia_txt}<br>'
                             f'<strong>Concentración por proceso:</strong> El proceso más frecuente es <span class="stat">"{proceso_top}"</span> con <strong>{int(cantidad_top)}</strong> solicitudes (<span class="stat">{pct_top:.1f}%</span> del total). '
