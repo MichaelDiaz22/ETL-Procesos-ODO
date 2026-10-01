@@ -353,7 +353,6 @@ def obtener_sufijo_sede(sedes_seleccionadas, df_filtrado):
 
 # ======================== FUNCIÓN PARA GENERAR RESUMEN EJECUTIVO GENERAL ========================
 def generar_resumen_ejecutivo(df):
-    """Genera un resumen ejecutivo general (sin la parte de solicitudes externas)"""
     total_ordenes = len(df)
     total_entidades = df['Entidad'].nunique()
     total_pacientes = df['Paciente'].nunique()
@@ -546,21 +545,6 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
                             tendencia = f"tendencia estable ({cambio_pct:+.1f}%)"
                         mes_pico_txt = f'Comparando el primer mes ({primer_mes.strftime("%Y-%m")}) con el último ({ultimo_mes.strftime("%Y-%m")}), se observa una <strong>{tendencia}</strong> en el volumen de solicitudes.'
     
-    # CIUDADES
-    ciudades_txt = ""
-    if 'ciudad' in df_externas_filtrado.columns:
-        top_ciudades = df_externas_filtrado['ciudad'].value_counts()
-        if len(top_ciudades) > 0:
-            num_ciudades = len(top_ciudades)
-            ciudades_txt = f'Las solicitudes externas provienen de <strong>{num_ciudades}</strong> ciudade(s) diferente(s). '
-            if num_ciudades >= 3:
-                top3_ciudades = top_ciudades.head(3)
-                lista_top3 = ', '.join([f'"{str(c)[:30]}" ({v})' for c, v in top3_ciudades.items()])
-                ciudades_txt += f'Las 3 ciudades principales son: {lista_top3}.'
-            else:
-                lista_ciudades = ', '.join([f'"{str(c)[:30]}" ({v})' for c, v in top_ciudades.items()])
-                ciudades_txt += f'Distribución: {lista_ciudades}.'
-    
     # ENTIDADES
     entidades_txt = ""
     if 'entidad' in df_externas_filtrado.columns:
@@ -573,39 +557,25 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
             entidad_top_pct = entidad_top_count/total_externas*100
             entidades_txt += f'La entidad con mayor volumen es <span class="stat">"{str(entidad_top)[:50]}"</span> con <strong>{entidad_top_count}</strong> solicitudes (<span class="stat">{entidad_top_pct:.1f}%</span>).'
     
-    # PACIENTES ÚNICOS
-    pacientes_txt = ""
-    if 'idPaciente' in df_externas_filtrado.columns:
-        total_pacientes_unicos = df_externas_filtrado['idPaciente'].nunique()
-        if total_pacientes_unicos > 0:
-            ratio = total_externas / total_pacientes_unicos
-            pacientes_txt = f'Las solicitudes corresponden a <strong>{total_pacientes_unicos:,}</strong> pacientes únicos, con un promedio de <span class="stat">{ratio:.2f}</span> solicitudes por paciente.'
-    
     # CONSTRUIR RESUMEN EJECUTIVO AMPLIADO
     resumen = '<div class="executive-summary">'
     resumen += '<h3>📋 Resumen Ejecutivo - Solicitudes Externas</h3>'
     
-    # Sección 1: Visión General
+    # Sección 1: Visión General (sin ciudades ni pacientes únicos)
     resumen += f'<p><strong>🔹 Visión General ({sufijo_sede}):</strong> Se identificaron <span class="stat">{total_externas:,}</span> solicitudes externas en total.'
-    if pacientes_txt:
-        resumen += f' {pacientes_txt}'
-    if ciudades_txt:
-        resumen += f' {ciudades_txt}'
     if entidades_txt:
         resumen += f' {entidades_txt}'
     resumen += '</p>'
     
-    # Sección 2: Estado de Gestión
+    # Sección 2: Estado de Gestión (sin el mensaje de "Buen desempeño")
     resumen += f'<p><strong>🔹 Estado de Gestión:</strong> Del total, <span class="stat">{total_gestionados_ext:,} ({pct_gestionados:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({pct_pendientes:.1f}%)</span> se encuentran pendientes de gestión.'
     if pct_pendientes >= 50:
         resumen += f' <strong style="color: #dc2626;">⚠️ Atención:</strong> Más de la mitad de las solicitudes están pendientes, lo que representa un <strong>riesgo operativo alto</strong> que requiere priorización inmediata.'
     elif pct_pendientes >= 25:
         resumen += f' <strong style="color: #ea580c;">⚠️ Nota:</strong> La proporción de pendientes es significativa ({pct_pendientes:.1f}%), se recomienda monitorear de cerca la gestión.'
-    else:
-        resumen += f' <strong style="color: #16a34a;">✅ Buen desempeño:</strong> La mayoría de las solicitudes han sido gestionadas, indicando una operación eficiente.'
     resumen += '</p>'
     
-    # Sección 3: Tiempos de Entrega
+    # Sección 3: Tiempos de Entrega (sin el mensaje de "satisfactorio")
     if promedio_dias_entrega_ext is not None and num_entregados_validos > 0:
         resumen += f'<p><strong>🔹 Tiempos de Entrega a Proceso:</strong> El tiempo promedio de entrega es de <span class="stat">{promedio_dias_entrega_ext:.1f}</span> días (mediana: <span class="stat">{mediana_dias_entrega_ext:.1f}</span> días), calculado sobre <strong>{num_entregados_validos}</strong> registros con fechas válidas. El rango oscila entre <strong>{min_dias_entrega_ext:.1f}</strong> y <strong>{max_dias_entrega_ext:.1f}</strong> días.'
         
@@ -617,11 +587,9 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
                 resumen += f' La mediana supera al promedio, indicando una <strong>distribución con valores bajos frecuentes</strong>.'
         
         resumen += f' De los entregados, <span class="stat">{num_entregados_a_tiempo:,} ({pct_entregados_a_tiempo:.1f}%)</span> fueron entregados en <strong>5 días o menos</strong>.'
-        if pct_entregados_a_tiempo >= 70:
-            resumen += ' Este nivel de cumplimiento es <strong style="color: #16a34a;">satisfactorio</strong>.'
-        elif pct_entregados_a_tiempo >= 40:
+        if pct_entregados_a_tiempo >= 40 and pct_entregados_a_tiempo < 70:
             resumen += ' Hay margen de mejora en los tiempos de entrega.'
-        else:
+        elif pct_entregados_a_tiempo < 40:
             resumen += ' <strong style="color: #dc2626;">Se requiere revisar los procesos</strong> para reducir los tiempos de entrega.'
         resumen += '</p>'
     elif len(entregados) > 0:
@@ -648,7 +616,7 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
             resumen += f'<li><strong>Estados:</strong> {top_estado_txt}</li>'
         resumen += '</ul>'
     
-    # Sección 6: Recomendaciones Automáticas
+    # Sección 6: Recomendaciones Automáticas (sin "Mantener el ritmo actual")
     resumen += '<p><strong>🔹 Recomendaciones Sugeridas:</strong></p>'
     resumen += '<ul style="margin-top: 5px; line-height: 1.8;">'
     
@@ -657,17 +625,12 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
         recomendaciones.append('Priorizar la gestión de solicitudes pendientes, ya que superan el 50% del total.')
     elif pct_pendientes >= 25:
         recomendaciones.append('Establecer un plan de seguimiento para reducir el volumen de pendientes.')
-    else:
-        recomendaciones.append('Mantener el ritmo actual de gestión, dado el bajo nivel de pendientes.')
     
     if promedio_dias_entrega_ext is not None and promedio_dias_entrega_ext > 5:
         recomendaciones.append(f'Revisar los procesos de entrega, ya que el tiempo promedio ({promedio_dias_entrega_ext:.1f} días) supera los 5 días.')
     
     if len(top_procesos) >= 1 and top_procesos.iloc[0]/total_externas > 0.4:
         recomendaciones.append(f'El proceso "{str(top_procesos.index[0])[:40]}" concentra más del 40% de las solicitudes; considerar optimización específica.')
-    
-    if len(top_ciudades) >= 1 if 'ciudad' in df_externas_filtrado.columns else False:
-        pass
     
     if not recomendaciones:
         recomendaciones.append('Continuar con el monitoreo regular de las solicitudes externas.')
@@ -1501,7 +1464,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
     st.divider()
     
     with st.expander("📂 Solicitudes Externas - Análisis Completo", expanded=False):
-        # ======================== CÁLCULO DE MÉTRICAS DE EXTERNAS (AMPLIADO A 6 INDICADORES) ========================
+        # ======================== CÁLCULO DE MÉTRICAS DE EXTERNAS ========================
         total_externas = 0
         total_gestionados_ext = 0
         pct_gestionados_ext = 0
@@ -1510,11 +1473,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         promedio_dias_entrega_ext = None
         num_entregados_validos = 0
         pct_entregados_a_tiempo = 0
-        total_pacientes_unicos = 0
-        total_ciudades = 0
         total_procesos = 0
         total_servicios = 0
-        total_entidades_ext = 0
         
         if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
             total_externas = len(df_externas_filtrado)
@@ -1534,16 +1494,10 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     promedio_dias_entrega_ext = entregados_validos['dias_entrega_ext'].mean()
                     pct_entregados_a_tiempo = (entregados_validos['dias_entrega_ext'] <= 5).sum() / num_entregados_validos * 100
             
-            if 'idPaciente' in df_externas_filtrado.columns:
-                total_pacientes_unicos = df_externas_filtrado['idPaciente'].nunique()
-            if 'ciudad' in df_externas_filtrado.columns:
-                total_ciudades = df_externas_filtrado['ciudad'].nunique()
             if 'proceso' in df_externas_filtrado.columns:
                 total_procesos = df_externas_filtrado['proceso'].nunique()
             if 'servicio' in df_externas_filtrado.columns:
                 total_servicios = df_externas_filtrado['servicio'].nunique()
-            if 'entidad' in df_externas_filtrado.columns:
-                total_entidades_ext = df_externas_filtrado['entidad'].nunique()
         
         sufijo_sede_ext = obtener_sufijo_sede(sedes_seleccionadas, df_filtrado)
         
@@ -1623,35 +1577,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         with col_ext_k6:
             st.markdown(f"""
                 <div class="metric-card-small">
-                    <p class="metric-label">👥 Pacientes Únicos</p>
-                    <p class="metric-value">{total_pacientes_unicos:,}</p>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        # Tercera fila: 3 tarjetas de diversidad (procesos, servicios, ciudades)
-        col_ext_k7, col_ext_k8, col_ext_k9 = st.columns(3)
-        
-        with col_ext_k7:
-            st.markdown(f"""
-                <div class="metric-card-small">
                     <p class="metric-label">🔀 Procesos Distintos</p>
                     <p class="metric-value">{total_procesos:,}</p>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with col_ext_k8:
-            st.markdown(f"""
-                <div class="metric-card-small">
-                    <p class="metric-label">🩺 Servicios Distintos</p>
-                    <p class="metric-value">{total_servicios:,}</p>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with col_ext_k9:
-            st.markdown(f"""
-                <div class="metric-card-small">
-                    <p class="metric-label">🌆 Ciudades Distintas</p>
-                    <p class="metric-value">{total_ciudades:,}</p>
                 </div>
             """, unsafe_allow_html=True)
         
@@ -1765,20 +1692,16 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         cantidad_baja = procesos_por_mes.groupby('mes')['Cantidad'].sum().min()
                         promedio_mes = procesos_por_mes.groupby('mes')['Cantidad'].sum().mean()
                         
-                        # Proceso más frecuente
                         proceso_top = procesos_por_mes.groupby('proceso')['Cantidad'].sum().idxmax()
                         cantidad_top = procesos_por_mes.groupby('proceso')['Cantidad'].sum().max()
                         pct_top = cantidad_top / total_solicitudes * 100
                         
-                        # Calcular concentración del top 3 procesos
                         top3_procesos = procesos_por_mes.groupby('proceso')['Cantidad'].sum().nlargest(3)
                         pct_top3 = top3_procesos.sum() / total_solicitudes * 100
                         
-                        # Variabilidad mensual (coeficiente de variación)
                         serie_mensual = procesos_por_mes.groupby('mes')['Cantidad'].sum()
                         cv_mensual = (serie_mensual.std() / serie_mensual.mean() * 100) if serie_mensual.mean() > 0 else 0
                         
-                        # Tendencia
                         tendencia_txt = ""
                         if len(serie_mensual) >= 2:
                             primer_val = serie_mensual.iloc[0]
@@ -1792,7 +1715,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                 else:
                                     tendencia_txt = f'La tendencia del período es <strong>estable ({cambio_pct:+.1f}%)</strong>, sin cambios significativos entre el primer y último mes.'
                         
-                        # Nivel de variabilidad
                         if cv_mensual > 50:
                             variabilidad_txt = f'La <strong>alta variabilidad mensual (CV: {cv_mensual:.1f}%)</strong> indica que el volumen de solicitudes fluctúa considerablemente, lo que puede dificultar la planificación de recursos.'
                         elif cv_mensual > 25:
@@ -1882,7 +1804,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             plt.tight_layout()
                             st.pyplot(fig5c)
                             
-                            # Interpretación ampliada
+                            # Interpretación ampliada (SIN la comparación top 1 vs 2)
                             texto_interpretacion5c = (
                                 f'<strong>Análisis del Top 10 de servicios - {titulo_mes}:</strong> '
                                 f'Se analizaron <strong>{total_periodo}</strong> solicitudes en el período seleccionado. '
@@ -1897,7 +1819,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                     f'<strong>{int(top_cant)}</strong> solicitudes (<span class="stat">{top_pct:.1f}%</span> del total). '
                                 )
                                 
-                                # Concentración del top 10
                                 total_top10 = conteo_servicios['Cantidad'].sum()
                                 pct_top10 = (total_top10 / total_periodo * 100) if total_periodo > 0 else 0
                                 texto_interpretacion5c += (
@@ -1910,23 +1831,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                     texto_interpretacion5c += f'Existe una <strong>concentración moderada</strong>, con margen para ampliar la diversidad de servicios ofrecidos.'
                                 else:
                                     texto_interpretacion5c += f'La demanda está <strong>bastante diversificada</strong> entre múltiples servicios, reflejando una atención amplia.'
-                                
-                                # Comparar top 1 vs top 2
-                                if len(conteo_servicios) > 1:
-                                    segundo_servicio = conteo_servicios.iloc[1]['Servicio']
-                                    segundo_cant = conteo_servicios.iloc[1]['Cantidad']
-                                    segundo_pct = conteo_servicios.iloc[1]['Porcentaje']
-                                    diferencia = top_cant - segundo_cant
-                                    texto_interpretacion5c += (
-                                        f'<br><strong>Comparación:</strong> El segundo servicio más solicitado es <span class="stat">"{str(segundo_servicio)[:60]}"</span> '
-                                        f'con <strong>{int(segundo_cant)}</strong> solicitudes (<span class="stat">{segundo_pct:.1f}%</span>), '
-                                        f'lo que representa una diferencia de <strong>{int(diferencia)}</strong> solicitudes respecto al primero.'
-                                    )
-                                    
-                                    if diferencia <= 2:
-                                        texto_interpretacion5c += ' Ambos servicios tienen una demanda muy similar, lo que sugiere <strong>priorizar ambos por igual</strong>.'
-                                    elif diferencia > top_cant * 0.5:
-                                        texto_interpretacion5c += ' El primer servicio domina claramente, lo que sugiere <strong>concentrar esfuerzos en optimizar su gestión</strong>.'
                                 
                                 # Distribución de los 10 servicios
                                 if len(conteo_servicios) >= 5:
@@ -2053,23 +1957,20 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             plt.tight_layout()
                             st.pyplot(fig5d)
                             
-                            # Interpretación ampliada
+                            # Interpretación ampliada (SIN "Proceso con mayor diversidad de estados")
                             total_analizado = len(df_ext_ep_top)
                             total_general = len(df_externas_filtrado)
                             pct_analizado = total_analizado/total_general*100
                             
-                            # Estado más común
                             estado_comun_serie = df_ext_ep_top['estado'].value_counts()
                             estado_comun = estado_comun_serie.index[0]
                             estado_comun_count = estado_comun_serie.iloc[0]
                             pct_estado_comun = estado_comun_count / total_analizado * 100
                             
-                            # Proceso con más volumen
                             proceso_top_serie = df_ext_ep_top['proceso'].value_counts()
                             proceso_mas_volumen = proceso_top_serie.index[0]
                             proceso_mas_count = proceso_top_serie.iloc[0]
                             
-                            # Detectar proceso con mayor proporción de un solo estado (concentración)
                             proceso_mas_concentrado = None
                             max_concentracion = 0
                             for proc in procesos_ordenados:
@@ -2081,7 +1982,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                         max_concentracion = concentracion
                                         proceso_mas_concentrado = proc
                             
-                            # Estado menos frecuente
                             estado_menos = estado_comun_serie.index[-1]
                             estado_menos_count = estado_comun_serie.iloc[-1]
                             
@@ -2104,13 +2004,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                 )
                                 if max_concentracion > 80:
                                     texto_interpretacion5d += 'Esta <strong>alta concentración</strong> sugiere un flujo muy homogéneo en este proceso, o bien un posible <strong>sesgo en el registro de estados</strong> que valdría la pena revisar.'
-                            
-                            texto_interpretacion5d += (
-                                f'<br><strong>Valor analítico:</strong> La comparación lado a lado de los meses permite identificar '
-                                f'<strong>tendencias estacionales</strong>, <strong>cambios en la composición de estados</strong> a lo largo del tiempo '
-                                f'y <strong>procesos con comportamiento estable vs volátil</strong>. Se recomienda revisar los procesos donde la '
-                                f'proporción de estados pendientes o cancelados aumente mes a mes, ya que podrían indicar cuellos de botella emergentes.'
-                            )
                             
                             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5d), unsafe_allow_html=True)
                         
@@ -2191,7 +2084,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             plt.tight_layout()
                             st.pyplot(fig5d)
                             
-                            # Interpretación ampliada
+                            # Interpretación ampliada (SIN "Proceso con mayor diversidad de estados")
                             total_analizado = int(pivot_ep.values.sum())
                             total_general = len(df_externas_filtrado)
                             pct_analizado = total_analizado/total_general*100
@@ -2202,20 +2095,13 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             estado_comun_count = estado_comun_serie.iloc[0]
                             pct_estado_comun = estado_comun_count / total_analizado * 100
                             
-                            # Proceso con más estados distintos (diversidad)
-                            diversidad_estados = df_ext_ep_top.groupby('proceso')['estado'].nunique()
-                            proceso_mas_diverso = diversidad_estados.idxmax()
-                            num_estados_diverso = diversidad_estados.max()
-                            
                             texto_interpretacion5d = (
                                 f'<strong>Cobertura del análisis ({titulo_periodo}):</strong> Se analizaron <strong>{n_filas}</strong> registros '
                                 f'(combinación proceso{" + periodo" if agrupacion_ep != "Total" else ""}) que representan '
                                 f'<strong>{total_analizado}</strong> de <strong>{total_general}</strong> solicitudes externas '
                                 f'(<span class="stat">{pct_analizado:.1f}%</span> del total).<br>'
                                 f'<strong>Estado dominante:</strong> El estado más común es <span class="stat">"{estado_comun}"</span> '
-                                f'con <strong>{estado_comun_count}</strong> registros (<span class="stat">{pct_estado_comun:.1f}%</span> del total analizado).<br>'
-                                f'<strong>Proceso con mayor diversidad de estados:</strong> <span class="stat">"{str(proceso_mas_diverso)[:50]}"</span> '
-                                f'presenta <strong>{num_estados_diverso}</strong> estados distintos, lo que puede indicar un proceso con múltiples rutas de gestión.'
+                                f'con <strong>{estado_comun_count}</strong> registros (<span class="stat">{pct_estado_comun:.1f}%</span> del total analizado).'
                             )
                             
                             if agrupacion_ep != "Total":
@@ -2275,34 +2161,18 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         plt.tight_layout()
                         st.pyplot(fig5e)
                         
-                        # Interpretación ampliada
+                        # Interpretación ampliada (SIN "El promedio por proceso es de...", SIN "Procesos más y menos activos...", SIN "Patrones de actividad...", SIN "Valor analítico...")
                         total_hm = int(pivot_hm.values.sum())
                         max_valor = pivot_hm.values.max()
                         idx_max = np.unravel_index(pivot_hm.values.argmax(), pivot_hm.values.shape)
                         proceso_max = pivot_hm.index[idx_max[0]]
                         mes_max = pivot_hm.columns[idx_max[1]]
                         
-                        # Calcular promedios por proceso y por mes
-                        promedio_por_proceso = pivot_hm.mean(axis=1)
-                        promedio_por_mes = pivot_hm.mean(axis=0)
-                        
-                        proceso_mas_activo = promedio_por_proceso.idxmax()
-                        proceso_menos_activo = promedio_por_proceso.idxmin()
-                        mes_mas_activo = promedio_por_mes.idxmax()
-                        mes_menos_activo = promedio_por_mes.idxmin()
-                        
-                        # Celdas vacías (sin solicitudes)
-                        celdas_vacias = (pivot_hm.values == 0).sum()
-                        total_celdas = pivot_hm.values.size
-                        pct_vacias = celdas_vacias / total_celdas * 100
-                        
-                        # Concentración: cuánto representa la celda máxima
                         pct_max = max_valor / total_hm * 100 if total_hm > 0 else 0
                         
                         texto_interpretacion5e = (
                             f'<strong>Visión general:</strong> La matriz de calor concentra <strong>{total_hm}</strong> solicitudes externas '
-                            f'en los <strong>{len(pivot_hm.index)}</strong> procesos más relevantes a lo largo de <strong>{len(pivot_hm.columns)}</strong> meses. '
-                            f'El promedio por proceso es de <strong>{promedio_por_proceso.mean():.1f}</strong> solicitudes y por mes de <strong>{promedio_por_mes.mean():.1f}</strong>.<br>'
+                            f'en los <strong>{len(pivot_hm.index)}</strong> procesos más relevantes a lo largo de <strong>{len(pivot_hm.columns)}</strong> meses.<br>'
                             f'<strong>Punto de máxima concentración:</strong> El proceso <span class="stat">"{str(proceso_max)[:50]}"</span> durante el mes '
                             f'<span class="stat">{mes_max}</span> registró <strong>{int(max_valor)}</strong> solicitudes, lo que representa el '
                             f'<span class="stat">{pct_max:.1f}%</span> del total analizado. '
@@ -2314,30 +2184,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             texto_interpretacion5e += 'Esta concentración es <strong>moderada</strong> y podría reflejar patrones estacionales recurrentes.'
                         else:
                             texto_interpretacion5e += 'La concentración es <strong>baja</strong>, indicando una distribución relativamente uniforme de la demanda.'
-                        
-                        texto_interpretacion5e += (
-                            f'<br><strong>Procesos más y menos activos:</strong> El proceso con mayor actividad promedio es '
-                            f'<span class="stat">"{str(proceso_mas_activo)[:50]}"</span>, mientras que el menos activo es '
-                            f'<span class="stat">"{str(proceso_menos_activo)[:50]}"</span>. '
-                            f'Los meses de mayor y menor actividad promedio son <span class="stat">{mes_mas_activo}</span> y '
-                            f'<span class="stat">{mes_menos_activo}</span> respectivamente.<br>'
-                            f'<strong>Patrones de actividad:</strong> El <span class="stat">{pct_vacias:.1f}%</span> de las celdas '
-                            f'(combinaciones proceso-mes) no presentan solicitudes. '
-                        )
-                        
-                        if pct_vacias > 50:
-                            texto_interpretacion5e += 'Esta <strong>alta proporción de celdas vacías</strong> indica que la actividad se concentra en pocos procesos y meses específicos, con una operación muy focalizada.'
-                        elif pct_vacias > 25:
-                            texto_interpretacion5e += 'Existe una <strong>distribución irregular</strong> con algunos procesos concentrando la actividad en meses específicos.'
-                        else:
-                            texto_interpretacion5e += 'La <strong>actividad está bien distribuida</strong> a lo largo del tiempo y entre procesos.'
-                        
-                        texto_interpretacion5e += (
-                            f'<br><strong>Valor analítico:</strong> Esta vista permite identificar '
-                            f'<strong>estacionalidad por proceso</strong>, <strong>procesos con actividad continua vs esporádica</strong>, '
-                            f'y <strong>meses atípicos</strong> que podrían requerir refuerzo operativo. Se recomienda cruzar estos patrones '
-                            f'con eventos institucionales o campañas de salud para explicar los picos observados.'
-                        )
                         
                         st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5e), unsafe_allow_html=True)
                     else:
