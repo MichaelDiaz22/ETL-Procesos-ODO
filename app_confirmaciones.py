@@ -528,10 +528,7 @@ if uploaded_file is not None:
                 else:
                     actividad_norm = pd.Series([''] * len(filtered_df), index=filtered_df.index)
                 
-                # ------------------------------------------------------------
-                # CAMBIO: Concatenar CUPS + Descripción Relacionada
-                # para las reglas que buscan "CONTRASTE"
-                # ------------------------------------------------------------
+                # Concatenar CUPS + Descripción Relacionada para búsqueda de "CONTRASTE"
                 cups_col = (
                     filtered_df['CUPS'].fillna('').astype(str).str.upper().str.strip()
                     if 'CUPS' in filtered_df.columns
@@ -543,7 +540,6 @@ if uploaded_file is not None:
                     else pd.Series([''] * len(filtered_df), index=filtered_df.index)
                 )
                 cups_norm = (cups_col + ' ' + desc_rel_col).str.strip()
-                # ------------------------------------------------------------
                 
                 def hora_formateada_a_decimal(hora_str):
                     if pd.isna(hora_str) or str(hora_str).strip() in ('', 'nan', 'NaT', '-'):
@@ -610,7 +606,8 @@ if uploaded_file is not None:
                     
                     horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
                 
-                # REGLA 3 (R7): PROCEDIMIENTOS DE RAYOS X                mascara_rayos = actividad_norm.str.contains(
+                # REGLA 3 (R7): PROCEDIMIENTOS DE RAYOS X
+                mascara_rayos = actividad_norm.str.contains(
                     'PROCEDIMIENTOS DE RAYOS X', na=False, regex=False
                 )
                 if mascara_rayos.any():
