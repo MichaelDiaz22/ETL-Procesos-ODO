@@ -1998,13 +1998,13 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             ax5d.set_xlim(limite_izq, limite_der)
                             
                             # Nota explicativa en la esquina
-                            ax5d.text(0.02, 0.98, "Cada barra representa un mes (etiqueta a la izquierda)", 
+                            """ax5d.text(0.02, 0.98, "Cada barra representa un mes (etiqueta a la izquierda)", 
                                      transform=ax5d.transAxes, fontsize=8, style='italic',
                                      va='top', ha='left', color='#6b7280',
                                      bbox=dict(boxstyle="round,pad=0.3", facecolor='#f9fafb', 
                                               edgecolor='#e5e7eb', alpha=0.9))
                             
-                            st.pyplot(fig5d, use_container_width=True)
+                            st.pyplot(fig5d, use_container_width=True)"""
                             
                             # Interpretación ampliada
                             total_analizado = len(df_ext_ep_top)
