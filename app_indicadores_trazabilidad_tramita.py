@@ -1761,7 +1761,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             total_periodo = len(df_top10)
                         
                         if len(df_top10) > 0:
-                            # ✅ MODIFICACIÓN: Agrupar por servicio Y proceso para incluir el proceso en la etiqueta
+                            # Agrupar por servicio Y proceso para incluir el proceso en la etiqueta
                             tiene_proceso = 'proceso' in df_top10.columns
                             
                             if tiene_proceso:
@@ -1789,7 +1789,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             bars = ax5c.barh(y_pos, conteo_servicios['Cantidad'], 
                                             color=colores_barras, edgecolor='white', linewidth=1.5)
                             
-                            # ✅ MODIFICACIÓN: Usar la etiqueta combinada (Servicio - Proceso), truncada a 75 caracteres
+                            # Usar la etiqueta combinada (Servicio - Proceso), truncada a 75 caracteres
                             etiquetas_y = [f"{str(e)[:75]}{'...' if len(str(e)) > 75 else ''}" 
                                           for e in conteo_servicios['Etiqueta']]
                             ax5c.set_yticks(y_pos)
@@ -1814,7 +1814,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             plt.tight_layout()
                             st.pyplot(fig5c)
                             
-                            # Interpretación ampliada (SIN la comparación top 1 vs 2)
+                            # Interpretación ampliada
                             texto_interpretacion5c = (
                                 f'<strong>Análisis del Top 10 de servicios - {titulo_mes}:</strong> '
                                 f'Se analizaron <strong>{total_periodo}</strong> solicitudes en el período seleccionado. '
@@ -1897,10 +1897,20 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             colores_estados_mes = colores_estados_mes[:len(estados_unicos_mes)]
                             dict_color_estado = {estado: colores_estados_mes[i] for i, estado in enumerate(estados_unicos_mes)}
                             
-                            fig5d, ax5d = plt.subplots(figsize=(14, max(7, n_procesos * 0.7)))
+                            fig5d, ax5d = plt.subplots(figsize=(16, max(7, n_procesos * 0.8)))
                             
                             y_pos = np.arange(n_procesos)
                             
+                            # Calcular el máximo total para ajustar el límite del eje X
+                            max_total = 0
+                            for p_idx, proceso in enumerate(procesos_ordenados):
+                                df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
+                                for mes in meses_unicos_ep:
+                                    total_celda = (df_proceso['periodo'] == mes).sum()
+                                    if total_celda > max_total:
+                                        max_total = total_celda
+                            
+                            # Dibujar las barras y añadir etiquetas de mes
                             for p_idx, proceso in enumerate(procesos_ordenados):
                                 df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
                                 
@@ -1924,9 +1934,22 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                     
                                     total_celda = len(df_celda)
                                     if total_celda > 0:
+                                        # Etiqueta del total al final de la barra
                                         ax5d.text(total_celda + 0.3, p_idx + offset, f'{total_celda}',
                                                  ha='left', va='center', fontsize=8, 
                                                  fontweight='bold', color='black')
+                                        
+                                        # Etiqueta del mes a la izquierda de la barra
+                                        mes_str = mes.strftime('%Y-%m')
+                                        ax5d.text(-max_total * 0.02 if max_total > 0 else -0.5, 
+                                                 p_idx + offset, mes_str,
+                                                 ha='right', va='center', fontsize=7,
+                                                 color='#5b21b6', fontweight='bold',
+                                                 bbox=dict(boxstyle="round,pad=0.15", 
+                                                          facecolor='#f8f4ff', 
+                                                          edgecolor='#c4b5fd', 
+                                                          alpha=0.9,
+                                                          linewidth=0.8))
                             
                             etiquetas_proc = [f"{str(p)[:45]}{'...' if len(str(p)) > 45 else ''}" for p in procesos_ordenados]
                             ax5d.set_yticks(y_pos)
@@ -1946,28 +1969,22 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                                  framealpha=0.95, edgecolor='#7c3aed')
                             ax5d.add_artist(legend1)
                             
-                            texto_leyenda_meses = "Orden de meses por proceso (arriba → abajo):\n" + "\n".join(
-                                [f"{i+1}. {m.strftime('%Y-%m')}" for i, m in enumerate(meses_unicos_ep)]
-                            )
-                            ax5d.text(1.02, 0.55, texto_leyenda_meses, transform=ax5d.transAxes,
-                                     fontsize=9, va='top', ha='left',
-                                     bbox=dict(boxstyle="round,pad=0.5", facecolor='#f8f4ff', 
-                                              edgecolor='#7c3aed', alpha=0.95))
+                            # Ajustar el límite del eje X para dejar espacio a las etiquetas de mes a la izquierda
+                            limite_izq = -max_total * 0.10 if max_total > 0 else -1
+                            limite_der = max_total * 1.18 if max_total > 0 else 10
+                            ax5d.set_xlim(limite_izq, limite_der)
                             
-                            max_total = 0
-                            for p_idx, proceso in enumerate(procesos_ordenados):
-                                df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
-                                for mes in meses_unicos_ep:
-                                    total_celda = (df_proceso['periodo'] == mes).sum()
-                                    if total_celda > max_total:
-                                        max_total = total_celda
-                            
-                            ax5d.set_xlim(0, max_total * 1.15 if max_total > 0 else 10)
+                            # Nota explicativa en la esquina
+                            ax5d.text(0.02, 0.98, "Cada barra representa un mes (etiqueta a la izquierda)", 
+                                     transform=ax5d.transAxes, fontsize=8, style='italic',
+                                     va='top', ha='left', color='#6b7280',
+                                     bbox=dict(boxstyle="round,pad=0.3", facecolor='#f9fafb', 
+                                              edgecolor='#e5e7eb', alpha=0.9))
                             
                             plt.tight_layout()
                             st.pyplot(fig5d)
                             
-                            # Interpretación ampliada (SIN "Proceso con mayor diversidad de estados")
+                            # Interpretación ampliada
                             total_analizado = len(df_ext_ep_top)
                             total_general = len(df_externas_filtrado)
                             pct_analizado = total_analizado/total_general*100
@@ -2094,7 +2111,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             plt.tight_layout()
                             st.pyplot(fig5d)
                             
-                            # Interpretación ampliada (SIN "Proceso con mayor diversidad de estados")
+                            # Interpretación ampliada
                             total_analizado = int(pivot_ep.values.sum())
                             total_general = len(df_externas_filtrado)
                             pct_analizado = total_analizado/total_general*100
@@ -2171,7 +2188,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         plt.tight_layout()
                         st.pyplot(fig5e)
                         
-                        # Interpretación ampliada (SIN "El promedio por proceso es de...", SIN "Procesos más y menos activos...", SIN "Patrones de actividad...", SIN "Valor analítico...")
+                        # Interpretación ampliada
                         total_hm = int(pivot_hm.values.sum())
                         max_valor = pivot_hm.values.max()
                         idx_max = np.unravel_index(pivot_hm.values.argmax(), pivot_hm.values.shape)
