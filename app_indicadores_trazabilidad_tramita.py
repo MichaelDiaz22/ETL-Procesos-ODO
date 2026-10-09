@@ -1974,14 +1974,14 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                                  bbox_to_anchor=(0.5, 1.0),
                                                  ncol=min(len(estados_unicos_mes), 4),
                                                  fontsize=9,
-                                                 title='Estados (color de barra)',
+                                                 title='Estados',
                                                  title_fontsize=10,
                                                  framealpha=0.95,
                                                  edgecolor='#7c3aed',
                                                  borderpad=0.8)
                             ax5d.add_artist(legend1)
                             
-                            # ===== LEYENDA 2: MESES (etiquetas de la izquierda) — ubicada DENTRO, en la esquina inferior derecha =====
+                            """# ===== LEYENDA 2: MESES (etiquetas de la izquierda) — ubicada DENTRO, en la esquina inferior derecha =====
                             legend_meses = [Patch(facecolor='#f8f4ff', edgecolor='#c4b5fd', 
                                                   label=m.strftime('%Y-%m'))
                                             for m in meses_unicos_ep]
@@ -1995,7 +1995,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                                  framealpha=0.95,
                                                  edgecolor='#7c3aed',
                                                  borderpad=0.8)
-                            ax5d.add_artist(legend2)
+                            ax5d.add_artist(legend2)"""
                             
                             # Ajustar el límite del eje X para dejar espacio a las etiquetas de mes a la izquierda
                             limite_izq = -max_total * 0.10 if max_total > 0 else -1
