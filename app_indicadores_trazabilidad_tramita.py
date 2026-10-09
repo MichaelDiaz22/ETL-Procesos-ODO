@@ -1888,7 +1888,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             n_procesos = len(procesos_ordenados)
                             n_meses = len(meses_unicos_ep)
                             
-                            altura_total_disponible = 0.8
+                            # Reducimos ligeramente el alto total disponible para dejar espacio a la leyenda superior
+                            altura_total_disponible = 0.70
                             ancho_barra = altura_total_disponible / n_meses if n_meses > 0 else altura_total_disponible
                             
                             colores_estados_mes = colores_diferenciados[:len(estados_unicos_mes)]
@@ -1897,9 +1898,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             colores_estados_mes = colores_estados_mes[:len(estados_unicos_mes)]
                             dict_color_estado = {estado: colores_estados_mes[i] for i, estado in enumerate(estados_unicos_mes)}
                             
-                            # Figura con espacio reservado a la derecha para las leyendas
-                            fig5d, ax5d = plt.subplots(figsize=(18, max(7, n_procesos * 0.8)))
-                            fig5d.subplots_adjust(right=0.72)
+                            # Aumentamos un poco la altura de la figura para que quepan las leyendas dentro
+                            fig5d, ax5d = plt.subplots(figsize=(16, max(8, n_procesos * 0.9)))
                             
                             y_pos = np.arange(n_procesos)
                             
@@ -1957,39 +1957,44 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             ax5d.set_yticks(y_pos)
                             ax5d.set_yticklabels(etiquetas_proc, fontsize=10)
                             
+                            # Ampliamos el rango del eje Y para dejar espacio arriba donde irá la leyenda
+                            ax5d.set_ylim(-0.6, n_procesos - 0.2 + max(0.8, n_procesos * 0.12))
+                            
                             ax5d.set_xlabel('Cantidad de Solicitudes', fontsize=12)
                             ax5d.set_ylabel('Proceso', fontsize=12)
                             ax5d.set_title(f'Solicitudes Externas: Distribución de Estados por Proceso - Agrupado por Mes - {sufijo_sede}',
                                           fontsize=14, fontweight='bold')
                             
-                            # ===== LEYENDA 1: ESTADOS (colores de las barras) =====
+                            # ===== LEYENDA 1: ESTADOS (colores de las barras) — ubicada DENTRO del área del gráfico =====
                             legend_estados = [Patch(facecolor=dict_color_estado[estado], edgecolor='white', 
                                                     label=str(estado)[:35])
                                               for estado in estados_unicos_mes]
-                            legend1 = ax5d.legend(handles=legend_estados, 
-                                                 loc='upper left', 
-                                                 bbox_to_anchor=(1.02, 1.0), 
-                                                 fontsize=9, 
-                                                 title='Estados (color de barra)', 
+                            legend1 = ax5d.legend(handles=legend_estados,
+                                                 loc='upper center',
+                                                 bbox_to_anchor=(0.5, 1.0),
+                                                 ncol=min(len(estados_unicos_mes), 4),
+                                                 fontsize=9,
+                                                 title='Estados (color de barra)',
                                                  title_fontsize=10,
-                                                 framealpha=0.95, 
+                                                 framealpha=0.95,
                                                  edgecolor='#7c3aed',
-                                                 borderpad=1)
+                                                 borderpad=0.8)
                             ax5d.add_artist(legend1)
                             
-                            # ===== LEYENDA 2: MESES (etiquetas de la izquierda) =====
+                            # ===== LEYENDA 2: MESES (etiquetas de la izquierda) — ubicada DENTRO, en la esquina inferior derecha =====
                             legend_meses = [Patch(facecolor='#f8f4ff', edgecolor='#c4b5fd', 
                                                   label=m.strftime('%Y-%m'))
                                             for m in meses_unicos_ep]
-                            legend2 = ax5d.legend(handles=legend_meses, 
-                                                 loc='upper left', 
-                                                 bbox_to_anchor=(1.02, 0.55), 
+                            legend2 = ax5d.legend(handles=legend_meses,
+                                                 loc='lower right',
+                                                 bbox_to_anchor=(1.0, 0.0),
+                                                 ncol=min(len(meses_unicos_ep), 4),
                                                  fontsize=9,
-                                                 title='Meses (etiqueta izquierda)', 
+                                                 title='Meses (etiqueta izquierda)',
                                                  title_fontsize=10,
-                                                 framealpha=0.95, 
+                                                 framealpha=0.95,
                                                  edgecolor='#7c3aed',
-                                                 borderpad=1)
+                                                 borderpad=0.8)
                             ax5d.add_artist(legend2)
                             
                             # Ajustar el límite del eje X para dejar espacio a las etiquetas de mes a la izquierda
@@ -1997,13 +2002,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             limite_der = max_total * 1.18 if max_total > 0 else 10
                             ax5d.set_xlim(limite_izq, limite_der)
                             
-                            # Nota explicativa en la esquina
-                            """ax5d.text(0.02, 0.98, "Cada barra representa un mes (etiqueta a la izquierda)", 
-                                     transform=ax5d.transAxes, fontsize=8, style='italic',
-                                     va='top', ha='left', color='#6b7280',
-                                     bbox=dict(boxstyle="round,pad=0.3", facecolor='#f9fafb', 
-                                              edgecolor='#e5e7eb', alpha=0.9))"""
-                            
+                            plt.tight_layout()
                             st.pyplot(fig5d, use_container_width=True)
                             
                             # Interpretación ampliada
