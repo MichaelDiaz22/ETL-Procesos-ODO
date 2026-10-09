@@ -1897,7 +1897,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             colores_estados_mes = colores_estados_mes[:len(estados_unicos_mes)]
                             dict_color_estado = {estado: colores_estados_mes[i] for i, estado in enumerate(estados_unicos_mes)}
                             
-                            fig5d, ax5d = plt.subplots(figsize=(16, max(7, n_procesos * 0.8)))
+                            # Figura con espacio reservado a la derecha para las leyendas
+                            fig5d, ax5d = plt.subplots(figsize=(18, max(7, n_procesos * 0.8)))
+                            fig5d.subplots_adjust(right=0.72)
                             
                             y_pos = np.arange(n_procesos)
                             
@@ -1960,28 +1962,34 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             ax5d.set_title(f'Solicitudes Externas: Distribución de Estados por Proceso - Agrupado por Mes - {sufijo_sede}',
                                           fontsize=14, fontweight='bold')
                             
-                            # ===== LEYENDA DE ESTADOS (CONVENCIONES DE COLOR) =====
+                            # ===== LEYENDA 1: ESTADOS (colores de las barras) =====
                             legend_estados = [Patch(facecolor=dict_color_estado[estado], edgecolor='white', 
                                                     label=str(estado)[:35])
                                               for estado in estados_unicos_mes]
-                            legend1 = ax5d.legend(handles=legend_estados, loc='upper left', 
-                                                 bbox_to_anchor=(1.02, 1), fontsize=9, 
-                                                 title='Estados (color de barra)', title_fontsize=10,
-                                                 framealpha=0.95, edgecolor='#7c3aed')
+                            legend1 = ax5d.legend(handles=legend_estados, 
+                                                 loc='upper left', 
+                                                 bbox_to_anchor=(1.02, 1.0), 
+                                                 fontsize=9, 
+                                                 title='Estados (color de barra)', 
+                                                 title_fontsize=10,
+                                                 framealpha=0.95, 
+                                                 edgecolor='#7c3aed',
+                                                 borderpad=1)
                             ax5d.add_artist(legend1)
                             
-                            # ===== LEYENDA DE MESES (CONVENCIONES DE ETIQUETA) =====
-                            from matplotlib.patches import Patch as PatchMes
-                            legend_meses = []
-                            for m in meses_unicos_ep:
-                                legend_meses.append(
-                                    PatchMes(facecolor='#f8f4ff', edgecolor='#c4b5fd', 
-                                             label=m.strftime('%Y-%m'))
-                                )
-                            legend2 = ax5d.legend(handles=legend_meses, loc='lower left',
-                                                 bbox_to_anchor=(1.02, 0.0), fontsize=9,
-                                                 title='Meses (etiqueta izquierda)', title_fontsize=10,
-                                                 framealpha=0.95, edgecolor='#7c3aed')
+                            # ===== LEYENDA 2: MESES (etiquetas de la izquierda) =====
+                            legend_meses = [Patch(facecolor='#f8f4ff', edgecolor='#c4b5fd', 
+                                                  label=m.strftime('%Y-%m'))
+                                            for m in meses_unicos_ep]
+                            legend2 = ax5d.legend(handles=legend_meses, 
+                                                 loc='upper left', 
+                                                 bbox_to_anchor=(1.02, 0.55), 
+                                                 fontsize=9,
+                                                 title='Meses (etiqueta izquierda)', 
+                                                 title_fontsize=10,
+                                                 framealpha=0.95, 
+                                                 edgecolor='#7c3aed',
+                                                 borderpad=1)
                             ax5d.add_artist(legend2)
                             
                             # Ajustar el límite del eje X para dejar espacio a las etiquetas de mes a la izquierda
@@ -1996,8 +2004,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                      bbox=dict(boxstyle="round,pad=0.3", facecolor='#f9fafb', 
                                               edgecolor='#e5e7eb', alpha=0.9))
                             
-                            plt.tight_layout()
-                            st.pyplot(fig5d)
+                            st.pyplot(fig5d, use_container_width=True)
                             
                             # Interpretación ampliada
                             total_analizado = len(df_ext_ep_top)
