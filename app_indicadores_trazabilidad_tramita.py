@@ -1960,14 +1960,29 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             ax5d.set_title(f'Solicitudes Externas: Distribución de Estados por Proceso - Agrupado por Mes - {sufijo_sede}',
                                           fontsize=14, fontweight='bold')
                             
+                            # ===== LEYENDA DE ESTADOS (CONVENCIONES DE COLOR) =====
                             legend_estados = [Patch(facecolor=dict_color_estado[estado], edgecolor='white', 
                                                     label=str(estado)[:35])
                                               for estado in estados_unicos_mes]
                             legend1 = ax5d.legend(handles=legend_estados, loc='upper left', 
                                                  bbox_to_anchor=(1.02, 1), fontsize=9, 
-                                                 title='Estados', title_fontsize=10,
+                                                 title='Estados (color de barra)', title_fontsize=10,
                                                  framealpha=0.95, edgecolor='#7c3aed')
                             ax5d.add_artist(legend1)
+                            
+                            # ===== LEYENDA DE MESES (CONVENCIONES DE ETIQUETA) =====
+                            from matplotlib.patches import Patch as PatchMes
+                            legend_meses = []
+                            for m in meses_unicos_ep:
+                                legend_meses.append(
+                                    PatchMes(facecolor='#f8f4ff', edgecolor='#c4b5fd', 
+                                             label=m.strftime('%Y-%m'))
+                                )
+                            legend2 = ax5d.legend(handles=legend_meses, loc='lower left',
+                                                 bbox_to_anchor=(1.02, 0.0), fontsize=9,
+                                                 title='Meses (etiqueta izquierda)', title_fontsize=10,
+                                                 framealpha=0.95, edgecolor='#7c3aed')
+                            ax5d.add_artist(legend2)
                             
                             # Ajustar el límite del eje X para dejar espacio a las etiquetas de mes a la izquierda
                             limite_izq = -max_total * 0.10 if max_total > 0 else -1
