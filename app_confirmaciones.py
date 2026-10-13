@@ -15,7 +15,6 @@ st.set_page_config(page_title="Excel Data Filtering", layout="wide")
 with st.sidebar:
     st.header("📘 Guía de uso")
 
-    # ---------------- PASO A PASO ----------------
     with st.expander("📝 Paso a paso: cómo usar la app", expanded=False):
         st.markdown("""
         **1. Cargar el archivo Excel**
@@ -26,85 +25,53 @@ with st.sidebar:
         - Aparecerá el rango de fechas detectado en los datos.
 
         **3. Seleccionar cantidad de archivos a generar**
-        - Usa **Number of output files to generate** para definir cuántos Excel quieres producir (cada uno con filtros independientes).
+        - Usa **Number of output files to generate** para definir cuántos Excel quieres producir.
 
         **4. Configurar los filtros por archivo**
-        - **Empresa(s)**: filtra por empresa.
-        - **Sede(s)**: filtra por sede (opciones dependen de la empresa).
-        - **Ubicación(es)**: Consulta / Procedimiento.
-        - **Unidad Funcional(es)**: filtra por unidad funcional.
-        - **Fecha inicio / Fecha fin**: rango de fechas de programación.
+        - Empresa(s), Sede(s), Ubicación(es), Unidad Funcional(es) y rango de fechas.
 
         **5. Generar los archivos**
         - Haz clic en **Generate and Download Files**.
-        - La app procesa cada archivo, aplica las reglas y muestra los botones de descarga.
 
         **6. Descargar los Excel**
-        - Cada archivo generado tendrá dos hojas:
-          - **Base confirmación**: con `TELEFONO CONFIRMACIÓN` y `VARIABLE`.
-          - **Pacientes**: con los datos detallados del paciente.
+        - Cada archivo tendrá dos hojas: **Base confirmación** y **Pacientes**.
         """)
 
-    # ---------------- REGLAS PARAMETRIZADAS ----------------
     with st.expander("⚙️ Reglas parametrizadas en el código", expanded=False):
         st.markdown("""
-        ### 🔹 Reglas generales (aplican a toda la app)
+        ### 🔹 Reglas generales
 
-        **R0. Creación de `Ubicación`**
-        - Si `Actividad Médica` empieza por "consulta" → `Consulta`.
-        - En caso contrario → `Procedimiento`.
+        **R0. Creación de `Ubicación`** — Consulta / Procedimiento según `Actividad Médica`.
 
-        **R1. Citas duplicadas**
-        - Se eliminan duplicados por `Numero de Identificación + Sede + Fecha`,
-          conservando el primer registro según hora.
+        **R1. Citas duplicadas** — Se eliminan duplicados por `Numero de Identificación + Sede + Fecha` conservando el primero según hora (después de aplicar reglas horarias).
 
-        **R2. Dirección final**
-        - Se asigna según `Sede` (tabla interna).
-        - Si `Modalidad == 'Teleconsulta'` → `Direccion Final = 'Teleconsulta'`.
+        **R2. Dirección final** — Según `Sede` o `Modalidad == 'Teleconsulta'`.
 
-        **R3. Teléfono de confirmación**
-        - Si `Telefono Movil` está vacío y `Telefono Fijo` es válido
-          (no empieza por "60") → se usa `+57` + `Telefono Fijo`.
-        - Si `Telefono Movil` empieza por "3" y no por "60" → `+57` + `Telefono Movil`.
-        - En caso contrario → `"sin número para enviar mensaje"`.
+        **R3. Teléfono de confirmación** — Lógica de móvil/fijo con prefijo `+57`.
 
         ---
         ### 🔹 Reglas para la sede MARAYA
-        *(Solo se aplican cuando la sede contiene "MARAYA")*
 
-        **R4. Exclusión**
-        - Si `Especialista` contiene `HECTOR ARTURO JAIMES`
-          y `Unidad Funcional == 'IMAGENES DIAGNOSTICAS MARAYA'`
-          → el registro se elimina del archivo resultante.
+        **R4. Exclusión** — `HECTOR ARTURO JAIMES` + `IMAGENES DIAGNOSTICAS MARAYA` se elimina.
 
-        **R5. CUPS o Descripción Relacionada con "CONTRASTE"**
-        - Se concatena `CUPS` + `Descripción Relacionada`.
-        - Si el texto concatenado contiene "CONTRASTE" → `Hora Cita = 07:00:00`.
+        **R5. CONTRASTE** — Si `CUPS` + `Descripción Relacionada` contiene "CONTRASTE" → `07:00:00`.
 
-        **R6. Ecografías y Doppler**
-        - Si un paciente tiene al menos un registro con
-          `PROCEDIMIENTOS DE ECOGRAFIAS Y DOPPLER` el mismo día y sede:
-          - Registros entre **11:00 y 12:00** → `10:00:00`.
-          - Registros entre **16:00 y 17:00** → `15:00:00`.
+        **R6. Ecografías y Doppler** — Mismo paciente/día/sede con ecografía:
+          - 11:00–12:00 → `10:00:00`
+          - 16:00–17:00 → `15:00:00`
 
-        **R7. Rayos X**
-        - Si `Actividad Médica` contiene `PROCEDIMIENTOS DE RAYOS X`
-          y la hora está entre **16:00 y 17:00** → `15:00:00`.
+        **R7. Rayos X** — `PROCEDIMIENTOS DE RAYOS X` entre 16:00–17:00 → `15:00:00`.
 
-        **R8. CUPS + Descripción Relacionada SIN "CONTRASTE"**
-        - Si el texto concatenado NO contiene "CONTRASTE"
-          y la hora está entre **16:00 y 17:00** → `16:00:00`.
+        **R8. Sin CONTRASTE** — Entre 16:00–17:00 → `16:00:00`.
 
-        **R9. Hora más temprana por paciente/sede/fecha**
-        - Para cada grupo `Numero de Identificación + Sede + Fecha`:
-          - Se toma la **hora más temprana** entre todas las horas resultantes
-            (después de aplicar R5–R8).
-          - Se asigna esa hora a **todos** los registros del mismo grupo.
+        **R9. Hora más temprana** — Para cada grupo paciente/sede/fecha, se toma la hora más temprana resultante y se asigna a todos.
 
         ---
-        ### 🔹 Formato de horas
-        - Todas las horas ajustadas se escriben en formato `HH:MM:SS`
-          (por ejemplo `07:00:00`, `10:00:00`, `15:00:00`, `16:00:00`).
+        ### 🔹 Orden de aplicación
+        1. Reglas horarias (R5–R8)
+        2. Eliminación de duplicados (R1)
+        3. Hora más temprana (R9)
+        4. Exclusión (R4)
         """)
 
 # ============================================================
@@ -327,6 +294,160 @@ if uploaded_file is not None:
         except:
             return 999999
 
+    def hora_formateada_a_decimal(hora_str):
+        if pd.isna(hora_str) or str(hora_str).strip() in ('', 'nan', 'NaT', '-'):
+            return None
+        hora_str = str(hora_str).strip()
+        try:
+            hora_dt = pd.to_datetime(hora_str, format='%I:%M %p')
+            return hora_dt.hour + hora_dt.minute / 60.0
+        except Exception:
+            try:
+                hora_dt = pd.to_datetime(hora_str)
+                return hora_dt.hour + hora_dt.minute / 60.0
+            except Exception:
+                return None
+
+    def decimal_a_hora_formateada(hora_dec):
+        if hora_dec is None:
+            return ''
+        horas = int(hora_dec)
+        minutos = int(round((hora_dec - horas) * 60))
+        if minutos == 60:
+            horas += 1
+            minutos = 0
+        return f"{horas:02d}:{minutos:02d}:00"
+
+    # ============================================================
+    # FUNCIÓN AUXILIAR: Aplicar reglas horarias Maraya sobre un DataFrame
+    # ============================================================
+    def aplicar_reglas_horarias_maraya(df_in):
+        """
+        Aplica R5, R6, R7 y R8 sobre df_in (ya filtrado por sede/sede Maraya).
+        Devuelve df_in modificado con Hora Cita Formatted actualizada.
+        """
+        if len(df_in) == 0:
+            return df_in
+        
+        df_out = df_in.copy()
+        
+        if 'Actividad Médica' in df_out.columns:
+            actividad_norm = df_out['Actividad Médica'].fillna('').astype(str).str.upper().str.strip()
+        else:
+            actividad_norm = pd.Series([''] * len(df_out), index=df_out.index)
+        
+        cups_col = (
+            df_out['CUPS'].fillna('').astype(str).str.upper().str.strip()
+            if 'CUPS' in df_out.columns
+            else pd.Series([''] * len(df_out), index=df_out.index)
+        )
+        desc_rel_col = (
+            df_out['Descripción Relacionada'].fillna('').astype(str).str.upper().str.strip()
+            if 'Descripción Relacionada' in df_out.columns
+            else pd.Series([''] * len(df_out), index=df_out.index)
+        )
+        cups_norm = (cups_col + ' ' + desc_rel_col).str.strip()
+        
+        if 'Hora Cita Formatted' in df_out.columns:
+            horas_decimales = df_out['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
+        else:
+            horas_decimales = pd.Series([None] * len(df_out), index=df_out.index)
+        
+        # R5: CONTRASTE -> 07:00:00
+        mascara_contraste = cups_norm.str.contains('CONTRASTE', na=False, regex=False)
+        if mascara_contraste.any():
+            df_out.loc[mascara_contraste, 'Hora Cita Formatted'] = '07:00:00'
+            horas_decimales = df_out['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
+        
+        # R6: Ecografías y Doppler
+        mascara_eco = actividad_norm.str.contains(
+            'PROCEDIMIENTOS DE ECOGRAFIAS Y DOPPLER', na=False, regex=False
+        )
+        if not mascara_eco.any():
+            mascara_eco = actividad_norm.str.contains(
+                'PROCEDIMIENTOS DE ECOGRAFÍAS Y DOPPLER', na=False, regex=False
+            )
+        
+        if (mascara_eco.any() 
+            and 'Numero de Identificación' in df_out.columns 
+            and 'Sede' in df_out.columns 
+            and 'Fecha Programación Formateada' in df_out.columns):
+            
+            clave_grupo = (
+                df_out['Numero de Identificación'].astype(str).str.strip()
+                + '|' + df_out['Sede'].astype(str).str.strip()
+                + '|' + df_out['Fecha Programación Formateada'].astype(str).str.strip()
+            )
+            claves_con_eco = set(clave_grupo[mascara_eco].unique())
+            mascara_mismo_grupo = clave_grupo.isin(claves_con_eco)
+            
+            mascara_11_12 = mascara_mismo_grupo & horas_decimales.between(11.0, 12.0, inclusive='both')
+            df_out.loc[mascara_11_12, 'Hora Cita Formatted'] = '10:00:00'
+            
+            mascara_16_17_eco = mascara_mismo_grupo & horas_decimales.between(16.0, 17.0, inclusive='both')
+            df_out.loc[mascara_16_17_eco, 'Hora Cita Formatted'] = '15:00:00'
+            
+            horas_decimales = df_out['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
+        
+        # R7: Rayos X
+        mascara_rayos = actividad_norm.str.contains(
+            'PROCEDIMIENTOS DE RAYOS X', na=False, regex=False
+        )
+        if mascara_rayos.any():
+            mascara_16_17_rayos = mascara_rayos & horas_decimales.between(16.0, 17.0, inclusive='both')
+            df_out.loc[mascara_16_17_rayos, 'Hora Cita Formatted'] = '15:00:00'
+            horas_decimales = df_out['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
+        
+        # R8: Sin CONTRASTE y 16:00-17:00 -> 16:00:00
+        mascara_sin_contraste = ~cups_norm.str.contains('CONTRASTE', na=False, regex=False)
+        mascara_16_17_general = mascara_sin_contraste & horas_decimales.between(16.0, 17.0, inclusive='both')
+        if mascara_16_17_general.any():
+            df_out.loc[mascara_16_17_general, 'Hora Cita Formatted'] = '16:00:00'
+        
+        return df_out
+
+    # ============================================================
+    # FUNCIÓN AUXILIAR: Hora más temprana por grupo (R9)
+    # ============================================================
+    def aplicar_hora_mas_temprana(df_in):
+        if len(df_in) == 0:
+            return df_in
+        
+        df_out = df_in.copy()
+        
+        if not ('Numero de Identificación' in df_out.columns 
+                and 'Sede' in df_out.columns 
+                and 'Fecha Programación Formateada' in df_out.columns
+                and 'Hora Cita Formatted' in df_out.columns):
+            return df_out
+        
+        horas_decimales = df_out['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
+        
+        clave_grupo_final = (
+            df_out['Numero de Identificación'].astype(str).str.strip()
+            + '|' + df_out['Sede'].astype(str).str.strip()
+            + '|' + df_out['Fecha Programación Formateada'].astype(str).str.strip()
+        )
+        
+        temp_horas = pd.DataFrame({
+            'clave': clave_grupo_final,
+            'hora_dec': horas_decimales
+        })
+        temp_horas_validas = temp_horas.dropna(subset=['hora_dec'])
+        
+        if len(temp_horas_validas) > 0:
+            minimos_por_grupo = temp_horas_validas.groupby('clave')['hora_dec'].min().to_dict()
+            nueva_hora_dec = clave_grupo_final.map(minimos_por_grupo)
+            mascara_con_minimo = nueva_hora_dec.notna()
+            df_out.loc[mascara_con_minimo, 'Hora Cita Formatted'] = (
+                nueva_hora_dec[mascara_con_minimo].apply(decimal_a_hora_formateada).values
+            )
+        
+        return df_out
+
+    # ============================================================
+    # FUNCIÓN AUXILIAR: Identificar primer servicio (eliminar duplicados)
+    # ============================================================
     def identificar_primer_servicio(df_filtrado):
         if len(df_filtrado) == 0:
             return df_filtrado
@@ -336,24 +457,27 @@ if uploaded_file is not None:
             if col not in df_temp.columns:
                 st.warning(f"⚠️ No se encontró la columna requerida: {col}")
                 return df_temp
-        df_temp['Fecha_Solo'] = df_temp['Fecha Programación_dt'].dt.date
-        df_temp['Hora_para_orden'] = df_temp['Hora Cita'].apply(hora_a_decimal)
+        
+        # 🔧 CAMBIO: usar la hora YA FORMATEADA (post-reglas) para ordenar
+        df_temp['Hora_para_orden'] = df_temp['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
+        df_temp['Hora_para_orden'] = df_temp['Hora_para_orden'].fillna(999999)
+        
         df_temp = df_temp.sort_values([
             'Numero de Identificación', 
             'Sede', 
-            'Fecha_Solo',
+            'Fecha Programación_dt',
             'Hora_para_orden'
         ])
-        mascara_fecha_valida = df_temp['Fecha_Solo'].notna()
-        df_temp['clave_duplicado'] = None
-        df_temp.loc[mascara_fecha_valida, 'clave_duplicado'] = (
-            df_temp.loc[mascara_fecha_valida, 'Numero de Identificación'].astype(str) + '|' + 
-            df_temp.loc[mascara_fecha_valida, 'Sede'].astype(str) + '|' + 
-            df_temp.loc[mascara_fecha_valida, 'Fecha_Solo'].astype(str)
+        
+        df_temp['clave_duplicado'] = (
+            df_temp['Numero de Identificación'].astype(str) + '|' + 
+            df_temp['Sede'].astype(str) + '|' + 
+            df_temp['Fecha Programación_dt'].astype(str)
         )
-        df_temp.loc[~mascara_fecha_valida, 'clave_duplicado'] = df_temp.loc[~mascara_fecha_valida].index.astype(str) + '_sin_fecha'
+        
         df_final = df_temp.drop_duplicates(subset=['clave_duplicado'], keep='first')
-        df_final = df_final.drop(columns=['clave_duplicado', 'Fecha_Solo', 'Hora_para_orden'])
+        df_final = df_final.drop(columns=['clave_duplicado', 'Hora_para_orden'])
+        
         st.success(f"✅ Después de filtrar citas duplicadas: {len(df_final)} filas (se eliminaron {len(df_temp) - len(df_final)} duplicados)")
         return df_final
 
@@ -500,13 +624,36 @@ if uploaded_file is not None:
             
             logs_placeholder.info(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
             
-            filtered_df = identificar_primer_servicio(filtered_df)
-
             # ============================================================
-            # NUEVA LÓGICA AMPLIADA PARA MARAYA
+            # NUEVO ORDEN DE APLICACIÓN:
+            # 1) Reglas horarias Maraya (R5–R8)
+            # 2) Identificar primer servicio / eliminar duplicados (R1)
+            # 3) Hora más temprana (R9)
+            # 4) Exclusión (R4)
             # ============================================================
             es_maraya = any('MARAYA' in str(s).upper() for s in file_filters['sedes'])
             
+            # 🔧 PASO 1: Reglas horarias antes de eliminar duplicados
+            if es_maraya and len(filtered_df) > 0:
+                filtered_df = aplicar_reglas_horarias_maraya(filtered_df)
+                # Reconstruir VARIABLE tras cambios de hora
+                filtered_df['VARIABLE'] = filtered_df.apply(
+                    lambda row: f"{row.get('Nombres','') } {row.get('Apellidos','')}|{row.get('Actividad Médica','')}|{row.get('Fecha Programación Formateada','')}|{row.get('Hora Cita Formatted','')}|{row.get('Especialista','')}|{row.get('Direccion Final','')}",
+                    axis=1
+                )
+            
+            # 🔧 PASO 2: Ahora sí, eliminar duplicados con las horas ya corregidas
+            filtered_df = identificar_primer_servicio(filtered_df)
+            
+            # 🔧 PASO 3: Hora más temprana por grupo
+            if es_maraya and len(filtered_df) > 0:
+                filtered_df = aplicar_hora_mas_temprana(filtered_df)
+                filtered_df['VARIABLE'] = filtered_df.apply(
+                    lambda row: f"{row.get('Nombres','') } {row.get('Apellidos','')}|{row.get('Actividad Médica','')}|{row.get('Fecha Programación Formateada','')}|{row.get('Hora Cita Formatted','')}|{row.get('Especialista','')}|{row.get('Direccion Final','')}",
+                    axis=1
+                )
+            
+            # 🔧 PASO 4: Exclusión (R4)
             if ('Especialista' in filtered_df.columns 
                 and 'Unidad Funcional' in filtered_df.columns
                 and len(filtered_df) > 0):
@@ -518,145 +665,10 @@ if uploaded_file is not None:
                 )
                 if mascara_excluir.any():
                     filtered_df = filtered_df.loc[~mascara_excluir].copy()
-            
-            if es_maraya and len(filtered_df) > 0:
-                
-                if 'Actividad Médica' in filtered_df.columns:
-                    actividad_norm = (
-                        filtered_df['Actividad Médica'].fillna('').astype(str).str.upper().str.strip()
+                    filtered_df['VARIABLE'] = filtered_df.apply(
+                        lambda row: f"{row.get('Nombres','') } {row.get('Apellidos','')}|{row.get('Actividad Médica','')}|{row.get('Fecha Programación Formateada','')}|{row.get('Hora Cita Formatted','')}|{row.get('Especialista','')}|{row.get('Direccion Final','')}",
+                        axis=1
                     )
-                else:
-                    actividad_norm = pd.Series([''] * len(filtered_df), index=filtered_df.index)
-                
-                # Concatenar CUPS + Descripción Relacionada para búsqueda de "CONTRASTE"
-                cups_col = (
-                    filtered_df['CUPS'].fillna('').astype(str).str.upper().str.strip()
-                    if 'CUPS' in filtered_df.columns
-                    else pd.Series([''] * len(filtered_df), index=filtered_df.index)
-                )
-                desc_rel_col = (
-                    filtered_df['Descripción Relacionada'].fillna('').astype(str).str.upper().str.strip()
-                    if 'Descripción Relacionada' in filtered_df.columns
-                    else pd.Series([''] * len(filtered_df), index=filtered_df.index)
-                )
-                cups_norm = (cups_col + ' ' + desc_rel_col).str.strip()
-                
-                def hora_formateada_a_decimal(hora_str):
-                    if pd.isna(hora_str) or str(hora_str).strip() in ('', 'nan', 'NaT', '-'):
-                        return None
-                    hora_str = str(hora_str).strip()
-                    try:
-                        hora_dt = pd.to_datetime(hora_str, format='%I:%M %p')
-                        return hora_dt.hour + hora_dt.minute / 60.0
-                    except Exception:
-                        try:
-                            hora_dt = pd.to_datetime(hora_str)
-                            return hora_dt.hour + hora_dt.minute / 60.0
-                        except Exception:
-                            return None
-                
-                def decimal_a_hora_formateada(hora_dec):
-                    if hora_dec is None:
-                        return ''
-                    horas = int(hora_dec)
-                    minutos = int(round((hora_dec - horas) * 60))
-                    if minutos == 60:
-                        horas += 1
-                        minutos = 0
-                    return f"{horas:02d}:{minutos:02d}:00"
-                
-                if 'Hora Cita Formatted' in filtered_df.columns:
-                    horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
-                else:
-                    horas_decimales = pd.Series([None] * len(filtered_df), index=filtered_df.index)
-                
-                # REGLA 2 (R5): CUPS + Descripción Relacionada contiene "CONTRASTE" -> 07:00:00
-                mascara_contraste = cups_norm.str.contains('CONTRASTE', na=False, regex=False)
-                if mascara_contraste.any():
-                    filtered_df.loc[mascara_contraste, 'Hora Cita Formatted'] = '07:00:00'
-                    horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
-                
-                # REGLA 1 (R6): ECOGRAFIAS Y DOPPLER
-                mascara_eco = actividad_norm.str.contains(
-                    'PROCEDIMIENTOS DE ECOGRAFIAS Y DOPPLER', na=False, regex=False
-                )
-                if not mascara_eco.any():
-                    mascara_eco = actividad_norm.str.contains(
-                        'PROCEDIMIENTOS DE ECOGRAFÍAS Y DOPPLER', na=False, regex=False
-                    )
-                
-                if (mascara_eco.any() 
-                    and 'Numero de Identificación' in filtered_df.columns 
-                    and 'Sede' in filtered_df.columns 
-                    and 'Fecha Programación Formateada' in filtered_df.columns):
-                    
-                    clave_grupo = (
-                        filtered_df['Numero de Identificación'].astype(str).str.strip()
-                        + '|' + filtered_df['Sede'].astype(str).str.strip()
-                        + '|' + filtered_df['Fecha Programación Formateada'].astype(str).str.strip()
-                    )
-                    claves_con_eco = set(clave_grupo[mascara_eco].unique())
-                    mascara_mismo_grupo = clave_grupo.isin(claves_con_eco)
-                    
-                    mascara_11_12 = mascara_mismo_grupo & horas_decimales.between(11.0, 12.0, inclusive='both')
-                    filtered_df.loc[mascara_11_12, 'Hora Cita Formatted'] = '10:00:00'
-                    
-                    mascara_16_17_eco = mascara_mismo_grupo & horas_decimales.between(16.0, 17.0, inclusive='both')
-                    filtered_df.loc[mascara_16_17_eco, 'Hora Cita Formatted'] = '15:00:00'
-                    
-                    horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
-                
-                # REGLA 3 (R7): PROCEDIMIENTOS DE RAYOS X
-                mascara_rayos = actividad_norm.str.contains(
-                    'PROCEDIMIENTOS DE RAYOS X', na=False, regex=False
-                )
-                if mascara_rayos.any():
-                    mascara_16_17_rayos = mascara_rayos & horas_decimales.between(16.0, 17.0, inclusive='both')
-                    filtered_df.loc[mascara_16_17_rayos, 'Hora Cita Formatted'] = '15:00:00'
-                    horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
-                
-                # REGLA 4 (R8): CUPS + Descripción Relacionada SIN "CONTRASTE" y hora 16:00-17:00 -> 16:00:00
-                mascara_sin_contraste = ~cups_norm.str.contains('CONTRASTE', na=False, regex=False)
-                mascara_16_17_general = mascara_sin_contraste & horas_decimales.between(16.0, 17.0, inclusive='both')
-                if mascara_16_17_general.any():
-                    filtered_df.loc[mascara_16_17_general, 'Hora Cita Formatted'] = '16:00:00'
-                
-                # REGLA 6 (R9): Hora más temprana por grupo paciente + sede + fecha
-                if ('Numero de Identificación' in filtered_df.columns 
-                    and 'Sede' in filtered_df.columns 
-                    and 'Fecha Programación Formateada' in filtered_df.columns
-                    and 'Hora Cita Formatted' in filtered_df.columns):
-                    
-                    horas_decimales = filtered_df['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
-                    
-                    clave_grupo_final = (
-                        filtered_df['Numero de Identificación'].astype(str).str.strip()
-                        + '|' + filtered_df['Sede'].astype(str).str.strip()
-                        + '|' + filtered_df['Fecha Programación Formateada'].astype(str).str.strip()
-                    )
-                    
-                    temp_horas = pd.DataFrame({
-                        'clave': clave_grupo_final,
-                        'hora_dec': horas_decimales
-                    })
-                    temp_horas_validas = temp_horas.dropna(subset=['hora_dec'])
-                    
-                    if len(temp_horas_validas) > 0:
-                        minimos_por_grupo = temp_horas_validas.groupby('clave')['hora_dec'].min().to_dict()
-                        nueva_hora_dec = clave_grupo_final.map(minimos_por_grupo)
-                        mascara_con_minimo = nueva_hora_dec.notna()
-                        filtered_df.loc[mascara_con_minimo, 'Hora Cita Formatted'] = (
-                            nueva_hora_dec[mascara_con_minimo].apply(decimal_a_hora_formateada).values
-                        )
-                
-                # Reconstruir VARIABLE
-                filtered_df['VARIABLE'] = filtered_df.apply(
-                    lambda row: f"{row.get('Nombres','') } {row.get('Apellidos','')}|{row.get('Actividad Médica','')}|{row.get('Fecha Programación Formateada','')}|{row.get('Hora Cita Formatted','')}|{row.get('Especialista','')}|{row.get('Direccion Final','')}",
-                    axis=1
-                )
-            # ============================================================
-            # FIN NUEVA LÓGICA AMPLIADA
-            # ============================================================
 
             if 'Fecha Programación_dt' in filtered_df.columns:
                 filtered_df = filtered_df.drop(columns=['Fecha Programación_dt'])
