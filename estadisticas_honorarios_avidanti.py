@@ -154,9 +154,9 @@ MAPA_FASES = [
     ("CAM", "CAM-Imagenología", "Fase 1"),
     ("CAM", "CAM-Sala de Cirugía 6 Cardiovascular", "Fase 3"),
     ("CAM", "CAM-Laboratorio Clínico", "Fase 1"),
-    ("CAM", "CAM - Sala de Cirugía 8", "Fase 3"),
-    ("CAM", "CAM - Terapias", "Fase 1"),
-    ("CAM", "CAM - Hospitalizacion 4 piso norte", "Fase 2"),
+    ("CAM", "CAM-Sala de Cirugía 8", "Fase 3"),
+    ("CAM", "CAM-Terapias", "Fase 1"),
+    ("CAM", "CAM-Hospitalizacion 4 piso norte", "Fase 2"),
 
     # -------------------- Clínica Avidanti Santa Marta (CASM) --------------------
     ("CASM", "CASM- Consulta Externa", "Fase 1"),
