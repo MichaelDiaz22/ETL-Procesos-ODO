@@ -5,9 +5,9 @@ import hashlib
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
-st.set_page_config(page_title="FASE 1 - AMBULATORIO", page_icon="📊", layout="wide")
+st.set_page_config(page_title="FASES 1 - 2 - 3", page_icon="📊", layout="wide")
 
-st.title("📊 FASE 1 - AMBULATORIO")
+st.title("📊 TABLEROS POR FASE")
 st.markdown(
     "Carga múltiples archivos Excel. Se clasificarán automáticamente en "
     "**Ventas**, **Atenciones del especialista** o **Totales**."
@@ -69,9 +69,141 @@ ESTRUCTURAS = {
 UMBRAL_COINCIDENCIA = 0.60
 
 # ============================================================
-# TABLA RESUMEN
+# TABLA BASE: SEDE + UBICACIÓN + FASE
 # ============================================================
-COLUMNAS_RESUMEN = ["ADC", "CAI", "CAM", "CASM", "CACV", "CAA"]
+MAPA_FASES = [
+    # Angiografía Villavicencio (ADC)
+    ("ADC", "VILL-Hospitalización 2 Piso", "Fase 2"),
+    ("ADC", "VILL-UCI 5 Piso", "Fase 2"),
+    ("ADC", "VILL-Hospitalización 6 Piso", "Fase 2"),
+    ("ADC", "VILL-Consulta Externa", "Fase 1"),
+    ("ADC", "VILL-Sala de Cirugía 2", "Fase 3"),
+    ("ADC", "VILL-Hemodinamia", "Fase 3"),
+    ("ADC", "VILL-Imagenología", "Fase 1"),
+    ("ADC", "VILL-UCINT 6 Piso", "Fase 2"),
+    ("ADC", "VILL-Electrofisiologia", "Fase 1"),
+    ("ADC", "VILL-Sala de Cirugía 1 Cardiovascular", "Fase 3"),
+    # Clínica Avidanti Armenia (CAA)
+    ("CAA", "CAA-Hospitalización 5 Piso", "Fase 2"),
+    ("CAA", "CAA-Urgencias", "Fase 2"),
+    ("CAA", "CAA-Consulta Externa", "Fase 1"),
+    ("CAA", "CAA-Sala de Cirugía 3", "Fase 3"),
+    ("CAA", "CAA-Sala de Cirugía 4", "Fase 3"),
+    ("CAA", "CAA-Hemodinamia", "Fase 3"),
+    ("CAA", "CAC-UCINT Adulto", "Fase 2"),
+    ("CAA", "CAA-UCI Adulto", "Fase 2"),
+    ("CAA", "CAA-Imagenología", "Fase 1"),
+    ("CAA", "CAA-Cardiología No Invasiva", "Fase 1"),
+    # Clínica Avidanti Ibagué (CAI)
+    ("CAI", "CAI-Consulta Externa Nueva", "Fase 1"),
+    ("CAI", "CAI-Sala de Cirugía 2", "Fase 3"),
+    ("CAI", "CAI-Urgencias Nueva", "Fase 2"),
+    ("CAI", "CAI-Hospitalización 6 Piso Norte Nueva", "Fase 2"),
+    ("CAI", "CAI-Hospitalización 5 Piso Norte Nueva", "Fase 2"),
+    ("CAI", "CAI-UCI 2 Piso 2 Nueva", "Fase 2"),
+    ("CAI", "CAI-Hospitalización 5 Piso Sur Nueva", "Fase 2"),
+    ("CAI", "CAI-Hospitalización 4 Piso Sur Nueva", "Fase 2"),
+    ("CAI", "CAI-Sala de Cirugía 4 (Urgencias)", "Fase 2"),
+    ("CAI", "CAI-Hospitalización 6 Piso Sur Nueva", "Fase 2"),
+    ("CAI", "CAI-UCINT  Piso 2 Nueva", "Fase 2"),
+    ("CAI", "CAI-UCI 1 Piso 2 Nueva", "Fase 2"),
+    ("CAI", "CAI-Electrofisiología", "Fase 1"),
+    ("CAI", "CAI-Imagenologia", "Fase 1"),
+    ("CAI", "CAI-Sala de Cirugía 1 (Cardiovascular)", "Fase 3"),
+    ("CAI", "CAI-Cardiología No Invasiva Nueva", "Fase 1"),
+    ("CAI", "CAI-Sala de Cirugía 3", "Fase 3"),
+    # Clínica Avidanti Manizales (CAM)
+    ("CAM", "CAM-Consulta Externa", "Fase 1"),
+    ("CAM", "CAM-Urgencias", "Fase 2"),
+    ("CAM", "CAM-Hospitalización 7 Piso Sur", "Fase 2"),
+    ("CAM", "CAM-Hospitalización 6 Piso Norte", "Fase 2"),
+    ("CAM", "CAM-Hospitalización 4 Piso Sur", "Fase 2"),
+    ("CAM", "CAM-UCI 7 Piso", "Fase 2"),
+    ("CAM", "CAM-Hospitalización 6 Piso Sur", "Fase 2"),
+    ("CAM", "CAM-Sala de Cirugía 1 (Urgencias)", "Fase 2"),
+    ("CAM", "CAM-Sala de Cirugía 4", "Fase 3"),
+    ("CAM", "CAM-Sala de Cirugía 3", "Fase 3"),
+    ("CAM", "CAM-Sala de Cirugía 2", "Fase 3"),
+    ("CAM", "CAM-Sala de Cirugía 5", "Fase 3"),
+    ("CAM", "CAM-Hospitalización 3 Piso Sur", "Fase 2"),
+    ("CAM", "CAM-Hospitalización 3 Piso Norte", "Fase 2"),
+    ("CAM", "CAM-Hospitalización 5 Piso Sur", "Fase 2"),
+    ("CAM", "CAM-UCINT 3 Piso", "Fase 2"),
+    ("CAM", "CAM-UCI 3 Piso", "Fase 2"),
+    ("CAM", "CAM-TeleConsulta", "Fase 1"),
+    ("CAM", "CAM- Sala de Cirugía 7", "Fase 3"),
+    ("CAM", "CAM-UCINT 5 Piso", "Fase 2"),
+    ("CAM", "CAM-Cardiología No Invasiva", "Fase 1"),
+    ("CAM", "CAM-Hemodinamia Piso 5", "Fase 3"),
+    ("CAM", "CAM-Electrofisiología Piso 5", "Fase 1"),
+    ("CAM", "CAM-Resonancia Magnética", "Fase 1"),
+    ("CAM", "CAM-Imagenología", "Fase 1"),
+    # Clínica Avidanti Santa Marta (CASM)
+    ("CASM", "CASM- Consulta Externa", "Fase 1"),
+    ("CASM", "CASM-Hospitalización VIP 2", "Fase 2"),
+    ("CASM", "CASM-Hospitalización 2 Piso Norte", "Fase 2"),
+    ("CASM", "CASM-Hospitalización 2 Piso Sur", "Fase 2"),
+    ("CASM", "CASM-Urgencias", "Fase 2"),
+    ("CASM", "CASM-Hospitalización VIP 1", "Fase 2"),
+    ("CASM", "CASM-Hospitalización 1 piso Norte", "Fase 2"),
+    ("CASM", "CASM-Hospitalización 1 piso", "Fase 2"),
+    ("CASM", "CASM-UCI Adulto 1", "Fase 2"),
+    ("CASM", "CASM-Sala de Cirugía 2", "Fase 3"),
+    ("CASM", "CASM-UCINT", "Fase 2"),
+    ("CASM", "CASM-UCI Adulto 2", "Fase 2"),
+    ("CASM", "CASM-Hospitalización 2 Piso Centro", "Fase 2"),
+    ("CASM", "CASM-Cardiología No Invasiva", "Fase 1"),
+    ("CASM", "CASM-Sala de Cirugía 4", "Fase 3"),
+    ("CASM", "CASM-Sala de Preparacion Cirugia", "Fase 3"),
+    ("CASM", "CASM-Sala de Cirugía 3 (Urgencias)", "Fase 2"),
+    ("CASM", "CASM- Hemodinamia", "Fase 3"),
+    ("CASM", "CASM-Imagenología", "Fase 1"),
+    # Clínica Avidanti Ciudad Verde (CACV)
+    ("CACV", "CACV-Hospitalización 5 Piso Norte", "Fase 2"),
+    ("CACV", "CACV-Hospitalización 5 Piso Sur", "Fase 2"),
+    ("CACV", "CACV-Laboratorio Clínico", "Fase 1"),
+    ("CACV", "CACV-Urgencias", "Fase 2"),
+    ("CACV", "CACV-Imagenología", "Fase 1"),
+    ("CACV", "CACV-Sala de Cirugía 3", "Fase 3"),
+    ("CACV", "CACV-Sala de Cirugía 4", "Fase 3"),
+    ("CACV", "CACV-Unidad Basico Neonatal", "Fase 3"),
+    ("CACV", "CACV-Terapias", "Fase 1"),
+    ("CACV", "CACV-Gestión Pre-transfusional", "Fase 3"),
+    ("CACV", "CACV-Sala de Cirugía 5", "Fase 3"),
+    ("CACV", "CACV-Hospitalización 6 Piso Norte", "Fase 2"),
+    ("CACV", "CACV-Hospitalización 6 Piso Sur", "Fase 2"),
+    ("CACV", "CACV- Hemodinamia 1", "Fase 3"),
+    ("CACV", "CACV-UCI Adulto", "Fase 2"),
+    ("CACV", "CACV-UCINT Adulto", "Fase 2"),
+    ("CACV", "CACV-UCI Neonatal", "Fase 2"),
+    ("CACV", "CACV-Sala de Partos 1", "Fase 3"),
+    ("CACV", "CACV-Sala Trabajo de Parto", "Fase 3"),
+    ("CACV", "CACV- Consulta Externa", "Fase 1"),
+    ("CACV", "CACV-UCINT Neonatal", "Fase 2"),
+    ("CACV", "CACV-Sala Postparto", "Fase 3"),
+    ("CACV", "CACV-Sala de Cesaria", "Fase 3"),
+    ("CACV", "CACV-Sala de Partos 2", "Fase 3"),
+    ("CACV", "CACV-Ecografía", "Fase 1"),
+    ("CACV", "CACV-UCINT Alto Riesgo", "Fase 2"),
+    ("CACV", "CACV-Sala de Procedimientos", "Fase 3"),
+    ("CACV", "CACV-Tomografía", "Fase 1"),
+    ("CACV", "CACV-Resonancia Magnética", "Fase 1"),
+    ("CACV", "CACV-Recuperación Cirugía", "Fase 3"),
+    ("CACV", "CACV-Cardiología No Invasiva", "Fase 1"),
+]
+
+# Nombres completos para los encabezados
+COLUMNAS_RESUMEN = [
+    "Angiografía Villavicencio",
+    "Clínica Avidanti Ibagué",
+    "Clínica Avidanti Manizales",
+    "Clínica Avidanti Santa Marta",
+    "Clínica Avidanti Ciudad Verde",
+    "Clínica Avidanti Armenia",
+]
+
+CODIGOS_SEDE = ["ADC", "CAI", "CAM", "CASM", "CACV", "CAA"]
+MAPA_CODIGO_A_COLUMNA = dict(zip(CODIGOS_SEDE, COLUMNAS_RESUMEN))
 
 FILAS_RESUMEN = [
     "Revisadas por analistas",
@@ -84,11 +216,12 @@ FILAS_RESUMEN = [
     "Porcentual impactado (META 0%)",
 ]
 
-UBICACIONES_ADC = [
-    "VILL-Consulta Externa",
-    "VILL-Electrofisiología",
-    "VILL-Imagenología",
-]
+FASES = ["Fase 1", "Fase 2", "Fase 3"]
+TITULOS_FASES = {
+    "Fase 1": "FASE 1 - AMBULATORIO",
+    "Fase 2": "FASE 2 - HOSPITALARIO",
+    "Fase 3": "FASE 3 - QUIRÚRGICO",
+}
 
 
 def construir_tabla_resumen():
@@ -121,7 +254,6 @@ ESTRUCTURAS_NORM = {
 
 
 def clasificar_estructura(columnas_df):
-    """Devuelve (nombre_estructura, score) del mejor match."""
     cols_df_norm = {normalizar(c) for c in columnas_df}
     mejor = (None, 0.0)
     for nombre, esperadas in ESTRUCTURAS_NORM.items():
@@ -135,7 +267,6 @@ def clasificar_estructura(columnas_df):
 
 
 def obtener_columna(df, nombre_esperado):
-    """Devuelve el nombre real de la columna cuyo nombre normalizado coincide."""
     objetivo = normalizar(nombre_esperado)
     for c in df.columns:
         if normalizar(c) == objetivo:
@@ -144,10 +275,43 @@ def obtener_columna(df, nombre_esperado):
 
 
 def hash_df(df):
-    """Hash estable del contenido del DataFrame (para detectar hojas duplicadas)."""
     return hashlib.md5(
         pd.util.hash_pandas_object(df, index=False).values.tobytes()
     ).hexdigest()
+
+
+# Construir mapa normalizado: {sede: {ubicacion_norm: fase}}
+MAPA_UBICACION_A_FASE = {}
+for sede, ubicacion, fase in MAPA_FASES:
+    MAPA_UBICACION_A_FASE.setdefault(sede, {})[normalizar(ubicacion)] = fase
+
+
+def detectar_sede(ubicacion_valor):
+    """Devuelve el código de sede (ADC, CAI, ...) según el prefijo."""
+    txt = normalizar(ubicacion_valor)
+    for codigo in CODIGOS_SEDE:
+        if txt.startswith(codigo.lower()):
+            return codigo
+    return None
+
+
+def detectar_fase(ubicacion_valor):
+    """Devuelve la fase (Fase 1/2/3) según el mapa normalizado."""
+    sede = detectar_sede(ubicacion_valor)
+    if sede is None:
+        return None
+
+    txt = normalizar(ubicacion_valor)
+    # Comparación exacta primero
+    mapa_sede = MAPA_UBICACION_A_FASE.get(sede, {})
+    if txt in mapa_sede:
+        return mapa_sede[txt]
+
+    # Si no hay match exacto, probar coincidencia por tokens
+    for ubi_norm, fase in mapa_sede.items():
+        if ubi_norm and ubi_norm in txt:
+            return fase
+    return None
 
 
 # ============================================================
@@ -161,14 +325,14 @@ uploaded_files = st.file_uploader(
 
 if not uploaded_files:
     st.info("👆 Carga al menos un archivo Excel para comenzar.")
-    st.subheader("📋 FASE 1 - AMBULATORIO")
-    st.dataframe(construir_tabla_resumen(), use_container_width=True)
+    for fase in FASES:
+        st.subheader(f"📋 {TITULOS_FASES[fase]}")
+        st.dataframe(construir_tabla_resumen(), use_container_width=True)
     st.stop()
 
 
 @st.cache_data(show_spinner=False)
 def leer_excel(file_bytes, file_name):
-    """Lee un Excel desde bytes y devuelve {hoja: DataFrame}."""
     import io
     try:
         sheets = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
@@ -178,7 +342,7 @@ def leer_excel(file_bytes, file_name):
 
 
 # ============================================================
-# PROCESAR ARCHIVOS (con detección de duplicados en la fuente)
+# PROCESAR ARCHIVOS
 # ============================================================
 bases = {nombre: [] for nombre in ESTRUCTURAS}
 no_clasificados = []
@@ -195,7 +359,6 @@ for idx, f in enumerate(uploaded_files):
     file_bytes = f.getvalue()
     hash_archivo = hashlib.md5(file_bytes).hexdigest()
 
-    # --- 1. ¿Archivo repetido? ---
     if hash_archivo in hashes_archivos_vistos:
         archivos_duplicados.append({
             "Archivo": f.name,
@@ -226,7 +389,6 @@ for idx, f in enumerate(uploaded_files):
             })
             continue
 
-        # --- 2. ¿Hoja repetida? (mismo contenido exacto) ---
         h = hash_df(df)
         if h in hashes_hojas_vistos:
             hojas_duplicadas.append({
@@ -268,28 +430,24 @@ if bases["Atenciones del especialista"]:
         df_aux["_archivo"] = arch
         df_aux["_hoja"] = hoja
         partes.append(df_aux)
-
     atenciones_df = pd.concat(partes, ignore_index=True)
 else:
     atenciones_df = pd.DataFrame()
 
 
 # ============================================================
-# CÁLCULOS ADC
+# CÁLCULOS: "Revisadas por analistas" y "Avaladas subgerencia médica"
 # ------------------------------------------------------------
-# - Revisadas por analistas:
-#     "Ubicación de la venta" ∈ {VILL-Consulta Externa,
-#                                VILL-Electrofisiología,
-#                                VILL-Imagenología}
-#     Y "Nombre de Usuario que Verifica" no vacío
-#
-# - Avaladas subgerencia médica:
-#     MISMOS filtros anteriores
-#     Y ADEMÁS "Usuario / Sub Medico" no vacío
+# Para cada combinación (sede, fase):
+#   - Revisadas: registros con "Nombre de Usuario que Verifica" != vacío
+#   - Avaladas:  registros con "Usuario / Sub Medico" != vacío
 # ============================================================
-conteo_adc_revisadas = 0
-conteo_adc_avaladas = 0
-df_filtrado_adc = pd.DataFrame()
+# conteos[fase][codigo_sede] = {"revisadas": int, "avaladas": int}
+conteos = {
+    fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
+    for fase in FASES
+}
+df_filtrado_revisadas = pd.DataFrame()
 df_filtrado_avaladas = pd.DataFrame()
 
 if not atenciones_df.empty:
@@ -299,126 +457,51 @@ if not atenciones_df.empty:
 
     if col_ubicacion is None or col_verifica is None:
         st.error(
-            "⚠️ No se encontraron las columnas necesarias en la base "
-            "'Atenciones del especialista': "
+            "⚠️ Faltan columnas clave en 'Atenciones del especialista': "
             f"'Ubicación de la venta'={'OK' if col_ubicacion else 'FALTA'}, "
             f"'Nombre de Usuario que Verifica'={'OK' if col_verifica else 'FALTA'}."
         )
     else:
-        # --- Normalizar ubicaciones ---
-        ubicaciones_norm = {normalizar(u) for u in UBICACIONES_ADC}
-        ubicaciones_serie = (
-            atenciones_df[col_ubicacion]
-            .astype(str)
-            .map(normalizar)
-        )
+        # Derivar sede y fase por cada fila
+        sede_serie = atenciones_df[col_ubicacion].astype(str).map(detectar_sede)
+        fase_serie = atenciones_df[col_ubicacion].astype(str).map(detectar_fase)
 
-        # --- Verificadores limpios ---
+        # Verificadores y subgerentes limpios
         verificadores_serie = (
             atenciones_df[col_verifica]
-            .astype(str)
-            .str.strip()
+            .astype(str).str.strip()
             .replace({"nan": "", "None": "", "NaN": ""})
         )
-
-        # --- Máscara base: ubicación + verificador no vacío ---
-        mask_ubicacion = ubicaciones_serie.isin(ubicaciones_norm)
-        mask_verifica = verificadores_serie != ""
-        mask_revisadas = mask_ubicacion & mask_verifica
-
-        df_filtrado_adc = atenciones_df.loc[mask_revisadas].copy()
-        conteo_adc_revisadas = int(mask_revisadas.sum())
-
-        # --- Avaladas: además, "Usuario / Sub Medico" no vacío ---
         if col_submedico is not None:
             submedico_serie = (
                 atenciones_df[col_submedico]
-                .astype(str)
-                .str.strip()
+                .astype(str).str.strip()
                 .replace({"nan": "", "None": "", "NaN": ""})
             )
-            mask_submedico = submedico_serie != ""
-            mask_avaladas = mask_revisadas & mask_submedico
-
-            df_filtrado_avaladas = atenciones_df.loc[mask_avaladas].copy()
-            conteo_adc_avaladas = int(mask_avaladas.sum())
         else:
-            st.warning(
-                "⚠️ No se encontró la columna 'Usuario / Sub Medico' en la base "
-                "'Atenciones del especialista'. No se puede calcular "
-                "'Avaladas subgerencia médica'."
-            )
+            submedico_serie = pd.Series([""] * len(atenciones_df), index=atenciones_df.index)
 
+        mask_verifica = verificadores_serie != ""
+        mask_submedico = submedico_serie != ""
 
-# ============================================================
-# CÁLCULO ADC: "Dinero enviado por interfaz"
-# ------------------------------------------------------------
-# Suma de "Valor Total Recalculado" en la base Ventas cuando
-# "Centro de costo" coincide (por similitud) con las ubicaciones
-# filtradas en Atenciones del especialista.
-#
-# En Ventas:    "Consulta Externa VILL", "Electrofisiología VILL", ...
-# En Atenciones: "VILL-Consulta Externa", "VILL-Electrofisiología", ...
-#
-# Estrategia: normalizar y comparar por conjunto de palabras
-# ignorando la palabra "vill" y el orden.
-# ============================================================
-conteo_dinero_interfaz = 0.0
-df_ventas_adc = pd.DataFrame()
+        # Iterar por fase y sede para contar
+        for fase in FASES:
+            for cod in CODIGOS_SEDE:
+                mask_base = (sede_serie == cod) & (fase_serie == fase)
+                mask_rev = mask_base & mask_verifica
+                mask_ava = mask_base & mask_verifica & mask_submedico
 
+                conteos[fase][cod]["revisadas"] = int(mask_rev.sum())
+                conteos[fase][cod]["avaladas"] = int(mask_ava.sum())
 
-def palabras_clave_ubicacion(texto):
-    """Devuelve un frozenset de palabras normalizadas, sin 'vill'."""
-    palabras = normalizar(texto).split()
-    return frozenset(p for p in palabras if p != "vill")
-
-
-CLAVES_UBICACION_ADC = {
-    palabras_clave_ubicacion(u) for u in UBICACIONES_ADC
-}
-
-
-if bases["Ventas"]:
-    ventas_df = pd.concat(
-        [df for _, _, df in bases["Ventas"]],
-        ignore_index=True
-    )
-
-    col_centro = obtener_columna(ventas_df, "Centro de costo")
-    col_valor = obtener_columna(ventas_df, "Valor Total Recalculado")
-
-    if col_centro is None or col_valor is None:
-        st.warning(
-            "⚠️ No se encontraron las columnas 'Centro de costo' o "
-            "'Valor Total Recalculado' en la base Ventas."
-        )
-    else:
-        # Palabras clave del Centro de costo en Ventas
-        centro_claves = ventas_df[col_centro].astype(str).map(palabras_clave_ubicacion)
-
-        # Máscara: contiene todas las palabras clave de alguna ubicación objetivo
-        def coincide(claves_venta):
-            for claves_ubi in CLAVES_UBICACION_ADC:
-                if claves_venta.issuperset(claves_ubi):
-                    return True
-            return False
-
-        mask_centro = centro_claves.map(coincide)
-        df_ventas_adc = ventas_df.loc[mask_centro].copy()
-
-        # Convertir "Valor Total Recalculado" a numérico
-        valores_num = pd.to_numeric(
-            df_ventas_adc[col_valor]
-            .astype(str)
-            .str.replace(",", "", regex=False)
-            .str.replace("$", "", regex=False)
-            .str.strip(),
-            errors="coerce"
-        ).fillna(0)
-
-        conteo_dinero_interfaz = float(valores_num.sum())
+        # Guardar filtrados globales (por si se usan más adelante)
+        df_filtrado_revisadas = atenciones_df.loc[mask_verifica].copy()
+        df_filtrado_avaladas = atenciones_df.loc[mask_verifica & mask_submedico].copy()
 else:
-    ventas_df = pd.DataFrame()
+    st.warning(
+        "⚠️ No hay datos de 'Atenciones del especialista' cargados. "
+        "Los conteos quedarán en cero."
+    )
 
 
 # ============================================================
@@ -438,24 +521,29 @@ with st.sidebar:
 
 
 # ============================================================
-# TABLA RESUMEN "FASE 1 - AMBULATORIO"
+# TABLAS RESUMEN POR FASE
 # ============================================================
-st.subheader("📋 FASE 1 - AMBULATORIO")
+for fase in FASES:
+    st.subheader(f"📋 {TITULOS_FASES[fase]}")
 
-tabla_resumen = construir_tabla_resumen()
-tabla_resumen.loc["Revisadas por analistas", "ADC"] = f"{conteo_adc_revisadas:,}"
-tabla_resumen.loc["Avaladas subgerencia médica", "ADC"] = f"{conteo_adc_avaladas:,}"
-tabla_resumen.loc["Dinero enviado por interfaz", "ADC"] = f"{conteo_dinero_interfaz:,.0f}"
+    tabla = construir_tabla_resumen()
 
-st.dataframe(tabla_resumen, use_container_width=True, height=380)
+    for cod in CODIGOS_SEDE:
+        columna = MAPA_CODIGO_A_COLUMNA[cod]
+        tabla.loc["Revisadas por analistas", columna] = f"{conteos[fase][cod]['revisadas']:,}"
+        tabla.loc["Avaladas subgerencia médica", columna] = f"{conteos[fase][cod]['avaladas']:,}"
 
-csv_resumen = tabla_resumen.to_csv().encode("utf-8")
-st.download_button(
-    label="⬇️ Descargar tabla resumen (CSV)",
-    data=csv_resumen,
-    file_name="FASE_1_AMBULATORIO.csv",
-    mime="text/csv",
-)
+    st.dataframe(tabla, use_container_width=True, height=380)
+
+    csv = tabla.to_csv().encode("utf-8")
+    st.download_button(
+        label=f"⬇️ Descargar {TITULOS_FASES[fase]} (CSV)",
+        data=csv,
+        file_name=f"{TITULOS_FASES[fase].replace(' ', '_')}.csv",
+        mime="text/csv",
+        key=f"dl_{fase}",
+    )
+    st.divider()
 
 
 # ============================================================
@@ -463,48 +551,38 @@ st.download_button(
 # ============================================================
 st.subheader("🔎 Novedades")
 
-if df_filtrado_adc.empty:
-    st.info(
-        "No hay registros que cumplan los filtros para 'Revisadas por analistas' "
-        "(columna ADC)."
-    )
+if df_filtrado_revisadas.empty:
+    st.info("No hay registros que cumplan los filtros de 'Revisadas por analistas'.")
 else:
-    col_verifica = obtener_columna(df_filtrado_adc, "Nombre de Usuario que Verifica")
-    col_submedico = obtener_columna(df_filtrado_adc, "Usuario / Sub Medico")
+    col_verifica = obtener_columna(df_filtrado_revisadas, "Nombre de Usuario que Verifica")
+    col_submedico = obtener_columna(df_filtrado_revisadas, "Usuario / Sub Medico")
 
     st.markdown(
-        f"**Total de registros que cumplen los filtros:** {conteo_adc_revisadas:,}  \n"
-        f"**Ubicaciones incluidas:** {', '.join(UBICACIONES_ADC)}"
+        f"**Total de registros que cumplen los filtros:** {len(df_filtrado_revisadas):,}"
     )
 
-    # Limpiar verificadores
     verificadores_limpios = (
-        df_filtrado_adc[col_verifica]
-        .astype(str)
-        .str.strip()
+        df_filtrado_revisadas[col_verifica]
+        .astype(str).str.strip()
         .replace({"nan": "", "None": "", "NaN": ""})
     )
-    df_filtrado_adc = df_filtrado_adc.assign(_verifica_limpio=verificadores_limpios)
+    df_filtrado_revisadas = df_filtrado_revisadas.assign(_verifica_limpio=verificadores_limpios)
 
-    # Agrupar por verificador
     resumen_verifica = (
-        df_filtrado_adc
+        df_filtrado_revisadas
         .groupby("_verifica_limpio", dropna=False)
         .size()
         .reset_index(name="Registros")
         .rename(columns={"_verifica_limpio": "Nombre de Usuario que Verifica"})
     )
 
-    # Comparación con Sub Médico
     def comparar_con_submedico(nombre_verifica):
         if not col_submedico:
             return "Sin datos de Sub Médico"
 
         valores_sub = (
-            df_filtrado_adc[col_submedico]
-            .dropna()
-            .astype(str)
-            .str.strip()
+            df_filtrado_revisadas[col_submedico]
+            .dropna().astype(str).str.strip()
         )
         valores_sub = valores_sub[~valores_sub.isin(["", "nan", "None", "NaN"])]
 
@@ -529,18 +607,3 @@ else:
 
     st.markdown("#### 👥 Verificadores y comparación con Sub Médico")
     st.dataframe(resumen_verifica, use_container_width=True)
-
-    # Detalle de valores únicos de Sub Médico
-    if col_submedico:
-        with st.expander("Ver valores únicos en 'Usuario / Sub Medico' (registros filtrados)"):
-            valores_sub = (
-                df_filtrado_adc[col_submedico]
-                .dropna()
-                .astype(str)
-                .str.strip()
-            )
-            valores_sub = sorted({
-                v for v in valores_sub.unique()
-                if v and v.lower() not in ("nan", "none")
-            })
-            st.write(valores_sub if valores_sub else "Sin valores registrados.")
