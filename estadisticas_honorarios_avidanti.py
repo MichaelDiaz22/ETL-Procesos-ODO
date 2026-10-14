@@ -4,13 +4,13 @@ import pandas as pd
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
-st.set_page_config(page_title="Unificador Excel", page_icon="📊", layout="wide")
+st.set_page_config(page_title="FASE 1 - AMBULATORIO", page_icon="📊", layout="wide")
 
-st.title("📊 Unificador de Archivos Excel")
+st.title("📊 FASE 1 - AMBULATORIO")
 st.markdown("Carga múltiples archivos Excel. Se clasificarán automáticamente en **Ventas**, **Atenciones del especialista** o **Totales**.")
 
 # ============================================================
-# ESTRUCTURAS ESPERADAS (columnas mínimas para identificar)
+# ESTRUCTURAS ESPERADAS
 # ============================================================
 ESTRUCTURAS = {
     "Ventas": [
@@ -62,11 +62,34 @@ ESTRUCTURAS = {
     ],
 }
 
+UMBRAL_COINCIDENCIA = 0.60
+
+# ============================================================
+# TABLA RESUMEN "FASE 1 - AMBULATORIO"
+# ============================================================
+COLUMNAS_RESUMEN = ["ADC", "CAI", "CAM", "CASM", "CACV", "CAA"]
+
+FILAS_RESUMEN = [
+    "Revisadas por analistas",
+    "Avaladas subgerencia médica",
+    "Dinero enviado por interfaz",
+    "Total ventas consulta externa (ACTIVO Y FACTURADO)",
+    "Dinero ventas ambulatorio",
+    "Porcentual faltante (META 30%)",
+    "Ventas relacionadas en factura (FACTURADO)",
+    "Porcentual impactado (META 0%)",
+]
+
+def construir_tabla_resumen():
+    """Crea un DataFrame vacío con las columnas y filas del resumen FASE 1."""
+    df = pd.DataFrame("", index=FILAS_RESUMEN, columns=COLUMNAS_RESUMEN)
+    df.index.name = "Concepto"
+    return df
+
 # ============================================================
 # FUNCIONES AUXILIARES
 # ============================================================
 def normalizar(s):
-    """Normaliza el nombre de una columna para comparación flexible."""
     return (
         str(s).strip().lower()
         .replace("á", "a").replace("é", "e").replace("í", "i")
@@ -78,24 +101,15 @@ def normalizar(s):
         .replace("  ", " ").strip()
     )
 
-# Precalcular columnas normalizadas por estructura
 ESTRUCTURAS_NORM = {
     nombre: {normalizar(c) for c in cols}
     for nombre, cols in ESTRUCTURAS.items()
 }
 
-# Umbral mínimo de coincidencia para aceptar una clasificación
-UMBRAL_COINCIDENCIA = 0.60  # 60% de columnas esperadas deben estar presentes
-
 
 def clasificar_estructura(columnas_df):
-    """
-    Devuelve (nombre_estructura, score) del mejor match.
-    Score = fracción de columnas esperadas presentes en el df.
-    """
     cols_df_norm = {normalizar(c) for c in columnas_df}
     mejor = (None, 0.0)
-
     for nombre, esperadas in ESTRUCTURAS_NORM.items():
         if not esperadas:
             continue
@@ -103,22 +117,16 @@ def clasificar_estructura(columnas_df):
         score = coincidencias / len(esperadas)
         if score > mejor[1]:
             mejor = (nombre, score)
-
     return mejor
 
 
 def filtrar_columnas_minimas(df, estructura):
-    """Conserva solo las columnas que pertenecen a la estructura esperada,
-    respetando el orden definido (cuando existan)."""
     esperadas = ESTRUCTURAS[estructura]
     mapa_norm = {normalizar(c): c for c in df.columns}
-
-    columnas_presentes = []
-    for col_esperada in esperadas:
-        col_norm = normalizar(col_esperada)
-        if col_norm in mapa_norm:
-            columnas_presentes.append(mapa_norm[col_norm])
-
+    columnas_presentes = [
+        mapa_norm[normalizar(c)] for c in esperadas
+        if normalizar(c) in mapa_norm
+    ]
     return df[columnas_presentes].copy()
 
 
@@ -133,12 +141,14 @@ uploaded_files = st.file_uploader(
 
 if not uploaded_files:
     st.info("👆 Carga al menos un archivo Excel para comenzar.")
+    # Aún así mostramos la tabla resumen vacía
+    st.subheader("📋 FASE 1 - AMBULATORIO")
+    st.dataframe(construir_tabla_resumen(), use_container_width=True)
     st.stop()
 
 
 @st.cache_data(show_spinner=False)
 def leer_excel(file_bytes, file_name):
-    """Lee un Excel y devuelve {hoja: DataFrame}."""
     import io
     try:
         sheets = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
@@ -148,9 +158,9 @@ def leer_excel(file_bytes, file_name):
 
 
 # ============================================================
-# PROCESAR ARCHIVOS: leer + clasificar
+# PROCESAR ARCHIVOS
 # ============================================================
-bases = {nombre: [] for nombre in ESTRUCTURAS}  # {estructura: [ (archivo, hoja, df) ]}
+bases = {nombre: [] for nombre in ESTRUCTURAS}
 no_clasificados = []
 errores = []
 
@@ -185,22 +195,22 @@ for idx, f in enumerate(uploaded_files):
 progress.empty()
 
 # ============================================================
-# MOSTRAR ERRORES Y NO CLASIFICADOS
+# ERRORES Y NO CLASIFICADOS
 # ============================================================
 if errores:
-    st.error("### ❌ Errores al leer archivos")
-    for nombre, err in errores:
-        st.write(f"- **{nombre}**: {err}")
+    with st.expander("❌ Errores al leer archivos", expanded=True):
+        for nombre, err in errores:
+            st.write(f"- **{nombre}**: {err}")
 
 if no_clasificados:
-    st.warning("### ⚠️ Archivos/hojas NO clasificados")
-    st.dataframe(pd.DataFrame(no_clasificados), use_container_width=True)
+    with st.expander("⚠️ Archivos/hojas NO clasificados", expanded=True):
+        st.dataframe(pd.DataFrame(no_clasificados), use_container_width=True)
 
 # ============================================================
 # RESUMEN GLOBAL (SIDEBAR)
 # ============================================================
 with st.sidebar:
-    st.header("📈 Resumen global")
+    st.header("📈 Resumen de carga")
     st.metric("Archivos cargados", len(uploaded_files))
     for nombre in ESTRUCTURAS:
         st.metric(nombre, f"{len(bases[nombre])} hoja(s)")
@@ -208,48 +218,18 @@ with st.sidebar:
         st.metric("No clasificados", len(no_clasificados))
 
 # ============================================================
-# MOSTRAR BASES UNIFICADAS POR ESTRUCTURA
+# TABLA RESUMEN "FASE 1 - AMBULATORIO"
 # ============================================================
-st.subheader("📋 Bases unificadas")
+st.subheader("📋 FASE 1 - AMBULATORIO")
 
-for estructura, items in bases.items():
-    st.markdown(f"## 🔗 {estructura}")
+tabla_resumen = construir_tabla_resumen()
+st.dataframe(tabla_resumen, use_container_width=True, height=380)
 
-    if not items:
-        st.info(f"No se encontraron archivos con estructura **{estructura}**.")
-        st.divider()
-        continue
-
-    # Unir
-    dfs = [df.assign(_archivo=arch, _hoja=hoja) for arch, hoja, df in items]
-    base_unificada = pd.concat(dfs, ignore_index=True)
-
-    # Métricas
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Hojas unidas", len(items))
-    c2.metric("Filas totales", f"{len(base_unificada):,}")
-    c3.metric("Columnas", len(base_unificada.columns) - 2)
-    c4.metric("Columnas esperadas", len(ESTRUCTURAS[estructura]))
-
-    # Origen de datos
-    with st.expander("📁 Archivos/hojas que componen esta base"):
-        st.dataframe(
-            pd.DataFrame([{"Archivo": a, "Hoja": h, "Filas": len(d)}
-                          for a, h, d in items]),
-            use_container_width=True
-        )
-
-    # Vista previa: 10 registros
-    st.markdown("**Vista previa (primeros 10 registros):**")
-    st.dataframe(base_unificada.head(10), use_container_width=True)
-
-    # Descarga CSV
-    csv = base_unificada.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label=f"⬇️ Descargar {estructura} (CSV)",
-        data=csv,
-        file_name=f"{estructura.replace(' ', '_')}.csv",
-        mime="text/csv",
-        key=f"dl_{estructura}"
-    )
-    st.divider()
+# Botón de descarga del esqueleto
+csv_resumen = tabla_resumen.to_csv().encode("utf-8")
+st.download_button(
+    label="⬇️ Descargar tabla resumen (CSV)",
+    data=csv_resumen,
+    file_name="FASE_1_AMBULATORIO.csv",
+    mime="text/csv",
+)
