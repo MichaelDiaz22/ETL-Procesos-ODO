@@ -554,9 +554,10 @@ else:
 # ------------------------------------------------------------
 # Para cada registro de Atenciones (revisado, con sede/fase):
 #   1. Obtener su "Numero Venta"
-#   2. Buscar en Ventas las filas con ese "Venta No."
-#   3. Sumar "Valor facturado" SOLO de las filas cuya
-#      "Ubicación despacho" pertenezca a la MISMA (sede, fase)
+#   2. Buscar en Ventas el valor "Valor facturado" de ese folio
+#      dentro de la MISMA (sede, fase)
+#   3. Tomar SOLO UN valor por folio (no duplicar si hay varias
+#      filas en Ventas con el mismo folio y misma ubicación)
 # ============================================================
 dinero_interfaz = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
@@ -602,14 +603,22 @@ if bases["Ventas"]:
             lambda u: MAPA_UBICACION.get(u, (None, None))[1]
         )
 
-        # --- Agrupar por (Venta No., sede, fase) → suma de Valor facturado ---
-        ventas_agg = (
+        # --- Deduplicar: UNA fila por (Venta No., sede, fase) ---
+        ventas_dedupe = (
             ventas_df
             .dropna(subset=["_sede_venta", "_fase_venta"])
-            .groupby(["_venta_no_norm", "_sede_venta", "_fase_venta"])[
+            .drop_duplicates(
+                subset=["_venta_no_norm", "_sede_venta", "_fase_venta"],
+                keep="first",
+            )
+        )
+
+        # Diccionario: {(venta_no, sede, fase): Valor facturado}
+        ventas_valor = (
+            ventas_dedupe
+            .set_index(["_venta_no_norm", "_sede_venta", "_fase_venta"])[
                 "_valor_facturado_num"
             ]
-            .sum()
             .to_dict()
         )
 
@@ -639,7 +648,7 @@ if bases["Ventas"]:
                     continue
 
                 llave = (venta_no, sede_cod, fase_val)
-                valor = ventas_agg.get(llave)
+                valor = ventas_valor.get(llave)
 
                 if valor is not None:
                     dinero_interfaz[fase_val][sede_cod] += float(valor)
@@ -723,8 +732,6 @@ if bases["Ventas"]:
 #   (Total ventas consulta externa - Avaladas subgerencia médica)
 #   ------------------------------------------------------------
 #                  Avaladas subgerencia médica
-#
-# Se calcula por (sede, fase). Si el denominador es 0 → 0%.
 # ============================================================
 porcentual_faltante = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
