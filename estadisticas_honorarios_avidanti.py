@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import hashlib
 
 # ============================================================
 # CONFIGURACIÓN
@@ -100,12 +101,7 @@ def construir_tabla_resumen():
 # FUNCIONES AUXILIARES
 # ============================================================
 def normalizar(s):
-    """Normaliza strings para comparaciones robustas:
-    - Quita tildes y mojibake común
-    - Unifica mayúsculas/minúsculas
-    - Reemplaza separadores por espacios
-    - Colapsa espacios múltiples
-    """
+    """Normaliza strings para comparaciones robustas."""
     return (
         str(s).strip().lower()
         .replace("á", "a").replace("é", "e").replace("í", "i")
@@ -147,6 +143,13 @@ def obtener_columna(df, nombre_esperado):
     return None
 
 
+def hash_df(df):
+    """Hash estable del contenido del DataFrame (para detectar hojas duplicadas)."""
+    return hashlib.md5(
+        pd.util.hash_pandas_object(df, index=False).values.tobytes()
+    ).hexdigest()
+
+
 # ============================================================
 # CARGA DE ARCHIVOS
 # ============================================================
@@ -175,16 +178,35 @@ def leer_excel(file_bytes, file_name):
 
 
 # ============================================================
-# PROCESAR ARCHIVOS
+# PROCESAR ARCHIVOS (con detección de duplicados en la fuente)
 # ============================================================
 bases = {nombre: [] for nombre in ESTRUCTURAS}
 no_clasificados = []
 errores = []
+archivos_duplicados = []
+hojas_duplicadas = []
+
+hashes_archivos_vistos = {}
+hashes_hojas_vistos = {}
 
 progress = st.progress(0, text="Procesando archivos...")
 
 for idx, f in enumerate(uploaded_files):
-    hojas, err = leer_excel(f.getvalue(), f.name)
+    file_bytes = f.getvalue()
+    hash_archivo = hashlib.md5(file_bytes).hexdigest()
+
+    # --- 1. ¿Archivo repetido? ---
+    if hash_archivo in hashes_archivos_vistos:
+        archivos_duplicados.append({
+            "Archivo": f.name,
+            "Ya cargado como": hashes_archivos_vistos[hash_archivo],
+        })
+        progress.progress((idx + 1) / len(uploaded_files))
+        continue
+
+    hashes_archivos_vistos[hash_archivo] = f.name
+
+    hojas, err = leer_excel(file_bytes, f.name)
     if err:
         errores.append((f.name, err))
         progress.progress((idx + 1) / len(uploaded_files))
@@ -204,7 +226,18 @@ for idx, f in enumerate(uploaded_files):
             })
             continue
 
-        # Conservamos TODAS las columnas originales para no perder información.
+        # --- 2. ¿Hoja repetida? (mismo contenido exacto) ---
+        h = hash_df(df)
+        if h in hashes_hojas_vistos:
+            hojas_duplicadas.append({
+                "Archivo": f.name,
+                "Hoja": hoja,
+                "Estructura": estructura,
+                "Duplicado de": hashes_hojas_vistos[h],
+            })
+            continue
+
+        hashes_hojas_vistos[h] = f"{f.name}::{hoja}"
         bases[estructura].append((f.name, hoja, df.copy()))
 
     progress.progress((idx + 1) / len(uploaded_files))
@@ -227,9 +260,7 @@ if no_clasificados:
 
 # ============================================================
 # CONSTRUIR BASE "ATENCIONES DEL ESPECIALISTA"
-# ------------------------------------------------------------
-# Se añaden columnas de trazabilidad (_archivo, _hoja) y se
-# eliminan filas exactamente duplicadas para evitar doble conteo.
+# (sin deduplicar después: los duplicados se evitan en la fuente)
 # ============================================================
 if bases["Atenciones del especialista"]:
     partes = []
@@ -241,40 +272,20 @@ if bases["Atenciones del especialista"]:
 
     atenciones_df = pd.concat(partes, ignore_index=True)
 
-    # Diagnóstico: filas leídas por archivo/hoja
+    # Diagnóstico: filas por archivo/hoja (informativo)
     diag_filas = (
         atenciones_df
         .groupby(["_archivo", "_hoja"])
         .size()
-        .reset_index(name="Filas leídas")
+        .reset_index(name="Filas")
     )
-
-    # Deduplicar filas idénticas (sin contar _archivo ni _hoja)
-    cols_datos = [c for c in atenciones_df.columns if c not in ("_archivo", "_hoja")]
-    filas_antes = len(atenciones_df)
-    atenciones_df = (
-        atenciones_df
-        .drop_duplicates(subset=cols_datos, keep="first")
-        .reset_index(drop=True)
-    )
-    filas_despues = len(atenciones_df)
-    duplicados_eliminados = filas_antes - filas_despues
 else:
     atenciones_df = pd.DataFrame()
     diag_filas = pd.DataFrame()
-    filas_antes = filas_despues = duplicados_eliminados = 0
 
 
 # ============================================================
 # CÁLCULO: "Revisadas por analistas" (columna ADC)
-# ------------------------------------------------------------
-# Cuenta registros de "Atenciones del especialista" donde:
-#   - "Ubicación de la venta" ∈ {VILL-Consulta Externa,
-#                                VILL-Electrofisiología,
-#                                VILL-Imagenología}
-#   - "Nombre de Usuario que Verifica" no esté vacío
-#
-# El conteo se hace por filas únicas después de deduplicar.
 # ============================================================
 conteo_adc = 0
 df_filtrado_adc = pd.DataFrame()
@@ -313,13 +324,11 @@ if not atenciones_df.empty:
         mask_verifica = verificadores_serie != ""
         mask_final = mask_ubicacion & mask_verifica
 
-        # Filtrado (solo filas únicas)
+        # Filtrado y conteo
         df_filtrado_adc = atenciones_df.loc[mask_final].copy()
-
-        # Conteo final
         conteo_adc = int(mask_final.sum())
 
-        # Diagnóstico: desglose por archivo/hoja
+        # Diagnóstico: por archivo/hoja
         if "_archivo" in df_filtrado_adc.columns:
             diagnostico_adc["Por archivo/hoja"] = (
                 df_filtrado_adc
@@ -328,7 +337,7 @@ if not atenciones_df.empty:
                 .reset_index(name="Registros filtrados")
             )
 
-        # Diagnóstico: desglose por ubicación
+        # Diagnóstico: por ubicación
         diagnostico_adc["Por ubicación"] = (
             df_filtrado_adc
             .assign(_ubicacion_norm=df_filtrado_adc[col_ubicacion].astype(str).map(normalizar))
@@ -347,6 +356,10 @@ with st.sidebar:
     st.metric("Archivos cargados", len(uploaded_files))
     for nombre in ESTRUCTURAS:
         st.metric(nombre, f"{len(bases[nombre])} hoja(s)")
+    if archivos_duplicados:
+        st.metric("Archivos duplicados (descartados)", len(archivos_duplicados))
+    if hojas_duplicadas:
+        st.metric("Hojas duplicadas (descartadas)", len(hojas_duplicadas))
     if no_clasificados:
         st.metric("No clasificados", len(no_clasificados))
 
@@ -371,18 +384,34 @@ st.download_button(
 
 
 # ============================================================
-# DIAGNÓSTICO DE DUPLICADOS
+# DIAGNÓSTICO DE CONTEO
 # ============================================================
-with st.expander("🧪 Diagnóstico de conteo y duplicados", expanded=False):
-    st.markdown("**Resumen de la base Atenciones del especialista:**")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Filas leídas (antes de deduplicar)", f"{filas_antes:,}")
-    c2.metric("Duplicados exactos eliminados", f"{duplicados_eliminados:,}")
-    c3.metric("Filas únicas", f"{filas_despues:,}")
+with st.expander("🧪 Diagnóstico de conteo", expanded=False):
+    st.markdown("**Fuentes descartadas por estar repetidas:**")
 
+    if archivos_duplicados:
+        st.warning(
+            f"Se descartaron **{len(archivos_duplicados)}** archivo(s) por estar duplicados:"
+        )
+        st.dataframe(pd.DataFrame(archivos_duplicados), use_container_width=True)
+    else:
+        st.success("No se detectaron archivos duplicados.")
+
+    if hojas_duplicadas:
+        st.warning(
+            f"Se descartaron **{len(hojas_duplicadas)}** hoja(s) por tener contenido idéntico:"
+        )
+        st.dataframe(pd.DataFrame(hojas_duplicadas), use_container_width=True)
+    else:
+        st.success("No se detectaron hojas duplicadas.")
+
+    st.markdown("---")
+    st.markdown("**Filas que componen la base Atenciones del especialista:**")
     if not diag_filas.empty:
-        st.markdown("**Filas leídas por archivo/hoja (antes de deduplicar):**")
         st.dataframe(diag_filas, use_container_width=True)
+        st.markdown(f"**Total de filas:** {len(atenciones_df):,}")
+    else:
+        st.info("Sin datos de Atenciones del especialista.")
 
     if diagnostico_adc.get("Por archivo/hoja") is not None:
         st.markdown("**Registros que cumplen los filtros ADC, por archivo/hoja:**")
@@ -432,7 +461,7 @@ else:
         .rename(columns={"_verifica_limpio": "Nombre de Usuario que Verifica"})
     )
 
-    # Comparación con Sub Médico (normalizada)
+    # Comparación con Sub Médico
     def comparar_con_submedico(nombre_verifica):
         if not col_submedico:
             return "Sin datos de Sub Médico"
