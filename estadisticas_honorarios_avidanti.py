@@ -83,7 +83,6 @@ FILAS_RESUMEN = [
     "Porcentual impactado (META 0%)",
 ]
 
-# Ubicaciones válidas para el conteo ADC
 UBICACIONES_ADC = [
     "VILL-Consulta Externa",
     "VILL-Electrofisiología",
@@ -126,8 +125,7 @@ ESTRUCTURAS_NORM = {
 
 
 def clasificar_estructura(columnas_df):
-    """Devuelve (nombre_estructura, score) del mejor match.
-    Score = fracción de columnas esperadas presentes en el df."""
+    """Devuelve (nombre_estructura, score) del mejor match."""
     cols_df_norm = {normalizar(c) for c in columnas_df}
     mejor = (None, 0.0)
     for nombre, esperadas in ESTRUCTURAS_NORM.items():
@@ -206,8 +204,7 @@ for idx, f in enumerate(uploaded_files):
             })
             continue
 
-        # ⚠️ IMPORTANTE: conservamos TODAS las columnas originales
-        # para no perder información al aplicar filtros de negocio.
+        # Conservamos TODAS las columnas originales para no perder información.
         bases[estructura].append((f.name, hoja, df.copy()))
 
     progress.progress((idx + 1) / len(uploaded_files))
@@ -229,15 +226,43 @@ if no_clasificados:
 
 
 # ============================================================
-# CONSTRUIR BASE "ATENCIONES DEL ESPECIALISTA" (SIN RECORTAR COLUMNAS)
+# CONSTRUIR BASE "ATENCIONES DEL ESPECIALISTA"
+# ------------------------------------------------------------
+# Se añaden columnas de trazabilidad (_archivo, _hoja) y se
+# eliminan filas exactamente duplicadas para evitar doble conteo.
 # ============================================================
 if bases["Atenciones del especialista"]:
-    atenciones_df = pd.concat(
-        [df for _, _, df in bases["Atenciones del especialista"]],
-        ignore_index=True
+    partes = []
+    for arch, hoja, df in bases["Atenciones del especialista"]:
+        df_aux = df.copy()
+        df_aux["_archivo"] = arch
+        df_aux["_hoja"] = hoja
+        partes.append(df_aux)
+
+    atenciones_df = pd.concat(partes, ignore_index=True)
+
+    # Diagnóstico: filas leídas por archivo/hoja
+    diag_filas = (
+        atenciones_df
+        .groupby(["_archivo", "_hoja"])
+        .size()
+        .reset_index(name="Filas leídas")
     )
+
+    # Deduplicar filas idénticas (sin contar _archivo ni _hoja)
+    cols_datos = [c for c in atenciones_df.columns if c not in ("_archivo", "_hoja")]
+    filas_antes = len(atenciones_df)
+    atenciones_df = (
+        atenciones_df
+        .drop_duplicates(subset=cols_datos, keep="first")
+        .reset_index(drop=True)
+    )
+    filas_despues = len(atenciones_df)
+    duplicados_eliminados = filas_antes - filas_despues
 else:
     atenciones_df = pd.DataFrame()
+    diag_filas = pd.DataFrame()
+    filas_antes = filas_despues = duplicados_eliminados = 0
 
 
 # ============================================================
@@ -248,9 +273,12 @@ else:
 #                                VILL-Electrofisiología,
 #                                VILL-Imagenología}
 #   - "Nombre de Usuario que Verifica" no esté vacío
+#
+# El conteo se hace por filas únicas después de deduplicar.
 # ============================================================
 conteo_adc = 0
 df_filtrado_adc = pd.DataFrame()
+diagnostico_adc = {}
 
 if not atenciones_df.empty:
     col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
@@ -264,16 +292,15 @@ if not atenciones_df.empty:
             f"'Nombre de Usuario que Verifica'={'OK' if col_verifica else 'FALTA'}."
         )
     else:
-        # --- Normalizar ubicaciones para comparación robusta ---
+        # Normalizar ubicaciones
         ubicaciones_norm = {normalizar(u) for u in UBICACIONES_ADC}
-
         ubicaciones_serie = (
             atenciones_df[col_ubicacion]
             .astype(str)
             .map(normalizar)
         )
 
-        # --- Verificadores: limpiar espacios y tratar "nan"/"None" como vacío ---
+        # Verificadores limpios
         verificadores_serie = (
             atenciones_df[col_verifica]
             .astype(str)
@@ -281,14 +308,35 @@ if not atenciones_df.empty:
             .replace({"nan": "", "None": "", "NaN": ""})
         )
 
-        # --- Máscaras ---
+        # Máscaras
         mask_ubicacion = ubicaciones_serie.isin(ubicaciones_norm)
         mask_verifica = verificadores_serie != ""
-
         mask_final = mask_ubicacion & mask_verifica
 
+        # Filtrado (solo filas únicas)
         df_filtrado_adc = atenciones_df.loc[mask_final].copy()
+
+        # Conteo final
         conteo_adc = int(mask_final.sum())
+
+        # Diagnóstico: desglose por archivo/hoja
+        if "_archivo" in df_filtrado_adc.columns:
+            diagnostico_adc["Por archivo/hoja"] = (
+                df_filtrado_adc
+                .groupby(["_archivo", "_hoja"])
+                .size()
+                .reset_index(name="Registros filtrados")
+            )
+
+        # Diagnóstico: desglose por ubicación
+        diagnostico_adc["Por ubicación"] = (
+            df_filtrado_adc
+            .assign(_ubicacion_norm=df_filtrado_adc[col_ubicacion].astype(str).map(normalizar))
+            .groupby("_ubicacion_norm")
+            .size()
+            .reset_index(name="Registros")
+            .rename(columns={"_ubicacion_norm": "Ubicación (normalizada)"})
+        )
 
 
 # ============================================================
@@ -323,6 +371,31 @@ st.download_button(
 
 
 # ============================================================
+# DIAGNÓSTICO DE DUPLICADOS
+# ============================================================
+with st.expander("🧪 Diagnóstico de conteo y duplicados", expanded=False):
+    st.markdown("**Resumen de la base Atenciones del especialista:**")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Filas leídas (antes de deduplicar)", f"{filas_antes:,}")
+    c2.metric("Duplicados exactos eliminados", f"{duplicados_eliminados:,}")
+    c3.metric("Filas únicas", f"{filas_despues:,}")
+
+    if not diag_filas.empty:
+        st.markdown("**Filas leídas por archivo/hoja (antes de deduplicar):**")
+        st.dataframe(diag_filas, use_container_width=True)
+
+    if diagnostico_adc.get("Por archivo/hoja") is not None:
+        st.markdown("**Registros que cumplen los filtros ADC, por archivo/hoja:**")
+        st.dataframe(diagnostico_adc["Por archivo/hoja"], use_container_width=True)
+
+    if diagnostico_adc.get("Por ubicación") is not None:
+        st.markdown("**Registros que cumplen los filtros ADC, por ubicación:**")
+        st.dataframe(diagnostico_adc["Por ubicación"], use_container_width=True)
+
+    st.markdown(f"**Conteo final ADC:** {conteo_adc:,}")
+
+
+# ============================================================
 # SECCIÓN DE NOVEDADES
 # ============================================================
 st.subheader("🔎 Novedades")
@@ -341,7 +414,7 @@ else:
         f"**Ubicaciones incluidas:** {', '.join(UBICACIONES_ADC)}"
     )
 
-    # --- Limpiar verificadores para agrupar sin duplicados por espacios/nan ---
+    # Limpiar verificadores
     verificadores_limpios = (
         df_filtrado_adc[col_verifica]
         .astype(str)
@@ -350,7 +423,7 @@ else:
     )
     df_filtrado_adc = df_filtrado_adc.assign(_verifica_limpio=verificadores_limpios)
 
-    # --- Agrupar por verificador ---
+    # Agrupar por verificador
     resumen_verifica = (
         df_filtrado_adc
         .groupby("_verifica_limpio", dropna=False)
@@ -359,7 +432,7 @@ else:
         .rename(columns={"_verifica_limpio": "Nombre de Usuario que Verifica"})
     )
 
-    # --- Comparación con Sub Médico (normalizada) ---
+    # Comparación con Sub Médico (normalizada)
     def comparar_con_submedico(nombre_verifica):
         if not col_submedico:
             return "Sin datos de Sub Médico"
@@ -394,7 +467,7 @@ else:
     st.markdown("#### 👥 Verificadores y comparación con Sub Médico")
     st.dataframe(resumen_verifica, use_container_width=True)
 
-    # --- Detalle de valores únicos de Sub Médico (auditoría) ---
+    # Detalle de valores únicos de Sub Médico
     if col_submedico:
         with st.expander("Ver valores únicos en 'Usuario / Sub Medico' (registros filtrados)"):
             valores_sub = (
