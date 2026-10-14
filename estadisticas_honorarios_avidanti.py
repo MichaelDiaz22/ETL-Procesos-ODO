@@ -270,16 +270,8 @@ if bases["Atenciones del especialista"]:
         partes.append(df_aux)
 
     atenciones_df = pd.concat(partes, ignore_index=True)
-
-    diag_filas = (
-        atenciones_df
-        .groupby(["_archivo", "_hoja"])
-        .size()
-        .reset_index(name="Filas")
-    )
 else:
     atenciones_df = pd.DataFrame()
-    diag_filas = pd.DataFrame()
 
 
 # ============================================================
@@ -299,7 +291,6 @@ conteo_adc_revisadas = 0
 conteo_adc_avaladas = 0
 df_filtrado_adc = pd.DataFrame()
 df_filtrado_avaladas = pd.DataFrame()
-diagnostico_adc = {}
 
 if not atenciones_df.empty:
     col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
@@ -358,40 +349,76 @@ if not atenciones_df.empty:
                 "'Avaladas subgerencia médica'."
             )
 
-        # --- Diagnóstico: por archivo/hoja ---
-        if "_archivo" in df_filtrado_adc.columns:
-            diagnostico_adc["Revisadas - por archivo/hoja"] = (
-                df_filtrado_adc
-                .groupby(["_archivo", "_hoja"])
-                .size()
-                .reset_index(name="Registros")
-            )
-        if not df_filtrado_avaladas.empty and "_archivo" in df_filtrado_avaladas.columns:
-            diagnostico_adc["Avaladas - por archivo/hoja"] = (
-                df_filtrado_avaladas
-                .groupby(["_archivo", "_hoja"])
-                .size()
-                .reset_index(name="Registros")
-            )
 
-        # --- Diagnóstico: por ubicación ---
-        diagnostico_adc["Revisadas - por ubicación"] = (
-            df_filtrado_adc
-            .assign(_ubicacion_norm=df_filtrado_adc[col_ubicacion].astype(str).map(normalizar))
-            .groupby("_ubicacion_norm")
-            .size()
-            .reset_index(name="Registros")
-            .rename(columns={"_ubicacion_norm": "Ubicación (normalizada)"})
+# ============================================================
+# CÁLCULO ADC: "Dinero enviado por interfaz"
+# ------------------------------------------------------------
+# Suma de "Valor Total Recalculado" en la base Ventas cuando
+# "Centro de costo" coincide (por similitud) con las ubicaciones
+# filtradas en Atenciones del especialista.
+#
+# En Ventas:    "Consulta Externa VILL", "Electrofisiología VILL", ...
+# En Atenciones: "VILL-Consulta Externa", "VILL-Electrofisiología", ...
+#
+# Estrategia: normalizar y comparar por conjunto de palabras
+# ignorando la palabra "vill" y el orden.
+# ============================================================
+conteo_dinero_interfaz = 0.0
+df_ventas_adc = pd.DataFrame()
+
+
+def palabras_clave_ubicacion(texto):
+    """Devuelve un frozenset de palabras normalizadas, sin 'vill'."""
+    palabras = normalizar(texto).split()
+    return frozenset(p for p in palabras if p != "vill")
+
+
+CLAVES_UBICACION_ADC = {
+    palabras_clave_ubicacion(u) for u in UBICACIONES_ADC
+}
+
+
+if bases["Ventas"]:
+    ventas_df = pd.concat(
+        [df for _, _, df in bases["Ventas"]],
+        ignore_index=True
+    )
+
+    col_centro = obtener_columna(ventas_df, "Centro de costo")
+    col_valor = obtener_columna(ventas_df, "Valor Total Recalculado")
+
+    if col_centro is None or col_valor is None:
+        st.warning(
+            "⚠️ No se encontraron las columnas 'Centro de costo' o "
+            "'Valor Total Recalculado' en la base Ventas."
         )
-        if not df_filtrado_avaladas.empty:
-            diagnostico_adc["Avaladas - por ubicación"] = (
-                df_filtrado_avaladas
-                .assign(_ubicacion_norm=df_filtrado_avaladas[col_ubicacion].astype(str).map(normalizar))
-                .groupby("_ubicacion_norm")
-                .size()
-                .reset_index(name="Registros")
-                .rename(columns={"_ubicacion_norm": "Ubicación (normalizada)"})
-            )
+    else:
+        # Palabras clave del Centro de costo en Ventas
+        centro_claves = ventas_df[col_centro].astype(str).map(palabras_clave_ubicacion)
+
+        # Máscara: contiene todas las palabras clave de alguna ubicación objetivo
+        def coincide(claves_venta):
+            for claves_ubi in CLAVES_UBICACION_ADC:
+                if claves_venta.issuperset(claves_ubi):
+                    return True
+            return False
+
+        mask_centro = centro_claves.map(coincide)
+        df_ventas_adc = ventas_df.loc[mask_centro].copy()
+
+        # Convertir "Valor Total Recalculado" a numérico
+        valores_num = pd.to_numeric(
+            df_ventas_adc[col_valor]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .str.replace("$", "", regex=False)
+            .str.strip(),
+            errors="coerce"
+        ).fillna(0)
+
+        conteo_dinero_interfaz = float(valores_num.sum())
+else:
+    ventas_df = pd.DataFrame()
 
 
 # ============================================================
@@ -418,6 +445,7 @@ st.subheader("📋 FASE 1 - AMBULATORIO")
 tabla_resumen = construir_tabla_resumen()
 tabla_resumen.loc["Revisadas por analistas", "ADC"] = f"{conteo_adc_revisadas:,}"
 tabla_resumen.loc["Avaladas subgerencia médica", "ADC"] = f"{conteo_adc_avaladas:,}"
+tabla_resumen.loc["Dinero enviado por interfaz", "ADC"] = f"{conteo_dinero_interfaz:,.0f}"
 
 st.dataframe(tabla_resumen, use_container_width=True, height=380)
 
@@ -428,57 +456,6 @@ st.download_button(
     file_name="FASE_1_AMBULATORIO.csv",
     mime="text/csv",
 )
-
-
-# ============================================================
-# DIAGNÓSTICO DE CONTEO
-# ============================================================
-with st.expander("🧪 Diagnóstico de conteo", expanded=False):
-    st.markdown("**Fuentes descartadas por estar repetidas:**")
-
-    if archivos_duplicados:
-        st.warning(
-            f"Se descartaron **{len(archivos_duplicados)}** archivo(s) por estar duplicados:"
-        )
-        st.dataframe(pd.DataFrame(archivos_duplicados), use_container_width=True)
-    else:
-        st.success("No se detectaron archivos duplicados.")
-
-    if hojas_duplicadas:
-        st.warning(
-            f"Se descartaron **{len(hojas_duplicadas)}** hoja(s) por tener contenido idéntico:"
-        )
-        st.dataframe(pd.DataFrame(hojas_duplicadas), use_container_width=True)
-    else:
-        st.success("No se detectaron hojas duplicadas.")
-
-    st.markdown("---")
-    st.markdown("**Filas que componen la base Atenciones del especialista:**")
-    if not diag_filas.empty:
-        st.dataframe(diag_filas, use_container_width=True)
-        st.markdown(f"**Total de filas:** {len(atenciones_df):,}")
-    else:
-        st.info("Sin datos de Atenciones del especialista.")
-
-    # Revisadas
-    st.markdown(f"### 🟦 Revisadas por analistas — **{conteo_adc_revisadas:,}**")
-    if "Revisadas - por archivo/hoja" in diagnostico_adc:
-        st.markdown("*Por archivo/hoja:*")
-        st.dataframe(diagnostico_adc["Revisadas - por archivo/hoja"], use_container_width=True)
-    if "Revisadas - por ubicación" in diagnostico_adc:
-        st.markdown("*Por ubicación:*")
-        st.dataframe(diagnostico_adc["Revisadas - por ubicación"], use_container_width=True)
-
-    # Avaladas
-    st.markdown(f"### 🟩 Avaladas subgerencia médica — **{conteo_adc_avaladas:,}**")
-    if "Avaladas - por archivo/hoja" in diagnostico_adc:
-        st.markdown("*Por archivo/hoja:*")
-        st.dataframe(diagnostico_adc["Avaladas - por archivo/hoja"], use_container_width=True)
-    else:
-        st.info("Sin registros avalados.")
-    if "Avaladas - por ubicación" in diagnostico_adc:
-        st.markdown("*Por ubicación:*")
-        st.dataframe(diagnostico_adc["Avaladas - por ubicación"], use_container_width=True)
 
 
 # ============================================================
