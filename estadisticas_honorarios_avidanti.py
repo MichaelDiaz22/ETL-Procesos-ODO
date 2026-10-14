@@ -260,7 +260,6 @@ if no_clasificados:
 
 # ============================================================
 # CONSTRUIR BASE "ATENCIONES DEL ESPECIALISTA"
-# (sin deduplicar después: los duplicados se evitan en la fuente)
 # ============================================================
 if bases["Atenciones del especialista"]:
     partes = []
@@ -272,7 +271,6 @@ if bases["Atenciones del especialista"]:
 
     atenciones_df = pd.concat(partes, ignore_index=True)
 
-    # Diagnóstico: filas por archivo/hoja (informativo)
     diag_filas = (
         atenciones_df
         .groupby(["_archivo", "_hoja"])
@@ -285,15 +283,28 @@ else:
 
 
 # ============================================================
-# CÁLCULO: "Revisadas por analistas" (columna ADC)
+# CÁLCULOS ADC
+# ------------------------------------------------------------
+# - Revisadas por analistas:
+#     "Ubicación de la venta" ∈ {VILL-Consulta Externa,
+#                                VILL-Electrofisiología,
+#                                VILL-Imagenología}
+#     Y "Nombre de Usuario que Verifica" no vacío
+#
+# - Avaladas subgerencia médica:
+#     MISMOS filtros anteriores
+#     Y ADEMÁS "Usuario / Sub Medico" no vacío
 # ============================================================
-conteo_adc = 0
+conteo_adc_revisadas = 0
+conteo_adc_avaladas = 0
 df_filtrado_adc = pd.DataFrame()
+df_filtrado_avaladas = pd.DataFrame()
 diagnostico_adc = {}
 
 if not atenciones_df.empty:
     col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
     col_verifica = obtener_columna(atenciones_df, "Nombre de Usuario que Verifica")
+    col_submedico = obtener_columna(atenciones_df, "Usuario / Sub Medico")
 
     if col_ubicacion is None or col_verifica is None:
         st.error(
@@ -303,7 +314,7 @@ if not atenciones_df.empty:
             f"'Nombre de Usuario que Verifica'={'OK' if col_verifica else 'FALTA'}."
         )
     else:
-        # Normalizar ubicaciones
+        # --- Normalizar ubicaciones ---
         ubicaciones_norm = {normalizar(u) for u in UBICACIONES_ADC}
         ubicaciones_serie = (
             atenciones_df[col_ubicacion]
@@ -311,7 +322,7 @@ if not atenciones_df.empty:
             .map(normalizar)
         )
 
-        # Verificadores limpios
+        # --- Verificadores limpios ---
         verificadores_serie = (
             atenciones_df[col_verifica]
             .astype(str)
@@ -319,26 +330,52 @@ if not atenciones_df.empty:
             .replace({"nan": "", "None": "", "NaN": ""})
         )
 
-        # Máscaras
+        # --- Máscara base: ubicación + verificador no vacío ---
         mask_ubicacion = ubicaciones_serie.isin(ubicaciones_norm)
         mask_verifica = verificadores_serie != ""
-        mask_final = mask_ubicacion & mask_verifica
+        mask_revisadas = mask_ubicacion & mask_verifica
 
-        # Filtrado y conteo
-        df_filtrado_adc = atenciones_df.loc[mask_final].copy()
-        conteo_adc = int(mask_final.sum())
+        df_filtrado_adc = atenciones_df.loc[mask_revisadas].copy()
+        conteo_adc_revisadas = int(mask_revisadas.sum())
 
-        # Diagnóstico: por archivo/hoja
+        # --- Avaladas: además, "Usuario / Sub Medico" no vacío ---
+        if col_submedico is not None:
+            submedico_serie = (
+                atenciones_df[col_submedico]
+                .astype(str)
+                .str.strip()
+                .replace({"nan": "", "None": "", "NaN": ""})
+            )
+            mask_submedico = submedico_serie != ""
+            mask_avaladas = mask_revisadas & mask_submedico
+
+            df_filtrado_avaladas = atenciones_df.loc[mask_avaladas].copy()
+            conteo_adc_avaladas = int(mask_avaladas.sum())
+        else:
+            st.warning(
+                "⚠️ No se encontró la columna 'Usuario / Sub Medico' en la base "
+                "'Atenciones del especialista'. No se puede calcular "
+                "'Avaladas subgerencia médica'."
+            )
+
+        # --- Diagnóstico: por archivo/hoja ---
         if "_archivo" in df_filtrado_adc.columns:
-            diagnostico_adc["Por archivo/hoja"] = (
+            diagnostico_adc["Revisadas - por archivo/hoja"] = (
                 df_filtrado_adc
                 .groupby(["_archivo", "_hoja"])
                 .size()
-                .reset_index(name="Registros filtrados")
+                .reset_index(name="Registros")
+            )
+        if not df_filtrado_avaladas.empty and "_archivo" in df_filtrado_avaladas.columns:
+            diagnostico_adc["Avaladas - por archivo/hoja"] = (
+                df_filtrado_avaladas
+                .groupby(["_archivo", "_hoja"])
+                .size()
+                .reset_index(name="Registros")
             )
 
-        # Diagnóstico: por ubicación
-        diagnostico_adc["Por ubicación"] = (
+        # --- Diagnóstico: por ubicación ---
+        diagnostico_adc["Revisadas - por ubicación"] = (
             df_filtrado_adc
             .assign(_ubicacion_norm=df_filtrado_adc[col_ubicacion].astype(str).map(normalizar))
             .groupby("_ubicacion_norm")
@@ -346,6 +383,15 @@ if not atenciones_df.empty:
             .reset_index(name="Registros")
             .rename(columns={"_ubicacion_norm": "Ubicación (normalizada)"})
         )
+        if not df_filtrado_avaladas.empty:
+            diagnostico_adc["Avaladas - por ubicación"] = (
+                df_filtrado_avaladas
+                .assign(_ubicacion_norm=df_filtrado_avaladas[col_ubicacion].astype(str).map(normalizar))
+                .groupby("_ubicacion_norm")
+                .size()
+                .reset_index(name="Registros")
+                .rename(columns={"_ubicacion_norm": "Ubicación (normalizada)"})
+            )
 
 
 # ============================================================
@@ -370,7 +416,8 @@ with st.sidebar:
 st.subheader("📋 FASE 1 - AMBULATORIO")
 
 tabla_resumen = construir_tabla_resumen()
-tabla_resumen.loc["Revisadas por analistas", "ADC"] = f"{conteo_adc:,}"
+tabla_resumen.loc["Revisadas por analistas", "ADC"] = f"{conteo_adc_revisadas:,}"
+tabla_resumen.loc["Avaladas subgerencia médica", "ADC"] = f"{conteo_adc_avaladas:,}"
 
 st.dataframe(tabla_resumen, use_container_width=True, height=380)
 
@@ -413,15 +460,25 @@ with st.expander("🧪 Diagnóstico de conteo", expanded=False):
     else:
         st.info("Sin datos de Atenciones del especialista.")
 
-    if diagnostico_adc.get("Por archivo/hoja") is not None:
-        st.markdown("**Registros que cumplen los filtros ADC, por archivo/hoja:**")
-        st.dataframe(diagnostico_adc["Por archivo/hoja"], use_container_width=True)
+    # Revisadas
+    st.markdown(f"### 🟦 Revisadas por analistas — **{conteo_adc_revisadas:,}**")
+    if "Revisadas - por archivo/hoja" in diagnostico_adc:
+        st.markdown("*Por archivo/hoja:*")
+        st.dataframe(diagnostico_adc["Revisadas - por archivo/hoja"], use_container_width=True)
+    if "Revisadas - por ubicación" in diagnostico_adc:
+        st.markdown("*Por ubicación:*")
+        st.dataframe(diagnostico_adc["Revisadas - por ubicación"], use_container_width=True)
 
-    if diagnostico_adc.get("Por ubicación") is not None:
-        st.markdown("**Registros que cumplen los filtros ADC, por ubicación:**")
-        st.dataframe(diagnostico_adc["Por ubicación"], use_container_width=True)
-
-    st.markdown(f"**Conteo final ADC:** {conteo_adc:,}")
+    # Avaladas
+    st.markdown(f"### 🟩 Avaladas subgerencia médica — **{conteo_adc_avaladas:,}**")
+    if "Avaladas - por archivo/hoja" in diagnostico_adc:
+        st.markdown("*Por archivo/hoja:*")
+        st.dataframe(diagnostico_adc["Avaladas - por archivo/hoja"], use_container_width=True)
+    else:
+        st.info("Sin registros avalados.")
+    if "Avaladas - por ubicación" in diagnostico_adc:
+        st.markdown("*Por ubicación:*")
+        st.dataframe(diagnostico_adc["Avaladas - por ubicación"], use_container_width=True)
 
 
 # ============================================================
@@ -439,7 +496,7 @@ else:
     col_submedico = obtener_columna(df_filtrado_adc, "Usuario / Sub Medico")
 
     st.markdown(
-        f"**Total de registros que cumplen los filtros:** {conteo_adc:,}  \n"
+        f"**Total de registros que cumplen los filtros:** {conteo_adc_revisadas:,}  \n"
         f"**Ubicaciones incluidas:** {', '.join(UBICACIONES_ADC)}"
     )
 
