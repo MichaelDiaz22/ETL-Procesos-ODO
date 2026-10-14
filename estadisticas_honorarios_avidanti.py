@@ -557,10 +557,6 @@ else:
 #   2. Buscar en Ventas las filas con ese "Venta No."
 #   3. Sumar "Valor facturado" SOLO de las filas cuya
 #      "Ubicación despacho" pertenezca a la MISMA (sede, fase)
-#      que el registro original de Atenciones.
-# ------------------------------------------------------------
-# Así se evita inflar el valor cuando un mismo folio tiene
-# productos en varias fases/ubicaciones.
 # ============================================================
 dinero_interfaz = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
@@ -617,10 +613,8 @@ if bases["Ventas"]:
             .to_dict()
         )
 
-        # Conjunto de ventas conocidas en Ventas (para detectar sin-match)
         ventas_conocidas = set(ventas_df["_venta_no_norm"].unique())
 
-        # --- Recorrer Atenciones (solo revisadas + con sede/fase) ---
         if not atenciones_df.empty and venta_norm_atenciones_serie is not None:
             for i in range(len(atenciones_df)):
                 sede_cod = sede_serie.iloc[i]
@@ -644,7 +638,6 @@ if bases["Ventas"]:
                     ventas_sin_match.add(venta_no)
                     continue
 
-                # Sumar SOLO las filas de Ventas con la misma (sede, fase)
                 llave = (venta_no, sede_cod, fase_val)
                 valor = ventas_agg.get(llave)
 
@@ -661,11 +654,6 @@ else:
 # ============================================================
 # CÁLCULO: "Total ventas consulta externa (ACTIVO Y FACTURADO)"
 # y        "Dinero ventas ambulatorio"
-# ------------------------------------------------------------
-# Ambos se calculan con la base Ventas filtrando por
-# "Ubicación despacho" ∈ tabla base:
-#   - Total ventas: CONTEO de registros por (sede, fase)
-#   - Dinero ventas ambulatorio: SUMA de "Valor Total Recalculado"
 # ============================================================
 total_ventas_ce = {
     fase: {cod: 0 for cod in CODIGOS_SEDE}
@@ -729,6 +717,34 @@ if bases["Ventas"]:
 
 
 # ============================================================
+# CÁLCULO: "Porcentual faltante (META 30%)"
+# ------------------------------------------------------------
+# Fórmula:
+#   (Total ventas consulta externa - Avaladas subgerencia médica)
+#   ------------------------------------------------------------
+#                  Avaladas subgerencia médica
+#
+# Se calcula por (sede, fase). Si el denominador es 0 → 0%.
+# ============================================================
+porcentual_faltante = {
+    fase: {cod: 0.0 for cod in CODIGOS_SEDE}
+    for fase in FASES
+}
+
+for fase in FASES:
+    for cod in CODIGOS_SEDE:
+        avaladas = conteos[fase][cod]["avaladas"]
+        total_ventas = total_ventas_ce[fase][cod]
+
+        if avaladas > 0:
+            porcentual_faltante[fase][cod] = (
+                (total_ventas - avaladas) / avaladas
+            ) * 100.0
+        else:
+            porcentual_faltante[fase][cod] = 0.0
+
+
+# ============================================================
 # RESUMEN GLOBAL (SIDEBAR)
 # ============================================================
 with st.sidebar:
@@ -774,8 +790,7 @@ if ventas_sin_ubicacion_fase:
         st.markdown(
             f"**{len(ventas_sin_ubicacion_fase):,}** ventas existen en Ventas, "
             "pero ninguna de sus filas tiene `Ubicación despacho` correspondiente "
-            "a la (sede, fase) del registro en Atenciones. No se suman a "
-            "'Dinero enviado por interfaz'."
+            "a la (sede, fase) del registro en Atenciones."
         )
         st.dataframe(
             pd.DataFrame(
@@ -800,6 +815,7 @@ for fase in FASES:
         tabla.loc["Dinero enviado por interfaz", columna] = f"${dinero_interfaz[fase][cod]:,.0f}"
         tabla.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce[fase][cod]:,}"
         tabla.loc["Dinero ventas ambulatorio", columna] = f"${dinero_ambulatorio[fase][cod]:,.0f}"
+        tabla.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante[fase][cod]:,.2f}%"
 
     st.dataframe(tabla, use_container_width=True, height=380)
 
