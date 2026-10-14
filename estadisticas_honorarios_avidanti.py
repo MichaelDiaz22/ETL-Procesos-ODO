@@ -245,7 +245,7 @@ TITULOS_FASES = {
 }
 
 # Estados permitidos para "Total ventas consulta externa" y "Dinero ventas ambulatorio"
-ESTADOS_PERMITIDOS = {"activo", "facturado"}
+ESTADOS_PERMITIDOS = {"Activa", "Facturada"}
 
 
 def construir_tabla_resumen():
