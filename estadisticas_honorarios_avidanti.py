@@ -244,8 +244,11 @@ TITULOS_FASES = {
     "Fase 3": "FASE 3 - QUIRÚRGICO",
 }
 
-# Estados permitidos para "Total ventas consulta externa" y "Dinero ventas ambulatorio"
-ESTADOS_PERMITIDOS = {"Activa", "Facturada"}
+# Estados permitidos (normalizados, sin tilde/mayúscula)
+# en la base Ventas:
+#   - "Activa"
+#   - "Facturada"
+ESTADOS_PERMITIDOS = {"activa", "facturada"}
 
 
 def construir_tabla_resumen():
@@ -660,10 +663,7 @@ else:
 # ------------------------------------------------------------
 # Filtros:
 #   - "Ubicación despacho" ∈ tabla base (define sede y fase)
-#   - "Estado" ∈ {"Activo", "Facturado"} (normalizado)
-#
-#   - Total ventas: CONTEO de registros por (sede, fase)
-#   - Dinero ventas ambulatorio: SUMA de "Valor Total Recalculado"
+#   - "Estado" ∈ {"Activa", "Facturada"} (normalizado)
 # ============================================================
 total_ventas_ce = {
     fase: {cod: 0 for cod in CODIGOS_SEDE}
@@ -704,7 +704,7 @@ if bases["Ventas"]:
             lambda u: MAPA_UBICACION.get(u, (None, None))[1]
         )
 
-        # --- Normalizar Estado y filtrar solo "Activo" y "Facturado" ---
+        # --- Normalizar Estado y filtrar solo "Activa" y "Facturada" ---
         estado_norm = (
             ventas_df[col_estado]
             .astype(str)
@@ -803,9 +803,9 @@ if not ubicaciones_ventas_no_mapeadas.empty:
         st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
 
 if not estados_no_incluidos.empty:
-    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo se cuentan 'Activo' y 'Facturado')", expanded=False):
+    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo se cuentan 'Activa' y 'Facturada')", expanded=False):
         st.markdown(
-            "Estos valores de `Estado` no coinciden con **Activo** o **Facturado**, "
+            "Estos valores de `Estado` no coinciden con **Activa** o **Facturada**, "
             "por lo que quedan fuera de **Total ventas consulta externa** y "
             "**Dinero ventas ambulatorio**."
         )
