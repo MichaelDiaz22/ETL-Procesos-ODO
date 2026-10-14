@@ -244,11 +244,9 @@ TITULOS_FASES = {
     "Fase 3": "FASE 3 - QUIRÚRGICO",
 }
 
-# Estados permitidos (normalizados, sin tilde/mayúscula)
-# en la base Ventas:
-#   - "Activa"
-#   - "Facturada"
-ESTADOS_PERMITIDOS = {"activa", "facturada"}
+# Estados permitidos (normalizados)
+ESTADOS_ACTIVA_FACTURADA = {"activa", "facturada"}
+ESTADO_FACTURADA = {"facturada"}
 
 
 def construir_tabla_resumen():
@@ -659,11 +657,12 @@ else:
 
 # ============================================================
 # CÁLCULO: "Total ventas consulta externa (ACTIVO Y FACTURADO)"
-# y        "Dinero ventas ambulatorio"
+#          "Dinero ventas ambulatorio"
+#          "Ventas relacionadas en factura (FACTURADO)"
 # ------------------------------------------------------------
-# Filtros:
-#   - "Ubicación despacho" ∈ tabla base (define sede y fase)
-#   - "Estado" ∈ {"Activa", "Facturada"} (normalizado)
+# - Total ventas:  Estado ∈ {Activa, Facturada}
+# - Dinero ambulatorio: suma de "Valor Total Recalculado" con el mismo filtro
+# - Ventas relacionadas en factura: Estado = {Facturada}
 # ============================================================
 total_ventas_ce = {
     fase: {cod: 0 for cod in CODIGOS_SEDE}
@@ -671,6 +670,10 @@ total_ventas_ce = {
 }
 dinero_ambulatorio = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
+    for fase in FASES
+}
+ventas_relacionadas_factura = {
+    fase: {cod: 0 for cod in CODIGOS_SEDE}
     for fase in FASES
 }
 ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
@@ -704,17 +707,18 @@ if bases["Ventas"]:
             lambda u: MAPA_UBICACION.get(u, (None, None))[1]
         )
 
-        # --- Normalizar Estado y filtrar solo "Activa" y "Facturada" ---
+        # --- Normalizar Estado ---
         estado_norm = (
             ventas_df[col_estado]
             .astype(str)
             .str.strip()
             .str.lower()
         )
-        mask_estado_valido = estado_norm.isin(ESTADOS_PERMITIDOS)
+        mask_estado_activa_facturada = estado_norm.isin(ESTADOS_ACTIVA_FACTURADA)
+        mask_estado_facturada = estado_norm.isin(ESTADO_FACTURADA)
 
-        # Diagnóstico: estados distintos que NO se incluyen
-        estados_excluidos = estado_norm[~mask_estado_valido]
+        # Diagnóstico: estados distintos que NO se incluyen en "Total ventas..."
+        estados_excluidos = estado_norm[~mask_estado_activa_facturada]
         if not estados_excluidos.empty:
             estados_no_incluidos = (
                 estados_excluidos
@@ -746,16 +750,26 @@ if bases["Ventas"]:
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (sede_ventas == cod) & (fase_ventas == fase)
-                mask_final = mask_sede_fase & mask_estado_valido
 
-                total_ventas_ce[fase][cod] = int(mask_final.sum())
+                # Total ventas (Activa + Facturada)
+                mask_total = mask_sede_fase & mask_estado_activa_facturada
+                total_ventas_ce[fase][cod] = int(mask_total.sum())
                 dinero_ambulatorio[fase][cod] = float(
-                    valor_total_recalc_num[mask_final].sum()
+                    valor_total_recalc_num[mask_total].sum()
                 )
+
+                # Ventas relacionadas en factura (solo Facturada)
+                mask_fact = mask_sede_fase & mask_estado_facturada
+                ventas_relacionadas_factura[fase][cod] = int(mask_fact.sum())
 
 
 # ============================================================
 # CÁLCULO: "Porcentual faltante (META 30%)"
+# ------------------------------------------------------------
+# Fórmula:
+#   Avaladas subgerencia médica
+#   ---------------------------   × 100
+#   Total ventas consulta externa
 # ============================================================
 porcentual_faltante = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
@@ -767,12 +781,38 @@ for fase in FASES:
         avaladas = conteos[fase][cod]["avaladas"]
         total_ventas = total_ventas_ce[fase][cod]
 
-        if avaladas > 0:
+        if total_ventas > 0:
             porcentual_faltante[fase][cod] = (
-                (total_ventas - avaladas) / avaladas
+                avaladas / total_ventas
             ) * 100.0
         else:
             porcentual_faltante[fase][cod] = 0.0
+
+
+# ============================================================
+# CÁLCULO: "Porcentual impactado (META 0%)"
+# ------------------------------------------------------------
+# Fórmula:
+#   Ventas relacionadas en factura (FACTURADO)
+#   -------------------------------------------   × 100
+#      Total ventas consulta externa
+# ============================================================
+porcentual_impactado = {
+    fase: {cod: 0.0 for cod in CODIGOS_SEDE}
+    for fase in FASES
+}
+
+for fase in FASES:
+    for cod in CODIGOS_SEDE:
+        relacionadas = ventas_relacionadas_factura[fase][cod]
+        total_ventas = total_ventas_ce[fase][cod]
+
+        if total_ventas > 0:
+            porcentual_impactado[fase][cod] = (
+                relacionadas / total_ventas
+            ) * 100.0
+        else:
+            porcentual_impactado[fase][cod] = 0.0
 
 
 # ============================================================
@@ -856,6 +896,8 @@ for fase in FASES:
         tabla.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce[fase][cod]:,}"
         tabla.loc["Dinero ventas ambulatorio", columna] = f"${dinero_ambulatorio[fase][cod]:,.0f}"
         tabla.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante[fase][cod]:,.2f}%"
+        tabla.loc["Ventas relacionadas en factura (FACTURADO)", columna] = f"{ventas_relacionadas_factura[fase][cod]:,}"
+        tabla.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado[fase][cod]:,.2f}%"
 
     st.dataframe(tabla, use_container_width=True, height=380)
 
