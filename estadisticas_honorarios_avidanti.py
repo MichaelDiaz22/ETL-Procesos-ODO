@@ -72,7 +72,6 @@ UMBRAL_COINCIDENCIA = 0.60
 # TABLA BASE: SEDE + UBICACIÓN + FASE
 # ============================================================
 MAPA_FASES = [
-    # Angiografía Villavicencio
     ("ADC", "VILL-Oncología", "Fase 1"),
     ("ADC", "VILL-Rehabilitación Cardiaca", "Fase 1"),
     ("ADC", "VILL-Consulta Externa", "Fase 1"),
@@ -88,8 +87,6 @@ MAPA_FASES = [
     ("ADC", "VILL-Electrofisiologia", "Fase 1"),
     ("ADC", "VILL-Gestión Pre-transfusional", "Fase 3"),
     ("ADC", "SAN-Consulta Externa", "Fase 1"),
-
-    # Clínica Avidanti Armenia
     ("CAA", "CAA-Hospitalización 5 Piso", "Fase 2"),
     ("CAA", "CAA-Urgencias", "Fase 2"),
     ("CAA", "CAA-Consulta Externa", "Fase 1"),
@@ -101,8 +98,6 @@ MAPA_FASES = [
     ("CAA", "CAA-Imagenología", "Fase 1"),
     ("CAA", "CAA-Cardiología No Invasiva", "Fase 1"),
     ("CAA", "CAA-Laboratorio Clínico", "Fase 1"),
-
-    # Clínica Avidanti Ibagué
     ("CAI", "CAI-Consulta Externa Nueva", "Fase 1"),
     ("CAI", "CAI-Sala de Cirugía 2", "Fase 3"),
     ("CAI", "CAI-Urgencias Nueva", "Fase 2"),
@@ -123,8 +118,6 @@ MAPA_FASES = [
     ("CAI", "CAI-Hemodinamia", "Fase 3"),
     ("CAI", "CAI-Laboratorio Clínico", "Fase 1"),
     ("CAI", "CAI-TeleConsulta", "Fase 1"),
-
-    # Clínica Avidanti Manizales
     ("CAM", "CAM-Consulta Externa", "Fase 1"),
     ("CAM", "CAM-Urgencias", "Fase 2"),
     ("CAM", "CAM-Hospitalización 7 Piso Sur", "Fase 2"),
@@ -153,8 +146,6 @@ MAPA_FASES = [
     ("CAM", "CAM-Sala de Cirugía 6 Cardiovascular", "Fase 3"),
     ("CAM", "CAM-Laboratorio Clínico", "Fase 1"),
     ("CAM", "CAM - Sala de Cirugía 8", "Fase 3"),
-
-    # Clínica Avidanti Santa Marta
     ("CASM", "CASM- Consulta Externa", "Fase 1"),
     ("CASM", "CASM-Hospitalización VIP 2", "Fase 2"),
     ("CASM", "CASM-Hospitalización 2 Piso Norte", "Fase 2"),
@@ -178,8 +169,6 @@ MAPA_FASES = [
     ("CASM", "CASM-Recuperación Cirugía", "Fase 3"),
     ("CASM", "CASM-Laboratorio Clínico", "Fase 1"),
     ("CASM", "CASM-Electrofisiología", "Fase 1"),
-
-    # Clínica Avidanti Ciudad Verde
     ("CACV", "CACV-Hospitalización 5 Piso Norte", "Fase 2"),
     ("CACV", "CACV-Hospitalización 5 Piso Sur", "Fase 2"),
     ("CACV", "CACV-Laboratorio Clínico", "Fase 1"),
@@ -213,7 +202,6 @@ MAPA_FASES = [
     ("CACV", "CACV-Cardiología No Invasiva", "Fase 1"),
 ]
 
-# Nombres completos para los encabezados
 COLUMNAS_RESUMEN = [
     "Angiografía Villavicencio",
     "Clínica Avidanti Ibagué",
@@ -244,7 +232,6 @@ TITULOS_FASES = {
     "Fase 3": "FASE 3 - QUIRÚRGICO",
 }
 
-# Estados permitidos (normalizados)
 ESTADOS_ACTIVA_FACTURADA = {"activa", "facturada"}
 ESTADO_FACTURADA = {"facturada"}
 
@@ -259,7 +246,6 @@ def construir_tabla_resumen():
 # FUNCIONES AUXILIARES
 # ============================================================
 def normalizar(s):
-    """Normaliza strings para comparaciones robustas."""
     return (
         str(s).strip().lower()
         .replace("á", "a").replace("é", "e").replace("í", "i")
@@ -306,7 +292,6 @@ def hash_df(df):
 
 
 def es_vacio(serie):
-    """Devuelve una máscara booleana: True donde el valor NO es vacío."""
     s = serie.astype(str).str.strip()
     return ~s.isin(["", "nan", "None", "NaN", "null", "NULL"])
 
@@ -328,7 +313,6 @@ def normalizar_llave_venta(v):
 
 
 def convertir_a_numero(serie):
-    """Convierte una serie de valores monetarios a float."""
     return pd.to_numeric(
         serie.astype(str)
         .str.replace(",", "", regex=False)
@@ -339,9 +323,6 @@ def convertir_a_numero(serie):
     ).fillna(0)
 
 
-# ============================================================
-# MAPA INVERTIDO: {ubicacion_normalizada: (codigo_sede, fase)}
-# ============================================================
 MAPA_UBICACION = {}
 for sede_cod, ubicacion, fase in MAPA_FASES:
     fase_canonica = str(fase).strip()
@@ -494,17 +475,12 @@ if not atenciones_df.empty:
 
     if col_ubicacion is None or col_verifica is None:
         st.error(
-            "⚠️ Faltan columnas clave en 'Atenciones del especialista': "
-            f"'Ubicación de la venta'={'OK' if col_ubicacion else 'FALTA'}, "
-            f"'Nombre de Usuario que Verifica'={'OK' if col_verifica else 'FALTA'}."
+            "⚠️ Faltan columnas clave en 'Atenciones del especialista'."
         )
     else:
         ubicacion_norm_serie = (
-            atenciones_df[col_ubicacion]
-            .astype(str)
-            .map(normalizar)
+            atenciones_df[col_ubicacion].astype(str).map(normalizar)
         )
-
         sede_serie = ubicacion_norm_serie.map(
             lambda u: MAPA_UBICACION.get(u, (None, None))[0]
         )
@@ -520,8 +496,7 @@ if not atenciones_df.empty:
 
         if col_num_venta is not None:
             venta_norm_atenciones_serie = (
-                atenciones_df[col_num_venta]
-                .map(normalizar_llave_venta)
+                atenciones_df[col_num_venta].map(normalizar_llave_venta)
             )
         else:
             venta_norm_atenciones_serie = pd.Series("", index=atenciones_df.index)
@@ -548,13 +523,12 @@ if not atenciones_df.empty:
         df_filtrado_avaladas = atenciones_df.loc[mask_verifica & mask_submedico].copy()
 else:
     st.warning(
-        "⚠️ No hay datos de 'Atenciones del especialista' cargados. "
-        "Los conteos quedarán en cero."
+        "⚠️ No hay datos de 'Atenciones del especialista' cargados."
     )
 
 
 # ============================================================
-# CÁLCULO: "Dinero enviado por interfaz" por fase y sede
+# CÁLCULO: "Dinero enviado por interfaz"
 # ============================================================
 dinero_interfaz = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
@@ -573,16 +547,7 @@ if bases["Ventas"]:
     col_valor_facturado = obtener_columna(ventas_df, "Valor facturado")
     col_ubicacion_despacho = obtener_columna(ventas_df, "Ubicación despacho")
 
-    if (
-        col_venta_no is None
-        or col_valor_facturado is None
-        or col_ubicacion_despacho is None
-    ):
-        st.warning(
-            "⚠️ Faltan columnas en Ventas para calcular 'Dinero enviado por "
-            "interfaz': 'Venta No.', 'Valor facturado' o 'Ubicación despacho'."
-        )
-    else:
+    if not (col_venta_no is None or col_valor_facturado is None or col_ubicacion_despacho is None):
         ventas_df["_venta_no_norm"] = (
             ventas_df[col_venta_no].map(normalizar_llave_venta)
         )
@@ -599,7 +564,6 @@ if bases["Ventas"]:
             lambda u: MAPA_UBICACION.get(u, (None, None))[1]
         )
 
-        # Deduplicar: UNA fila por (Venta No., sede, fase)
         ventas_dedupe = (
             ventas_df
             .dropna(subset=["_sede_venta", "_fase_venta"])
@@ -656,25 +620,17 @@ else:
 
 
 # ============================================================
-# CÁLCULO: "Total ventas consulta externa (ACTIVO Y FACTURADO)"
-#          "Dinero ventas ambulatorio"
-#          "Ventas relacionadas en factura (FACTURADO)"
-# ------------------------------------------------------------
-# - Total ventas:  Estado ∈ {Activa, Facturada}
-# - Dinero ambulatorio: suma de "Valor Total Recalculado" con el mismo filtro
-# - Ventas relacionadas en factura: Estado = {Facturada}
+# CÁLCULO: "Total ventas consulta externa", "Dinero ventas ambulatorio"
+#          y "Ventas relacionadas en factura (FACTURADO)"
 # ============================================================
 total_ventas_ce = {
-    fase: {cod: 0 for cod in CODIGOS_SEDE}
-    for fase in FASES
+    fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES
 }
 dinero_ambulatorio = {
-    fase: {cod: 0.0 for cod in CODIGOS_SEDE}
-    for fase in FASES
+    fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES
 }
 ventas_relacionadas_factura = {
-    fase: {cod: 0 for cod in CODIGOS_SEDE}
-    for fase in FASES
+    fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES
 }
 ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
 estados_no_incluidos = pd.Series(dtype=int)
@@ -684,22 +640,10 @@ if bases["Ventas"]:
     col_estado = obtener_columna(ventas_df, "Estado")
     col_valor_total_recalc = obtener_columna(ventas_df, "Valor Total Recalculado")
 
-    if col_ubicacion_despacho is None:
-        st.warning(
-            "⚠️ No se encontró la columna 'Ubicación despacho' en la base Ventas."
-        )
-    elif col_estado is None:
-        st.warning(
-            "⚠️ No se encontró la columna 'Estado' en la base Ventas. "
-            "No se puede aplicar el filtro ACTIVO Y FACTURADO."
-        )
-    else:
+    if col_ubicacion_despacho is not None and col_estado is not None:
         ubicacion_despacho_norm = (
-            ventas_df[col_ubicacion_despacho]
-            .astype(str)
-            .map(normalizar)
+            ventas_df[col_ubicacion_despacho].astype(str).map(normalizar)
         )
-
         sede_ventas = ubicacion_despacho_norm.map(
             lambda u: MAPA_UBICACION.get(u, (None, None))[0]
         )
@@ -707,17 +651,12 @@ if bases["Ventas"]:
             lambda u: MAPA_UBICACION.get(u, (None, None))[1]
         )
 
-        # --- Normalizar Estado ---
         estado_norm = (
-            ventas_df[col_estado]
-            .astype(str)
-            .str.strip()
-            .str.lower()
+            ventas_df[col_estado].astype(str).str.strip().str.lower()
         )
         mask_estado_activa_facturada = estado_norm.isin(ESTADOS_ACTIVA_FACTURADA)
         mask_estado_facturada = estado_norm.isin(ESTADO_FACTURADA)
 
-        # Diagnóstico: estados distintos que NO se incluyen en "Total ventas..."
         estados_excluidos = estado_norm[~mask_estado_activa_facturada]
         if not estados_excluidos.empty:
             estados_no_incluidos = (
@@ -727,7 +666,6 @@ if bases["Ventas"]:
                 .reset_index(name="Registros")
             )
 
-        # Diagnóstico: ubicaciones de despacho sin match
         sin_match_ventas = ubicacion_despacho_norm[sede_ventas.isna()]
         if not sin_match_ventas.empty:
             ubicaciones_ventas_no_mapeadas = (
@@ -743,76 +681,89 @@ if bases["Ventas"]:
             )
         else:
             valor_total_recalc_num = pd.Series(0.0, index=ventas_df.index)
-            st.warning(
-                "⚠️ No se encontró la columna 'Valor Total Recalculado' en Ventas."
-            )
 
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (sede_ventas == cod) & (fase_ventas == fase)
 
-                # Total ventas (Activa + Facturada)
                 mask_total = mask_sede_fase & mask_estado_activa_facturada
                 total_ventas_ce[fase][cod] = int(mask_total.sum())
                 dinero_ambulatorio[fase][cod] = float(
                     valor_total_recalc_num[mask_total].sum()
                 )
 
-                # Ventas relacionadas en factura (solo Facturada)
                 mask_fact = mask_sede_fase & mask_estado_facturada
                 ventas_relacionadas_factura[fase][cod] = int(mask_fact.sum())
 
 
 # ============================================================
-# CÁLCULO: "Porcentual faltante (META 30%)"
-# ------------------------------------------------------------
-# Fórmula:
-#   Avaladas subgerencia médica
-#   ---------------------------   × 100
-#   Total ventas consulta externa
+# "Porcentual faltante (META 30%)"  y  "Porcentual impactado (META 0%)"
 # ============================================================
 porcentual_faltante = {
-    fase: {cod: 0.0 for cod in CODIGOS_SEDE}
-    for fase in FASES
+    fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES
+}
+porcentual_impactado = {
+    fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES
 }
 
 for fase in FASES:
     for cod in CODIGOS_SEDE:
         avaladas = conteos[fase][cod]["avaladas"]
         total_ventas = total_ventas_ce[fase][cod]
+        relacionadas = ventas_relacionadas_factura[fase][cod]
 
         if total_ventas > 0:
-            porcentual_faltante[fase][cod] = (
-                avaladas / total_ventas
-            ) * 100.0
+            porcentual_faltante[fase][cod] = (avaladas / total_ventas) * 100.0
+            porcentual_impactado[fase][cod] = (relacionadas / total_ventas) * 100.0
         else:
             porcentual_faltante[fase][cod] = 0.0
-
-
-# ============================================================
-# CÁLCULO: "Porcentual impactado (META 0%)"
-# ------------------------------------------------------------
-# Fórmula:
-#   Ventas relacionadas en factura (FACTURADO)
-#   -------------------------------------------   × 100
-#      Total ventas consulta externa
-# ============================================================
-porcentual_impactado = {
-    fase: {cod: 0.0 for cod in CODIGOS_SEDE}
-    for fase in FASES
-}
-
-for fase in FASES:
-    for cod in CODIGOS_SEDE:
-        relacionadas = ventas_relacionadas_factura[fase][cod]
-        total_ventas = total_ventas_ce[fase][cod]
-
-        if total_ventas > 0:
-            porcentual_impactado[fase][cod] = (
-                relacionadas / total_ventas
-            ) * 100.0
-        else:
             porcentual_impactado[fase][cod] = 0.0
+
+
+# ============================================================
+# TABLA CONSOLIDADA (suma de las 3 fases por sede)
+# ============================================================
+conteos_consolidado = {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
+dinero_interfaz_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+total_ventas_ce_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
+dinero_ambulatorio_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+ventas_relacionadas_factura_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
+
+for cod in CODIGOS_SEDE:
+    for fase in FASES:
+        conteos_consolidado[cod]["revisadas"] += conteos[fase][cod]["revisadas"]
+        conteos_consolidado[cod]["avaladas"] += conteos[fase][cod]["avaladas"]
+        dinero_interfaz_consolidado[cod] += dinero_interfaz[fase][cod]
+        total_ventas_ce_consolidado[cod] += total_ventas_ce[fase][cod]
+        dinero_ambulatorio_consolidado[cod] += dinero_ambulatorio[fase][cod]
+        ventas_relacionadas_factura_consolidado[cod] += ventas_relacionadas_factura[fase][cod]
+
+porcentual_faltante_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+porcentual_impactado_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+
+for cod in CODIGOS_SEDE:
+    avaladas = conteos_consolidado[cod]["avaladas"]
+    total_ventas = total_ventas_ce_consolidado[cod]
+    relacionadas = ventas_relacionadas_factura_consolidado[cod]
+
+    if total_ventas > 0:
+        porcentual_faltante_consolidado[cod] = (avaladas / total_ventas) * 100.0
+        porcentual_impactado_consolidado[cod] = (relacionadas / total_ventas) * 100.0
+    else:
+        porcentual_faltante_consolidado[cod] = 0.0
+        porcentual_impactado_consolidado[cod] = 0.0
+
+tabla_consolidada = construir_tabla_resumen()
+for cod in CODIGOS_SEDE:
+    columna = MAPA_CODIGO_A_COLUMNA[cod]
+    tabla_consolidada.loc["Revisadas por analistas", columna] = f"{conteos_consolidado[cod]['revisadas']:,}"
+    tabla_consolidada.loc["Avaladas subgerencia médica", columna] = f"{conteos_consolidado[cod]['avaladas']:,}"
+    tabla_consolidada.loc["Dinero enviado por interfaz", columna] = f"${dinero_interfaz_consolidado[cod]:,.0f}"
+    tabla_consolidada.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce_consolidado[cod]:,}"
+    tabla_consolidada.loc["Dinero ventas ambulatorio", columna] = f"${dinero_ambulatorio_consolidado[cod]:,.0f}"
+    tabla_consolidada.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante_consolidado[cod]:,.2f}%"
+    tabla_consolidada.loc["Ventas relacionadas en factura (FACTURADO)", columna] = f"{ventas_relacionadas_factura_consolidado[cod]:,}"
+    tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%"
 
 
 # ============================================================
@@ -844,19 +795,10 @@ if not ubicaciones_ventas_no_mapeadas.empty:
 
 if not estados_no_incluidos.empty:
     with st.expander("ℹ️ Estados en Ventas NO incluidos (solo se cuentan 'Activa' y 'Facturada')", expanded=False):
-        st.markdown(
-            "Estos valores de `Estado` no coinciden con **Activa** o **Facturada**, "
-            "por lo que quedan fuera de **Total ventas consulta externa** y "
-            "**Dinero ventas ambulatorio**."
-        )
         st.dataframe(estados_no_incluidos, use_container_width=True)
 
 if ventas_sin_match:
     with st.expander("⚠️ Ventas de Atenciones sin coincidencia en la base Ventas", expanded=False):
-        st.markdown(
-            f"**{len(ventas_sin_match):,}** valores de `Numero Venta` (Atenciones) "
-            "no se encontraron en `Venta No.` (Ventas)."
-        )
         st.dataframe(
             pd.DataFrame({"Numero Venta (sin match)": sorted(ventas_sin_match)}).head(200),
             use_container_width=True,
@@ -867,11 +809,6 @@ if ventas_sin_ubicacion_fase:
         "⚠️ Ventas cuyo folio existe pero sin filas en la misma (sede, fase)",
         expanded=False,
     ):
-        st.markdown(
-            f"**{len(ventas_sin_ubicacion_fase):,}** ventas existen en Ventas, "
-            "pero ninguna de sus filas tiene `Ubicación despacho` correspondiente "
-            "a la (sede, fase) del registro en Atenciones."
-        )
         st.dataframe(
             pd.DataFrame(
                 {"Venta (sede - fase)": sorted(ventas_sin_ubicacion_fase)}
@@ -910,6 +847,25 @@ for fase in FASES:
         key=f"dl_{fase}",
     )
     st.divider()
+
+
+# ============================================================
+# TABLA CONSOLIDADA
+# ============================================================
+st.subheader("📋 CONSOLIDADO - TODAS LAS FASES")
+
+st.dataframe(tabla_consolidada, use_container_width=True, height=380)
+
+csv_consolidado = tabla_consolidada.to_csv().encode("utf-8")
+st.download_button(
+    label="⬇️ Descargar CONSOLIDADO (CSV)",
+    data=csv_consolidado,
+    file_name="CONSOLIDADO_FASES.csv",
+    mime="text/csv",
+    key="dl_consolidado",
+)
+
+st.divider()
 
 
 # ============================================================
