@@ -65,7 +65,7 @@ ESTRUCTURAS = {
 UMBRAL_COINCIDENCIA = 0.60
 
 # ============================================================
-# TABLA RESUMEN "FASE 1 - AMBULATORIO"
+# TABLA RESUMEN
 # ============================================================
 COLUMNAS_RESUMEN = ["ADC", "CAI", "CAM", "CASM", "CACV", "CAA"]
 
@@ -80,8 +80,14 @@ FILAS_RESUMEN = [
     "Porcentual impactado (META 0%)",
 ]
 
+# Filtros para "Revisadas por analistas" (columna ADC)
+UBICACIONES_ADC = [
+    "VILL-Consulta Externa",
+    "VILL-Electrofisiología",
+    "VILL-Imagenología",
+]
+
 def construir_tabla_resumen():
-    """Crea un DataFrame vacío con las columnas y filas del resumen FASE 1."""
     df = pd.DataFrame("", index=FILAS_RESUMEN, columns=COLUMNAS_RESUMEN)
     df.index.name = "Concepto"
     return df
@@ -130,6 +136,15 @@ def filtrar_columnas_minimas(df, estructura):
     return df[columnas_presentes].copy()
 
 
+def obtener_columna(df, nombre_esperado):
+    """Devuelve la columna real del df cuyo nombre normalizado coincide."""
+    objetivo = normalizar(nombre_esperado)
+    for c in df.columns:
+        if normalizar(c) == objetivo:
+            return c
+    return None
+
+
 # ============================================================
 # CARGA DE ARCHIVOS
 # ============================================================
@@ -141,7 +156,6 @@ uploaded_files = st.file_uploader(
 
 if not uploaded_files:
     st.info("👆 Carga al menos un archivo Excel para comenzar.")
-    # Aún así mostramos la tabla resumen vacía
     st.subheader("📋 FASE 1 - AMBULATORIO")
     st.dataframe(construir_tabla_resumen(), use_container_width=True)
     st.stop()
@@ -198,34 +212,63 @@ progress.empty()
 # ERRORES Y NO CLASIFICADOS
 # ============================================================
 if errores:
-    with st.expander("❌ Errores al leer archivos", expanded=True):
+    with st.expander("❌ Errores al leer archivos", expanded=False):
         for nombre, err in errores:
             st.write(f"- **{nombre}**: {err}")
 
 if no_clasificados:
-    with st.expander("⚠️ Archivos/hojas NO clasificados", expanded=True):
+    with st.expander("⚠️ Archivos/hojas NO clasificados", expanded=False):
         st.dataframe(pd.DataFrame(no_clasificados), use_container_width=True)
 
 # ============================================================
-# RESUMEN GLOBAL (SIDEBAR)
+# CONSTRUIR BASE "ATENCIONES DEL ESPECIALISTA" UNIFICADA
 # ============================================================
-with st.sidebar:
-    st.header("📈 Resumen de carga")
-    st.metric("Archivos cargados", len(uploaded_files))
-    for nombre in ESTRUCTURAS:
-        st.metric(nombre, f"{len(bases[nombre])} hoja(s)")
-    if no_clasificados:
-        st.metric("No clasificados", len(no_clasificados))
+if bases["Atenciones del especialista"]:
+    atenciones_df = pd.concat(
+        [df for _, _, df in bases["Atenciones del especialista"]],
+        ignore_index=True
+    )
+else:
+    atenciones_df = pd.DataFrame()
 
 # ============================================================
-# TABLA RESUMEN "FASE 1 - AMBULATORIO"
+# CÁLCULO: "Revisadas por analistas" (columna ADC)
+# ============================================================
+conteo_adc = 0
+df_filtrado_adc = pd.DataFrame()
+
+if not atenciones_df.empty:
+    col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
+    col_verifica = obtener_columna(atenciones_df, "Nombre de Usuario que Verifica")
+
+    if col_ubicacion and col_verifica:
+        # Normalizar valores para comparar (trim, sin distinguir mayúsculas)
+        ubicaciones_norm = [u.strip().lower() for u in UBICACIONES_ADC]
+
+        mask_ubicacion = (
+            atenciones_df[col_ubicacion]
+            .astype(str).str.strip().str.lower()
+            .isin(ubicaciones_norm)
+        )
+        mask_verifica = (
+            atenciones_df[col_verifica].notna()
+            & (atenciones_df[col_verifica].astype(str).str.strip() != "")
+            & (atenciones_df[col_verifica].astype(str).str.strip().str.lower() != "nan")
+        )
+
+        df_filtrado_adc = atenciones_df[mask_ubicacion & mask_verifica].copy()
+        conteo_adc = len(df_filtrado_adc)
+
+# ============================================================
+# TABLA RESUMEN
 # ============================================================
 st.subheader("📋 FASE 1 - AMBULATORIO")
 
 tabla_resumen = construir_tabla_resumen()
+tabla_resumen.loc["Revisadas por analistas", "ADC"] = f"{conteo_adc:,}"
+
 st.dataframe(tabla_resumen, use_container_width=True, height=380)
 
-# Botón de descarga del esqueleto
 csv_resumen = tabla_resumen.to_csv().encode("utf-8")
 st.download_button(
     label="⬇️ Descargar tabla resumen (CSV)",
@@ -233,3 +276,68 @@ st.download_button(
     file_name="FASE_1_AMBULATORIO.csv",
     mime="text/csv",
 )
+
+# ============================================================
+# SECCIÓN DE NOVEDADES
+# ============================================================
+st.subheader("🔎 Novedades")
+
+if df_filtrado_adc.empty:
+    st.info("No hay registros que cumplan los filtros para 'Revisadas por analistas' (columna ADC).")
+else:
+    col_verifica = obtener_columna(df_filtrado_adc, "Nombre de Usuario que Verifica")
+    col_submedico = obtener_columna(df_filtrado_adc, "Usuario / Sub Medico")
+
+    st.markdown(
+        f"**Total de registros que cumplen los filtros:** {conteo_adc:,}  \n"
+        f"**Ubicaciones incluidas:** {', '.join(UBICACIONES_ADC)}"
+    )
+
+    # Agrupar por "Nombre de Usuario que Verifica"
+    resumen_verifica = (
+        df_filtrado_adc
+        .groupby(col_verifica, dropna=False)
+        .size()
+        .reset_index(name="Registros")
+        .rename(columns={col_verifica: "Nombre de Usuario que Verifica"})
+    )
+
+    # Determinar, por cada verificador, si coincide con algún "Usuario / Sub Medico"
+    def comparar_con_submedico(nombre_verifica, sub_df):
+        if not col_submedico:
+            return "Sin datos de Sub Médico"
+
+        valores_sub = (
+            sub_df[col_submedico].dropna().astype(str).str.strip()
+        )
+        valores_sub = valores_sub[valores_sub != ""]
+        valores_sub = valores_sub[valores_sub.str.lower() != "nan"]
+
+        if valores_sub.empty:
+            return "Sin datos de Sub Médico"
+
+        nombre_norm = str(nombre_verifica).strip().lower()
+        set_sub_norm = {v.lower() for v in valores_sub.unique()}
+
+        return "Misma persona" if nombre_norm in set_sub_norm else "Diferente persona"
+
+    sub_df = df_filtrado_adc[df_filtrado_adc[col_verifica].astype(str).str.strip().str.lower() ==
+                             str(resumen_verifica.iloc[0][col_verifica]).strip().lower()] if False else df_filtrado_adc
+
+    resumen_verifica["¿Coincide con Usuario / Sub Médico?"] = resumen_verifica[
+        "Nombre de Usuario que Verifica"
+    ].apply(lambda n: comparar_con_submedico(n, df_filtrado_adc))
+
+    resumen_verifica = resumen_verifica.sort_values("Registros", ascending=False).reset_index(drop=True)
+
+    st.markdown("#### 👥 Verificadores y comparación con Sub Médico")
+    st.dataframe(resumen_verifica, use_container_width=True)
+
+    # Detalle de valores únicos de Sub Médico presentes (para trazabilidad)
+    if col_submedico:
+        with st.expander("Ver valores únicos en 'Usuario / Sub Medico' (registros filtrados)"):
+            valores_sub = (
+                df_filtrado_adc[col_submedico].dropna().astype(str).str.strip()
+            )
+            valores_sub = sorted({v for v in valores_sub.unique() if v and v.lower() != "nan"})
+            st.write(valores_sub if valores_sub else "Sin valores registrados.")
