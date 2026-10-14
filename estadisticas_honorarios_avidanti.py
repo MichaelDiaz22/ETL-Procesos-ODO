@@ -72,7 +72,6 @@ UMBRAL_COINCIDENCIA = 0.60
 # TABLA BASE: SEDE + UBICACIÓN + FASE
 # ============================================================
 MAPA_FASES = [
-    # Angiografía Villavicencio (ADC)
     ("ADC", "VILL-Hospitalización 2 Piso", "Fase 2"),
     ("ADC", "VILL-UCI 5 Piso", "Fase 2"),
     ("ADC", "VILL-Hospitalización 6 Piso", "Fase 2"),
@@ -83,18 +82,18 @@ MAPA_FASES = [
     ("ADC", "VILL-UCINT 6 Piso", "Fase 2"),
     ("ADC", "VILL-Electrofisiologia", "Fase 1"),
     ("ADC", "VILL-Sala de Cirugía 1 Cardiovascular", "Fase 3"),
-    # Clínica Avidanti Armenia (CAA)
+
     ("CAA", "CAA-Hospitalización 5 Piso", "Fase 2"),
     ("CAA", "CAA-Urgencias", "Fase 2"),
     ("CAA", "CAA-Consulta Externa", "Fase 1"),
     ("CAA", "CAA-Sala de Cirugía 3", "Fase 3"),
     ("CAA", "CAA-Sala de Cirugía 4", "Fase 3"),
     ("CAA", "CAA-Hemodinamia", "Fase 3"),
-    ("CAA", "CAC-UCINT Adulto", "Fase 2"),
+    ("CAA", "CAA-UCINT Adulto", "Fase 2"),
     ("CAA", "CAA-UCI Adulto", "Fase 2"),
     ("CAA", "CAA-Imagenología", "Fase 1"),
     ("CAA", "CAA-Cardiología No Invasiva", "Fase 1"),
-    # Clínica Avidanti Ibagué (CAI)
+
     ("CAI", "CAI-Consulta Externa Nueva", "Fase 1"),
     ("CAI", "CAI-Sala de Cirugía 2", "Fase 3"),
     ("CAI", "CAI-Urgencias Nueva", "Fase 2"),
@@ -112,7 +111,7 @@ MAPA_FASES = [
     ("CAI", "CAI-Sala de Cirugía 1 (Cardiovascular)", "Fase 3"),
     ("CAI", "CAI-Cardiología No Invasiva Nueva", "Fase 1"),
     ("CAI", "CAI-Sala de Cirugía 3", "Fase 3"),
-    # Clínica Avidanti Manizales (CAM)
+
     ("CAM", "CAM-Consulta Externa", "Fase 1"),
     ("CAM", "CAM-Urgencias", "Fase 2"),
     ("CAM", "CAM-Hospitalización 7 Piso Sur", "Fase 2"),
@@ -138,7 +137,7 @@ MAPA_FASES = [
     ("CAM", "CAM-Electrofisiología Piso 5", "Fase 1"),
     ("CAM", "CAM-Resonancia Magnética", "Fase 1"),
     ("CAM", "CAM-Imagenología", "Fase 1"),
-    # Clínica Avidanti Santa Marta (CASM)
+
     ("CASM", "CASM- Consulta Externa", "Fase 1"),
     ("CASM", "CASM-Hospitalización VIP 2", "Fase 2"),
     ("CASM", "CASM-Hospitalización 2 Piso Norte", "Fase 2"),
@@ -158,7 +157,7 @@ MAPA_FASES = [
     ("CASM", "CASM-Sala de Cirugía 3 (Urgencias)", "Fase 2"),
     ("CASM", "CASM- Hemodinamia", "Fase 3"),
     ("CASM", "CASM-Imagenología", "Fase 1"),
-    # Clínica Avidanti Ciudad Verde (CACV)
+
     ("CACV", "CACV-Hospitalización 5 Piso Norte", "Fase 2"),
     ("CACV", "CACV-Hospitalización 5 Piso Sur", "Fase 2"),
     ("CACV", "CACV-Laboratorio Clínico", "Fase 1"),
@@ -280,38 +279,18 @@ def hash_df(df):
     ).hexdigest()
 
 
-# Construir mapa normalizado: {sede: {ubicacion_norm: fase}}
-MAPA_UBICACION_A_FASE = {}
-for sede, ubicacion, fase in MAPA_FASES:
-    MAPA_UBICACION_A_FASE.setdefault(sede, {})[normalizar(ubicacion)] = fase
+def es_vacio(serie):
+    """Devuelve una máscara booleana: True donde el valor NO es vacío."""
+    s = serie.astype(str).str.strip()
+    return ~s.isin(["", "nan", "None", "NaN", "null", "NULL"])
 
 
-def detectar_sede(ubicacion_valor):
-    """Devuelve el código de sede (ADC, CAI, ...) según el prefijo."""
-    txt = normalizar(ubicacion_valor)
-    for codigo in CODIGOS_SEDE:
-        if txt.startswith(codigo.lower()):
-            return codigo
-    return None
-
-
-def detectar_fase(ubicacion_valor):
-    """Devuelve la fase (Fase 1/2/3) según el mapa normalizado."""
-    sede = detectar_sede(ubicacion_valor)
-    if sede is None:
-        return None
-
-    txt = normalizar(ubicacion_valor)
-    # Comparación exacta primero
-    mapa_sede = MAPA_UBICACION_A_FASE.get(sede, {})
-    if txt in mapa_sede:
-        return mapa_sede[txt]
-
-    # Si no hay match exacto, probar coincidencia por tokens
-    for ubi_norm, fase in mapa_sede.items():
-        if ubi_norm and ubi_norm in txt:
-            return fase
-    return None
+# ============================================================
+# MAPA INVERTIDO: {ubicacion_normalizada: (codigo_sede, fase)}
+# ============================================================
+MAPA_UBICACION = {}
+for sede_cod, ubicacion, fase in MAPA_FASES:
+    MAPA_UBICACION[normalizar(ubicacion)] = (sede_cod, fase)
 
 
 # ============================================================
@@ -438,17 +417,20 @@ else:
 # ============================================================
 # CÁLCULOS: "Revisadas por analistas" y "Avaladas subgerencia médica"
 # ------------------------------------------------------------
-# Para cada combinación (sede, fase):
-#   - Revisadas: registros con "Nombre de Usuario que Verifica" != vacío
-#   - Avaladas:  registros con "Usuario / Sub Medico" != vacío
+# Para cada registro de Atenciones:
+#   1. Se busca su "Ubicación de la venta" en el mapa base
+#      → obtiene (código_sede, fase)
+#   2. Se cuenta en esa (sede, fase) si:
+#      - "Nombre de Usuario que Verifica"  no vacío    (revisadas)
+#      - "Usuario / Sub Medico"            no vacío    (avaladas)
 # ============================================================
-# conteos[fase][codigo_sede] = {"revisadas": int, "avaladas": int}
 conteos = {
     fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
     for fase in FASES
 }
 df_filtrado_revisadas = pd.DataFrame()
 df_filtrado_avaladas = pd.DataFrame()
+ubicaciones_no_mapeadas = pd.Series(dtype=int)
 
 if not atenciones_df.empty:
     col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
@@ -462,39 +444,49 @@ if not atenciones_df.empty:
             f"'Nombre de Usuario que Verifica'={'OK' if col_verifica else 'FALTA'}."
         )
     else:
-        # Derivar sede y fase por cada fila
-        sede_serie = atenciones_df[col_ubicacion].astype(str).map(detectar_sede)
-        fase_serie = atenciones_df[col_ubicacion].astype(str).map(detectar_fase)
-
-        # Verificadores y subgerentes limpios
-        verificadores_serie = (
-            atenciones_df[col_verifica]
-            .astype(str).str.strip()
-            .replace({"nan": "", "None": "", "NaN": ""})
+        # Normalizar ubicación de cada registro
+        ubicacion_norm_serie = (
+            atenciones_df[col_ubicacion]
+            .astype(str)
+            .map(normalizar)
         )
+
+        # Mapear a (sede, fase)
+        sede_serie = ubicacion_norm_serie.map(
+            lambda u: MAPA_UBICACION.get(u, (None, None))[0]
+        )
+        fase_serie = ubicacion_norm_serie.map(
+            lambda u: MAPA_UBICACION.get(u, (None, None))[1]
+        )
+
+        # Máscaras de no-vacío
+        mask_verifica = es_vacio(atenciones_df[col_verifica])
         if col_submedico is not None:
-            submedico_serie = (
-                atenciones_df[col_submedico]
-                .astype(str).str.strip()
-                .replace({"nan": "", "None": "", "NaN": ""})
-            )
+            mask_submedico = es_vacio(atenciones_df[col_submedico])
         else:
-            submedico_serie = pd.Series([""] * len(atenciones_df), index=atenciones_df.index)
+            mask_submedico = pd.Series(False, index=atenciones_df.index)
 
-        mask_verifica = verificadores_serie != ""
-        mask_submedico = submedico_serie != ""
+        # Diagnóstico: ubicaciones sin match
+        sin_match = ubicacion_norm_serie[sede_serie.isna()]
+        if not sin_match.empty:
+            ubicaciones_no_mapeadas = (
+                sin_match
+                .value_counts()
+                .rename_axis("Ubicación (normalizada)")
+                .reset_index(name="Registros")
+            )
 
-        # Iterar por fase y sede para contar
+        # Iterar por fase × sede
         for fase in FASES:
             for cod in CODIGOS_SEDE:
-                mask_base = (sede_serie == cod) & (fase_serie == fase)
-                mask_rev = mask_base & mask_verifica
-                mask_ava = mask_base & mask_verifica & mask_submedico
+                mask_sede_fase = (sede_serie == cod) & (fase_serie == fase)
+                mask_rev = mask_sede_fase & mask_verifica
+                mask_ava = mask_rev & mask_submedico
 
                 conteos[fase][cod]["revisadas"] = int(mask_rev.sum())
                 conteos[fase][cod]["avaladas"] = int(mask_ava.sum())
 
-        # Guardar filtrados globales (por si se usan más adelante)
+        # Guardar filtrados globales
         df_filtrado_revisadas = atenciones_df.loc[mask_verifica].copy()
         df_filtrado_avaladas = atenciones_df.loc[mask_verifica & mask_submedico].copy()
 else:
@@ -518,6 +510,20 @@ with st.sidebar:
         st.metric("Hojas duplicadas (descartadas)", len(hojas_duplicadas))
     if no_clasificados:
         st.metric("No clasificados", len(no_clasificados))
+
+
+# ============================================================
+# DIAGNÓSTICO: UBICACIONES SIN MAPEAR
+# ============================================================
+if not ubicaciones_no_mapeadas.empty:
+    with st.expander("⚠️ Ubicaciones de la venta sin coincidencia en la tabla base", expanded=False):
+        st.markdown(
+            "Estos valores de `Ubicación de la venta` no coinciden con ninguna "
+            "fila de la tabla base Sede + Ubicación + Fase, por lo que **no se "
+            "están contando**. Si ves aquí valores legítimos, hay que ajustarlos "
+            "en la tabla base o normalizarlos."
+        )
+        st.dataframe(ubicaciones_no_mapeadas, use_container_width=True)
 
 
 # ============================================================
