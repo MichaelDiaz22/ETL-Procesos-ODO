@@ -285,6 +285,21 @@ def es_vacio(serie):
     return ~s.isin(["", "nan", "None", "NaN", "null", "NULL"])
 
 
+def normalizar_llave_venta(v):
+    """Normaliza una llave de venta para el cruce entre bases.
+    Elimina espacios, ceros a la izquierda, sufijos '.0' y pasa a string limpio."""
+    if pd.isna(v):
+        return ""
+    s = str(v).strip()
+    # Quitar sufijo .0 típico de float
+    if s.endswith(".0"):
+        s = s[:-2]
+    # Si es puramente numérico, quitar ceros a la izquierda
+    if s.isdigit():
+        s = s.lstrip("0") or "0"
+    return s
+
+
 # ============================================================
 # MAPA INVERTIDO: {ubicacion_normalizada: (codigo_sede, fase)}
 # ============================================================
@@ -416,13 +431,6 @@ else:
 
 # ============================================================
 # CÁLCULOS: "Revisadas por analistas" y "Avaladas subgerencia médica"
-# ------------------------------------------------------------
-# Para cada registro de Atenciones:
-#   1. Se busca su "Ubicación de la venta" en el mapa base
-#      → obtiene (código_sede, fase)
-#   2. Se cuenta en esa (sede, fase) si:
-#      - "Nombre de Usuario que Verifica"  no vacío    (revisadas)
-#      - "Usuario / Sub Medico"            no vacío    (avaladas)
 # ============================================================
 conteos = {
     fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
@@ -432,10 +440,18 @@ df_filtrado_revisadas = pd.DataFrame()
 df_filtrado_avaladas = pd.DataFrame()
 ubicaciones_no_mapeadas = pd.Series(dtype=int)
 
+# Series que se reutilizarán en el cálculo del dinero
+sede_serie = None
+fase_serie = None
+mask_verifica = None
+mask_submedico = None
+venta_norm_atenciones_serie = None
+
 if not atenciones_df.empty:
     col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
     col_verifica = obtener_columna(atenciones_df, "Nombre de Usuario que Verifica")
     col_submedico = obtener_columna(atenciones_df, "Usuario / Sub Medico")
+    col_num_venta = obtener_columna(atenciones_df, "Numero Venta")
 
     if col_ubicacion is None or col_verifica is None:
         st.error(
@@ -466,6 +482,15 @@ if not atenciones_df.empty:
         else:
             mask_submedico = pd.Series(False, index=atenciones_df.index)
 
+        # Normalizar "Numero Venta" para el cruce posterior
+        if col_num_venta is not None:
+            venta_norm_atenciones_serie = (
+                atenciones_df[col_num_venta]
+                .map(normalizar_llave_venta)
+            )
+        else:
+            venta_norm_atenciones_serie = pd.Series("", index=atenciones_df.index)
+
         # Diagnóstico: ubicaciones sin match
         sin_match = ubicacion_norm_serie[sede_serie.isna()]
         if not sin_match.empty:
@@ -476,7 +501,7 @@ if not atenciones_df.empty:
                 .reset_index(name="Registros")
             )
 
-        # Iterar por fase × sede
+        # Iterar por fase × sede para contar
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (sede_serie == cod) & (fase_serie == fase)
@@ -494,6 +519,83 @@ else:
         "⚠️ No hay datos de 'Atenciones del especialista' cargados. "
         "Los conteos quedarán en cero."
     )
+
+
+# ============================================================
+# CÁLCULO: "Dinero enviado por interfaz" por fase y sede
+# ------------------------------------------------------------
+# Por cada (fase, sede):
+#   - Tomar los registros de Atenciones "Revisadas" (verificador no vacío)
+#   - Cruzar "Numero Venta" con "Venta No." de la base Ventas
+#   - Sumar "Valor facturado"
+# ============================================================
+dinero_interfaz = {
+    fase: {cod: 0.0 for cod in CODIGOS_SEDE}
+    for fase in FASES
+}
+ventas_sin_match = set()
+
+if bases["Ventas"]:
+    ventas_df = pd.concat(
+        [df for _, _, df in bases["Ventas"]],
+        ignore_index=True
+    )
+
+    col_venta_no = obtener_columna(ventas_df, "Venta No.")
+    col_valor_facturado = obtener_columna(ventas_df, "Valor facturado")
+
+    if col_venta_no is None or col_valor_facturado is None:
+        st.warning(
+            "⚠️ No se encontraron las columnas 'Venta No.' o 'Valor facturado' "
+            "en la base Ventas. No se puede calcular 'Dinero enviado por interfaz'."
+        )
+    else:
+        # Normalizar llave de venta en Ventas
+        ventas_df["_venta_no_norm"] = (
+            ventas_df[col_venta_no]
+            .map(normalizar_llave_venta)
+        )
+
+        # Valor facturado numérico
+        ventas_df["_valor_facturado_num"] = pd.to_numeric(
+            ventas_df[col_valor_facturado]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .str.replace("$", "", regex=False)
+            .str.replace(" ", "", regex=False)
+            .str.strip(),
+            errors="coerce"
+        ).fillna(0)
+
+        # Agrupar por Venta No.: suma de Valor facturado
+        ventas_agg = (
+            ventas_df
+            .groupby("_venta_no_norm", dropna=False)["_valor_facturado_num"]
+            .sum()
+            .to_dict()
+        )
+
+        # Recorrer los registros de Atenciones (solo revisadas + con sede/fase)
+        if not atenciones_df.empty and venta_norm_atenciones_serie is not None:
+            for i in range(len(atenciones_df)):
+                sede_cod = sede_serie.iloc[i]
+                fase_val = fase_serie.iloc[i]
+
+                if sede_cod is None or fase_val is None:
+                    continue
+                if not mask_verifica.iloc[i]:
+                    continue
+
+                venta_no = venta_norm_atenciones_serie.iloc[i]
+                if not venta_no:
+                    continue
+
+                if venta_no in ventas_agg:
+                    dinero_interfaz[fase_val][sede_cod] += ventas_agg[venta_no]
+                else:
+                    ventas_sin_match.add(venta_no)
+else:
+    ventas_df = pd.DataFrame()
 
 
 # ============================================================
@@ -520,10 +622,25 @@ if not ubicaciones_no_mapeadas.empty:
         st.markdown(
             "Estos valores de `Ubicación de la venta` no coinciden con ninguna "
             "fila de la tabla base Sede + Ubicación + Fase, por lo que **no se "
-            "están contando**. Si ves aquí valores legítimos, hay que ajustarlos "
-            "en la tabla base o normalizarlos."
+            "están contando**."
         )
         st.dataframe(ubicaciones_no_mapeadas, use_container_width=True)
+
+
+# ============================================================
+# DIAGNÓSTICO: VENTAS SIN MATCH
+# ============================================================
+if ventas_sin_match:
+    with st.expander("⚠️ Ventas de Atenciones sin coincidencia en la base Ventas", expanded=False):
+        st.markdown(
+            f"**{len(ventas_sin_match):,}** valores de `Numero Venta` (Atenciones) "
+            "no se encontraron en `Venta No.` (Ventas). Esos registros no aportan "
+            "al 'Dinero enviado por interfaz'."
+        )
+        st.dataframe(
+            pd.DataFrame({"Numero Venta (sin match)": sorted(ventas_sin_match)}).head(200),
+            use_container_width=True,
+        )
 
 
 # ============================================================
@@ -538,6 +655,7 @@ for fase in FASES:
         columna = MAPA_CODIGO_A_COLUMNA[cod]
         tabla.loc["Revisadas por analistas", columna] = f"{conteos[fase][cod]['revisadas']:,}"
         tabla.loc["Avaladas subgerencia médica", columna] = f"{conteos[fase][cod]['avaladas']:,}"
+        tabla.loc["Dinero enviado por interfaz", columna] = f"${dinero_interfaz[fase][cod]:,.0f}"
 
     st.dataframe(tabla, use_container_width=True, height=380)
 
