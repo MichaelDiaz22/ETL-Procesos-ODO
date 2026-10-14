@@ -69,31 +69,40 @@ ESTRUCTURAS = {
 UMBRAL_COINCIDENCIA = 0.60
 
 # ============================================================
-# TABLA BASE: SEDE + UBICACIÓN + FASE
+# TABLA BASE: SEDE + UBICACIÓN + FASE (ACTUALIZADA)
 # ============================================================
 MAPA_FASES = [
-    ("ADC", "VILL-Hospitalización 2 Piso", "Fase 2"),
-    ("ADC", "VILL-UCI 5 Piso", "Fase 2"),
-    ("ADC", "VILL-Hospitalización 6 Piso", "Fase 2"),
+    # Angiografía Villavicencio
+    ("ADC", "VILL-Oncología", "Fase 1"),
+    ("ADC", "VILL-Rehabilitación Cardiaca", "Fase 1"),
     ("ADC", "VILL-Consulta Externa", "Fase 1"),
-    ("ADC", "VILL-Sala de Cirugía 2", "Fase 3"),
+    ("ADC", "VILL-Hospitalización 2 Piso", "Fase 2"),
     ("ADC", "VILL-Hemodinamia", "Fase 3"),
-    ("ADC", "VILL-Imagenología", "Fase 1"),
+    ("ADC", "VILL-Laboratorio Clínico", "Fase 1"),
     ("ADC", "VILL-UCINT 6 Piso", "Fase 2"),
-    ("ADC", "VILL-Electrofisiologia", "Fase 1"),
+    ("ADC", "VILL-UCI 5 Piso", "Fase 2"),
+    ("ADC", "VILL-Imagenología", "Fase 1"),
     ("ADC", "VILL-Sala de Cirugía 1 Cardiovascular", "Fase 3"),
+    ("ADC", "VILL-Hospitalización 6 Piso", "Fase 2"),
+    ("ADC", "VILL-Sala de Cirugía 2", "Fase 3"),
+    ("ADC", "VILL-Electrofisiologia", "Fase 1"),
+    ("ADC", "VILL-Gestión Pre-transfusional", "Fase 3"),
+    ("ADC", "SAN-Consulta Externa", "Fase 1"),
 
+    # Clínica Avidanti Armenia
     ("CAA", "CAA-Hospitalización 5 Piso", "Fase 2"),
     ("CAA", "CAA-Urgencias", "Fase 2"),
     ("CAA", "CAA-Consulta Externa", "Fase 1"),
     ("CAA", "CAA-Sala de Cirugía 3", "Fase 3"),
     ("CAA", "CAA-Sala de Cirugía 4", "Fase 3"),
     ("CAA", "CAA-Hemodinamia", "Fase 3"),
-    ("CAA", "CAA-UCINT Adulto", "Fase 2"),
+    ("CAA", "CAC-UCINT Adulto", "Fase 2"),
     ("CAA", "CAA-UCI Adulto", "Fase 2"),
     ("CAA", "CAA-Imagenología", "Fase 1"),
     ("CAA", "CAA-Cardiología No Invasiva", "Fase 1"),
+    ("CAA", "CAA-Laboratorio Clínico", "Fase 1"),
 
+    # Clínica Avidanti Ibagué
     ("CAI", "CAI-Consulta Externa Nueva", "Fase 1"),
     ("CAI", "CAI-Sala de Cirugía 2", "Fase 3"),
     ("CAI", "CAI-Urgencias Nueva", "Fase 2"),
@@ -111,7 +120,11 @@ MAPA_FASES = [
     ("CAI", "CAI-Sala de Cirugía 1 (Cardiovascular)", "Fase 3"),
     ("CAI", "CAI-Cardiología No Invasiva Nueva", "Fase 1"),
     ("CAI", "CAI-Sala de Cirugía 3", "Fase 3"),
+    ("CAI", "CAI-Hemodinamia", "Fase 3"),
+    ("CAI", "CAI-Laboratorio Clínico", "Fase 1"),
+    ("CAI", "CAI-TeleConsulta", "Fase 1"),
 
+    # Clínica Avidanti Manizales
     ("CAM", "CAM-Consulta Externa", "Fase 1"),
     ("CAM", "CAM-Urgencias", "Fase 2"),
     ("CAM", "CAM-Hospitalización 7 Piso Sur", "Fase 2"),
@@ -137,7 +150,11 @@ MAPA_FASES = [
     ("CAM", "CAM-Electrofisiología Piso 5", "Fase 1"),
     ("CAM", "CAM-Resonancia Magnética", "Fase 1"),
     ("CAM", "CAM-Imagenología", "Fase 1"),
+    ("CAM", "CAM-Sala de Cirugía 6 Cardiovascular", "Fase 3"),
+    ("CAM", "CAM-Laboratorio Clínico", "Fase 1"),
+    ("CAM", "CAM - Sala de Cirugía 8", "Fase 3"),
 
+    # Clínica Avidanti Santa Marta
     ("CASM", "CASM- Consulta Externa", "Fase 1"),
     ("CASM", "CASM-Hospitalización VIP 2", "Fase 2"),
     ("CASM", "CASM-Hospitalización 2 Piso Norte", "Fase 2"),
@@ -157,7 +174,12 @@ MAPA_FASES = [
     ("CASM", "CASM-Sala de Cirugía 3 (Urgencias)", "Fase 2"),
     ("CASM", "CASM- Hemodinamia", "Fase 3"),
     ("CASM", "CASM-Imagenología", "Fase 1"),
+    ("CASM", "CASM-Sala de Cirugía 1 Cardiovascular", "Fase 3"),
+    ("CASM", "CASM-Recuperación Cirugía", "Fase 3"),
+    ("CASM", "CASM-Laboratorio Clínico", "Fase 1"),
+    ("CASM", "CASM-Electrofisiología", "Fase 1"),
 
+    # Clínica Avidanti Ciudad Verde
     ("CACV", "CACV-Hospitalización 5 Piso Norte", "Fase 2"),
     ("CACV", "CACV-Hospitalización 5 Piso Sur", "Fase 2"),
     ("CACV", "CACV-Laboratorio Clínico", "Fase 1"),
@@ -286,8 +308,6 @@ def es_vacio(serie):
 
 
 def normalizar_llave_venta(v):
-    """Normaliza una llave de venta para el cruce entre bases.
-    Elimina espacios, sufijos '.0' y ceros a la izquierda."""
     if v is None:
         return ""
     try:
@@ -519,10 +539,6 @@ else:
 
 # ============================================================
 # CÁLCULO: "Dinero enviado por interfaz" por fase y sede
-# ------------------------------------------------------------
-# - Tomar los registros de Atenciones (revisadas + con sede/fase)
-# - Cruzar "Numero Venta" con "Venta No." de la base Ventas
-# - Sumar "Valor facturado"
 # ============================================================
 dinero_interfaz = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
@@ -572,7 +588,6 @@ if bases["Ventas"]:
                 sede_cod = sede_serie.iloc[i]
                 fase_val = fase_serie.iloc[i]
 
-                # Validar estrictamente que fase y sede existan
                 if fase_val is None or sede_cod is None:
                     continue
                 fase_val = str(fase_val).strip()
@@ -597,6 +612,57 @@ else:
 
 
 # ============================================================
+# CÁLCULO: "Total ventas consulta externa (ACTIVO Y FACTURADO)"
+# ------------------------------------------------------------
+# Se calcula con la base Ventas:
+#   - Filtrar por "Ubicación despacho" ∈ ubicaciones de la tabla base
+#   - Contar registros por (sede, fase)
+# ============================================================
+total_ventas_ce = {
+    fase: {cod: 0 for cod in CODIGOS_SEDE}
+    for fase in FASES
+}
+ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
+
+if bases["Ventas"]:
+    col_ubicacion_despacho = obtener_columna(ventas_df, "Ubicación despacho")
+
+    if col_ubicacion_despacho is None:
+        st.warning(
+            "⚠️ No se encontró la columna 'Ubicación despacho' en la base Ventas. "
+            "No se puede calcular 'Total ventas consulta externa (ACTIVO Y FACTURADO)'."
+        )
+    else:
+        ubicacion_despacho_norm = (
+            ventas_df[col_ubicacion_despacho]
+            .astype(str)
+            .map(normalizar)
+        )
+
+        sede_ventas = ubicacion_despacho_norm.map(
+            lambda u: MAPA_UBICACION.get(u, (None, None))[0]
+        )
+        fase_ventas = ubicacion_despacho_norm.map(
+            lambda u: MAPA_UBICACION.get(u, (None, None))[1]
+        )
+
+        # Diagnóstico: ubicaciones de despacho sin match
+        sin_match_ventas = ubicacion_despacho_norm[sede_ventas.isna()]
+        if not sin_match_ventas.empty:
+            ubicaciones_ventas_no_mapeadas = (
+                sin_match_ventas
+                .value_counts()
+                .rename_axis("Ubicación despacho (normalizada)")
+                .reset_index(name="Registros")
+            )
+
+        for fase in FASES:
+            for cod in CODIGOS_SEDE:
+                mask_sede_fase = (sede_ventas == cod) & (fase_ventas == fase)
+                total_ventas_ce[fase][cod] = int(mask_sede_fase.sum())
+
+
+# ============================================================
 # RESUMEN GLOBAL (SIDEBAR)
 # ============================================================
 with st.sidebar:
@@ -613,16 +679,19 @@ with st.sidebar:
 
 
 # ============================================================
-# DIAGNÓSTICO: UBICACIONES SIN MAPEAR
+# DIAGNÓSTICO: UBICACIONES SIN MAPEAR (ATENCIONES)
 # ============================================================
 if not ubicaciones_no_mapeadas.empty:
-    with st.expander("⚠️ Ubicaciones de la venta sin coincidencia en la tabla base", expanded=False):
-        st.markdown(
-            "Estos valores de `Ubicación de la venta` no coinciden con ninguna "
-            "fila de la tabla base Sede + Ubicación + Fase, por lo que **no se "
-            "están contando**."
-        )
+    with st.expander("⚠️ Ubicaciones de la venta (Atenciones) sin coincidencia en la tabla base", expanded=False):
         st.dataframe(ubicaciones_no_mapeadas, use_container_width=True)
+
+
+# ============================================================
+# DIAGNÓSTICO: UBICACIONES SIN MAPEAR (VENTAS)
+# ============================================================
+if not ubicaciones_ventas_no_mapeadas.empty:
+    with st.expander("⚠️ Ubicaciones de despacho (Ventas) sin coincidencia en la tabla base", expanded=False):
+        st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
 
 
 # ============================================================
@@ -632,8 +701,7 @@ if ventas_sin_match:
     with st.expander("⚠️ Ventas de Atenciones sin coincidencia en la base Ventas", expanded=False):
         st.markdown(
             f"**{len(ventas_sin_match):,}** valores de `Numero Venta` (Atenciones) "
-            "no se encontraron en `Venta No.` (Ventas). Esos registros no aportan "
-            "al 'Dinero enviado por interfaz'."
+            "no se encontraron en `Venta No.` (Ventas)."
         )
         st.dataframe(
             pd.DataFrame({"Numero Venta (sin match)": sorted(ventas_sin_match)}).head(200),
@@ -654,6 +722,7 @@ for fase in FASES:
         tabla.loc["Revisadas por analistas", columna] = f"{conteos[fase][cod]['revisadas']:,}"
         tabla.loc["Avaladas subgerencia médica", columna] = f"{conteos[fase][cod]['avaladas']:,}"
         tabla.loc["Dinero enviado por interfaz", columna] = f"${dinero_interfaz[fase][cod]:,.0f}"
+        tabla.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce[fase][cod]:,}"
 
     st.dataframe(tabla, use_container_width=True, height=380)
 
