@@ -7,7 +7,10 @@ import pandas as pd
 st.set_page_config(page_title="FASE 1 - AMBULATORIO", page_icon="📊", layout="wide")
 
 st.title("📊 FASE 1 - AMBULATORIO")
-st.markdown("Carga múltiples archivos Excel. Se clasificarán automáticamente en **Ventas**, **Atenciones del especialista** o **Totales**.")
+st.markdown(
+    "Carga múltiples archivos Excel. Se clasificarán automáticamente en "
+    "**Ventas**, **Atenciones del especialista** o **Totales**."
+)
 
 # ============================================================
 # ESTRUCTURAS ESPERADAS
@@ -80,22 +83,30 @@ FILAS_RESUMEN = [
     "Porcentual impactado (META 0%)",
 ]
 
-# Filtros para "Revisadas por analistas" (columna ADC)
+# Ubicaciones válidas para el conteo ADC
 UBICACIONES_ADC = [
     "VILL-Consulta Externa",
     "VILL-Electrofisiología",
     "VILL-Imagenología",
 ]
 
+
 def construir_tabla_resumen():
     df = pd.DataFrame("", index=FILAS_RESUMEN, columns=COLUMNAS_RESUMEN)
     df.index.name = "Concepto"
     return df
 
+
 # ============================================================
 # FUNCIONES AUXILIARES
 # ============================================================
 def normalizar(s):
+    """Normaliza strings para comparaciones robustas:
+    - Quita tildes y mojibake común
+    - Unifica mayúsculas/minúsculas
+    - Reemplaza separadores por espacios
+    - Colapsa espacios múltiples
+    """
     return (
         str(s).strip().lower()
         .replace("á", "a").replace("é", "e").replace("í", "i")
@@ -107,6 +118,7 @@ def normalizar(s):
         .replace("  ", " ").strip()
     )
 
+
 ESTRUCTURAS_NORM = {
     nombre: {normalizar(c) for c in cols}
     for nombre, cols in ESTRUCTURAS.items()
@@ -114,6 +126,8 @@ ESTRUCTURAS_NORM = {
 
 
 def clasificar_estructura(columnas_df):
+    """Devuelve (nombre_estructura, score) del mejor match.
+    Score = fracción de columnas esperadas presentes en el df."""
     cols_df_norm = {normalizar(c) for c in columnas_df}
     mejor = (None, 0.0)
     for nombre, esperadas in ESTRUCTURAS_NORM.items():
@@ -126,18 +140,8 @@ def clasificar_estructura(columnas_df):
     return mejor
 
 
-def filtrar_columnas_minimas(df, estructura):
-    esperadas = ESTRUCTURAS[estructura]
-    mapa_norm = {normalizar(c): c for c in df.columns}
-    columnas_presentes = [
-        mapa_norm[normalizar(c)] for c in esperadas
-        if normalizar(c) in mapa_norm
-    ]
-    return df[columnas_presentes].copy()
-
-
 def obtener_columna(df, nombre_esperado):
-    """Devuelve la columna real del df cuyo nombre normalizado coincide."""
+    """Devuelve el nombre real de la columna cuyo nombre normalizado coincide."""
     objetivo = normalizar(nombre_esperado)
     for c in df.columns:
         if normalizar(c) == objetivo:
@@ -163,6 +167,7 @@ if not uploaded_files:
 
 @st.cache_data(show_spinner=False)
 def leer_excel(file_bytes, file_name):
+    """Lee un Excel desde bytes y devuelve {hoja: DataFrame}."""
     import io
     try:
         sheets = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
@@ -201,12 +206,14 @@ for idx, f in enumerate(uploaded_files):
             })
             continue
 
-        df_filtrado = filtrar_columnas_minimas(df, estructura)
-        bases[estructura].append((f.name, hoja, df_filtrado))
+        # ⚠️ IMPORTANTE: conservamos TODAS las columnas originales
+        # para no perder información al aplicar filtros de negocio.
+        bases[estructura].append((f.name, hoja, df.copy()))
 
     progress.progress((idx + 1) / len(uploaded_files))
 
 progress.empty()
+
 
 # ============================================================
 # ERRORES Y NO CLASIFICADOS
@@ -220,8 +227,9 @@ if no_clasificados:
     with st.expander("⚠️ Archivos/hojas NO clasificados", expanded=False):
         st.dataframe(pd.DataFrame(no_clasificados), use_container_width=True)
 
+
 # ============================================================
-# CONSTRUIR BASE "ATENCIONES DEL ESPECIALISTA" UNIFICADA
+# CONSTRUIR BASE "ATENCIONES DEL ESPECIALISTA" (SIN RECORTAR COLUMNAS)
 # ============================================================
 if bases["Atenciones del especialista"]:
     atenciones_df = pd.concat(
@@ -231,8 +239,15 @@ if bases["Atenciones del especialista"]:
 else:
     atenciones_df = pd.DataFrame()
 
+
 # ============================================================
 # CÁLCULO: "Revisadas por analistas" (columna ADC)
+# ------------------------------------------------------------
+# Cuenta registros de "Atenciones del especialista" donde:
+#   - "Ubicación de la venta" ∈ {VILL-Consulta Externa,
+#                                VILL-Electrofisiología,
+#                                VILL-Imagenología}
+#   - "Nombre de Usuario que Verifica" no esté vacío
 # ============================================================
 conteo_adc = 0
 df_filtrado_adc = pd.DataFrame()
@@ -241,26 +256,55 @@ if not atenciones_df.empty:
     col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
     col_verifica = obtener_columna(atenciones_df, "Nombre de Usuario que Verifica")
 
-    if col_ubicacion and col_verifica:
-        # Normalizar valores para comparar (trim, sin distinguir mayúsculas)
-        ubicaciones_norm = [u.strip().lower() for u in UBICACIONES_ADC]
+    if col_ubicacion is None or col_verifica is None:
+        st.error(
+            "⚠️ No se encontraron las columnas necesarias en la base "
+            "'Atenciones del especialista': "
+            f"'Ubicación de la venta'={'OK' if col_ubicacion else 'FALTA'}, "
+            f"'Nombre de Usuario que Verifica'={'OK' if col_verifica else 'FALTA'}."
+        )
+    else:
+        # --- Normalizar ubicaciones para comparación robusta ---
+        ubicaciones_norm = {normalizar(u) for u in UBICACIONES_ADC}
 
-        mask_ubicacion = (
+        ubicaciones_serie = (
             atenciones_df[col_ubicacion]
-            .astype(str).str.strip().str.lower()
-            .isin(ubicaciones_norm)
-        )
-        mask_verifica = (
-            atenciones_df[col_verifica].notna()
-            & (atenciones_df[col_verifica].astype(str).str.strip() != "")
-            & (atenciones_df[col_verifica].astype(str).str.strip().str.lower() != "nan")
+            .astype(str)
+            .map(normalizar)
         )
 
-        df_filtrado_adc = atenciones_df[mask_ubicacion & mask_verifica].copy()
-        conteo_adc = len(df_filtrado_adc)
+        # --- Verificadores: limpiar espacios y tratar "nan"/"None" como vacío ---
+        verificadores_serie = (
+            atenciones_df[col_verifica]
+            .astype(str)
+            .str.strip()
+            .replace({"nan": "", "None": "", "NaN": ""})
+        )
+
+        # --- Máscaras ---
+        mask_ubicacion = ubicaciones_serie.isin(ubicaciones_norm)
+        mask_verifica = verificadores_serie != ""
+
+        mask_final = mask_ubicacion & mask_verifica
+
+        df_filtrado_adc = atenciones_df.loc[mask_final].copy()
+        conteo_adc = int(mask_final.sum())
+
 
 # ============================================================
-# TABLA RESUMEN
+# RESUMEN GLOBAL (SIDEBAR)
+# ============================================================
+with st.sidebar:
+    st.header("📈 Resumen de carga")
+    st.metric("Archivos cargados", len(uploaded_files))
+    for nombre in ESTRUCTURAS:
+        st.metric(nombre, f"{len(bases[nombre])} hoja(s)")
+    if no_clasificados:
+        st.metric("No clasificados", len(no_clasificados))
+
+
+# ============================================================
+# TABLA RESUMEN "FASE 1 - AMBULATORIO"
 # ============================================================
 st.subheader("📋 FASE 1 - AMBULATORIO")
 
@@ -277,13 +321,17 @@ st.download_button(
     mime="text/csv",
 )
 
+
 # ============================================================
 # SECCIÓN DE NOVEDADES
 # ============================================================
 st.subheader("🔎 Novedades")
 
 if df_filtrado_adc.empty:
-    st.info("No hay registros que cumplan los filtros para 'Revisadas por analistas' (columna ADC).")
+    st.info(
+        "No hay registros que cumplan los filtros para 'Revisadas por analistas' "
+        "(columna ADC)."
+    )
 else:
     col_verifica = obtener_columna(df_filtrado_adc, "Nombre de Usuario que Verifica")
     col_submedico = obtener_columna(df_filtrado_adc, "Usuario / Sub Medico")
@@ -293,51 +341,70 @@ else:
         f"**Ubicaciones incluidas:** {', '.join(UBICACIONES_ADC)}"
     )
 
-    # Agrupar por "Nombre de Usuario que Verifica"
+    # --- Limpiar verificadores para agrupar sin duplicados por espacios/nan ---
+    verificadores_limpios = (
+        df_filtrado_adc[col_verifica]
+        .astype(str)
+        .str.strip()
+        .replace({"nan": "", "None": "", "NaN": ""})
+    )
+    df_filtrado_adc = df_filtrado_adc.assign(_verifica_limpio=verificadores_limpios)
+
+    # --- Agrupar por verificador ---
     resumen_verifica = (
         df_filtrado_adc
-        .groupby(col_verifica, dropna=False)
+        .groupby("_verifica_limpio", dropna=False)
         .size()
         .reset_index(name="Registros")
-        .rename(columns={col_verifica: "Nombre de Usuario que Verifica"})
+        .rename(columns={"_verifica_limpio": "Nombre de Usuario que Verifica"})
     )
 
-    # Determinar, por cada verificador, si coincide con algún "Usuario / Sub Medico"
-    def comparar_con_submedico(nombre_verifica, sub_df):
+    # --- Comparación con Sub Médico (normalizada) ---
+    def comparar_con_submedico(nombre_verifica):
         if not col_submedico:
             return "Sin datos de Sub Médico"
 
         valores_sub = (
-            sub_df[col_submedico].dropna().astype(str).str.strip()
+            df_filtrado_adc[col_submedico]
+            .dropna()
+            .astype(str)
+            .str.strip()
         )
-        valores_sub = valores_sub[valores_sub != ""]
-        valores_sub = valores_sub[valores_sub.str.lower() != "nan"]
+        valores_sub = valores_sub[~valores_sub.isin(["", "nan", "None", "NaN"])]
 
         if valores_sub.empty:
             return "Sin datos de Sub Médico"
 
-        nombre_norm = str(nombre_verifica).strip().lower()
-        set_sub_norm = {v.lower() for v in valores_sub.unique()}
+        norm_verifica = normalizar(nombre_verifica)
+        set_sub_norm = {normalizar(v) for v in valores_sub.unique()}
 
-        return "Misma persona" if nombre_norm in set_sub_norm else "Diferente persona"
+        return "Misma persona" if norm_verifica in set_sub_norm else "Diferente persona"
 
-    sub_df = df_filtrado_adc[df_filtrado_adc[col_verifica].astype(str).str.strip().str.lower() ==
-                             str(resumen_verifica.iloc[0][col_verifica]).strip().lower()] if False else df_filtrado_adc
+    resumen_verifica["¿Coincide con Usuario / Sub Médico?"] = (
+        resumen_verifica["Nombre de Usuario que Verifica"]
+        .apply(comparar_con_submedico)
+    )
 
-    resumen_verifica["¿Coincide con Usuario / Sub Médico?"] = resumen_verifica[
-        "Nombre de Usuario que Verifica"
-    ].apply(lambda n: comparar_con_submedico(n, df_filtrado_adc))
-
-    resumen_verifica = resumen_verifica.sort_values("Registros", ascending=False).reset_index(drop=True)
+    resumen_verifica = (
+        resumen_verifica
+        .sort_values("Registros", ascending=False)
+        .reset_index(drop=True)
+    )
 
     st.markdown("#### 👥 Verificadores y comparación con Sub Médico")
     st.dataframe(resumen_verifica, use_container_width=True)
 
-    # Detalle de valores únicos de Sub Médico presentes (para trazabilidad)
+    # --- Detalle de valores únicos de Sub Médico (auditoría) ---
     if col_submedico:
         with st.expander("Ver valores únicos en 'Usuario / Sub Medico' (registros filtrados)"):
             valores_sub = (
-                df_filtrado_adc[col_submedico].dropna().astype(str).str.strip()
+                df_filtrado_adc[col_submedico]
+                .dropna()
+                .astype(str)
+                .str.strip()
             )
-            valores_sub = sorted({v for v in valores_sub.unique() if v and v.lower() != "nan"})
+            valores_sub = sorted({
+                v for v in valores_sub.unique()
+                if v and v.lower() not in ("nan", "none")
+            })
             st.write(valores_sub if valores_sub else "Sin valores registrados.")
