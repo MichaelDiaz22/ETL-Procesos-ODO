@@ -69,9 +69,10 @@ ESTRUCTURAS = {
 UMBRAL_COINCIDENCIA = 0.60
 
 # ============================================================
-# TABLA BASE: SEDE + UBICACIÓN + FASE
+# TABLA BASE: SEDE + UBICACIÓN + FASE (ACTUALIZADA)
 # ============================================================
 MAPA_FASES = [
+    # -------------------- Angiografía Villavicencio (ADC) --------------------
     ("ADC", "VILL-Oncología", "Fase 1"),
     ("ADC", "VILL-Rehabilitación Cardiaca", "Fase 1"),
     ("ADC", "VILL-Consulta Externa", "Fase 1"),
@@ -87,6 +88,8 @@ MAPA_FASES = [
     ("ADC", "VILL-Electrofisiologia", "Fase 1"),
     ("ADC", "VILL-Gestión Pre-transfusional", "Fase 3"),
     ("ADC", "SAN-Consulta Externa", "Fase 1"),
+
+    # -------------------- Clínica Avidanti Armenia (CAA) --------------------
     ("CAA", "CAA-Hospitalización 5 Piso", "Fase 2"),
     ("CAA", "CAA-Urgencias", "Fase 2"),
     ("CAA", "CAA-Consulta Externa", "Fase 1"),
@@ -98,6 +101,8 @@ MAPA_FASES = [
     ("CAA", "CAA-Imagenología", "Fase 1"),
     ("CAA", "CAA-Cardiología No Invasiva", "Fase 1"),
     ("CAA", "CAA-Laboratorio Clínico", "Fase 1"),
+
+    # -------------------- Clínica Avidanti Ibagué (CAI) --------------------
     ("CAI", "CAI-Consulta Externa Nueva", "Fase 1"),
     ("CAI", "CAI-Sala de Cirugía 2", "Fase 3"),
     ("CAI", "CAI-Urgencias Nueva", "Fase 2"),
@@ -118,6 +123,10 @@ MAPA_FASES = [
     ("CAI", "CAI-Hemodinamia", "Fase 3"),
     ("CAI", "CAI-Laboratorio Clínico", "Fase 1"),
     ("CAI", "CAI-TeleConsulta", "Fase 1"),
+    ("CAI", "CAI-Gestion pre transfusional", "Fase 3"),
+    ("CAI", "CAI-Terapias", "Fase 1"),
+
+    # -------------------- Clínica Avidanti Manizales (CAM) --------------------
     ("CAM", "CAM-Consulta Externa", "Fase 1"),
     ("CAM", "CAM-Urgencias", "Fase 2"),
     ("CAM", "CAM-Hospitalización 7 Piso Sur", "Fase 2"),
@@ -146,6 +155,10 @@ MAPA_FASES = [
     ("CAM", "CAM-Sala de Cirugía 6 Cardiovascular", "Fase 3"),
     ("CAM", "CAM-Laboratorio Clínico", "Fase 1"),
     ("CAM", "CAM - Sala de Cirugía 8", "Fase 3"),
+    ("CAM", "CAM - Terapias", "Fase 1"),
+    ("CAM", "CAM - Hospitalizacion 4 piso norte", "Fase 2"),
+
+    # -------------------- Clínica Avidanti Santa Marta (CASM) --------------------
     ("CASM", "CASM- Consulta Externa", "Fase 1"),
     ("CASM", "CASM-Hospitalización VIP 2", "Fase 2"),
     ("CASM", "CASM-Hospitalización 2 Piso Norte", "Fase 2"),
@@ -169,6 +182,11 @@ MAPA_FASES = [
     ("CASM", "CASM-Recuperación Cirugía", "Fase 3"),
     ("CASM", "CASM-Laboratorio Clínico", "Fase 1"),
     ("CASM", "CASM-Electrofisiología", "Fase 1"),
+    ("CASM", "CASM-Gestion pre transfusional", "Fase 3"),
+    ("CASM", "CASM-Hemodialisis", "Fase 3"),
+    ("CASM", "CASM-Tomografia", "Fase 1"),
+
+    # -------------------- Clínica Avidanti Ciudad Verde (CACV) --------------------
     ("CACV", "CACV-Hospitalización 5 Piso Norte", "Fase 2"),
     ("CACV", "CACV-Hospitalización 5 Piso Sur", "Fase 2"),
     ("CACV", "CACV-Laboratorio Clínico", "Fase 1"),
@@ -859,7 +877,7 @@ st.dataframe(tabla_consolidada, use_container_width=True, height=380)
 csv_consolidado = tabla_consolidada.to_csv().encode("utf-8")
 st.download_button(
     label="⬇️ Descargar CONSOLIDADO (CSV)",
-    data=csv_consolidado,
+    data=tabla_consolidada.to_csv().encode("utf-8"),
     file_name="CONSOLIDADO_FASES.csv",
     mime="text/csv",
     key="dl_consolidado",
