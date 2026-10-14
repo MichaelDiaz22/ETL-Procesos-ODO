@@ -551,12 +551,23 @@ else:
 
 # ============================================================
 # CÁLCULO: "Dinero enviado por interfaz" por fase y sede
+# ------------------------------------------------------------
+# Para cada registro de Atenciones (revisado, con sede/fase):
+#   1. Obtener su "Numero Venta"
+#   2. Buscar en Ventas las filas con ese "Venta No."
+#   3. Sumar "Valor facturado" SOLO de las filas cuya
+#      "Ubicación despacho" pertenezca a la MISMA (sede, fase)
+#      que el registro original de Atenciones.
+# ------------------------------------------------------------
+# Así se evita inflar el valor cuando un mismo folio tiene
+# productos en varias fases/ubicaciones.
 # ============================================================
 dinero_interfaz = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
     for fase in FASES
 }
 ventas_sin_match = set()
+ventas_sin_ubicacion_fase = set()
 
 if bases["Ventas"]:
     ventas_df = pd.concat(
@@ -566,26 +577,50 @@ if bases["Ventas"]:
 
     col_venta_no = obtener_columna(ventas_df, "Venta No.")
     col_valor_facturado = obtener_columna(ventas_df, "Valor facturado")
+    col_ubicacion_despacho = obtener_columna(ventas_df, "Ubicación despacho")
 
-    if col_venta_no is None or col_valor_facturado is None:
+    if (
+        col_venta_no is None
+        or col_valor_facturado is None
+        or col_ubicacion_despacho is None
+    ):
         st.warning(
-            "⚠️ No se encontraron las columnas 'Venta No.' o 'Valor facturado' "
-            "en la base Ventas. No se puede calcular 'Dinero enviado por interfaz'."
+            "⚠️ Faltan columnas en Ventas para calcular 'Dinero enviado por "
+            "interfaz': 'Venta No.', 'Valor facturado' o 'Ubicación despacho'."
         )
     else:
+        # --- Preparar columnas auxiliares en Ventas ---
         ventas_df["_venta_no_norm"] = (
-            ventas_df[col_venta_no]
-            .map(normalizar_llave_venta)
+            ventas_df[col_venta_no].map(normalizar_llave_venta)
         )
-        ventas_df["_valor_facturado_num"] = convertir_a_numero(ventas_df[col_valor_facturado])
+        ventas_df["_valor_facturado_num"] = convertir_a_numero(
+            ventas_df[col_valor_facturado]
+        )
+        ventas_df["_ubicacion_norm"] = (
+            ventas_df[col_ubicacion_despacho].astype(str).map(normalizar)
+        )
+        ventas_df["_sede_venta"] = ventas_df["_ubicacion_norm"].map(
+            lambda u: MAPA_UBICACION.get(u, (None, None))[0]
+        )
+        ventas_df["_fase_venta"] = ventas_df["_ubicacion_norm"].map(
+            lambda u: MAPA_UBICACION.get(u, (None, None))[1]
+        )
 
+        # --- Agrupar por (Venta No., sede, fase) → suma de Valor facturado ---
         ventas_agg = (
             ventas_df
-            .groupby("_venta_no_norm", dropna=False)["_valor_facturado_num"]
+            .dropna(subset=["_sede_venta", "_fase_venta"])
+            .groupby(["_venta_no_norm", "_sede_venta", "_fase_venta"])[
+                "_valor_facturado_num"
+            ]
             .sum()
+            .to_dict()
         )
-        ventas_agg_dict = dict(ventas_agg)
 
+        # Conjunto de ventas conocidas en Ventas (para detectar sin-match)
+        ventas_conocidas = set(ventas_df["_venta_no_norm"].unique())
+
+        # --- Recorrer Atenciones (solo revisadas + con sede/fase) ---
         if not atenciones_df.empty and venta_norm_atenciones_serie is not None:
             for i in range(len(atenciones_df)):
                 sede_cod = sede_serie.iloc[i]
@@ -605,11 +640,20 @@ if bases["Ventas"]:
                 if not venta_no:
                     continue
 
-                valor = ventas_agg_dict.get(venta_no)
+                if venta_no not in ventas_conocidas:
+                    ventas_sin_match.add(venta_no)
+                    continue
+
+                # Sumar SOLO las filas de Ventas con la misma (sede, fase)
+                llave = (venta_no, sede_cod, fase_val)
+                valor = ventas_agg.get(llave)
+
                 if valor is not None:
                     dinero_interfaz[fase_val][sede_cod] += float(valor)
                 else:
-                    ventas_sin_match.add(venta_no)
+                    ventas_sin_ubicacion_fase.add(
+                        f"{venta_no} ({sede_cod} - {fase_val})"
+                    )
 else:
     ventas_df = pd.DataFrame()
 
@@ -618,8 +662,8 @@ else:
 # CÁLCULO: "Total ventas consulta externa (ACTIVO Y FACTURADO)"
 # y        "Dinero ventas ambulatorio"
 # ------------------------------------------------------------
-# Se calculan con la base Ventas:
-#   - Filtrar por "Ubicación despacho" ∈ ubicaciones de la tabla base
+# Ambos se calculan con la base Ventas filtrando por
+# "Ubicación despacho" ∈ tabla base:
 #   - Total ventas: CONTEO de registros por (sede, fase)
 #   - Dinero ventas ambulatorio: SUMA de "Valor Total Recalculado"
 # ============================================================
@@ -639,9 +683,7 @@ if bases["Ventas"]:
 
     if col_ubicacion_despacho is None:
         st.warning(
-            "⚠️ No se encontró la columna 'Ubicación despacho' en la base Ventas. "
-            "No se puede calcular 'Total ventas consulta externa' ni "
-            "'Dinero ventas ambulatorio'."
+            "⚠️ No se encontró la columna 'Ubicación despacho' en la base Ventas."
         )
     else:
         ubicacion_despacho_norm = (
@@ -657,7 +699,6 @@ if bases["Ventas"]:
             lambda u: MAPA_UBICACION.get(u, (None, None))[1]
         )
 
-        # Diagnóstico: ubicaciones de despacho sin match
         sin_match_ventas = ubicacion_despacho_norm[sede_ventas.isna()]
         if not sin_match_ventas.empty:
             ubicaciones_ventas_no_mapeadas = (
@@ -667,24 +708,21 @@ if bases["Ventas"]:
                 .reset_index(name="Registros")
             )
 
-        # Convertir "Valor Total Recalculado" a numérico (para dinero ambulatorio)
         if col_valor_total_recalc is not None:
-            valor_total_recalc_num = convertir_a_numero(ventas_df[col_valor_total_recalc])
+            valor_total_recalc_num = convertir_a_numero(
+                ventas_df[col_valor_total_recalc]
+            )
         else:
             valor_total_recalc_num = pd.Series(0.0, index=ventas_df.index)
             st.warning(
-                "⚠️ No se encontró la columna 'Valor Total Recalculado' en Ventas. "
-                "'Dinero ventas ambulatorio' quedará en 0."
+                "⚠️ No se encontró la columna 'Valor Total Recalculado' en Ventas."
             )
 
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (sede_ventas == cod) & (fase_ventas == fase)
 
-                # Conteo de registros
                 total_ventas_ce[fase][cod] = int(mask_sede_fase.sum())
-
-                # Suma de "Valor Total Recalculado"
                 dinero_ambulatorio[fase][cod] = float(
                     valor_total_recalc_num[mask_sede_fase].sum()
                 )
@@ -725,6 +763,24 @@ if ventas_sin_match:
         )
         st.dataframe(
             pd.DataFrame({"Numero Venta (sin match)": sorted(ventas_sin_match)}).head(200),
+            use_container_width=True,
+        )
+
+if ventas_sin_ubicacion_fase:
+    with st.expander(
+        "⚠️ Ventas cuyo folio existe pero sin filas en la misma (sede, fase)",
+        expanded=False,
+    ):
+        st.markdown(
+            f"**{len(ventas_sin_ubicacion_fase):,}** ventas existen en Ventas, "
+            "pero ninguna de sus filas tiene `Ubicación despacho` correspondiente "
+            "a la (sede, fase) del registro en Atenciones. No se suman a "
+            "'Dinero enviado por interfaz'."
+        )
+        st.dataframe(
+            pd.DataFrame(
+                {"Venta (sede - fase)": sorted(ventas_sin_ubicacion_fase)}
+            ).head(200),
             use_container_width=True,
         )
 
