@@ -287,14 +287,17 @@ def es_vacio(serie):
 
 def normalizar_llave_venta(v):
     """Normaliza una llave de venta para el cruce entre bases.
-    Elimina espacios, ceros a la izquierda, sufijos '.0' y pasa a string limpio."""
-    if pd.isna(v):
+    Elimina espacios, sufijos '.0' y ceros a la izquierda."""
+    if v is None:
         return ""
+    try:
+        if pd.isna(v):
+            return ""
+    except (TypeError, ValueError):
+        pass
     s = str(v).strip()
-    # Quitar sufijo .0 típico de float
     if s.endswith(".0"):
         s = s[:-2]
-    # Si es puramente numérico, quitar ceros a la izquierda
     if s.isdigit():
         s = s.lstrip("0") or "0"
     return s
@@ -305,7 +308,8 @@ def normalizar_llave_venta(v):
 # ============================================================
 MAPA_UBICACION = {}
 for sede_cod, ubicacion, fase in MAPA_FASES:
-    MAPA_UBICACION[normalizar(ubicacion)] = (sede_cod, fase)
+    fase_canonica = str(fase).strip()
+    MAPA_UBICACION[normalizar(ubicacion)] = (sede_cod, fase_canonica)
 
 
 # ============================================================
@@ -440,7 +444,6 @@ df_filtrado_revisadas = pd.DataFrame()
 df_filtrado_avaladas = pd.DataFrame()
 ubicaciones_no_mapeadas = pd.Series(dtype=int)
 
-# Series que se reutilizarán en el cálculo del dinero
 sede_serie = None
 fase_serie = None
 mask_verifica = None
@@ -460,14 +463,12 @@ if not atenciones_df.empty:
             f"'Nombre de Usuario que Verifica'={'OK' if col_verifica else 'FALTA'}."
         )
     else:
-        # Normalizar ubicación de cada registro
         ubicacion_norm_serie = (
             atenciones_df[col_ubicacion]
             .astype(str)
             .map(normalizar)
         )
 
-        # Mapear a (sede, fase)
         sede_serie = ubicacion_norm_serie.map(
             lambda u: MAPA_UBICACION.get(u, (None, None))[0]
         )
@@ -475,14 +476,12 @@ if not atenciones_df.empty:
             lambda u: MAPA_UBICACION.get(u, (None, None))[1]
         )
 
-        # Máscaras de no-vacío
         mask_verifica = es_vacio(atenciones_df[col_verifica])
         if col_submedico is not None:
             mask_submedico = es_vacio(atenciones_df[col_submedico])
         else:
             mask_submedico = pd.Series(False, index=atenciones_df.index)
 
-        # Normalizar "Numero Venta" para el cruce posterior
         if col_num_venta is not None:
             venta_norm_atenciones_serie = (
                 atenciones_df[col_num_venta]
@@ -491,7 +490,6 @@ if not atenciones_df.empty:
         else:
             venta_norm_atenciones_serie = pd.Series("", index=atenciones_df.index)
 
-        # Diagnóstico: ubicaciones sin match
         sin_match = ubicacion_norm_serie[sede_serie.isna()]
         if not sin_match.empty:
             ubicaciones_no_mapeadas = (
@@ -501,7 +499,6 @@ if not atenciones_df.empty:
                 .reset_index(name="Registros")
             )
 
-        # Iterar por fase × sede para contar
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (sede_serie == cod) & (fase_serie == fase)
@@ -511,7 +508,6 @@ if not atenciones_df.empty:
                 conteos[fase][cod]["revisadas"] = int(mask_rev.sum())
                 conteos[fase][cod]["avaladas"] = int(mask_ava.sum())
 
-        # Guardar filtrados globales
         df_filtrado_revisadas = atenciones_df.loc[mask_verifica].copy()
         df_filtrado_avaladas = atenciones_df.loc[mask_verifica & mask_submedico].copy()
 else:
@@ -524,10 +520,9 @@ else:
 # ============================================================
 # CÁLCULO: "Dinero enviado por interfaz" por fase y sede
 # ------------------------------------------------------------
-# Por cada (fase, sede):
-#   - Tomar los registros de Atenciones "Revisadas" (verificador no vacío)
-#   - Cruzar "Numero Venta" con "Venta No." de la base Ventas
-#   - Sumar "Valor facturado"
+# - Tomar los registros de Atenciones (revisadas + con sede/fase)
+# - Cruzar "Numero Venta" con "Venta No." de la base Ventas
+# - Sumar "Valor facturado"
 # ============================================================
 dinero_interfaz = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
@@ -550,13 +545,11 @@ if bases["Ventas"]:
             "en la base Ventas. No se puede calcular 'Dinero enviado por interfaz'."
         )
     else:
-        # Normalizar llave de venta en Ventas
         ventas_df["_venta_no_norm"] = (
             ventas_df[col_venta_no]
             .map(normalizar_llave_venta)
         )
 
-        # Valor facturado numérico
         ventas_df["_valor_facturado_num"] = pd.to_numeric(
             ventas_df[col_valor_facturado]
             .astype(str)
@@ -567,31 +560,36 @@ if bases["Ventas"]:
             errors="coerce"
         ).fillna(0)
 
-        # Agrupar por Venta No.: suma de Valor facturado
         ventas_agg = (
             ventas_df
             .groupby("_venta_no_norm", dropna=False)["_valor_facturado_num"]
             .sum()
-            .to_dict()
         )
+        ventas_agg_dict = dict(ventas_agg)
 
-        # Recorrer los registros de Atenciones (solo revisadas + con sede/fase)
         if not atenciones_df.empty and venta_norm_atenciones_serie is not None:
             for i in range(len(atenciones_df)):
                 sede_cod = sede_serie.iloc[i]
                 fase_val = fase_serie.iloc[i]
 
-                if sede_cod is None or fase_val is None:
+                # Validar estrictamente que fase y sede existan
+                if fase_val is None or sede_cod is None:
                     continue
-                if not mask_verifica.iloc[i]:
+                fase_val = str(fase_val).strip()
+                if fase_val not in dinero_interfaz:
+                    continue
+                if sede_cod not in dinero_interfaz[fase_val]:
+                    continue
+                if not bool(mask_verifica.iloc[i]):
                     continue
 
                 venta_no = venta_norm_atenciones_serie.iloc[i]
                 if not venta_no:
                     continue
 
-                if venta_no in ventas_agg:
-                    dinero_interfaz[fase_val][sede_cod] += ventas_agg[venta_no]
+                valor = ventas_agg_dict.get(venta_no)
+                if valor is not None:
+                    dinero_interfaz[fase_val][sede_cod] += float(valor)
                 else:
                     ventas_sin_match.add(venta_no)
 else:
