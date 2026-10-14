@@ -69,7 +69,7 @@ ESTRUCTURAS = {
 UMBRAL_COINCIDENCIA = 0.60
 
 # ============================================================
-# TABLA BASE: SEDE + UBICACIÓN + FASE (ACTUALIZADA)
+# TABLA BASE: SEDE + UBICACIÓN + FASE
 # ============================================================
 MAPA_FASES = [
     # Angiografía Villavicencio
@@ -323,6 +323,18 @@ def normalizar_llave_venta(v):
     return s
 
 
+def convertir_a_numero(serie):
+    """Convierte una serie de valores monetarios a float."""
+    return pd.to_numeric(
+        serie.astype(str)
+        .str.replace(",", "", regex=False)
+        .str.replace("$", "", regex=False)
+        .str.replace(" ", "", regex=False)
+        .str.strip(),
+        errors="coerce"
+    ).fillna(0)
+
+
 # ============================================================
 # MAPA INVERTIDO: {ubicacion_normalizada: (codigo_sede, fase)}
 # ============================================================
@@ -565,16 +577,7 @@ if bases["Ventas"]:
             ventas_df[col_venta_no]
             .map(normalizar_llave_venta)
         )
-
-        ventas_df["_valor_facturado_num"] = pd.to_numeric(
-            ventas_df[col_valor_facturado]
-            .astype(str)
-            .str.replace(",", "", regex=False)
-            .str.replace("$", "", regex=False)
-            .str.replace(" ", "", regex=False)
-            .str.strip(),
-            errors="coerce"
-        ).fillna(0)
+        ventas_df["_valor_facturado_num"] = convertir_a_numero(ventas_df[col_valor_facturado])
 
         ventas_agg = (
             ventas_df
@@ -613,24 +616,32 @@ else:
 
 # ============================================================
 # CÁLCULO: "Total ventas consulta externa (ACTIVO Y FACTURADO)"
+# y        "Dinero ventas ambulatorio"
 # ------------------------------------------------------------
-# Se calcula con la base Ventas:
+# Se calculan con la base Ventas:
 #   - Filtrar por "Ubicación despacho" ∈ ubicaciones de la tabla base
-#   - Contar registros por (sede, fase)
+#   - Total ventas: CONTEO de registros por (sede, fase)
+#   - Dinero ventas ambulatorio: SUMA de "Valor Total Recalculado"
 # ============================================================
 total_ventas_ce = {
     fase: {cod: 0 for cod in CODIGOS_SEDE}
+    for fase in FASES
+}
+dinero_ambulatorio = {
+    fase: {cod: 0.0 for cod in CODIGOS_SEDE}
     for fase in FASES
 }
 ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
 
 if bases["Ventas"]:
     col_ubicacion_despacho = obtener_columna(ventas_df, "Ubicación despacho")
+    col_valor_total_recalc = obtener_columna(ventas_df, "Valor Total Recalculado")
 
     if col_ubicacion_despacho is None:
         st.warning(
             "⚠️ No se encontró la columna 'Ubicación despacho' en la base Ventas. "
-            "No se puede calcular 'Total ventas consulta externa (ACTIVO Y FACTURADO)'."
+            "No se puede calcular 'Total ventas consulta externa' ni "
+            "'Dinero ventas ambulatorio'."
         )
     else:
         ubicacion_despacho_norm = (
@@ -656,10 +667,27 @@ if bases["Ventas"]:
                 .reset_index(name="Registros")
             )
 
+        # Convertir "Valor Total Recalculado" a numérico (para dinero ambulatorio)
+        if col_valor_total_recalc is not None:
+            valor_total_recalc_num = convertir_a_numero(ventas_df[col_valor_total_recalc])
+        else:
+            valor_total_recalc_num = pd.Series(0.0, index=ventas_df.index)
+            st.warning(
+                "⚠️ No se encontró la columna 'Valor Total Recalculado' en Ventas. "
+                "'Dinero ventas ambulatorio' quedará en 0."
+            )
+
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (sede_ventas == cod) & (fase_ventas == fase)
+
+                # Conteo de registros
                 total_ventas_ce[fase][cod] = int(mask_sede_fase.sum())
+
+                # Suma de "Valor Total Recalculado"
+                dinero_ambulatorio[fase][cod] = float(
+                    valor_total_recalc_num[mask_sede_fase].sum()
+                )
 
 
 # ============================================================
@@ -679,24 +707,16 @@ with st.sidebar:
 
 
 # ============================================================
-# DIAGNÓSTICO: UBICACIONES SIN MAPEAR (ATENCIONES)
+# DIAGNÓSTICOS
 # ============================================================
 if not ubicaciones_no_mapeadas.empty:
     with st.expander("⚠️ Ubicaciones de la venta (Atenciones) sin coincidencia en la tabla base", expanded=False):
         st.dataframe(ubicaciones_no_mapeadas, use_container_width=True)
 
-
-# ============================================================
-# DIAGNÓSTICO: UBICACIONES SIN MAPEAR (VENTAS)
-# ============================================================
 if not ubicaciones_ventas_no_mapeadas.empty:
     with st.expander("⚠️ Ubicaciones de despacho (Ventas) sin coincidencia en la tabla base", expanded=False):
         st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
 
-
-# ============================================================
-# DIAGNÓSTICO: VENTAS SIN MATCH
-# ============================================================
 if ventas_sin_match:
     with st.expander("⚠️ Ventas de Atenciones sin coincidencia en la base Ventas", expanded=False):
         st.markdown(
@@ -723,6 +743,7 @@ for fase in FASES:
         tabla.loc["Avaladas subgerencia médica", columna] = f"{conteos[fase][cod]['avaladas']:,}"
         tabla.loc["Dinero enviado por interfaz", columna] = f"${dinero_interfaz[fase][cod]:,.0f}"
         tabla.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce[fase][cod]:,}"
+        tabla.loc["Dinero ventas ambulatorio", columna] = f"${dinero_ambulatorio[fase][cod]:,.0f}"
 
     st.dataframe(tabla, use_container_width=True, height=380)
 
