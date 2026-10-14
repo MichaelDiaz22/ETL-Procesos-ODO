@@ -244,6 +244,9 @@ TITULOS_FASES = {
     "Fase 3": "FASE 3 - QUIRÚRGICO",
 }
 
+# Estados permitidos para "Total ventas consulta externa" y "Dinero ventas ambulatorio"
+ESTADOS_PERMITIDOS = {"activo", "facturado"}
+
 
 def construir_tabla_resumen():
     df = pd.DataFrame("", index=FILAS_RESUMEN, columns=COLUMNAS_RESUMEN)
@@ -551,13 +554,6 @@ else:
 
 # ============================================================
 # CÁLCULO: "Dinero enviado por interfaz" por fase y sede
-# ------------------------------------------------------------
-# Para cada registro de Atenciones (revisado, con sede/fase):
-#   1. Obtener su "Numero Venta"
-#   2. Buscar en Ventas el valor "Valor facturado" de ese folio
-#      dentro de la MISMA (sede, fase)
-#   3. Tomar SOLO UN valor por folio (no duplicar si hay varias
-#      filas en Ventas con el mismo folio y misma ubicación)
 # ============================================================
 dinero_interfaz = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
@@ -586,7 +582,6 @@ if bases["Ventas"]:
             "interfaz': 'Venta No.', 'Valor facturado' o 'Ubicación despacho'."
         )
     else:
-        # --- Preparar columnas auxiliares en Ventas ---
         ventas_df["_venta_no_norm"] = (
             ventas_df[col_venta_no].map(normalizar_llave_venta)
         )
@@ -603,7 +598,7 @@ if bases["Ventas"]:
             lambda u: MAPA_UBICACION.get(u, (None, None))[1]
         )
 
-        # --- Deduplicar: UNA fila por (Venta No., sede, fase) ---
+        # Deduplicar: UNA fila por (Venta No., sede, fase)
         ventas_dedupe = (
             ventas_df
             .dropna(subset=["_sede_venta", "_fase_venta"])
@@ -613,7 +608,6 @@ if bases["Ventas"]:
             )
         )
 
-        # Diccionario: {(venta_no, sede, fase): Valor facturado}
         ventas_valor = (
             ventas_dedupe
             .set_index(["_venta_no_norm", "_sede_venta", "_fase_venta"])[
@@ -663,6 +657,13 @@ else:
 # ============================================================
 # CÁLCULO: "Total ventas consulta externa (ACTIVO Y FACTURADO)"
 # y        "Dinero ventas ambulatorio"
+# ------------------------------------------------------------
+# Filtros:
+#   - "Ubicación despacho" ∈ tabla base (define sede y fase)
+#   - "Estado" ∈ {"Activo", "Facturado"} (normalizado)
+#
+#   - Total ventas: CONTEO de registros por (sede, fase)
+#   - Dinero ventas ambulatorio: SUMA de "Valor Total Recalculado"
 # ============================================================
 total_ventas_ce = {
     fase: {cod: 0 for cod in CODIGOS_SEDE}
@@ -673,14 +674,21 @@ dinero_ambulatorio = {
     for fase in FASES
 }
 ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
+estados_no_incluidos = pd.Series(dtype=int)
 
 if bases["Ventas"]:
     col_ubicacion_despacho = obtener_columna(ventas_df, "Ubicación despacho")
+    col_estado = obtener_columna(ventas_df, "Estado")
     col_valor_total_recalc = obtener_columna(ventas_df, "Valor Total Recalculado")
 
     if col_ubicacion_despacho is None:
         st.warning(
             "⚠️ No se encontró la columna 'Ubicación despacho' en la base Ventas."
+        )
+    elif col_estado is None:
+        st.warning(
+            "⚠️ No se encontró la columna 'Estado' en la base Ventas. "
+            "No se puede aplicar el filtro ACTIVO Y FACTURADO."
         )
     else:
         ubicacion_despacho_norm = (
@@ -696,6 +704,26 @@ if bases["Ventas"]:
             lambda u: MAPA_UBICACION.get(u, (None, None))[1]
         )
 
+        # --- Normalizar Estado y filtrar solo "Activo" y "Facturado" ---
+        estado_norm = (
+            ventas_df[col_estado]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+        )
+        mask_estado_valido = estado_norm.isin(ESTADOS_PERMITIDOS)
+
+        # Diagnóstico: estados distintos que NO se incluyen
+        estados_excluidos = estado_norm[~mask_estado_valido]
+        if not estados_excluidos.empty:
+            estados_no_incluidos = (
+                estados_excluidos
+                .value_counts()
+                .rename_axis("Estado (normalizado)")
+                .reset_index(name="Registros")
+            )
+
+        # Diagnóstico: ubicaciones de despacho sin match
         sin_match_ventas = ubicacion_despacho_norm[sede_ventas.isna()]
         if not sin_match_ventas.empty:
             ubicaciones_ventas_no_mapeadas = (
@@ -718,20 +746,16 @@ if bases["Ventas"]:
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (sede_ventas == cod) & (fase_ventas == fase)
+                mask_final = mask_sede_fase & mask_estado_valido
 
-                total_ventas_ce[fase][cod] = int(mask_sede_fase.sum())
+                total_ventas_ce[fase][cod] = int(mask_final.sum())
                 dinero_ambulatorio[fase][cod] = float(
-                    valor_total_recalc_num[mask_sede_fase].sum()
+                    valor_total_recalc_num[mask_final].sum()
                 )
 
 
 # ============================================================
 # CÁLCULO: "Porcentual faltante (META 30%)"
-# ------------------------------------------------------------
-# Fórmula:
-#   (Total ventas consulta externa - Avaladas subgerencia médica)
-#   ------------------------------------------------------------
-#                  Avaladas subgerencia médica
 # ============================================================
 porcentual_faltante = {
     fase: {cod: 0.0 for cod in CODIGOS_SEDE}
@@ -777,6 +801,15 @@ if not ubicaciones_no_mapeadas.empty:
 if not ubicaciones_ventas_no_mapeadas.empty:
     with st.expander("⚠️ Ubicaciones de despacho (Ventas) sin coincidencia en la tabla base", expanded=False):
         st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
+
+if not estados_no_incluidos.empty:
+    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo se cuentan 'Activo' y 'Facturado')", expanded=False):
+        st.markdown(
+            "Estos valores de `Estado` no coinciden con **Activo** o **Facturado**, "
+            "por lo que quedan fuera de **Total ventas consulta externa** y "
+            "**Dinero ventas ambulatorio**."
+        )
+        st.dataframe(estados_no_incluidos, use_container_width=True)
 
 if ventas_sin_match:
     with st.expander("⚠️ Ventas de Atenciones sin coincidencia en la base Ventas", expanded=False):
