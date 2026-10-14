@@ -9,3 +9,4 @@ seaborn
 fpdf
 streamlit
 plotly
+hashlib
