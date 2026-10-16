@@ -213,8 +213,8 @@ if uploaded_file is not None:
             'Calle 50 N° 13-10, MARAYA - PEREIRA',
             'Calle 10 N° 2C-10B, CLÍNICA AVIDANTI -  MANIZALES',
             'Carrera 23 N° 46 Esquina, CLÍNICA LA PRESENTACIÓN - MANIZALES',
-            'Avenida Universitaria # 46-71 - TUNJA',
-            'Calle 92 N°  29-75,  SAN MARCEL -  MANIZALES'
+            'Calle 92 N°  29-75,  SAN MARCEL -  MANIZALES',
+            'Avenida Universitaria # 46-71 - TUNJA'
         ]
     })
 
