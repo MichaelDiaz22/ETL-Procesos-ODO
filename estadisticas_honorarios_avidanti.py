@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import hashlib
+import re
 
 # ============================================================
 # CONFIGURACIÓN
@@ -69,9 +70,10 @@ ESTRUCTURAS = {
 UMBRAL_COINCIDENCIA = 0.60
 
 # ============================================================
-# TABLA BASE: SEDE + UBICACIÓN + FASE
+# TABLA BASE: SEDE + UBICACIÓN + FASE (ACTUALIZADA - DEFINITIVA)
 # ============================================================
 MAPA_FASES = [
+    # -------------------- Angiografía Villavicencio (ADC) --------------------
     ("ADC", "VILL-Oncología", "Fase 1"),
     ("ADC", "VILL-Rehabilitación Cardiaca", "Fase 1"),
     ("ADC", "VILL-Consulta Externa", "Fase 1"),
@@ -87,6 +89,8 @@ MAPA_FASES = [
     ("ADC", "VILL-Electrofisiologia", "Fase 1"),
     ("ADC", "VILL-Gestión Pre-transfusional", "Fase 3"),
     ("ADC", "SAN-Consulta Externa", "Fase 1"),
+
+    # -------------------- Clínica Avidanti Armenia (CAA) --------------------
     ("CAA", "CAA-Hospitalización 5 Piso", "Fase 2"),
     ("CAA", "CAA-Urgencias", "Fase 2"),
     ("CAA", "CAA-Consulta Externa", "Fase 1"),
@@ -98,6 +102,8 @@ MAPA_FASES = [
     ("CAA", "CAA-Imagenología", "Fase 1"),
     ("CAA", "CAA-Cardiología No Invasiva", "Fase 1"),
     ("CAA", "CAA-Laboratorio Clínico", "Fase 1"),
+
+    # -------------------- Clínica Avidanti Ibagué (CAI) --------------------
     ("CAI", "CAI-Consulta Externa Nueva", "Fase 1"),
     ("CAI", "CAI-Sala de Cirugía 2", "Fase 3"),
     ("CAI", "CAI-Urgencias Nueva", "Fase 2"),
@@ -108,7 +114,7 @@ MAPA_FASES = [
     ("CAI", "CAI-Hospitalización 4 Piso Sur Nueva", "Fase 2"),
     ("CAI", "CAI-Sala de Cirugía 4 (Urgencias)", "Fase 2"),
     ("CAI", "CAI-Hospitalización 6 Piso Sur Nueva", "Fase 2"),
-    ("CAI", "CAI-UCINT  Piso 2 Nueva", "Fase 2"),
+    ("CAI", "CAI-UCINT Piso 2 Nueva", "Fase 2"),
     ("CAI", "CAI-UCI 1 Piso 2 Nueva", "Fase 2"),
     ("CAI", "CAI-Electrofisiología", "Fase 1"),
     ("CAI", "CAI-Imagenologia", "Fase 1"),
@@ -120,6 +126,8 @@ MAPA_FASES = [
     ("CAI", "CAI-TeleConsulta", "Fase 1"),
     ("CAI", "CAI-Gestion pre transfusional", "Fase 3"),
     ("CAI", "CAI-Terapias", "Fase 1"),
+
+    # -------------------- Clínica Avidanti Manizales (CAM) --------------------
     ("CAM", "CAM-Consulta Externa", "Fase 1"),
     ("CAM", "CAM-Urgencias", "Fase 2"),
     ("CAM", "CAM-Hospitalización 7 Piso Sur", "Fase 2"),
@@ -150,6 +158,8 @@ MAPA_FASES = [
     ("CAM", "CAM - Sala de Cirugía 8", "Fase 3"),
     ("CAM", "CAM - Terapias", "Fase 1"),
     ("CAM", "CAM - Hospitalizacion 4 piso norte", "Fase 2"),
+
+    # -------------------- Clínica Avidanti Santa Marta (CASM) --------------------
     ("CASM", "CASM- Consulta Externa", "Fase 1"),
     ("CASM", "CASM-Hospitalización VIP 2", "Fase 2"),
     ("CASM", "CASM-Hospitalización 2 Piso Norte", "Fase 2"),
@@ -176,6 +186,8 @@ MAPA_FASES = [
     ("CASM", "CASM-Gestion pre transfusional", "Fase 3"),
     ("CASM", "CASM-Hemodialisis", "Fase 3"),
     ("CASM", "CASM-Tomografia", "Fase 1"),
+
+    # -------------------- Clínica Avidanti Ciudad Verde (CACV) --------------------
     ("CACV", "CACV-Hospitalización 5 Piso Norte", "Fase 2"),
     ("CACV", "CACV-Hospitalización 5 Piso Sur", "Fase 2"),
     ("CACV", "CACV-Laboratorio Clínico", "Fase 1"),
@@ -239,9 +251,6 @@ TITULOS_FASES = {
     "Fase 3": "FASE 3 - QUIRÚRGICO",
 }
 
-ESTADOS_ACTIVA_FACTURADA = {"activa", "facturada"}
-ESTADO_FACTURADA = {"facturada"}
-
 
 def construir_tabla_resumen():
     df = pd.DataFrame("", index=FILAS_RESUMEN, columns=COLUMNAS_RESUMEN)
@@ -250,19 +259,28 @@ def construir_tabla_resumen():
 
 
 # ============================================================
-# FUNCIONES AUXILIARES
+# NORMALIZACIÓN ROBUSTA
 # ============================================================
 def normalizar(s):
-    return (
-        str(s).strip().lower()
-        .replace("á", "a").replace("é", "e").replace("í", "i")
-        .replace("ó", "o").replace("ú", "u").replace("ñ", "n")
-        .replace("Ã³", "o").replace("Ã¡", "a").replace("Ã©", "e")
-        .replace("Ã", "i").replace("Ãº", "u")
-        .replace("_", " ").replace("-", " ")
-        .replace(".", "").replace(",", "").replace("/", " ")
-        .replace("  ", " ").strip()
+    """Normalización robusta: colapsa espacios con regex."""
+    if pd.isna(s):
+        return ""
+    txt = str(s).strip().lower()
+    # Mojibake
+    txt = (
+        txt.replace("Ã³", "o").replace("Ã¡", "a").replace("Ã©", "e")
+           .replace("Ã", "i").replace("Ãº", "u")
     )
+    # Acentos
+    txt = (
+        txt.replace("á", "a").replace("é", "e").replace("í", "i")
+           .replace("ó", "o").replace("ú", "u").replace("ñ", "n")
+    )
+    # Separadores → espacio
+    txt = re.sub(r"[_\-\.,/()]", " ", txt)
+    # Colapsar espacios múltiples
+    txt = re.sub(r"\s+", " ", txt).strip()
+    return txt
 
 
 ESTRUCTURAS_NORM = {
@@ -330,10 +348,12 @@ def convertir_a_numero(serie):
     ).fillna(0)
 
 
+# ============================================================
+# MAPA DE UBICACIONES + MATCH FLEXIBLE
+# ============================================================
 MAPA_UBICACION = {}
 for sede_cod, ubicacion, fase in MAPA_FASES:
-    fase_canonica = str(fase).strip()
-    MAPA_UBICACION[normalizar(ubicacion)] = (sede_cod, fase_canonica)
+    MAPA_UBICACION[normalizar(ubicacion)] = (sede_cod, str(fase).strip())
 
 
 def _palabras_clave(texto):
@@ -348,16 +368,22 @@ MAPA_UBICACION_TOKENS = {
 
 
 def detectar_ubicacion_flexible(valor):
+    """Devuelve (sede, fase) buscando coincidencia exacta o por tokens."""
     if pd.isna(valor):
         return (None, None)
     txt_norm = normalizar(valor)
     if txt_norm in MAPA_UBICACION:
         return MAPA_UBICACION[txt_norm]
     tokens_valor = _palabras_clave(txt_norm)
+    # Buscar el match de tokens con más palabras (el más específico)
+    mejor_match = None
+    mejor_score = 0
     for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
         if tokens_ubi and tokens_ubi.issubset(tokens_valor):
-            return (sede, fase)
-    return (None, None)
+            if len(tokens_ubi) > mejor_score:
+                mejor_score = len(tokens_ubi)
+                mejor_match = (sede, fase)
+    return mejor_match if mejor_match else (None, None)
 
 
 # ============================================================
@@ -435,7 +461,6 @@ for idx, f in enumerate(uploaded_files):
             })
             continue
 
-        # Filtro previo para "Totales": Total tarifas y recargos/descuentos >= 1000
         if estructura == "Totales":
             col_tot_tarifas = obtener_columna(df, "Total tarifas y recargos/descuentos")
             if col_tot_tarifas is not None:
@@ -468,9 +493,6 @@ for idx, f in enumerate(uploaded_files):
 progress.empty()
 
 
-# ============================================================
-# ERRORES Y NO CLASIFICADOS
-# ============================================================
 if errores:
     with st.expander("❌ Errores al leer archivos", expanded=False):
         for nombre, err in errores:
@@ -503,9 +525,7 @@ conteos = {
     fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
     for fase in FASES
 }
-dinero_interfaz = {
-    fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES
-}
+dinero_interfaz = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 errores_valor_bajo = {
     fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
     for fase in FASES
@@ -563,9 +583,7 @@ if not atenciones_df.empty:
         df_filtrado_revisadas = atenciones_df.loc[mask_verifica].copy()
 
         if col_valor_liquidado is not None:
-            valor_liquidado_num = convertir_a_numero(
-                atenciones_df[col_valor_liquidado]
-            )
+            valor_liquidado_num = convertir_a_numero(atenciones_df[col_valor_liquidado])
             for i in range(len(atenciones_df)):
                 sede_cod = sede_serie.iloc[i]
                 fase_val = fase_serie.iloc[i]
@@ -591,21 +609,6 @@ else:
 
 # ============================================================
 # CÁLCULOS SOBRE "Totales" cruzado con "Ventas"
-# ------------------------------------------------------------
-# Para cada (sede, fase):
-#
-#   Total ventas consulta externa =
-#       count(Totales ∩ Ventas)     ← SIN filtro de tarifa
-#
-#   Dinero ventas ambulatorio =
-#       sum(tarifas)               ← SIN filtro de tarifa
-#
-#   Ventas relacionadas en factura =
-#       count(Totales ∩ Ventas con tarifa >= 1000)   ← CON filtro
-#
-#   Errores (relacionados con "Ventas relacionadas"):
-#       count/suma(Totales ∩ Ventas con tarifa < 1000)
-#       % = errores / Avaladas
 # ============================================================
 total_ventas_ce = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
 dinero_ambulatorio = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
@@ -615,6 +618,7 @@ errores_tarifa = {
     for fase in FASES
 }
 ubicaciones_totales_no_mapeadas = pd.Series(dtype=int)
+diagnostico_totales_por_fase = {fase: 0 for fase in FASES}
 
 if bases["Totales"]:
     totales_df = pd.concat(
@@ -633,6 +637,9 @@ if bases["Totales"]:
         totales_ubic = totales_df[col_totales_centro_costo].astype(str).map(detectar_ubicacion_flexible)
         totales_df["_sede"] = totales_ubic.map(lambda x: x[0])
         totales_df["_fase"] = totales_ubic.map(lambda x: x[1])
+
+        for fase in FASES:
+            diagnostico_totales_por_fase[fase] = int((totales_df["_fase"] == fase).sum())
 
         sin_match_totales = (
             totales_df.loc[totales_df["_sede"].isna(), col_totales_centro_costo]
@@ -671,18 +678,11 @@ if bases["Totales"]:
                 mask_sede_fase = (totales_df["_sede"] == cod) & (totales_df["_fase"] == fase)
                 mask_final = mask_sede_fase & mask_venta_en_ventas
 
-                # Total ventas: count de TODOS los Totales ∩ Ventas (sin filtro de tarifa)
                 total_ventas_ce[fase][cod] = int(mask_final.sum())
+                dinero_ambulatorio[fase][cod] = float(totales_tarifa_num[mask_final].sum())
 
-                # Dinero ambulatorio: sum de tarifas de TODOS (sin filtro de tarifa)
-                dinero_ambulatorio[fase][cod] = float(
-                    totales_tarifa_num[mask_final].sum()
-                )
-
-                # Ventas relacionadas en factura: solo tarifa >= 1000
                 tarifas_para_analisis = totales_tarifa_num[mask_final]
                 indices = tarifas_para_analisis.index
-
                 mask_valida = totales_tarifa_num.loc[indices] >= 1000
                 mask_error = ~mask_valida
 
@@ -700,8 +700,8 @@ if bases["Totales"]:
 # ============================================================
 porcentual_faltante = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 porcentual_impactado = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-porcentaje_errores = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 porcentaje_errores_valor = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+porcentaje_errores_tarifa = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 
 for fase in FASES:
     for cod in CODIGOS_SEDE:
@@ -716,7 +716,7 @@ for fase in FASES:
             porcentual_impactado[fase][cod] = (relacionadas / total_ventas) * 100.0
         if avaladas > 0:
             porcentaje_errores_valor[fase][cod] = (cant_err_v / avaladas) * 100.0
-            porcentaje_errores[fase][cod] = (cant_err_t / avaladas) * 100.0
+            porcentaje_errores_tarifa[fase][cod] = (cant_err_t / avaladas) * 100.0
 
 
 # ============================================================
@@ -745,8 +745,8 @@ for cod in CODIGOS_SEDE:
 
 porcentual_faltante_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
 porcentual_impactado_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
-porcentaje_errores_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
 porcentaje_errores_valor_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+porcentaje_errores_tarifa_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
 
 for cod in CODIGOS_SEDE:
     avaladas = conteos_consolidado[cod]["avaladas"]
@@ -760,54 +760,44 @@ for cod in CODIGOS_SEDE:
         porcentual_impactado_consolidado[cod] = (relacionadas / total_ventas) * 100.0
     if avaladas > 0:
         porcentaje_errores_valor_consolidado[cod] = (cant_err_v / avaladas) * 100.0
-        porcentaje_errores_consolidado[cod] = (cant_err_t / avaladas) * 100.0
+        porcentaje_errores_tarifa_consolidado[cod] = (cant_err_t / avaladas) * 100.0
 
 
-# ============================================================
-# Helpers de formato
-# ============================================================
 def formatear_dinero_interfaz(total, cant_err, suma_err, pct_err):
     if cant_err > 0:
-        return (
-            f"${total:,.0f} "
-            f"(Errores: ${suma_err:,.0f} en {cant_err} registros — {pct_err:.2f}%)"
-        )
+        return f"${total:,.0f} (Errores: ${suma_err:,.0f} en {cant_err} registros — {pct_err:.2f}%)"
     return f"${total:,.0f}"
 
 
 def formatear_ventas_relacionadas(total, cant_err, suma_err, pct_err):
     if cant_err > 0:
-        return (
-            f"{total:,} "
-            f"(Errores: ${suma_err:,.0f} en {cant_err} registros — {pct_err:.2f}%)"
-        )
+        return f"{total:,} (Errores: ${suma_err:,.0f} en {cant_err} registros — {pct_err:.2f}%)"
     return f"{total:,}"
 
 
 # ============================================================
-# TABLA CONSOLIDADA
+# DIAGNÓSTICO POR FASE
 # ============================================================
-tabla_consolidada = construir_tabla_resumen()
-for cod in CODIGOS_SEDE:
-    columna = MAPA_CODIGO_A_COLUMNA[cod]
-    tabla_consolidada.loc["Revisadas por analistas", columna] = f"{conteos_consolidado[cod]['revisadas']:,}"
-    tabla_consolidada.loc["Avaladas subgerencia médica", columna] = f"{conteos_consolidado[cod]['avaladas']:,}"
-    tabla_consolidada.loc["Dinero enviado por interfaz", columna] = formatear_dinero_interfaz(
-        dinero_interfaz_consolidado[cod],
-        errores_valor_bajo_consolidado[cod]["cantidad"],
-        errores_valor_bajo_consolidado[cod]["suma"],
-        porcentaje_errores_valor_consolidado[cod],
+with st.expander("🔎 Diagnóstico por fase", expanded=False):
+    st.markdown("**Registros en la base 'Totales' por fase (después de mapear Centro De Costo):**")
+    st.dataframe(
+        pd.DataFrame([{"Fase": k, "Registros": v} for k, v in diagnostico_totales_por_fase.items()]),
+        use_container_width=True,
     )
-    tabla_consolidada.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce_consolidado[cod]:,}"
-    tabla_consolidada.loc["Dinero ventas ambulatorio", columna] = f"${dinero_ambulatorio_consolidado[cod]:,.0f}"
-    tabla_consolidada.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante_consolidado[cod]:,.2f}%"
-    tabla_consolidada.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_ventas_relacionadas(
-        ventas_relacionadas_factura_consolidado[cod],
-        errores_tarifa_consolidado[cod]["cantidad"],
-        errores_tarifa_consolidado[cod]["suma"],
-        porcentaje_errores_consolidado[cod],
-    )
-    tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%"
+
+    st.markdown("**Totales por fase y sede en cada indicador:**")
+    resumen_diag = []
+    for fase in FASES:
+        for cod in CODIGOS_SEDE:
+            resumen_diag.append({
+                "Fase": fase,
+                "Sede": cod,
+                "Revisadas": conteos[fase][cod]["revisadas"],
+                "Avaladas": conteos[fase][cod]["avaladas"],
+                "Total ventas CE": total_ventas_ce[fase][cod],
+                "Ventas rel. factura": ventas_relacionadas_factura[fase][cod],
+            })
+    st.dataframe(pd.DataFrame(resumen_diag), use_container_width=True)
 
 
 # ============================================================
@@ -827,7 +817,7 @@ with st.sidebar:
 
 
 # ============================================================
-# DIAGNÓSTICOS
+# DIAGNÓSTICOS DE UBICACIONES
 # ============================================================
 if not ubicaciones_no_mapeadas.empty:
     with st.expander("⚠️ Ubicaciones de la venta (Atenciones) sin coincidencia", expanded=False):
@@ -862,7 +852,7 @@ for fase in FASES:
             ventas_relacionadas_factura[fase][cod],
             errores_tarifa[fase][cod]["cantidad"],
             errores_tarifa[fase][cod]["suma"],
-            porcentaje_errores[fase][cod],
+            porcentaje_errores_tarifa[fase][cod],
         )
         tabla.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado[fase][cod]:,.2f}%"
 
@@ -881,6 +871,28 @@ for fase in FASES:
 # CONSOLIDADO
 # ============================================================
 st.subheader("📋 CONSOLIDADO - TODAS LAS FASES")
+tabla_consolidada = construir_tabla_resumen()
+for cod in CODIGOS_SEDE:
+    columna = MAPA_CODIGO_A_COLUMNA[cod]
+    tabla_consolidada.loc["Revisadas por analistas", columna] = f"{conteos_consolidado[cod]['revisadas']:,}"
+    tabla_consolidada.loc["Avaladas subgerencia médica", columna] = f"{conteos_consolidado[cod]['avaladas']:,}"
+    tabla_consolidada.loc["Dinero enviado por interfaz", columna] = formatear_dinero_interfaz(
+        dinero_interfaz_consolidado[cod],
+        errores_valor_bajo_consolidado[cod]["cantidad"],
+        errores_valor_bajo_consolidado[cod]["suma"],
+        porcentaje_errores_valor_consolidado[cod],
+    )
+    tabla_consolidada.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce_consolidado[cod]:,}"
+    tabla_consolidada.loc["Dinero ventas ambulatorio", columna] = f"${dinero_ambulatorio_consolidado[cod]:,.0f}"
+    tabla_consolidada.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante_consolidado[cod]:,.2f}%"
+    tabla_consolidada.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_ventas_relacionadas(
+        ventas_relacionadas_factura_consolidado[cod],
+        errores_tarifa_consolidado[cod]["cantidad"],
+        errores_tarifa_consolidado[cod]["suma"],
+        porcentaje_errores_tarifa_consolidado[cod],
+    )
+    tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%"
+
 st.dataframe(tabla_consolidada, use_container_width=True, height=380)
 st.download_button(
     label="⬇️ Descargar CONSOLIDADO (CSV)",
