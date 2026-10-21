@@ -251,6 +251,9 @@ TITULOS_FASES = {
     "Fase 3": "FASE 3 - QUIRÚRGICO",
 }
 
+ESTADOS_ACTIVA_FACTURADA = {"activa", "facturada"}
+ESTADO_FACTURADA = {"facturada"}
+
 
 def construir_tabla_resumen():
     df = pd.DataFrame("", index=FILAS_RESUMEN, columns=COLUMNAS_RESUMEN)
@@ -262,23 +265,19 @@ def construir_tabla_resumen():
 # NORMALIZACIÓN ROBUSTA
 # ============================================================
 def normalizar(s):
-    """Normalización robusta: colapsa espacios con regex."""
+    """Normalización robusta: colapsa espacios con regex, quita paréntesis."""
     if pd.isna(s):
         return ""
     txt = str(s).strip().lower()
-    # Mojibake
     txt = (
         txt.replace("Ã³", "o").replace("Ã¡", "a").replace("Ã©", "e")
            .replace("Ã", "i").replace("Ãº", "u")
     )
-    # Acentos
     txt = (
         txt.replace("á", "a").replace("é", "e").replace("í", "i")
            .replace("ó", "o").replace("ú", "u").replace("ñ", "n")
     )
-    # Separadores → espacio
     txt = re.sub(r"[_\-\.,/()]", " ", txt)
-    # Colapsar espacios múltiples
     txt = re.sub(r"\s+", " ", txt).strip()
     return txt
 
@@ -349,7 +348,7 @@ def convertir_a_numero(serie):
 
 
 # ============================================================
-# MAPA DE UBICACIONES + MATCH FLEXIBLE
+# MOTOR DE MATCH (MAPA DE FASES)
 # ============================================================
 MAPA_UBICACION = {}
 for sede_cod, ubicacion, fase in MAPA_FASES:
@@ -368,20 +367,21 @@ MAPA_UBICACION_TOKENS = {
 
 
 def detectar_ubicacion_flexible(valor):
-    """Devuelve (sede, fase) buscando coincidencia exacta o por tokens."""
+    """Devuelve (sede, fase) por coincidencia exacta o por mayor coincidencia de tokens."""
     if pd.isna(valor):
         return (None, None)
     txt_norm = normalizar(valor)
     if txt_norm in MAPA_UBICACION:
         return MAPA_UBICACION[txt_norm]
+
     tokens_valor = _palabras_clave(txt_norm)
-    # Buscar el match de tokens con más palabras (el más específico)
     mejor_match = None
     mejor_score = 0
     for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
         if tokens_ubi and tokens_ubi.issubset(tokens_valor):
-            if len(tokens_ubi) > mejor_score:
-                mejor_score = len(tokens_ubi)
+            score = len(tokens_ubi)
+            if score > mejor_score:
+                mejor_score = score
                 mejor_match = (sede, fase)
     return mejor_match if mejor_match else (None, None)
 
@@ -696,6 +696,76 @@ if bases["Totales"]:
 
 
 # ============================================================
+# CÁLCULO: "Ventas relacionadas en factura (FACTURADO)"
+# ------------------------------------------------------------
+# Se calcula desde la base Ventas filtrando por:
+#   - Centro de costo (match contra el mapa de fases)
+#   - Estado = Facturada
+# ============================================================
+ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
+diagnostico_ventas_por_fase = {fase: 0 for fase in FASES}
+estados_no_incluidos = pd.Series(dtype=int)
+
+if bases["Ventas"]:
+    ventas_df = pd.concat(
+        [df for _, _, df in bases["Ventas"]],
+        ignore_index=True
+    )
+
+    col_ventas_centro_costo = obtener_columna(ventas_df, "Centro de costo")
+    col_ventas_estado = obtener_columna(ventas_df, "Estado")
+
+    if col_ventas_centro_costo is None:
+        st.warning(
+            "⚠️ No se encontró la columna 'Centro de costo' en la base Ventas."
+        )
+    else:
+        # Detectar (sede, fase) desde Centro de costo
+        ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_flexible)
+        ventas_df["_sede"] = ventas_ubic.map(lambda x: x[0])
+        ventas_df["_fase"] = ventas_ubic.map(lambda x: x[1])
+
+        for fase in FASES:
+            diagnostico_ventas_por_fase[fase] = int((ventas_df["_fase"] == fase).sum())
+
+        # Diagnóstico: Centros de costo sin coincidencia
+        sin_match_ventas = (
+            ventas_df.loc[ventas_df["_sede"].isna(), col_ventas_centro_costo]
+            .astype(str).map(normalizar)
+        )
+        if not sin_match_ventas.empty:
+            ubicaciones_ventas_no_mapeadas = (
+                sin_match_ventas
+                .value_counts()
+                .rename_axis("Centro de costo (normalizado)")
+                .reset_index(name="Registros")
+            )
+
+        # Estado normalizado
+        if col_ventas_estado is not None:
+            estado_norm = ventas_df[col_ventas_estado].astype(str).str.strip().str.lower()
+            mask_estado_facturada = estado_norm.isin(ESTADO_FACTURADA)
+
+            estados_excluidos = estado_norm[~estado_norm.isin(ESTADOS_ACTIVA_FACTURADA)]
+            if not estados_excluidos.empty:
+                estados_no_incluidos = (
+                    estados_excluidos
+                    .value_counts()
+                    .rename_axis("Estado (normalizado)")
+                    .reset_index(name="Registros")
+                )
+        else:
+            mask_estado_facturada = pd.Series(False, index=ventas_df.index)
+
+        # Contar por (sede, fase) → Estado = Facturada
+        for fase in FASES:
+            for cod in CODIGOS_SEDE:
+                mask_sede_fase = (ventas_df["_sede"] == cod) & (ventas_df["_fase"] == fase)
+                mask_fact = mask_sede_fase & mask_estado_facturada
+                ventas_relacionadas_factura[fase][cod] += int(mask_fact.sum())
+
+
+# ============================================================
 # PORCENTUALES
 # ============================================================
 porcentual_faltante = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
@@ -779,11 +849,15 @@ def formatear_ventas_relacionadas(total, cant_err, suma_err, pct_err):
 # DIAGNÓSTICO POR FASE
 # ============================================================
 with st.expander("🔎 Diagnóstico por fase", expanded=False):
-    st.markdown("**Registros en la base 'Totales' por fase (después de mapear Centro De Costo):**")
-    st.dataframe(
-        pd.DataFrame([{"Fase": k, "Registros": v} for k, v in diagnostico_totales_por_fase.items()]),
-        use_container_width=True,
-    )
+    st.markdown("**Registros por fase en cada base (después de mapear Centro de costo):**")
+    diag_fases = []
+    for fase in FASES:
+        diag_fases.append({
+            "Fase": fase,
+            "Totales": diagnostico_totales_por_fase.get(fase, 0),
+            "Ventas": diagnostico_ventas_por_fase.get(fase, 0),
+        })
+    st.dataframe(pd.DataFrame(diag_fases), use_container_width=True)
 
     st.markdown("**Totales por fase y sede en cada indicador:**")
     resumen_diag = []
@@ -817,7 +891,7 @@ with st.sidebar:
 
 
 # ============================================================
-# DIAGNÓSTICOS DE UBICACIONES
+# DIAGNÓSTICOS
 # ============================================================
 if not ubicaciones_no_mapeadas.empty:
     with st.expander("⚠️ Ubicaciones de la venta (Atenciones) sin coincidencia", expanded=False):
@@ -826,6 +900,14 @@ if not ubicaciones_no_mapeadas.empty:
 if not ubicaciones_totales_no_mapeadas.empty:
     with st.expander("⚠️ Centros de Costo (Totales) sin coincidencia en la tabla base", expanded=False):
         st.dataframe(ubicaciones_totales_no_mapeadas, use_container_width=True)
+
+if not ubicaciones_ventas_no_mapeadas.empty:
+    with st.expander("⚠️ Centros de costo (Ventas) sin coincidencia en la tabla base", expanded=False):
+        st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
+
+if not estados_no_incluidos.empty:
+    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo se cuentan 'Activa' y 'Facturada')", expanded=False):
+        st.dataframe(estados_no_incluidos, use_container_width=True)
 
 
 # ============================================================
