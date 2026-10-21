@@ -2,6 +2,10 @@ import streamlit as st
 import pandas as pd
 import hashlib
 import re
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 
 # ============================================================
 # CONFIGURACIÓN
@@ -70,10 +74,9 @@ ESTRUCTURAS = {
 UMBRAL_COINCIDENCIA = 0.60
 
 # ============================================================
-# TABLA BASE: SEDE + UBICACIÓN + FASE (ACTUALIZADA - DEFINITIVA)
+# TABLA BASE: SEDE + UBICACIÓN + FASE
 # ============================================================
 MAPA_FASES = [
-    # -------------------- Angiografía Villavicencio (ADC) --------------------
     ("ADC", "VILL-Oncología", "Fase 1"),
     ("ADC", "VILL-Rehabilitación Cardiaca", "Fase 1"),
     ("ADC", "VILL-Consulta Externa", "Fase 1"),
@@ -89,8 +92,6 @@ MAPA_FASES = [
     ("ADC", "VILL-Electrofisiologia", "Fase 1"),
     ("ADC", "VILL-Gestión Pre-transfusional", "Fase 3"),
     ("ADC", "SAN-Consulta Externa", "Fase 1"),
-
-    # -------------------- Clínica Avidanti Armenia (CAA) --------------------
     ("CAA", "CAA-Hospitalización 5 Piso", "Fase 2"),
     ("CAA", "CAA-Urgencias", "Fase 2"),
     ("CAA", "CAA-Consulta Externa", "Fase 1"),
@@ -102,8 +103,6 @@ MAPA_FASES = [
     ("CAA", "CAA-Imagenología", "Fase 1"),
     ("CAA", "CAA-Cardiología No Invasiva", "Fase 1"),
     ("CAA", "CAA-Laboratorio Clínico", "Fase 1"),
-
-    # -------------------- Clínica Avidanti Ibagué (CAI) --------------------
     ("CAI", "CAI-Consulta Externa Nueva", "Fase 1"),
     ("CAI", "CAI-Sala de Cirugía 2", "Fase 3"),
     ("CAI", "CAI-Urgencias Nueva", "Fase 2"),
@@ -126,8 +125,6 @@ MAPA_FASES = [
     ("CAI", "CAI-TeleConsulta", "Fase 1"),
     ("CAI", "CAI-Gestion pre transfusional", "Fase 3"),
     ("CAI", "CAI-Terapias", "Fase 1"),
-
-    # -------------------- Clínica Avidanti Manizales (CAM) --------------------
     ("CAM", "CAM-Consulta Externa", "Fase 1"),
     ("CAM", "CAM-Urgencias", "Fase 2"),
     ("CAM", "CAM-Hospitalización 7 Piso Sur", "Fase 2"),
@@ -158,8 +155,6 @@ MAPA_FASES = [
     ("CAM", "CAM - Sala de Cirugía 8", "Fase 3"),
     ("CAM", "CAM - Terapias", "Fase 1"),
     ("CAM", "CAM - Hospitalizacion 4 piso norte", "Fase 2"),
-
-    # -------------------- Clínica Avidanti Santa Marta (CASM) --------------------
     ("CASM", "CASM- Consulta Externa", "Fase 1"),
     ("CASM", "CASM-Hospitalización VIP 2", "Fase 2"),
     ("CASM", "CASM-Hospitalización 2 Piso Norte", "Fase 2"),
@@ -186,8 +181,6 @@ MAPA_FASES = [
     ("CASM", "CASM-Gestion pre transfusional", "Fase 3"),
     ("CASM", "CASM-Hemodialisis", "Fase 3"),
     ("CASM", "CASM-Tomografia", "Fase 1"),
-
-    # -------------------- Clínica Avidanti Ciudad Verde (CACV) --------------------
     ("CACV", "CACV-Hospitalización 5 Piso Norte", "Fase 2"),
     ("CACV", "CACV-Hospitalización 5 Piso Sur", "Fase 2"),
     ("CACV", "CACV-Laboratorio Clínico", "Fase 1"),
@@ -265,7 +258,6 @@ def construir_tabla_resumen():
 # NORMALIZACIÓN ROBUSTA
 # ============================================================
 def normalizar(s):
-    """Normalización robusta: colapsa espacios con regex, quita paréntesis."""
     if pd.isna(s):
         return ""
     txt = str(s).strip().lower()
@@ -367,7 +359,6 @@ MAPA_UBICACION_TOKENS = {
 
 
 def detectar_ubicacion_flexible(valor):
-    """Devuelve (sede, fase) por coincidencia exacta o por mayor coincidencia de tokens."""
     if pd.isna(valor):
         return (None, None)
     txt_norm = normalizar(valor)
@@ -405,7 +396,6 @@ if not uploaded_files:
 
 @st.cache_data(show_spinner=False)
 def leer_excel(file_bytes, file_name):
-    import io
     try:
         sheets = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
         return {name: df for name, df in sheets.items() if not df.empty}, None
@@ -603,8 +593,6 @@ if not atenciones_df.empty:
                     errores_valor_bajo[fase_val][sede_cod]["suma"] += valor
                 else:
                     dinero_interfaz[fase_val][sede_cod] += valor
-else:
-    st.warning("⚠️ No hay datos de 'Atenciones del especialista' cargados.")
 
 
 # ============================================================
@@ -619,6 +607,9 @@ errores_tarifa = {
 }
 ubicaciones_totales_no_mapeadas = pd.Series(dtype=int)
 diagnostico_totales_por_fase = {fase: 0 for fase in FASES}
+
+# NUEVO: Totales sin match en Atenciones
+totales_sin_match_atenciones_df = pd.DataFrame()
 
 if bases["Totales"]:
     totales_df = pd.concat(
@@ -694,13 +685,39 @@ if bases["Totales"]:
                         totales_tarifa_num.loc[indices][mask_error].sum()
                     )
 
+        # --- Totales sin match en Atenciones ---
+        atenciones_nos_existentes = set()
+        if not atenciones_df.empty:
+            col_num_venta_at = obtener_columna(atenciones_df, "Numero Venta")
+            if col_num_venta_at is not None:
+                atenciones_nos_existentes = set(
+                    atenciones_df[col_num_venta_at]
+                    .map(normalizar_llave_venta).dropna().unique()
+                )
+
+        mask_sin_match_atenciones = ~totales_df["_venta_no_norm"].isin(atenciones_nos_existentes)
+
+        if mask_sin_match_atenciones.any():
+            cols_mostrar = []
+            for nombre_col in ["profesional", "producto", "Centro De Costo", "tarifas (reliquidado)"]:
+                col_real = obtener_columna(totales_df, nombre_col)
+                if col_real is not None:
+                    cols_mostrar.append(col_real)
+
+            if cols_mostrar:
+                totales_sin_match_atenciones_df = totales_df.loc[
+                    mask_sin_match_atenciones, cols_mostrar
+                ].copy()
+                totales_sin_match_atenciones_df = totales_sin_match_atenciones_df.rename(
+                    columns={
+                        "Centro De Costo": "Centro de costos",
+                        "tarifas (reliquidado)": "tarifas (reliquidado)",
+                    }
+                )
+
 
 # ============================================================
-# CÁLCULO: "Ventas relacionadas en factura (FACTURADO)"
-# ------------------------------------------------------------
-# Se calcula desde la base Ventas filtrando por:
-#   - Centro de costo (match contra el mapa de fases)
-#   - Estado = Facturada
+# CÁLCULO: "Ventas relacionadas en factura (FACTURADO)" desde Ventas
 # ============================================================
 ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
 diagnostico_ventas_por_fase = {fase: 0 for fase in FASES}
@@ -715,12 +732,7 @@ if bases["Ventas"]:
     col_ventas_centro_costo = obtener_columna(ventas_df, "Centro de costo")
     col_ventas_estado = obtener_columna(ventas_df, "Estado")
 
-    if col_ventas_centro_costo is None:
-        st.warning(
-            "⚠️ No se encontró la columna 'Centro de costo' en la base Ventas."
-        )
-    else:
-        # Detectar (sede, fase) desde Centro de costo
+    if col_ventas_centro_costo is not None:
         ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_flexible)
         ventas_df["_sede"] = ventas_ubic.map(lambda x: x[0])
         ventas_df["_fase"] = ventas_ubic.map(lambda x: x[1])
@@ -728,7 +740,6 @@ if bases["Ventas"]:
         for fase in FASES:
             diagnostico_ventas_por_fase[fase] = int((ventas_df["_fase"] == fase).sum())
 
-        # Diagnóstico: Centros de costo sin coincidencia
         sin_match_ventas = (
             ventas_df.loc[ventas_df["_sede"].isna(), col_ventas_centro_costo]
             .astype(str).map(normalizar)
@@ -741,7 +752,6 @@ if bases["Ventas"]:
                 .reset_index(name="Registros")
             )
 
-        # Estado normalizado
         if col_ventas_estado is not None:
             estado_norm = ventas_df[col_ventas_estado].astype(str).str.strip().str.lower()
             mask_estado_facturada = estado_norm.isin(ESTADO_FACTURADA)
@@ -757,7 +767,6 @@ if bases["Ventas"]:
         else:
             mask_estado_facturada = pd.Series(False, index=ventas_df.index)
 
-        # Contar por (sede, fase) → Estado = Facturada
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (ventas_df["_sede"] == cod) & (ventas_df["_fase"] == fase)
@@ -846,76 +855,10 @@ def formatear_ventas_relacionadas(total, cant_err, suma_err, pct_err):
 
 
 # ============================================================
-# DIAGNÓSTICO POR FASE
+# CONSTRUIR LAS 4 TABLAS (para pantalla y para Excel)
 # ============================================================
-with st.expander("🔎 Diagnóstico por fase", expanded=False):
-    st.markdown("**Registros por fase en cada base (después de mapear Centro de costo):**")
-    diag_fases = []
-    for fase in FASES:
-        diag_fases.append({
-            "Fase": fase,
-            "Totales": diagnostico_totales_por_fase.get(fase, 0),
-            "Ventas": diagnostico_ventas_por_fase.get(fase, 0),
-        })
-    st.dataframe(pd.DataFrame(diag_fases), use_container_width=True)
-
-    st.markdown("**Totales por fase y sede en cada indicador:**")
-    resumen_diag = []
-    for fase in FASES:
-        for cod in CODIGOS_SEDE:
-            resumen_diag.append({
-                "Fase": fase,
-                "Sede": cod,
-                "Revisadas": conteos[fase][cod]["revisadas"],
-                "Avaladas": conteos[fase][cod]["avaladas"],
-                "Total ventas CE": total_ventas_ce[fase][cod],
-                "Ventas rel. factura": ventas_relacionadas_factura[fase][cod],
-            })
-    st.dataframe(pd.DataFrame(resumen_diag), use_container_width=True)
-
-
-# ============================================================
-# SIDEBAR
-# ============================================================
-with st.sidebar:
-    st.header("📈 Resumen de carga")
-    st.metric("Archivos cargados", len(uploaded_files))
-    for nombre in ESTRUCTURAS:
-        st.metric(nombre, f"{len(bases[nombre])} hoja(s)")
-    if archivos_duplicados:
-        st.metric("Archivos duplicados (descartados)", len(archivos_duplicados))
-    if hojas_duplicadas:
-        st.metric("Hojas duplicadas (descartadas)", len(hojas_duplicadas))
-    if no_clasificados:
-        st.metric("No clasificados", len(no_clasificados))
-
-
-# ============================================================
-# DIAGNÓSTICOS
-# ============================================================
-if not ubicaciones_no_mapeadas.empty:
-    with st.expander("⚠️ Ubicaciones de la venta (Atenciones) sin coincidencia", expanded=False):
-        st.dataframe(ubicaciones_no_mapeadas, use_container_width=True)
-
-if not ubicaciones_totales_no_mapeadas.empty:
-    with st.expander("⚠️ Centros de Costo (Totales) sin coincidencia en la tabla base", expanded=False):
-        st.dataframe(ubicaciones_totales_no_mapeadas, use_container_width=True)
-
-if not ubicaciones_ventas_no_mapeadas.empty:
-    with st.expander("⚠️ Centros de costo (Ventas) sin coincidencia en la tabla base", expanded=False):
-        st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
-
-if not estados_no_incluidos.empty:
-    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo se cuentan 'Activa' y 'Facturada')", expanded=False):
-        st.dataframe(estados_no_incluidos, use_container_width=True)
-
-
-# ============================================================
-# TABLAS POR FASE
-# ============================================================
+tablas_por_fase = {}
 for fase in FASES:
-    st.subheader(f"📋 {TITULOS_FASES[fase]}")
-
     tabla = construir_tabla_resumen()
     for cod in CODIGOS_SEDE:
         columna = MAPA_CODIGO_A_COLUMNA[cod]
@@ -937,22 +880,8 @@ for fase in FASES:
             porcentaje_errores_tarifa[fase][cod],
         )
         tabla.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado[fase][cod]:,.2f}%"
+    tablas_por_fase[fase] = tabla
 
-    st.dataframe(tabla, use_container_width=True, height=380)
-    st.download_button(
-        label=f"⬇️ Descargar {TITULOS_FASES[fase]} (CSV)",
-        data=tabla.to_csv().encode("utf-8"),
-        file_name=f"{TITULOS_FASES[fase].replace(' ', '_')}.csv",
-        mime="text/csv",
-        key=f"dl_{fase}",
-    )
-    st.divider()
-
-
-# ============================================================
-# CONSOLIDADO
-# ============================================================
-st.subheader("📋 CONSOLIDADO - TODAS LAS FASES")
 tabla_consolidada = construir_tabla_resumen()
 for cod in CODIGOS_SEDE:
     columna = MAPA_CODIGO_A_COLUMNA[cod]
@@ -975,29 +904,18 @@ for cod in CODIGOS_SEDE:
     )
     tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%"
 
-st.dataframe(tabla_consolidada, use_container_width=True, height=380)
-st.download_button(
-    label="⬇️ Descargar CONSOLIDADO (CSV)",
-    data=tabla_consolidada.to_csv().encode("utf-8"),
-    file_name="CONSOLIDADO_FASES.csv",
-    mime="text/csv",
-    key="dl_consolidado",
-)
-st.divider()
-
 
 # ============================================================
-# NOVEDADES
+# NOVEDADES (calcula y guarda el DataFrame para Excel)
 # ============================================================
-st.subheader("🔎 Novedades")
+resumen_verifica = pd.DataFrame()
 
 if df_filtrado_revisadas.empty:
+    st.subheader("🔎 Novedades")
     st.info("No hay registros que cumplan los filtros de 'Revisadas por analistas'.")
 else:
     col_verifica = obtener_columna(df_filtrado_revisadas, "Nombre de Usuario que Verifica")
     col_submedico = obtener_columna(df_filtrado_revisadas, "Usuario / Sub Medico")
-
-    st.markdown(f"**Total de registros que cumplen los filtros:** {len(df_filtrado_revisadas):,}")
 
     verificadores_limpios = (
         df_filtrado_revisadas[col_verifica]
@@ -1038,5 +956,283 @@ else:
         .reset_index(drop=True)
     )
 
+
+# ============================================================
+# SIDEBAR → LISTADO DE REGLAS
+# ============================================================
+with st.sidebar:
+    st.header("📚 Reglas de procesamiento")
+    st.markdown("""
+**Carga de archivos**
+- Se aceptan múltiples Excel (`.xlsx`, `.xls`).
+- Se leen todas las hojas no vacías.
+- Cada hoja se clasifica por estructura de columnas:
+  **Ventas**, **Atenciones del especialista** o **Totales**.
+- Hojas/archivos con el mismo contenido se **descartan automáticamente** (hash).
+
+**Filtros previos**
+- En **Totales**: solo se conservan registros con
+  `Total tarifas y recargos/descuentos >= 1000`.
+
+**Mapeo de (sede, fase)**
+- Cada registro se asigna a una **sede** y **fase** según el mapa
+  `Sede + Ubicación de la venta → Fase`.
+- El match es flexible: normaliza tildes, mayúsculas, guiones,
+  paréntesis, espacios múltiples y elige la coincidencia con
+  **mayor número de palabras clave**.
+
+**Cálculos por (sede, fase)**
+
+1. **Revisadas por analistas**
+   - `Ubicación de la venta` en Atenciones mapea en el diccionario.
+   - `Nombre de Usuario que Verifica` **no vacío**.
+
+2. **Avaladas subgerencia médica**
+   - Mismos filtros que "Revisadas".
+   - **Además** `Usuario / Sub Medico` **no vacío**.
+
+3. **Dinero enviado por interfaz**
+   - Suma de `Valor liquidado` (Atenciones) para "Revisadas".
+   - Valores **< 1000** se cuentan como **errores** aparte:
+     `$suma en N registros — % respecto a Avaladas`.
+
+4. **Total ventas consulta externa**
+   - Conteo de **Totales** cuyo `No. de venta` existe en
+     `Venta No.` de Ventas.
+   - **Sin** filtro de tarifa.
+
+5. **Dinero ventas ambulatorio**
+   - Suma de `tarifas (reliquidado)` de esos Totales.
+   - **Sin** filtro de tarifa.
+
+6. **Porcentual faltante (META 30%)**
+   - `Avaladas / Total ventas × 100`.
+
+7. **Ventas relacionadas en factura (FACTURADO)**
+   - Conteo de **Ventas** con `Centro de costo` mapeado y
+     `Estado = Facturada`.
+   - Se reportan en paréntesis los Totales con `tarifas < 1000`
+     (`$suma en N registros — % respecto a Avaladas`).
+
+8. **Porcentual impactado (META 0%)**
+   - `Ventas relacionadas / Total ventas × 100`.
+
+**Consolidado**
+- Suma de las 3 fases para filas de conteo y dinero.
+- Los porcentajes se **recalculan** sobre los consolidados.
+""")
+
+
+# ============================================================
+# DIAGNÓSTICOS
+# ============================================================
+if not ubicaciones_no_mapeadas.empty:
+    with st.expander("⚠️ Ubicaciones de la venta (Atenciones) sin coincidencia", expanded=False):
+        st.dataframe(ubicaciones_no_mapeadas, use_container_width=True)
+
+if not ubicaciones_totales_no_mapeadas.empty:
+    with st.expander("⚠️ Centros de Costo (Totales) sin coincidencia en la tabla base", expanded=False):
+        st.dataframe(ubicaciones_totales_no_mapeadas, use_container_width=True)
+
+if not ubicaciones_ventas_no_mapeadas.empty:
+    with st.expander("⚠️ Centros de costo (Ventas) sin coincidencia en la tabla base", expanded=False):
+        st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
+
+if not estados_no_incluidos.empty:
+    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo se contó 'Facturada')", expanded=False):
+        st.dataframe(estados_no_incluidos, use_container_width=True)
+
+
+# ============================================================
+# TABLAS POR FASE
+# ============================================================
+for fase in FASES:
+    st.subheader(f"📋 {TITULOS_FASES[fase]}")
+    st.dataframe(tablas_por_fase[fase], use_container_width=True, height=380)
+    st.download_button(
+        label=f"⬇️ Descargar {TITULOS_FASES[fase]} (CSV)",
+        data=tablas_por_fase[fase].to_csv().encode("utf-8"),
+        file_name=f"{TITULOS_FASES[fase].replace(' ', '_')}.csv",
+        mime="text/csv",
+        key=f"dl_{fase}",
+    )
+    st.divider()
+
+
+# ============================================================
+# CONSOLIDADO
+# ============================================================
+st.subheader("📋 CONSOLIDADO - TODAS LAS FASES")
+st.dataframe(tabla_consolidada, use_container_width=True, height=380)
+st.download_button(
+    label="⬇️ Descargar CONSOLIDADO (CSV)",
+    data=tabla_consolidada.to_csv().encode("utf-8"),
+    file_name="CONSOLIDADO_FASES.csv",
+    mime="text/csv",
+    key="dl_consolidado",
+)
+st.divider()
+
+
+# ============================================================
+# NOVEDADES
+# ============================================================
+st.subheader("🔎 Novedades")
+
+if resumen_verifica.empty:
+    st.info("No hay registros que cumplan los filtros de 'Revisadas por analistas'.")
+else:
+    st.markdown(
+        f"**Total de registros que cumplen los filtros:** {len(df_filtrado_revisadas):,}"
+    )
     st.markdown("#### 👥 Verificadores y comparación con Sub Médico")
     st.dataframe(resumen_verifica, use_container_width=True)
+
+
+# ============================================================
+# EXPORTABLE EXCEL — 4 hojas
+# ============================================================
+def generar_excel_completo():
+    wb = Workbook()
+
+    # --- Hoja 1: Resultados (4 tablas apiladas) ---
+    ws1 = wb.active
+    ws1.title = "Resultados"
+
+    bold = Font(bold=True, size=12)
+    bold_white = Font(bold=True, size=11, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="305496")
+    title_fill = PatternFill("solid", fgColor="1F4E78")
+    thin = Side(border_style="thin", color="BFBFBF")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def escribir_tabla(ws, tabla_df, titulo, fila_inicio):
+        # Título
+        ws.cell(row=fila_inicio, column=1, value=titulo).font = Font(bold=True, size=13, color="FFFFFF")
+        ws.cell(row=fila_inicio, column=1).fill = title_fill
+        for col_idx in range(1, len(tabla_df.columns) + 2):
+            ws.cell(row=fila_inicio, column=col_idx).fill = title_fill
+        ws.merge_cells(
+            start_row=fila_inicio,
+            start_column=1,
+            end_row=fila_inicio,
+            end_column=len(tabla_df.columns) + 1,
+        )
+
+        fila_actual = fila_inicio + 1
+
+        # Encabezados
+        ws.cell(row=fila_actual, column=1, value="Concepto")
+        ws.cell(row=fila_actual, column=1).font = bold_white
+        ws.cell(row=fila_actual, column=1).fill = header_fill
+        for j, col in enumerate(tabla_df.columns, start=2):
+            c = ws.cell(row=fila_actual, column=j, value=col)
+            c.font = bold_white
+            c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
+        fila_actual += 1
+
+        # Datos
+        for idx, row in tabla_df.iterrows():
+            ws.cell(row=fila_actual, column=1, value=str(idx)).font = bold
+            for j, col in enumerate(tabla_df.columns, start=2):
+                ws.cell(row=fila_actual, column=j, value=row[col])
+            fila_actual += 1
+
+        return fila_actual + 2  # espacio entre tablas
+
+    fila = 1
+    for fase in FASES:
+        fila = escribir_tabla(ws1, tablas_por_fase[fase], TITULOS_FASES[fase], fila)
+    fila = escribir_tabla(ws1, tabla_consolidada, "CONSOLIDADO - TODAS LAS FASES", fila)
+
+    # Ajustar ancho de columnas
+    for col_idx in range(1, len(COLUMNAS_RESUMEN) + 2):
+        ws1.column_dimensions[get_column_letter(col_idx)].width = 28 if col_idx == 1 else 22
+
+    # --- Hoja 2: Totales sin match en Atenciones ---
+    ws2 = wb.create_sheet("Totales sin match")
+    if totales_sin_match_atenciones_df.empty:
+        ws2.cell(row=1, column=1, value="No hay registros de Totales sin coincidencia en Atenciones del especialista.")
+    else:
+        for j, col in enumerate(totales_sin_match_atenciones_df.columns, start=1):
+            c = ws2.cell(row=1, column=j, value=col)
+            c.font = bold_white
+            c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
+        for i, (_, row) in enumerate(totales_sin_match_atenciones_df.iterrows(), start=2):
+            for j, col in enumerate(totales_sin_match_atenciones_df.columns, start=1):
+                ws2.cell(row=i, column=j, value=row[col])
+        for j in range(1, len(totales_sin_match_atenciones_df.columns) + 1):
+            ws2.column_dimensions[get_column_letter(j)].width = 30
+
+    # --- Hoja 3: Novedades ---
+    ws3 = wb.create_sheet("Novedades")
+    if resumen_verifica.empty:
+        ws3.cell(row=1, column=1, value="No hay registros en Novedades.")
+    else:
+        for j, col in enumerate(resumen_verifica.columns, start=1):
+            c = ws3.cell(row=1, column=j, value=col)
+            c.font = bold_white
+            c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
+        for i, (_, row) in enumerate(resumen_verifica.iterrows(), start=2):
+            for j, col in enumerate(resumen_verifica.columns, start=1):
+                ws3.cell(row=i, column=j, value=row[col])
+        ws3.column_dimensions["A"].width = 40
+        ws3.column_dimensions["B"].width = 15
+        ws3.column_dimensions["C"].width = 30
+
+    # --- Hoja 4: Reglas ---
+    ws4 = wb.create_sheet("Reglas")
+    reglas = [
+        ("Carga de archivos", ""),
+        ("", "Se aceptan múltiples Excel (.xlsx, .xls)."),
+        ("", "Se leen todas las hojas no vacías."),
+        ("", "Cada hoja se clasifica por estructura de columnas: Ventas, Atenciones del especialista o Totales."),
+        ("", "Hojas/archivos con el mismo contenido se descartan automáticamente (hash)."),
+        ("Filtros previos", ""),
+        ("", "En Totales: solo se conservan registros con 'Total tarifas y recargos/descuentos' >= 1000."),
+        ("Mapeo de (sede, fase)", ""),
+        ("", "Cada registro se asigna a una sede y fase según el mapa Sede + Ubicación de la venta → Fase."),
+        ("", "El match es flexible: normaliza tildes, mayúsculas, guiones, paréntesis, espacios múltiples."),
+        ("", "En caso de empate se elige la coincidencia con mayor número de palabras clave."),
+        ("Cálculos por (sede, fase)", ""),
+        ("1. Revisadas por analistas", "Ubicación de la venta mapea. 'Nombre de Usuario que Verifica' NO vacío."),
+        ("2. Avaladas subgerencia médica", "Mismos filtros que Revisadas + 'Usuario / Sub Medico' NO vacío."),
+        ("3. Dinero enviado por interfaz", "Suma de 'Valor liquidado' (Atenciones) para revisadas. Valores < 1000 se reportan como errores."),
+        ("4. Total ventas consulta externa", "Conteo de Totales cuyo 'No. de venta' existe en 'Venta No.' de Ventas. Sin filtro de tarifa."),
+        ("5. Dinero ventas ambulatorio", "Suma de 'tarifas (reliquidado)' de esos Totales. Sin filtro de tarifa."),
+        ("6. Porcentual faltante (META 30%)", "Avaladas / Total ventas × 100."),
+        ("7. Ventas relacionadas en factura", "Conteo de Ventas con Centro de costo mapeado y Estado = Facturada."),
+        ("8. Porcentual impactado (META 0%)", "Ventas relacionadas / Total ventas × 100."),
+        ("Consolidado", "Suma de las 3 fases en conteo/dinero. Porcentajes recalculados sobre consolidados."),
+    ]
+    for i, (col1, col2) in enumerate(reglas, start=1):
+        c1 = ws4.cell(row=i, column=1, value=col1)
+        c2 = ws4.cell(row=i, column=2, value=col2)
+        if col1 and not col2:
+            c1.font = Font(bold=True, size=12, color="305496")
+            c1.fill = PatternFill("solid", fgColor="D9E1F2")
+        c2.alignment = Alignment(wrap_text=True, vertical="top")
+    ws4.column_dimensions["A"].width = 40
+    ws4.column_dimensions["B"].width = 100
+
+    # Guardar en buffer
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+try:
+    excel_buffer = generar_excel_completo()
+    st.download_button(
+        label="📥 Descargar Excel completo (4 hojas)",
+        data=excel_buffer,
+        file_name="resultados_por_fase.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="dl_excel_completo",
+    )
+except Exception as e:
+    st.error(f"❌ Error generando el Excel: {e}")
