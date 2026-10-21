@@ -336,6 +336,30 @@ for sede_cod, ubicacion, fase in MAPA_FASES:
     MAPA_UBICACION[normalizar(ubicacion)] = (sede_cod, fase_canonica)
 
 
+def _palabras_clave(texto):
+    palabras = normalizar(texto).split()
+    return frozenset(p for p in palabras if p != "vill")
+
+
+MAPA_UBICACION_TOKENS = {
+    ubi_norm: (sede, fase, _palabras_clave(ubi_norm))
+    for ubi_norm, (sede, fase) in MAPA_UBICACION.items()
+}
+
+
+def detectar_ubicacion_flexible(valor):
+    if pd.isna(valor):
+        return (None, None)
+    txt_norm = normalizar(valor)
+    if txt_norm in MAPA_UBICACION:
+        return MAPA_UBICACION[txt_norm]
+    tokens_valor = _palabras_clave(txt_norm)
+    for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
+        if tokens_ubi and tokens_ubi.issubset(tokens_valor):
+            return (sede, fase)
+    return (None, None)
+
+
 # ============================================================
 # CARGA DE ARCHIVOS
 # ============================================================
@@ -411,7 +435,7 @@ for idx, f in enumerate(uploaded_files):
             })
             continue
 
-        # --- NUEVO: filtro especial para "Totales" ---
+        # Filtro especial para "Totales"
         if estructura == "Totales":
             col_tot_tarifas = obtener_columna(df, "Total tarifas y recargos/descuentos")
             if col_tot_tarifas is not None:
@@ -425,11 +449,6 @@ for idx, f in enumerate(uploaded_files):
                     errors="coerce"
                 )
                 df = df[valores_tot >= 1000].copy()
-            else:
-                st.warning(
-                    f"⚠️ En '{f.name}::{hoja}' no se encontró la columna "
-                    "'Total tarifas y recargos/descuentos'. No se aplicó filtro."
-                )
 
         h = hash_df(df)
         if h in hashes_hojas_vistos:
@@ -478,25 +497,31 @@ else:
 
 
 # ============================================================
-# CÁLCULOS: "Revisadas por analistas" y "Avaladas subgerencia médica"
+# CÁLCULOS: Revisadas / Avaladas / Dinero interfaz
 # ============================================================
 conteos = {
     fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
     for fase in FASES
 }
+dinero_interfaz = {
+    fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES
+}
+errores_valor_bajo = {
+    fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
+    for fase in FASES
+}
 df_filtrado_revisadas = pd.DataFrame()
-df_filtrado_avaladas = pd.DataFrame()
 ubicaciones_no_mapeadas = pd.Series(dtype=int)
 
 sede_serie = None
 fase_serie = None
 mask_verifica = None
-mask_submedico = None
 
 if not atenciones_df.empty:
     col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
     col_verifica = obtener_columna(atenciones_df, "Nombre de Usuario que Verifica")
     col_submedico = obtener_columna(atenciones_df, "Usuario / Sub Medico")
+    col_valor_liquidado = obtener_columna(atenciones_df, "Valor liquidado")
 
     if col_ubicacion is None or col_verifica is None:
         st.error("⚠️ Faltan columnas clave en 'Atenciones del especialista'.")
@@ -512,10 +537,11 @@ if not atenciones_df.empty:
         )
 
         mask_verifica = es_vacio(atenciones_df[col_verifica])
-        if col_submedico is not None:
-            mask_submedico = es_vacio(atenciones_df[col_submedico])
-        else:
-            mask_submedico = pd.Series(False, index=atenciones_df.index)
+        mask_submedico = (
+            es_vacio(atenciones_df[col_submedico])
+            if col_submedico is not None
+            else pd.Series(False, index=atenciones_df.index)
+        )
 
         sin_match = ubicacion_norm_serie[sede_serie.isna()]
         if not sin_match.empty:
@@ -531,80 +557,119 @@ if not atenciones_df.empty:
                 mask_sede_fase = (sede_serie == cod) & (fase_serie == fase)
                 mask_rev = mask_sede_fase & mask_verifica
                 mask_ava = mask_rev & mask_submedico
-
                 conteos[fase][cod]["revisadas"] = int(mask_rev.sum())
                 conteos[fase][cod]["avaladas"] = int(mask_ava.sum())
 
         df_filtrado_revisadas = atenciones_df.loc[mask_verifica].copy()
-        df_filtrado_avaladas = atenciones_df.loc[mask_verifica & mask_submedico].copy()
+
+        if col_valor_liquidado is not None:
+            valor_liquidado_num = convertir_a_numero(
+                atenciones_df[col_valor_liquidado]
+            )
+            for i in range(len(atenciones_df)):
+                sede_cod = sede_serie.iloc[i]
+                fase_val = fase_serie.iloc[i]
+                if fase_val is None or sede_cod is None:
+                    continue
+                fase_val = str(fase_val).strip()
+                if fase_val not in dinero_interfaz:
+                    continue
+                if sede_cod not in dinero_interfaz[fase_val]:
+                    continue
+                if not bool(mask_verifica.iloc[i]):
+                    continue
+
+                valor = float(valor_liquidado_num.iloc[i])
+                if valor < 1000:
+                    errores_valor_bajo[fase_val][sede_cod]["cantidad"] += 1
+                    errores_valor_bajo[fase_val][sede_cod]["suma"] += valor
+                else:
+                    dinero_interfaz[fase_val][sede_cod] += valor
 else:
     st.warning("⚠️ No hay datos de 'Atenciones del especialista' cargados.")
 
 
 # ============================================================
-# CÁLCULO: "Dinero enviado por interfaz"
-# (suma de "Valor liquidado"; <1000 se marca como error)
+# CÁLCULO: Total ventas consulta externa (desde Totales × Ventas)
+#          Dinero ventas ambulatorio
+#          Ventas relacionadas en factura (desde Ventas)
 # ============================================================
-dinero_interfaz = {
-    fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES
-}
-errores_valor_bajo = {
-    fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
-    for fase in FASES
-}
-
-col_valor_liquidado = None
-if not atenciones_df.empty:
-    col_valor_liquidado = obtener_columna(atenciones_df, "Valor liquidado")
-
-if col_valor_liquidado is not None and sede_serie is not None and fase_serie is not None:
-    valor_liquidado_num = convertir_a_numero(atenciones_df[col_valor_liquidado])
-
-    for i in range(len(atenciones_df)):
-        sede_cod = sede_serie.iloc[i]
-        fase_val = fase_serie.iloc[i]
-
-        if fase_val is None or sede_cod is None:
-            continue
-        fase_val = str(fase_val).strip()
-        if fase_val not in dinero_interfaz:
-            continue
-        if sede_cod not in dinero_interfaz[fase_val]:
-            continue
-        if not bool(mask_verifica.iloc[i]):
-            continue
-
-        valor = float(valor_liquidado_num.iloc[i])
-
-        if valor < 1000:
-            errores_valor_bajo[fase_val][sede_cod]["cantidad"] += 1
-            errores_valor_bajo[fase_val][sede_cod]["suma"] += valor
-        else:
-            dinero_interfaz[fase_val][sede_cod] += valor
-elif not atenciones_df.empty:
-    st.warning("⚠️ No se encontró la columna 'Valor liquidado' en Atenciones.")
-
-
-# ============================================================
-# CÁLCULO: "Total ventas consulta externa", "Dinero ventas ambulatorio"
-#          y "Ventas relacionadas en factura (FACTURADO)"
-# ============================================================
-ventas_df = pd.DataFrame()
 total_ventas_ce = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
 dinero_ambulatorio = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 ventas_relacionadas_factura = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
+ubicaciones_totales_no_mapeadas = pd.Series(dtype=int)
 ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
 estados_no_incluidos = pd.Series(dtype=int)
 
+# --- Cruzar Totales con Ventas ---
+if bases["Totales"]:
+    totales_df = pd.concat(
+        [df for _, _, df in bases["Totales"]],
+        ignore_index=True
+    )
+
+    col_totales_venta_no = obtener_columna(totales_df, "No. de venta")
+    col_totales_centro_costo = obtener_columna(totales_df, "Centro De Costo")
+    col_totales_tarifa_reliq = obtener_columna(totales_df, "tarifas (reliquidado)")
+
+    if col_totales_venta_no is not None and col_totales_centro_costo is not None:
+        totales_df["_venta_no_norm"] = (
+            totales_df[col_totales_venta_no].map(normalizar_llave_venta)
+        )
+        totales_ubic = totales_df[col_totales_centro_costo].astype(str).map(detectar_ubicacion_flexible)
+        totales_df["_sede"] = totales_ubic.map(lambda x: x[0])
+        totales_df["_fase"] = totales_ubic.map(lambda x: x[1])
+
+        sin_match_totales = (
+            totales_df.loc[totales_df["_sede"].isna(), col_totales_centro_costo]
+            .astype(str).map(normalizar)
+        )
+        if not sin_match_totales.empty:
+            ubicaciones_totales_no_mapeadas = (
+                sin_match_totales
+                .value_counts()
+                .rename_axis("Centro De Costo (normalizado)")
+                .reset_index(name="Registros")
+            )
+
+        if col_totales_tarifa_reliq is not None:
+            totales_tarifa_num = convertir_a_numero(totales_df[col_totales_tarifa_reliq])
+        else:
+            totales_tarifa_num = pd.Series(0.0, index=totales_df.index)
+
+        # Ventas conocidas
+        ventas_nos_existentes = set()
+        if bases["Ventas"]:
+            ventas_para_cruce = pd.concat(
+                [df for _, _, df in bases["Ventas"]],
+                ignore_index=True
+            )
+            col_venta_no_v = obtener_columna(ventas_para_cruce, "Venta No.")
+            if col_venta_no_v is not None:
+                ventas_nos_existentes = set(
+                    ventas_para_cruce[col_venta_no_v]
+                    .map(normalizar_llave_venta).dropna().unique()
+                )
+
+        mask_venta_en_ventas = totales_df["_venta_no_norm"].isin(ventas_nos_existentes)
+
+        for fase in FASES:
+            for cod in CODIGOS_SEDE:
+                mask_sede_fase = (totales_df["_sede"] == cod) & (totales_df["_fase"] == fase)
+                mask_final = mask_sede_fase & mask_venta_en_ventas
+                total_ventas_ce[fase][cod] = int(mask_final.sum())
+                dinero_ambulatorio[fase][cod] = float(
+                    totales_tarifa_num[mask_final].sum()
+                )
+
+# --- Ventas relacionadas en factura (FACTURADO) ---
 if bases["Ventas"]:
     ventas_df = pd.concat(
         [df for _, _, df in bases["Ventas"]],
         ignore_index=True
     )
-
     col_ubicacion_despacho = obtener_columna(ventas_df, "Ubicación despacho")
     col_estado = obtener_columna(ventas_df, "Estado")
-    col_valor_total_recalc = obtener_columna(ventas_df, "Valor Total Recalculado")
 
     if col_ubicacion_despacho is not None and col_estado is not None:
         ubicacion_despacho_norm = (
@@ -617,13 +682,10 @@ if bases["Ventas"]:
             lambda u: MAPA_UBICACION.get(u, (None, None))[1]
         )
 
-        estado_norm = (
-            ventas_df[col_estado].astype(str).str.strip().str.lower()
-        )
-        mask_estado_activa_facturada = estado_norm.isin(ESTADOS_ACTIVA_FACTURADA)
+        estado_norm = ventas_df[col_estado].astype(str).str.strip().str.lower()
         mask_estado_facturada = estado_norm.isin(ESTADO_FACTURADA)
 
-        estados_excluidos = estado_norm[~mask_estado_activa_facturada]
+        estados_excluidos = estado_norm[~estado_norm.isin(ESTADOS_ACTIVA_FACTURADA)]
         if not estados_excluidos.empty:
             estados_no_incluidos = (
                 estados_excluidos
@@ -641,29 +703,15 @@ if bases["Ventas"]:
                 .reset_index(name="Registros")
             )
 
-        if col_valor_total_recalc is not None:
-            valor_total_recalc_num = convertir_a_numero(
-                ventas_df[col_valor_total_recalc]
-            )
-        else:
-            valor_total_recalc_num = pd.Series(0.0, index=ventas_df.index)
-
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (sede_ventas == cod) & (fase_ventas == fase)
-
-                mask_total = mask_sede_fase & mask_estado_activa_facturada
-                total_ventas_ce[fase][cod] = int(mask_total.sum())
-                dinero_ambulatorio[fase][cod] = float(
-                    valor_total_recalc_num[mask_total].sum()
-                )
-
                 mask_fact = mask_sede_fase & mask_estado_facturada
                 ventas_relacionadas_factura[fase][cod] = int(mask_fact.sum())
 
 
 # ============================================================
-# Porcentuales por (sede, fase)
+# PORCENTUALES POR FASE
 # ============================================================
 porcentual_faltante = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 porcentual_impactado = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
@@ -679,13 +727,12 @@ for fase in FASES:
         if total_ventas > 0:
             porcentual_faltante[fase][cod] = (avaladas / total_ventas) * 100.0
             porcentual_impactado[fase][cod] = (relacionadas / total_ventas) * 100.0
-
         if avaladas > 0:
             porcentaje_errores[fase][cod] = (cant_err / avaladas) * 100.0
 
 
 # ============================================================
-# TABLA CONSOLIDADA
+# CONSOLIDADO
 # ============================================================
 conteos_consolidado = {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
 dinero_interfaz_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
@@ -714,7 +761,6 @@ for cod in CODIGOS_SEDE:
     total_ventas = total_ventas_ce_consolidado[cod]
     relacionadas = ventas_relacionadas_factura_consolidado[cod]
     cant_err = errores_valor_bajo_consolidado[cod]["cantidad"]
-
     if total_ventas > 0:
         porcentual_faltante_consolidado[cod] = (avaladas / total_ventas) * 100.0
         porcentual_impactado_consolidado[cod] = (relacionadas / total_ventas) * 100.0
@@ -772,12 +818,16 @@ if not ubicaciones_no_mapeadas.empty:
     with st.expander("⚠️ Ubicaciones de la venta (Atenciones) sin coincidencia", expanded=False):
         st.dataframe(ubicaciones_no_mapeadas, use_container_width=True)
 
+if not ubicaciones_totales_no_mapeadas.empty:
+    with st.expander("⚠️ Centros de Costo (Totales) sin coincidencia en la tabla base", expanded=False):
+        st.dataframe(ubicaciones_totales_no_mapeadas, use_container_width=True)
+
 if not ubicaciones_ventas_no_mapeadas.empty:
     with st.expander("⚠️ Ubicaciones de despacho (Ventas) sin coincidencia", expanded=False):
         st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
 
 if not estados_no_incluidos.empty:
-    with st.expander("ℹ️ Estados en Ventas NO incluidos", expanded=False):
+    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo se cuentan 'Activa' y 'Facturada')", expanded=False):
         st.dataframe(estados_no_incluidos, use_container_width=True)
 
 
@@ -868,7 +918,6 @@ else:
         valores_sub = valores_sub[~valores_sub.isin(["", "nan", "None", "NaN"])]
         if valores_sub.empty:
             return "Sin datos de Sub Médico"
-
         norm_verifica = normalizar(nombre_verifica)
         set_sub_norm = {normalizar(v) for v in valores_sub.unique()}
         return "Misma persona" if norm_verifica in set_sub_norm else "Diferente persona"
@@ -877,7 +926,6 @@ else:
         resumen_verifica["Nombre de Usuario que Verifica"]
         .apply(comparar_con_submedico)
     )
-
     resumen_verifica = (
         resumen_verifica
         .sort_values("Registros", ascending=False)
