@@ -8,6 +8,7 @@ from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as XLImage
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -945,7 +946,7 @@ def formatear_ventas_relacionadas(total, cant_err, suma_err, pct_err):
 
 
 # ============================================================
-# CONSTRUIR TABLAS (con etiquetas dinámicas)
+# CONSTRUIR TABLAS
 # ============================================================
 tablas_por_fase = {}
 for fase in FASES:
@@ -1115,7 +1116,9 @@ else:
 st.divider()
 
 
-# ANÁLISIS HISTÓRICO
+# ============================================================
+# ANÁLISIS HISTÓRICO EN PANTALLA
+# ============================================================
 periodos_historicos = dict(historicos_detectados)
 if periodo_etiqueta != "—":
     def _tabla_a_dict(tabla_df):
@@ -1254,7 +1257,9 @@ if len(periodos_historicos) > 0:
                     plt.close(fig6)
 
 
-# EXPORTABLE EXCEL
+# ============================================================
+# EXPORTABLE EXCEL (incluye hoja "Análisis" con gráficos)
+# ============================================================
 def generar_excel_completo():
     wb = Workbook()
     bold_white = Font(bold=True, size=11, color="FFFFFF")
@@ -1286,6 +1291,7 @@ def generar_excel_completo():
             fila += 1
         return fila + 2
 
+    # --- Hoja 1: Resultados ---
     ws1 = wb.active
     ws1.title = "Resultados"
 
@@ -1308,6 +1314,7 @@ def generar_excel_completo():
     for col_idx in range(1, len(COLUMNAS_RESUMEN) + 2):
         ws1.column_dimensions[get_column_letter(col_idx)].width = 28 if col_idx == 1 else 22
 
+    # --- Hoja 2: Totales sin match ---
     ws2 = wb.create_sheet("Totales sin match")
     if totales_sin_match_atenciones_df.empty:
         ws2.cell(row=1, column=1, value="No hay registros de Totales sin coincidencia en Atenciones.")
@@ -1322,6 +1329,7 @@ def generar_excel_completo():
         for j in range(1, len(totales_sin_match_atenciones_df.columns) + 1):
             ws2.column_dimensions[get_column_letter(j)].width = 30
 
+    # --- Hoja 3: Novedades ---
     ws3 = wb.create_sheet("Novedades")
     if resumen_verifica.empty:
         ws3.cell(row=1, column=1, value="No hay registros en Novedades.")
@@ -1337,6 +1345,7 @@ def generar_excel_completo():
         ws3.column_dimensions["B"].width = 15
         ws3.column_dimensions["C"].width = 30
 
+    # --- Hoja 4: Reglas ---
     ws4 = wb.create_sheet("Reglas")
     reglas = [
         ("Carga de archivos", ""),
@@ -1370,6 +1379,156 @@ def generar_excel_completo():
     ws4.column_dimensions["A"].width = 40
     ws4.column_dimensions["B"].width = 100
 
+    # --- Hoja 5: Análisis con gráficos ---
+    ws_analisis = wb.create_sheet("Análisis")
+    ws_analisis.cell(
+        row=1, column=1,
+        value="Análisis histórico comparativo entre periodos"
+    ).font = Font(bold=True, size=14, color="305496")
+
+    periodos_historicos_exp = dict(historicos_detectados)
+    if periodo_etiqueta != "—":
+        def _tabla_a_dict_exp(tabla_df):
+            d = {}
+            for idx, row in tabla_df.iterrows():
+                d[idx] = {col: row[col] for col in tabla_df.columns}
+            return d
+        periodos_historicos_exp[periodo_etiqueta] = _tabla_a_dict_exp(tabla_consolidada)
+
+    if len(periodos_historicos_exp) == 0:
+        ws_analisis.cell(row=3, column=1, value="No hay datos suficientes para generar el análisis.")
+    else:
+        def normalizar_etiqueta_exp(concepto):
+            c = str(concepto).strip()
+            if c.startswith("Total ventas ") and "(ACTIVO Y FACTURADO)" in c:
+                return "Total ventas (ACTIVO Y FACTURADO)"
+            if c.startswith("Dinero ventas "):
+                return "Dinero ventas"
+            return c
+
+        filas_exp = []
+        for periodo, conceptos in periodos_historicos_exp.items():
+            for concepto, valores in conceptos.items():
+                concepto_norm = normalizar_etiqueta_exp(concepto)
+                for sede, valor in valores.items():
+                    filas_exp.append({
+                        "Periodo": periodo,
+                        "Concepto": concepto_norm,
+                        "Sede": sede,
+                        "ValorCrudo": valor,
+                    })
+
+        df_hist_exp = pd.DataFrame(filas_exp)
+
+        def parsear_valor_exp(v):
+            if pd.isna(v):
+                return None
+            s = str(v).strip()
+            s = re.sub(r"\(.*?\)", "", s).strip()
+            s = s.replace("$", "").replace(",", "").replace("%", "").strip()
+            try:
+                return float(s) if s else None
+            except Exception:
+                return None
+
+        df_hist_exp["Valor"] = df_hist_exp["ValorCrudo"].apply(parsear_valor_exp)
+        df_hist_exp = df_hist_exp.dropna(subset=["Valor"])
+
+        if df_hist_exp.empty:
+            ws_analisis.cell(row=3, column=1, value="No se pudieron parsear los valores para graficar.")
+        else:
+            sns.set_theme(style="whitegrid")
+            fila_actual = 3
+
+            def insertar_grafico(ws, fig, fila, ancho=900, alto=420, titulo=None):
+                if titulo:
+                    ws.cell(row=fila, column=1, value=titulo).font = Font(bold=True, size=12, color="1F4E78")
+                    fila += 1
+                img_buffer = io.BytesIO()
+                fig.savefig(img_buffer, format="png", dpi=110, bbox_inches="tight")
+                img_buffer.seek(0)
+                xl_img = XLImage(img_buffer)
+                xl_img.width = ancho
+                xl_img.height = alto
+                ws.add_image(xl_img, f"A{fila}")
+                return fila + int(alto / 20) + 3
+
+            df_g1 = df_hist_exp[df_hist_exp["Concepto"] == "Dinero enviado por interfaz"]
+            if not df_g1.empty:
+                fig, ax = plt.subplots(figsize=(12, 5))
+                sns.barplot(data=df_g1, x="Periodo", y="Valor", hue="Sede", ax=ax)
+                ax.set_title("Dinero enviado por interfaz por periodo y sede")
+                ax.set_ylabel("Valor ($)")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 1 — Dinero enviado por interfaz")
+                plt.close(fig)
+
+            df_g2 = df_hist_exp[df_hist_exp["Concepto"].isin([
+                "Total ventas (ACTIVO Y FACTURADO)",
+                "Ventas relacionadas en factura (FACTURADO)",
+            ])]
+            if not df_g2.empty:
+                fig, ax = plt.subplots(figsize=(12, 5))
+                sns.barplot(data=df_g2, x="Periodo", y="Valor", hue="Concepto", ax=ax)
+                ax.set_title("Total ventas vs Ventas relacionadas en factura")
+                ax.set_ylabel("Registros")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 2 — Total ventas vs Ventas relacionadas en factura")
+                plt.close(fig)
+
+            df_g3 = df_hist_exp[df_hist_exp["Concepto"] == "Porcentual faltante (META 30%)"]
+            if not df_g3.empty:
+                fig, ax = plt.subplots(figsize=(12, 5))
+                sns.lineplot(data=df_g3, x="Periodo", y="Valor", hue="Sede", marker="o", ax=ax)
+                ax.axhline(30, color="red", linestyle="--", label="Meta 30%")
+                ax.set_title("Porcentual faltante por periodo y sede")
+                ax.set_ylabel("%")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 3 — Porcentual faltante (META 30%)")
+                plt.close(fig)
+
+            df_g4 = df_hist_exp[df_hist_exp["Concepto"] == "Porcentual impactado (META 0%)"]
+            if not df_g4.empty:
+                fig, ax = plt.subplots(figsize=(12, 5))
+                sns.lineplot(data=df_g4, x="Periodo", y="Valor", hue="Sede", marker="o", ax=ax)
+                ax.axhline(0, color="red", linestyle="--", label="Meta 0%")
+                ax.set_title("Porcentual impactado por periodo y sede")
+                ax.set_ylabel("%")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 4 — Porcentual impactado (META 0%)")
+                plt.close(fig)
+
+            df_g5 = df_hist_exp[df_hist_exp["Concepto"].isin([
+                "Revisadas por analistas",
+                "Avaladas subgerencia médica",
+            ])]
+            if not df_g5.empty:
+                fig, ax = plt.subplots(figsize=(12, 5))
+                sns.barplot(data=df_g5, x="Periodo", y="Valor", hue="Concepto", ax=ax)
+                ax.set_title("Revisadas vs Avaladas por periodo")
+                ax.set_ylabel("Registros")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 5 — Revisadas vs Avaladas")
+                plt.close(fig)
+
+            df_heat = df_hist_exp[df_hist_exp["Concepto"] == "Porcentual impactado (META 0%)"]
+            if not df_heat.empty:
+                pivot = df_heat.pivot_table(index="Sede", columns="Periodo", values="Valor", aggfunc="mean")
+                if not pivot.empty:
+                    fig, ax = plt.subplots(figsize=(12, 5))
+                    sns.heatmap(pivot, annot=True, fmt=".1f", cmap="RdYlGn_r", ax=ax, cbar_kws={"label": "%"})
+                    ax.set_title("Heatmap Porcentual impactado (sede × periodo)")
+                    plt.tight_layout()
+                    fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 6 — Heatmap Porcentual impactado")
+                    plt.close(fig)
+
+            ws_analisis.column_dimensions["A"].width = 130
+
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
@@ -1379,7 +1538,7 @@ def generar_excel_completo():
 try:
     excel_buffer = generar_excel_completo()
     st.download_button(
-        label="📥 Descargar Excel completo (Resultados + Totales sin match + Novedades + Reglas)",
+        label="📥 Descargar Excel completo (Resultados + Totales sin match + Novedades + Reglas + Análisis)",
         data=excel_buffer,
         file_name=f"resultados_por_fase_{periodo_etiqueta.replace(' ', '_')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
