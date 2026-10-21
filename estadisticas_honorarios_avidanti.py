@@ -3,9 +3,15 @@ import pandas as pd
 import hashlib
 import re
 import io
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # ============================================================
 # CONFIGURACIÓN
@@ -15,7 +21,7 @@ st.set_page_config(page_title="FASES 1 - 2 - 3", page_icon="📊", layout="wide"
 st.title("📊 TABLEROS POR FASE")
 st.markdown(
     "Carga múltiples archivos Excel. Se clasificarán automáticamente en "
-    "**Ventas**, **Atenciones del especialista** o **Totales**."
+    "**Ventas**, **Atenciones del especialista**, **Totales** o **Histórico**."
 )
 
 # ============================================================
@@ -74,7 +80,7 @@ ESTRUCTURAS = {
 UMBRAL_COINCIDENCIA = 0.60
 
 # ============================================================
-# TABLA BASE: SEDE + UBICACIÓN + FASE
+# MAPA DE FASES
 # ============================================================
 MAPA_FASES = [
     ("ADC", "VILL-Oncología", "Fase 1"),
@@ -226,17 +232,6 @@ COLUMNAS_RESUMEN = [
 CODIGOS_SEDE = ["ADC", "CAI", "CAM", "CASM", "CACV", "CAA"]
 MAPA_CODIGO_A_COLUMNA = dict(zip(CODIGOS_SEDE, COLUMNAS_RESUMEN))
 
-FILAS_RESUMEN = [
-    "Revisadas por analistas",
-    "Avaladas subgerencia médica",
-    "Dinero enviado por interfaz",
-    "Total ventas consulta externa (ACTIVO Y FACTURADO)",
-    "Dinero ventas ambulatorio",
-    "Porcentual faltante (META 30%)",
-    "Ventas relacionadas en factura (FACTURADO)",
-    "Porcentual impactado (META 0%)",
-]
-
 FASES = ["Fase 1", "Fase 2", "Fase 3"]
 TITULOS_FASES = {
     "Fase 1": "FASE 1 - AMBULATORIO",
@@ -247,15 +242,54 @@ TITULOS_FASES = {
 ESTADOS_ACTIVA_FACTURADA = {"activa", "facturada"}
 ESTADO_FACTURADA = {"facturada"}
 
+MESES_ES = {
+    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+    5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+    9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+}
 
-def construir_tabla_resumen():
-    df = pd.DataFrame("", index=FILAS_RESUMEN, columns=COLUMNAS_RESUMEN)
+# ============================================================
+# ETIQUETAS DINÁMICAS POR TABLA
+# ============================================================
+SUFIJOS_POR_TABLA = {
+    "Fase 1": "consulta externa",
+    "Fase 2": "hospitalario",
+    "Fase 3": "quirúrgico",
+    "Consolidado": "consolidado",
+}
+
+PREFIJOS_POR_TABLA = {
+    "Fase 1": "ambulatorio",
+    "Fase 2": "hospitalario",
+    "Fase 3": "quirúrgico",
+    "Consolidado": "consolidado",
+}
+
+
+def filas_resumen(tipo_tabla):
+    sufijo = SUFIJOS_POR_TABLA.get(tipo_tabla, "consulta externa")
+    prefijo = PREFIJOS_POR_TABLA.get(tipo_tabla, "ambulatorio")
+    return [
+        "Revisadas por analistas",
+        "Avaladas subgerencia médica",
+        "Dinero enviado por interfaz",
+        f"Total ventas {sufijo} (ACTIVO Y FACTURADO)",
+        f"Dinero ventas {prefijo}",
+        "Porcentual faltante (META 30%)",
+        "Ventas relacionadas en factura (FACTURADO)",
+        "Porcentual impactado (META 0%)",
+    ]
+
+
+def construir_tabla_resumen(tipo_tabla="Fase 1"):
+    filas = filas_resumen(tipo_tabla)
+    df = pd.DataFrame("", index=filas, columns=COLUMNAS_RESUMEN)
     df.index.name = "Concepto"
     return df
 
 
 # ============================================================
-# NORMALIZACIÓN ROBUSTA
+# NORMALIZACIÓN
 # ============================================================
 def normalizar(s):
     if pd.isna(s):
@@ -340,7 +374,7 @@ def convertir_a_numero(serie):
 
 
 # ============================================================
-# MOTOR DE MATCH (MAPA DE FASES)
+# MOTOR DE MATCH
 # ============================================================
 MAPA_UBICACION = {}
 for sede_cod, ubicacion, fase in MAPA_FASES:
@@ -364,7 +398,6 @@ def detectar_ubicacion_flexible(valor):
     txt_norm = normalizar(valor)
     if txt_norm in MAPA_UBICACION:
         return MAPA_UBICACION[txt_norm]
-
     tokens_valor = _palabras_clave(txt_norm)
     mejor_match = None
     mejor_score = 0
@@ -375,6 +408,88 @@ def detectar_ubicacion_flexible(valor):
                 mejor_score = score
                 mejor_match = (sede, fase)
     return mejor_match if mejor_match else (None, None)
+
+
+# ============================================================
+# EXTRACCIÓN DE PERIODO
+# ============================================================
+def extraer_periodo_desde_nombre(nombre_archivo):
+    base = str(nombre_archivo).rsplit(".", 1)[0]
+    base_norm = base.lower()
+
+    m = re.search(r"(20\d{2})[-_/]?(0?[1-9]|1[0-2])(?:[-_/]|$|\D)", base_norm)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+
+    m = re.search(r"(?<!\d)(0?[1-9]|1[0-2])[-_/](20\d{2})(?!\d)", base_norm)
+    if m:
+        return int(m.group(2)), int(m.group(1))
+
+    meses_norm = {
+        "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
+        "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
+        "septiembre": 9, "setiembre": 9, "octubre": 10,
+        "noviembre": 11, "diciembre": 12,
+    }
+    for nombre_mes, num_mes in meses_norm.items():
+        if nombre_mes in base_norm:
+            m_anio = re.search(r"(20\d{2})", base_norm)
+            if m_anio:
+                return int(m_anio.group(1)), num_mes
+            return datetime.now().year, num_mes
+
+    abrev = {
+        "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
+        "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12,
+    }
+    for nombre_mes, num_mes in abrev.items():
+        if re.search(rf"\b{nombre_mes}\b", base_norm):
+            m_anio = re.search(r"(20\d{2})", base_norm)
+            if m_anio:
+                return int(m_anio.group(1)), num_mes
+
+    return (None, None)
+
+
+def formatear_periodo(anio, mes):
+    if anio is None or mes is None:
+        return ("—", None, None)
+    fecha_inicio = datetime(anio, mes, 1)
+    fecha_fin = fecha_inicio + relativedelta(months=1) - relativedelta(days=1)
+    etiqueta = f"{MESES_ES[mes]} {anio}"
+    return (etiqueta, fecha_inicio.date(), fecha_fin.date())
+
+
+# ============================================================
+# DETECCIÓN DE HOJAS HISTÓRICAS
+# ============================================================
+def es_hoja_de_resultados(df):
+    if df is None or df.empty:
+        return False
+    columnas_norm = {normalizar(c) for c in df.columns}
+    sedes_norm = {normalizar(s) for s in COLUMNAS_RESUMEN}
+    return sedes_norm.issubset(columnas_norm)
+
+
+def parsear_hoja_resultados(df, nombre_hoja):
+    resultado = {}
+    col_concepto = df.columns[0]
+    mapa_col_a_sede = {}
+    for c in df.columns:
+        c_norm = normalizar(c)
+        for col_canon in COLUMNAS_RESUMEN:
+            if normalizar(col_canon) == c_norm:
+                mapa_col_a_sede[c] = col_canon
+                break
+
+    for _, row in df.iterrows():
+        concepto = str(row[col_concepto]).strip()
+        if not concepto or concepto.lower() == "nan":
+            continue
+        resultado[concepto] = {}
+        for c, sede_canon in mapa_col_a_sede.items():
+            resultado[concepto][sede_canon] = row[c]
+    return resultado
 
 
 # ============================================================
@@ -390,7 +505,7 @@ if not uploaded_files:
     st.info("👆 Carga al menos un archivo Excel para comenzar.")
     for fase in FASES:
         st.subheader(f"📋 {TITULOS_FASES[fase]}")
-        st.dataframe(construir_tabla_resumen(), use_container_width=True)
+        st.dataframe(construir_tabla_resumen(fase), use_container_width=True)
     st.stop()
 
 
@@ -404,13 +519,15 @@ def leer_excel(file_bytes, file_name):
 
 
 # ============================================================
-# PROCESAR ARCHIVOS
+# PROCESAR
 # ============================================================
 bases = {nombre: [] for nombre in ESTRUCTURAS}
 no_clasificados = []
 errores = []
 archivos_duplicados = []
 hojas_duplicadas = []
+periodos_detectados = []
+historicos_detectados = {}
 
 hashes_archivos_vistos = {}
 hashes_hojas_vistos = {}
@@ -431,6 +548,9 @@ for idx, f in enumerate(uploaded_files):
 
     hashes_archivos_vistos[hash_archivo] = f.name
 
+    anio, mes = extraer_periodo_desde_nombre(f.name)
+    periodos_detectados.append((f.name, (anio, mes)))
+
     hojas, err = leer_excel(file_bytes, f.name)
     if err:
         errores.append((f.name, err))
@@ -438,6 +558,16 @@ for idx, f in enumerate(uploaded_files):
         continue
 
     for hoja, df in hojas.items():
+        if es_hoja_de_resultados(df):
+            a_h, m_h = extraer_periodo_desde_nombre(hoja)
+            if a_h is None:
+                a_h, m_h = anio, mes
+            etiqueta, _, _ = formatear_periodo(a_h, m_h)
+            if etiqueta == "—":
+                etiqueta = hoja
+            historicos_detectados[etiqueta] = parsear_hoja_resultados(df, hoja)
+            continue
+
         estructura, score = clasificar_estructura(df.columns)
 
         if estructura is None or score < UMBRAL_COINCIDENCIA:
@@ -494,7 +624,37 @@ if no_clasificados:
 
 
 # ============================================================
-# CONSTRUIR BASE "ATENCIONES DEL ESPECIALISTA"
+# PERIODO
+# ============================================================
+periodos_validos = [(n, p) for n, p in periodos_detectados if p[0] is not None and p[1] is not None]
+
+if periodos_validos:
+    from collections import Counter
+    conteo = Counter(p for _, p in periodos_validos)
+    periodo_actual_tupla = conteo.most_common(1)[0][0]
+else:
+    periodo_actual_tupla = (None, None)
+
+periodo_etiqueta, periodo_inicio, periodo_fin = formatear_periodo(*periodo_actual_tupla)
+
+if periodo_etiqueta != "—":
+    st.markdown(
+        f"<div style='background-color:#D9E1F2; padding:10px 15px; border-radius:8px; "
+        f"border-left:5px solid #305496; margin-bottom:15px;'>"
+        f"<b>📅 Periodo analizado:</b> {periodo_etiqueta} "
+        f"&nbsp;&nbsp;|&nbsp;&nbsp; <b>Inicio:</b> {periodo_inicio} "
+        f"&nbsp;&nbsp;|&nbsp;&nbsp; <b>Fin:</b> {periodo_fin}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+else:
+    st.warning(
+        "⚠️ No se pudo detectar el periodo desde el nombre de los archivos."
+    )
+
+
+# ============================================================
+# BASE ATENCIONES
 # ============================================================
 if bases["Atenciones del especialista"]:
     partes = []
@@ -509,17 +669,11 @@ else:
 
 
 # ============================================================
-# CÁLCULOS: Revisadas / Avaladas / Dinero interfaz
+# CÁLCULOS
 # ============================================================
-conteos = {
-    fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
-    for fase in FASES
-}
+conteos = {fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE} for fase in FASES}
 dinero_interfaz = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-errores_valor_bajo = {
-    fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
-    for fase in FASES
-}
+errores_valor_bajo = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
 df_filtrado_revisadas = pd.DataFrame()
 ubicaciones_no_mapeadas = pd.Series(dtype=int)
 
@@ -533,18 +687,10 @@ if not atenciones_df.empty:
     col_submedico = obtener_columna(atenciones_df, "Usuario / Sub Medico")
     col_valor_liquidado = obtener_columna(atenciones_df, "Valor liquidado")
 
-    if col_ubicacion is None or col_verifica is None:
-        st.error("⚠️ Faltan columnas clave en 'Atenciones del especialista'.")
-    else:
-        ubicacion_norm_serie = (
-            atenciones_df[col_ubicacion].astype(str).map(normalizar)
-        )
-        sede_serie = ubicacion_norm_serie.map(
-            lambda u: MAPA_UBICACION.get(u, (None, None))[0]
-        )
-        fase_serie = ubicacion_norm_serie.map(
-            lambda u: MAPA_UBICACION.get(u, (None, None))[1]
-        )
+    if col_ubicacion is not None and col_verifica is not None:
+        ubicacion_norm_serie = atenciones_df[col_ubicacion].astype(str).map(normalizar)
+        sede_serie = ubicacion_norm_serie.map(lambda u: MAPA_UBICACION.get(u, (None, None))[0])
+        fase_serie = ubicacion_norm_serie.map(lambda u: MAPA_UBICACION.get(u, (None, None))[1])
 
         mask_verifica = es_vacio(atenciones_df[col_verifica])
         mask_submedico = (
@@ -556,8 +702,7 @@ if not atenciones_df.empty:
         sin_match = ubicacion_norm_serie[sede_serie.isna()]
         if not sin_match.empty:
             ubicaciones_no_mapeadas = (
-                sin_match
-                .value_counts()
+                sin_match.value_counts()
                 .rename_axis("Ubicación (normalizada)")
                 .reset_index(name="Registros")
             )
@@ -595,51 +740,30 @@ if not atenciones_df.empty:
                     dinero_interfaz[fase_val][sede_cod] += valor
 
 
-# ============================================================
-# CÁLCULOS SOBRE "Totales" cruzado con "Ventas"
-# ============================================================
 total_ventas_ce = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
 dinero_ambulatorio = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 ventas_relacionadas_factura = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
-errores_tarifa = {
-    fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
-    for fase in FASES
-}
+errores_tarifa = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
 ubicaciones_totales_no_mapeadas = pd.Series(dtype=int)
-diagnostico_totales_por_fase = {fase: 0 for fase in FASES}
-
-# NUEVO: Totales sin match en Atenciones
 totales_sin_match_atenciones_df = pd.DataFrame()
 
 if bases["Totales"]:
-    totales_df = pd.concat(
-        [df for _, _, df in bases["Totales"]],
-        ignore_index=True
-    )
+    totales_df = pd.concat([df for _, _, df in bases["Totales"]], ignore_index=True)
 
     col_totales_venta_no = obtener_columna(totales_df, "No. de venta")
     col_totales_centro_costo = obtener_columna(totales_df, "Centro De Costo")
     col_totales_tarifa_reliq = obtener_columna(totales_df, "tarifas (reliquidado)")
 
     if col_totales_venta_no is not None and col_totales_centro_costo is not None:
-        totales_df["_venta_no_norm"] = (
-            totales_df[col_totales_venta_no].map(normalizar_llave_venta)
-        )
+        totales_df["_venta_no_norm"] = totales_df[col_totales_venta_no].map(normalizar_llave_venta)
         totales_ubic = totales_df[col_totales_centro_costo].astype(str).map(detectar_ubicacion_flexible)
         totales_df["_sede"] = totales_ubic.map(lambda x: x[0])
         totales_df["_fase"] = totales_ubic.map(lambda x: x[1])
 
-        for fase in FASES:
-            diagnostico_totales_por_fase[fase] = int((totales_df["_fase"] == fase).sum())
-
-        sin_match_totales = (
-            totales_df.loc[totales_df["_sede"].isna(), col_totales_centro_costo]
-            .astype(str).map(normalizar)
-        )
+        sin_match_totales = totales_df.loc[totales_df["_sede"].isna(), col_totales_centro_costo].astype(str).map(normalizar)
         if not sin_match_totales.empty:
             ubicaciones_totales_no_mapeadas = (
-                sin_match_totales
-                .value_counts()
+                sin_match_totales.value_counts()
                 .rename_axis("Centro De Costo (normalizado)")
                 .reset_index(name="Registros")
             )
@@ -651,15 +775,11 @@ if bases["Totales"]:
 
         ventas_nos_existentes = set()
         if bases["Ventas"]:
-            ventas_para_cruce = pd.concat(
-                [df for _, _, df in bases["Ventas"]],
-                ignore_index=True
-            )
+            ventas_para_cruce = pd.concat([df for _, _, df in bases["Ventas"]], ignore_index=True)
             col_venta_no_v = obtener_columna(ventas_para_cruce, "Venta No.")
             if col_venta_no_v is not None:
                 ventas_nos_existentes = set(
-                    ventas_para_cruce[col_venta_no_v]
-                    .map(normalizar_llave_venta).dropna().unique()
+                    ventas_para_cruce[col_venta_no_v].map(normalizar_llave_venta).dropna().unique()
                 )
 
         mask_venta_en_ventas = totales_df["_venta_no_norm"].isin(ventas_nos_existentes)
@@ -681,54 +801,37 @@ if bases["Totales"]:
 
                 if mask_error.any():
                     errores_tarifa[fase][cod]["cantidad"] = int(mask_error.sum())
-                    errores_tarifa[fase][cod]["suma"] = float(
-                        totales_tarifa_num.loc[indices][mask_error].sum()
-                    )
+                    errores_tarifa[fase][cod]["suma"] = float(totales_tarifa_num.loc[indices][mask_error].sum())
 
-        # --- Totales sin match en Atenciones ---
         atenciones_nos_existentes = set()
         if not atenciones_df.empty:
             col_num_venta_at = obtener_columna(atenciones_df, "Numero Venta")
             if col_num_venta_at is not None:
                 atenciones_nos_existentes = set(
-                    atenciones_df[col_num_venta_at]
-                    .map(normalizar_llave_venta).dropna().unique()
+                    atenciones_df[col_num_venta_at].map(normalizar_llave_venta).dropna().unique()
                 )
 
         mask_sin_match_atenciones = ~totales_df["_venta_no_norm"].isin(atenciones_nos_existentes)
 
         if mask_sin_match_atenciones.any():
             cols_mostrar = []
-            for nombre_col in ["profesional", "producto", "Centro De Costo", "tarifas (reliquidado)"]:
+            for nombre_col in ["No. de venta", "profesional", "producto", "Centro De Costo", "tarifas (reliquidado)"]:
                 col_real = obtener_columna(totales_df, nombre_col)
                 if col_real is not None:
                     cols_mostrar.append(col_real)
 
             if cols_mostrar:
-                totales_sin_match_atenciones_df = totales_df.loc[
-                    mask_sin_match_atenciones, cols_mostrar
-                ].copy()
+                totales_sin_match_atenciones_df = totales_df.loc[mask_sin_match_atenciones, cols_mostrar].copy()
                 totales_sin_match_atenciones_df = totales_sin_match_atenciones_df.rename(
-                    columns={
-                        "Centro De Costo": "Centro de costos",
-                        "tarifas (reliquidado)": "tarifas (reliquidado)",
-                    }
+                    columns={"Centro De Costo": "Centro de costos"}
                 )
 
 
-# ============================================================
-# CÁLCULO: "Ventas relacionadas en factura (FACTURADO)" desde Ventas
-# ============================================================
 ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
-diagnostico_ventas_por_fase = {fase: 0 for fase in FASES}
 estados_no_incluidos = pd.Series(dtype=int)
 
 if bases["Ventas"]:
-    ventas_df = pd.concat(
-        [df for _, _, df in bases["Ventas"]],
-        ignore_index=True
-    )
-
+    ventas_df = pd.concat([df for _, _, df in bases["Ventas"]], ignore_index=True)
     col_ventas_centro_costo = obtener_columna(ventas_df, "Centro de costo")
     col_ventas_estado = obtener_columna(ventas_df, "Estado")
 
@@ -737,17 +840,10 @@ if bases["Ventas"]:
         ventas_df["_sede"] = ventas_ubic.map(lambda x: x[0])
         ventas_df["_fase"] = ventas_ubic.map(lambda x: x[1])
 
-        for fase in FASES:
-            diagnostico_ventas_por_fase[fase] = int((ventas_df["_fase"] == fase).sum())
-
-        sin_match_ventas = (
-            ventas_df.loc[ventas_df["_sede"].isna(), col_ventas_centro_costo]
-            .astype(str).map(normalizar)
-        )
+        sin_match_ventas = ventas_df.loc[ventas_df["_sede"].isna(), col_ventas_centro_costo].astype(str).map(normalizar)
         if not sin_match_ventas.empty:
             ubicaciones_ventas_no_mapeadas = (
-                sin_match_ventas
-                .value_counts()
+                sin_match_ventas.value_counts()
                 .rename_axis("Centro de costo (normalizado)")
                 .reset_index(name="Registros")
             )
@@ -759,8 +855,7 @@ if bases["Ventas"]:
             estados_excluidos = estado_norm[~estado_norm.isin(ESTADOS_ACTIVA_FACTURADA)]
             if not estados_excluidos.empty:
                 estados_no_incluidos = (
-                    estados_excluidos
-                    .value_counts()
+                    estados_excluidos.value_counts()
                     .rename_axis("Estado (normalizado)")
                     .reset_index(name="Registros")
                 )
@@ -774,9 +869,6 @@ if bases["Ventas"]:
                 ventas_relacionadas_factura[fase][cod] += int(mask_fact.sum())
 
 
-# ============================================================
-# PORCENTUALES
-# ============================================================
 porcentual_faltante = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 porcentual_impactado = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 porcentaje_errores_valor = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
@@ -798,9 +890,7 @@ for fase in FASES:
             porcentaje_errores_tarifa[fase][cod] = (cant_err_t / avaladas) * 100.0
 
 
-# ============================================================
 # CONSOLIDADO
-# ============================================================
 conteos_consolidado = {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
 dinero_interfaz_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
 errores_valor_bajo_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
@@ -855,11 +945,12 @@ def formatear_ventas_relacionadas(total, cant_err, suma_err, pct_err):
 
 
 # ============================================================
-# CONSTRUIR LAS 4 TABLAS (para pantalla y para Excel)
+# CONSTRUIR TABLAS (con etiquetas dinámicas)
 # ============================================================
 tablas_por_fase = {}
 for fase in FASES:
-    tabla = construir_tabla_resumen()
+    tabla = construir_tabla_resumen(fase)
+    filas = filas_resumen(fase)
     for cod in CODIGOS_SEDE:
         columna = MAPA_CODIGO_A_COLUMNA[cod]
         tabla.loc["Revisadas por analistas", columna] = f"{conteos[fase][cod]['revisadas']:,}"
@@ -870,8 +961,8 @@ for fase in FASES:
             errores_valor_bajo[fase][cod]["suma"],
             porcentaje_errores_valor[fase][cod],
         )
-        tabla.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce[fase][cod]:,}"
-        tabla.loc["Dinero ventas ambulatorio", columna] = f"${dinero_ambulatorio[fase][cod]:,.0f}"
+        tabla.loc[filas[3], columna] = f"{total_ventas_ce[fase][cod]:,}"
+        tabla.loc[filas[4], columna] = f"${dinero_ambulatorio[fase][cod]:,.0f}"
         tabla.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante[fase][cod]:,.2f}%"
         tabla.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_ventas_relacionadas(
             ventas_relacionadas_factura[fase][cod],
@@ -882,7 +973,8 @@ for fase in FASES:
         tabla.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado[fase][cod]:,.2f}%"
     tablas_por_fase[fase] = tabla
 
-tabla_consolidada = construir_tabla_resumen()
+tabla_consolidada = construir_tabla_resumen("Consolidado")
+filas_cons = filas_resumen("Consolidado")
 for cod in CODIGOS_SEDE:
     columna = MAPA_CODIGO_A_COLUMNA[cod]
     tabla_consolidada.loc["Revisadas por analistas", columna] = f"{conteos_consolidado[cod]['revisadas']:,}"
@@ -893,8 +985,8 @@ for cod in CODIGOS_SEDE:
         errores_valor_bajo_consolidado[cod]["suma"],
         porcentaje_errores_valor_consolidado[cod],
     )
-    tabla_consolidada.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce_consolidado[cod]:,}"
-    tabla_consolidada.loc["Dinero ventas ambulatorio", columna] = f"${dinero_ambulatorio_consolidado[cod]:,.0f}"
+    tabla_consolidada.loc[filas_cons[3], columna] = f"{total_ventas_ce_consolidado[cod]:,}"
+    tabla_consolidada.loc[filas_cons[4], columna] = f"${dinero_ambulatorio_consolidado[cod]:,.0f}"
     tabla_consolidada.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante_consolidado[cod]:,.2f}%"
     tabla_consolidada.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_ventas_relacionadas(
         ventas_relacionadas_factura_consolidado[cod],
@@ -905,40 +997,25 @@ for cod in CODIGOS_SEDE:
     tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%"
 
 
-# ============================================================
-# NOVEDADES (calcula y guarda el DataFrame para Excel)
-# ============================================================
+# NOVEDADES
 resumen_verifica = pd.DataFrame()
-
-if df_filtrado_revisadas.empty:
-    st.subheader("🔎 Novedades")
-    st.info("No hay registros que cumplan los filtros de 'Revisadas por analistas'.")
-else:
+if not df_filtrado_revisadas.empty:
     col_verifica = obtener_columna(df_filtrado_revisadas, "Nombre de Usuario que Verifica")
     col_submedico = obtener_columna(df_filtrado_revisadas, "Usuario / Sub Medico")
 
-    verificadores_limpios = (
-        df_filtrado_revisadas[col_verifica]
-        .astype(str).str.strip()
-        .replace({"nan": "", "None": "", "NaN": ""})
-    )
+    verificadores_limpios = df_filtrado_revisadas[col_verifica].astype(str).str.strip().replace({"nan": "", "None": "", "NaN": ""})
     df_filtrado_revisadas = df_filtrado_revisadas.assign(_verifica_limpio=verificadores_limpios)
 
     resumen_verifica = (
-        df_filtrado_revisadas
-        .groupby("_verifica_limpio", dropna=False)
-        .size()
-        .reset_index(name="Registros")
+        df_filtrado_revisadas.groupby("_verifica_limpio", dropna=False)
+        .size().reset_index(name="Registros")
         .rename(columns={"_verifica_limpio": "Nombre de Usuario que Verifica"})
     )
 
     def comparar_con_submedico(nombre_verifica):
         if not col_submedico:
             return "Sin datos de Sub Médico"
-        valores_sub = (
-            df_filtrado_revisadas[col_submedico]
-            .dropna().astype(str).str.strip()
-        )
+        valores_sub = df_filtrado_revisadas[col_submedico].dropna().astype(str).str.strip()
         valores_sub = valores_sub[~valores_sub.isin(["", "nan", "None", "NaN"])]
         if valores_sub.empty:
             return "Sin datos de Sub Médico"
@@ -946,106 +1023,63 @@ else:
         set_sub_norm = {normalizar(v) for v in valores_sub.unique()}
         return "Misma persona" if norm_verifica in set_sub_norm else "Diferente persona"
 
-    resumen_verifica["¿Coincide con Usuario / Sub Médico?"] = (
-        resumen_verifica["Nombre de Usuario que Verifica"]
-        .apply(comparar_con_submedico)
-    )
-    resumen_verifica = (
-        resumen_verifica
-        .sort_values("Registros", ascending=False)
-        .reset_index(drop=True)
-    )
+    resumen_verifica["¿Coincide con Usuario / Sub Médico?"] = resumen_verifica["Nombre de Usuario que Verifica"].apply(comparar_con_submedico)
+    resumen_verifica = resumen_verifica.sort_values("Registros", ascending=False).reset_index(drop=True)
 
 
-# ============================================================
-# SIDEBAR → LISTADO DE REGLAS
-# ============================================================
+# SIDEBAR
 with st.sidebar:
     st.header("📚 Reglas de procesamiento")
     st.markdown("""
 **Carga de archivos**
 - Se aceptan múltiples Excel (`.xlsx`, `.xls`).
-- Se leen todas las hojas no vacías.
-- Cada hoja se clasifica por estructura de columnas:
-  **Ventas**, **Atenciones del especialista** o **Totales**.
-- Hojas/archivos con el mismo contenido se **descartan automáticamente** (hash).
+- Se clasifican: **Ventas**, **Atenciones del especialista**, **Totales** o **Histórico**.
+- Se descartan hojas/archivos duplicados por hash.
+
+**Periodo**
+- Se extrae del nombre del archivo (`YYYY-MM`, `MM-YYYY`, mes + año, etc.).
 
 **Filtros previos**
-- En **Totales**: solo se conservan registros con
-  `Total tarifas y recargos/descuentos >= 1000`.
+- En **Totales**: `Total tarifas y recargos/descuentos >= 1000`.
 
 **Mapeo de (sede, fase)**
-- Cada registro se asigna a una **sede** y **fase** según el mapa
-  `Sede + Ubicación de la venta → Fase`.
-- El match es flexible: normaliza tildes, mayúsculas, guiones,
-  paréntesis, espacios múltiples y elige la coincidencia con
-  **mayor número de palabras clave**.
+- Match flexible contra el mapa `Sede + Ubicación → Fase`.
 
 **Cálculos por (sede, fase)**
 
-1. **Revisadas por analistas**
-   - `Ubicación de la venta` en Atenciones mapea en el diccionario.
-   - `Nombre de Usuario que Verifica` **no vacío**.
-
-2. **Avaladas subgerencia médica**
-   - Mismos filtros que "Revisadas".
-   - **Además** `Usuario / Sub Medico` **no vacío**.
-
-3. **Dinero enviado por interfaz**
-   - Suma de `Valor liquidado` (Atenciones) para "Revisadas".
-   - Valores **< 1000** se cuentan como **errores** aparte:
-     `$suma en N registros — % respecto a Avaladas`.
-
-4. **Total ventas consulta externa**
-   - Conteo de **Totales** cuyo `No. de venta` existe en
-     `Venta No.` de Ventas.
-   - **Sin** filtro de tarifa.
-
-5. **Dinero ventas ambulatorio**
-   - Suma de `tarifas (reliquidado)` de esos Totales.
-   - **Sin** filtro de tarifa.
-
-6. **Porcentual faltante (META 30%)**
-   - `Avaladas / Total ventas × 100`.
-
-7. **Ventas relacionadas en factura (FACTURADO)**
-   - Conteo de **Ventas** con `Centro de costo` mapeado y
-     `Estado = Facturada`.
-   - Se reportan en paréntesis los Totales con `tarifas < 1000`
-     (`$suma en N registros — % respecto a Avaladas`).
-
-8. **Porcentual impactado (META 0%)**
-   - `Ventas relacionadas / Total ventas × 100`.
+1. **Revisadas**: Ubicación mapea + `Usuario que Verifica` NO vacío.
+2. **Avaladas**: Revisadas + `Usuario / Sub Medico` NO vacío.
+3. **Dinero interfaz**: Σ `Valor liquidado` (valores < 1000 reportados como errores).
+4. **Total ventas**: count(Totales ∩ Ventas) sin filtro de tarifa.
+5. **Dinero ventas**: Σ `tarifas (reliquidado)` sin filtro de tarifa.
+6. **Porcentual faltante**: `Avaladas / Total ventas × 100`.
+7. **Ventas relacionadas**: count(Ventas con Estado=Facturada y Centro de costo mapeado).
+8. **Porcentual impactado**: `Ventas relacionadas / Total ventas × 100`.
 
 **Consolidado**
-- Suma de las 3 fases para filas de conteo y dinero.
-- Los porcentajes se **recalculan** sobre los consolidados.
+- Suma de las 3 fases. Porcentajes recalculados.
 """)
 
 
-# ============================================================
 # DIAGNÓSTICOS
-# ============================================================
 if not ubicaciones_no_mapeadas.empty:
     with st.expander("⚠️ Ubicaciones de la venta (Atenciones) sin coincidencia", expanded=False):
         st.dataframe(ubicaciones_no_mapeadas, use_container_width=True)
 
 if not ubicaciones_totales_no_mapeadas.empty:
-    with st.expander("⚠️ Centros de Costo (Totales) sin coincidencia en la tabla base", expanded=False):
+    with st.expander("⚠️ Centros de Costo (Totales) sin coincidencia", expanded=False):
         st.dataframe(ubicaciones_totales_no_mapeadas, use_container_width=True)
 
 if not ubicaciones_ventas_no_mapeadas.empty:
-    with st.expander("⚠️ Centros de costo (Ventas) sin coincidencia en la tabla base", expanded=False):
+    with st.expander("⚠️ Centros de costo (Ventas) sin coincidencia", expanded=False):
         st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
 
 if not estados_no_incluidos.empty:
-    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo se contó 'Facturada')", expanded=False):
+    with st.expander("ℹ️ Estados en Ventas NO incluidos", expanded=False):
         st.dataframe(estados_no_incluidos, use_container_width=True)
 
 
-# ============================================================
-# TABLAS POR FASE
-# ============================================================
+# TABLAS
 for fase in FASES:
     st.subheader(f"📋 {TITULOS_FASES[fase]}")
     st.dataframe(tablas_por_fase[fase], use_container_width=True, height=380)
@@ -1059,9 +1093,6 @@ for fase in FASES:
     st.divider()
 
 
-# ============================================================
-# CONSOLIDADO
-# ============================================================
 st.subheader("📋 CONSOLIDADO - TODAS LAS FASES")
 st.dataframe(tabla_consolidada, use_container_width=True, height=380)
 st.download_button(
@@ -1074,99 +1105,223 @@ st.download_button(
 st.divider()
 
 
-# ============================================================
 # NOVEDADES
-# ============================================================
 st.subheader("🔎 Novedades")
-
 if resumen_verifica.empty:
     st.info("No hay registros que cumplan los filtros de 'Revisadas por analistas'.")
 else:
-    st.markdown(
-        f"**Total de registros que cumplen los filtros:** {len(df_filtrado_revisadas):,}"
-    )
-    st.markdown("#### 👥 Verificadores y comparación con Sub Médico")
+    st.markdown(f"**Total de registros que cumplen los filtros:** {len(df_filtrado_revisadas):,}")
     st.dataframe(resumen_verifica, use_container_width=True)
+st.divider()
 
 
-# ============================================================
-# EXPORTABLE EXCEL — 4 hojas
-# ============================================================
+# ANÁLISIS HISTÓRICO
+periodos_historicos = dict(historicos_detectados)
+if periodo_etiqueta != "—":
+    def _tabla_a_dict(tabla_df):
+        d = {}
+        for idx, row in tabla_df.iterrows():
+            d[idx] = {col: row[col] for col in tabla_df.columns}
+        return d
+    periodos_historicos[periodo_etiqueta] = _tabla_a_dict(tabla_consolidada)
+
+if len(periodos_historicos) > 0:
+    with st.expander("📈 Análisis histórico comparativo entre periodos", expanded=True):
+        st.markdown(
+            f"Se encontraron **{len(periodos_historicos)}** periodos: "
+            + ", ".join(sorted(periodos_historicos.keys()))
+        )
+
+        def normalizar_etiqueta(concepto):
+            c = str(concepto).strip()
+            if c.startswith("Total ventas ") and "(ACTIVO Y FACTURADO)" in c:
+                return "Total ventas (ACTIVO Y FACTURADO)"
+            if c.startswith("Dinero ventas "):
+                return "Dinero ventas"
+            return c
+
+        filas = []
+        for periodo, conceptos in periodos_historicos.items():
+            for concepto, valores in conceptos.items():
+                concepto_norm = normalizar_etiqueta(concepto)
+                for sede, valor in valores.items():
+                    filas.append({
+                        "Periodo": periodo,
+                        "Concepto": concepto_norm,
+                        "Sede": sede,
+                        "ValorCrudo": valor,
+                    })
+
+        df_hist = pd.DataFrame(filas)
+
+        def parsear_valor(v):
+            if pd.isna(v):
+                return None
+            s = str(v).strip()
+            s = re.sub(r"\(.*?\)", "", s).strip()
+            s = s.replace("$", "").replace(",", "").replace("%", "").strip()
+            try:
+                return float(s) if s else None
+            except Exception:
+                return None
+
+        df_hist["Valor"] = df_hist["ValorCrudo"].apply(parsear_valor)
+        df_hist = df_hist.dropna(subset=["Valor"])
+
+        if df_hist.empty:
+            st.warning("No se pudieron parsear valores numéricos del histórico.")
+        else:
+            sns.set_theme(style="whitegrid")
+
+            st.markdown("### 💰 Dinero enviado por interfaz por periodo")
+            df_g1 = df_hist[df_hist["Concepto"] == "Dinero enviado por interfaz"]
+            if not df_g1.empty:
+                fig1, ax1 = plt.subplots(figsize=(12, 5))
+                sns.barplot(data=df_g1, x="Periodo", y="Valor", hue="Sede", ax=ax1)
+                ax1.set_title("Dinero enviado por interfaz por periodo y sede")
+                ax1.set_ylabel("Valor ($)")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                st.pyplot(fig1)
+                plt.close(fig1)
+
+            st.markdown("### 📊 Total ventas vs Ventas relacionadas en factura")
+            df_g2 = df_hist[df_hist["Concepto"].isin([
+                "Total ventas (ACTIVO Y FACTURADO)",
+                "Ventas relacionadas en factura (FACTURADO)",
+            ])]
+            if not df_g2.empty:
+                fig2, ax2 = plt.subplots(figsize=(12, 5))
+                sns.barplot(data=df_g2, x="Periodo", y="Valor", hue="Concepto", ax=ax2)
+                ax2.set_title("Total ventas vs Ventas relacionadas en factura")
+                ax2.set_ylabel("Registros")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                st.pyplot(fig2)
+                plt.close(fig2)
+
+            st.markdown("### 📉 Porcentual faltante (META 30%) por periodo")
+            df_g3 = df_hist[df_hist["Concepto"] == "Porcentual faltante (META 30%)"]
+            if not df_g3.empty:
+                fig3, ax3 = plt.subplots(figsize=(12, 5))
+                sns.lineplot(data=df_g3, x="Periodo", y="Valor", hue="Sede", marker="o", ax=ax3)
+                ax3.axhline(30, color="red", linestyle="--", label="Meta 30%")
+                ax3.set_title("Porcentual faltante por periodo y sede")
+                ax3.set_ylabel("%")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                st.pyplot(fig3)
+                plt.close(fig3)
+
+            st.markdown("### 📉 Porcentual impactado (META 0%) por periodo")
+            df_g4 = df_hist[df_hist["Concepto"] == "Porcentual impactado (META 0%)"]
+            if not df_g4.empty:
+                fig4, ax4 = plt.subplots(figsize=(12, 5))
+                sns.lineplot(data=df_g4, x="Periodo", y="Valor", hue="Sede", marker="o", ax=ax4)
+                ax4.axhline(0, color="red", linestyle="--", label="Meta 0%")
+                ax4.set_title("Porcentual impactado por periodo y sede")
+                ax4.set_ylabel("%")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                st.pyplot(fig4)
+                plt.close(fig4)
+
+            st.markdown("### 👥 Revisadas vs Avaladas por periodo")
+            df_g5 = df_hist[df_hist["Concepto"].isin([
+                "Revisadas por analistas",
+                "Avaladas subgerencia médica",
+            ])]
+            if not df_g5.empty:
+                fig5, ax5 = plt.subplots(figsize=(12, 5))
+                sns.barplot(data=df_g5, x="Periodo", y="Valor", hue="Concepto", ax=ax5)
+                ax5.set_title("Revisadas vs Avaladas por periodo")
+                ax5.set_ylabel("Registros")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                st.pyplot(fig5)
+                plt.close(fig5)
+
+            st.markdown("### 🔥 Heatmap Porcentual impactado (sede × periodo)")
+            df_heat = df_hist[df_hist["Concepto"] == "Porcentual impactado (META 0%)"]
+            if not df_heat.empty:
+                pivot = df_heat.pivot_table(index="Sede", columns="Periodo", values="Valor", aggfunc="mean")
+                if not pivot.empty:
+                    fig6, ax6 = plt.subplots(figsize=(12, 5))
+                    sns.heatmap(pivot, annot=True, fmt=".1f", cmap="RdYlGn_r", ax=ax6, cbar_kws={"label": "%"})
+                    ax6.set_title("Heatmap Porcentual impactado")
+                    plt.tight_layout()
+                    st.pyplot(fig6)
+                    plt.close(fig6)
+
+
+# EXPORTABLE EXCEL
 def generar_excel_completo():
     wb = Workbook()
-
-    # --- Hoja 1: Resultados (4 tablas apiladas) ---
-    ws1 = wb.active
-    ws1.title = "Resultados"
-
-    bold = Font(bold=True, size=12)
     bold_white = Font(bold=True, size=11, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="305496")
     title_fill = PatternFill("solid", fgColor="1F4E78")
-    thin = Side(border_style="thin", color="BFBFBF")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    info_fill = PatternFill("solid", fgColor="D9E1F2")
 
     def escribir_tabla(ws, tabla_df, titulo, fila_inicio):
-        # Título
-        ws.cell(row=fila_inicio, column=1, value=titulo).font = Font(bold=True, size=13, color="FFFFFF")
-        ws.cell(row=fila_inicio, column=1).fill = title_fill
+        fila = fila_inicio
+        ws.cell(row=fila, column=1, value=titulo).font = Font(bold=True, size=13, color="FFFFFF")
         for col_idx in range(1, len(tabla_df.columns) + 2):
-            ws.cell(row=fila_inicio, column=col_idx).fill = title_fill
-        ws.merge_cells(
-            start_row=fila_inicio,
-            start_column=1,
-            end_row=fila_inicio,
-            end_column=len(tabla_df.columns) + 1,
-        )
+            ws.cell(row=fila, column=col_idx).fill = title_fill
+        ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=len(tabla_df.columns) + 1)
+        fila += 1
 
-        fila_actual = fila_inicio + 1
-
-        # Encabezados
-        ws.cell(row=fila_actual, column=1, value="Concepto")
-        ws.cell(row=fila_actual, column=1).font = bold_white
-        ws.cell(row=fila_actual, column=1).fill = header_fill
+        ws.cell(row=fila, column=1, value="Concepto").font = bold_white
+        ws.cell(row=fila, column=1).fill = header_fill
         for j, col in enumerate(tabla_df.columns, start=2):
-            c = ws.cell(row=fila_actual, column=j, value=col)
+            c = ws.cell(row=fila, column=j, value=col)
             c.font = bold_white
             c.fill = header_fill
             c.alignment = Alignment(horizontal="center", wrap_text=True)
-        fila_actual += 1
+        fila += 1
 
-        # Datos
         for idx, row in tabla_df.iterrows():
-            ws.cell(row=fila_actual, column=1, value=str(idx)).font = bold
+            ws.cell(row=fila, column=1, value=str(idx)).font = Font(bold=True)
             for j, col in enumerate(tabla_df.columns, start=2):
-                ws.cell(row=fila_actual, column=j, value=row[col])
-            fila_actual += 1
+                ws.cell(row=fila, column=j, value=row[col])
+            fila += 1
+        return fila + 2
 
-        return fila_actual + 2  # espacio entre tablas
+    ws1 = wb.active
+    ws1.title = "Resultados"
+
+    periodo_info = None
+    if periodo_etiqueta != "—":
+        periodo_info = f"Periodo: {periodo_etiqueta} | Inicio: {periodo_inicio} | Fin: {periodo_fin}"
 
     fila = 1
+    if periodo_info:
+        ws1.cell(row=fila, column=1, value=periodo_info).font = Font(bold=True, size=12, color="FFFFFF")
+        for c in range(1, len(COLUMNAS_RESUMEN) + 2):
+            ws1.cell(row=fila, column=c).fill = title_fill
+        ws1.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=len(COLUMNAS_RESUMEN) + 1)
+        fila += 2
+
     for fase in FASES:
         fila = escribir_tabla(ws1, tablas_por_fase[fase], TITULOS_FASES[fase], fila)
     fila = escribir_tabla(ws1, tabla_consolidada, "CONSOLIDADO - TODAS LAS FASES", fila)
 
-    # Ajustar ancho de columnas
     for col_idx in range(1, len(COLUMNAS_RESUMEN) + 2):
         ws1.column_dimensions[get_column_letter(col_idx)].width = 28 if col_idx == 1 else 22
 
-    # --- Hoja 2: Totales sin match en Atenciones ---
     ws2 = wb.create_sheet("Totales sin match")
     if totales_sin_match_atenciones_df.empty:
-        ws2.cell(row=1, column=1, value="No hay registros de Totales sin coincidencia en Atenciones del especialista.")
+        ws2.cell(row=1, column=1, value="No hay registros de Totales sin coincidencia en Atenciones.")
     else:
         for j, col in enumerate(totales_sin_match_atenciones_df.columns, start=1):
             c = ws2.cell(row=1, column=j, value=col)
             c.font = bold_white
             c.fill = header_fill
-            c.alignment = Alignment(horizontal="center", wrap_text=True)
         for i, (_, row) in enumerate(totales_sin_match_atenciones_df.iterrows(), start=2):
             for j, col in enumerate(totales_sin_match_atenciones_df.columns, start=1):
                 ws2.cell(row=i, column=j, value=row[col])
         for j in range(1, len(totales_sin_match_atenciones_df.columns) + 1):
             ws2.column_dimensions[get_column_letter(j)].width = 30
 
-    # --- Hoja 3: Novedades ---
     ws3 = wb.create_sheet("Novedades")
     if resumen_verifica.empty:
         ws3.cell(row=1, column=1, value="No hay registros en Novedades.")
@@ -1175,7 +1330,6 @@ def generar_excel_completo():
             c = ws3.cell(row=1, column=j, value=col)
             c.font = bold_white
             c.fill = header_fill
-            c.alignment = Alignment(horizontal="center", wrap_text=True)
         for i, (_, row) in enumerate(resumen_verifica.iterrows(), start=2):
             for j, col in enumerate(resumen_verifica.columns, start=1):
                 ws3.cell(row=i, column=j, value=row[col])
@@ -1183,42 +1337,39 @@ def generar_excel_completo():
         ws3.column_dimensions["B"].width = 15
         ws3.column_dimensions["C"].width = 30
 
-    # --- Hoja 4: Reglas ---
     ws4 = wb.create_sheet("Reglas")
     reglas = [
         ("Carga de archivos", ""),
         ("", "Se aceptan múltiples Excel (.xlsx, .xls)."),
-        ("", "Se leen todas las hojas no vacías."),
-        ("", "Cada hoja se clasifica por estructura de columnas: Ventas, Atenciones del especialista o Totales."),
-        ("", "Hojas/archivos con el mismo contenido se descartan automáticamente (hash)."),
+        ("", "Cada hoja se clasifica: Ventas, Atenciones del especialista, Totales o Histórico."),
+        ("", "Hojas/archivos duplicados se descartan por hash."),
+        ("Periodo", ""),
+        ("", "Se extrae del nombre del archivo (YYYY-MM, MM-YYYY, nombre de mes + año)."),
         ("Filtros previos", ""),
-        ("", "En Totales: solo se conservan registros con 'Total tarifas y recargos/descuentos' >= 1000."),
+        ("", "En Totales: 'Total tarifas y recargos/descuentos' >= 1000."),
         ("Mapeo de (sede, fase)", ""),
-        ("", "Cada registro se asigna a una sede y fase según el mapa Sede + Ubicación de la venta → Fase."),
-        ("", "El match es flexible: normaliza tildes, mayúsculas, guiones, paréntesis, espacios múltiples."),
-        ("", "En caso de empate se elige la coincidencia con mayor número de palabras clave."),
+        ("", "Match flexible contra el mapa Sede + Ubicación → Fase."),
         ("Cálculos por (sede, fase)", ""),
-        ("1. Revisadas por analistas", "Ubicación de la venta mapea. 'Nombre de Usuario que Verifica' NO vacío."),
-        ("2. Avaladas subgerencia médica", "Mismos filtros que Revisadas + 'Usuario / Sub Medico' NO vacío."),
-        ("3. Dinero enviado por interfaz", "Suma de 'Valor liquidado' (Atenciones) para revisadas. Valores < 1000 se reportan como errores."),
-        ("4. Total ventas consulta externa", "Conteo de Totales cuyo 'No. de venta' existe en 'Venta No.' de Ventas. Sin filtro de tarifa."),
-        ("5. Dinero ventas ambulatorio", "Suma de 'tarifas (reliquidado)' de esos Totales. Sin filtro de tarifa."),
+        ("1. Revisadas por analistas", "Ubicación mapea + 'Nombre de Usuario que Verifica' NO vacío."),
+        ("2. Avaladas subgerencia médica", "Revisadas + 'Usuario / Sub Medico' NO vacío."),
+        ("3. Dinero enviado por interfaz", "Σ 'Valor liquidado' (errores < 1000 reportados aparte)."),
+        ("4. Total ventas", "count(Totales ∩ Ventas). Sin filtro de tarifa. (Sufijo según fase)."),
+        ("5. Dinero ventas", "Σ 'tarifas (reliquidado)'. Sin filtro de tarifa. (Sufijo según fase)."),
         ("6. Porcentual faltante (META 30%)", "Avaladas / Total ventas × 100."),
-        ("7. Ventas relacionadas en factura", "Conteo de Ventas con Centro de costo mapeado y Estado = Facturada."),
+        ("7. Ventas relacionadas en factura", "count(Ventas con Estado=Facturada y Centro de costo mapeado)."),
         ("8. Porcentual impactado (META 0%)", "Ventas relacionadas / Total ventas × 100."),
-        ("Consolidado", "Suma de las 3 fases en conteo/dinero. Porcentajes recalculados sobre consolidados."),
+        ("Consolidado", "Suma de las 3 fases. Porcentajes recalculados. Etiquetas con sufijo 'consolidado'."),
     ]
-    for i, (col1, col2) in enumerate(reglas, start=1):
-        c1 = ws4.cell(row=i, column=1, value=col1)
-        c2 = ws4.cell(row=i, column=2, value=col2)
-        if col1 and not col2:
-            c1.font = Font(bold=True, size=12, color="305496")
-            c1.fill = PatternFill("solid", fgColor="D9E1F2")
-        c2.alignment = Alignment(wrap_text=True, vertical="top")
+    for i, (c1, c2) in enumerate(reglas, start=1):
+        celda1 = ws4.cell(row=i, column=1, value=c1)
+        celda2 = ws4.cell(row=i, column=2, value=c2)
+        if c1 and not c2:
+            celda1.font = Font(bold=True, size=12, color="305496")
+            celda1.fill = info_fill
+        celda2.alignment = Alignment(wrap_text=True, vertical="top")
     ws4.column_dimensions["A"].width = 40
     ws4.column_dimensions["B"].width = 100
 
-    # Guardar en buffer
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
@@ -1228,9 +1379,9 @@ def generar_excel_completo():
 try:
     excel_buffer = generar_excel_completo()
     st.download_button(
-        label="📥 Descargar Excel completo (4 hojas)",
+        label="📥 Descargar Excel completo (Resultados + Totales sin match + Novedades + Reglas)",
         data=excel_buffer,
-        file_name="resultados_por_fase.xlsx",
+        file_name=f"resultados_por_fase_{periodo_etiqueta.replace(' ', '_')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="dl_excel_completo",
     )
