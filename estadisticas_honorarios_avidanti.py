@@ -435,7 +435,7 @@ for idx, f in enumerate(uploaded_files):
             })
             continue
 
-        # Filtro especial para "Totales"
+        # Filtro para "Totales": Total tarifas y recargos/descuentos >= 1000
         if estructura == "Totales":
             col_tot_tarifas = obtener_columna(df, "Total tarifas y recargos/descuentos")
             if col_tot_tarifas is not None:
@@ -590,12 +590,15 @@ else:
 
 
 # ============================================================
-# CÁLCULO: Total ventas consulta externa (desde Totales × Ventas)
-#          Dinero ventas ambulatorio
-#          Ventas relacionadas en factura (desde Ventas)
+# CÁLCULO: Total ventas consulta externa y Dinero ventas ambulatorio
+#          (desde Totales cruzado con Ventas) + Ventas relacionadas
 # ============================================================
 total_ventas_ce = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
 dinero_ambulatorio = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+errores_tarifa = {
+    fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
+    for fase in FASES
+}
 ventas_relacionadas_factura = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
 ubicaciones_totales_no_mapeadas = pd.Series(dtype=int)
 ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
@@ -637,7 +640,6 @@ if bases["Totales"]:
         else:
             totales_tarifa_num = pd.Series(0.0, index=totales_df.index)
 
-        # Ventas conocidas
         ventas_nos_existentes = set()
         if bases["Ventas"]:
             ventas_para_cruce = pd.concat(
@@ -657,10 +659,26 @@ if bases["Totales"]:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (totales_df["_sede"] == cod) & (totales_df["_fase"] == fase)
                 mask_final = mask_sede_fase & mask_venta_en_ventas
+
+                # Total ventas: se cuenta igual (sin filtrar por tarifa)
                 total_ventas_ce[fase][cod] = int(mask_final.sum())
+
+                # Dinero ambulatorio: excluir valores < 1000 y acumularlos como error
+                tarifas_filtradas = totales_tarifa_num[mask_final]
+                indices_filtrados = tarifas_filtradas.index
+
+                mask_error = totales_tarifa_num.loc[indices_filtrados] < 1000
+                mask_valido = ~mask_error
+
                 dinero_ambulatorio[fase][cod] = float(
-                    totales_tarifa_num[mask_final].sum()
+                    totales_tarifa_num.loc[indices_filtrados][mask_valido].sum()
                 )
+
+                if mask_error.any():
+                    errores_tarifa[fase][cod]["cantidad"] = int(mask_error.sum())
+                    errores_tarifa[fase][cod]["suma"] = float(
+                        totales_tarifa_num.loc[indices_filtrados][mask_error].sum()
+                    )
 
 # --- Ventas relacionadas en factura (FACTURADO) ---
 if bases["Ventas"]:
@@ -739,6 +757,7 @@ dinero_interfaz_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
 errores_valor_bajo_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
 total_ventas_ce_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
 dinero_ambulatorio_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+errores_tarifa_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
 ventas_relacionadas_factura_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
 
 for cod in CODIGOS_SEDE:
@@ -750,6 +769,8 @@ for cod in CODIGOS_SEDE:
         errores_valor_bajo_consolidado[cod]["suma"] += errores_valor_bajo[fase][cod]["suma"]
         total_ventas_ce_consolidado[cod] += total_ventas_ce[fase][cod]
         dinero_ambulatorio_consolidado[cod] += dinero_ambulatorio[fase][cod]
+        errores_tarifa_consolidado[cod]["cantidad"] += errores_tarifa[fase][cod]["cantidad"]
+        errores_tarifa_consolidado[cod]["suma"] += errores_tarifa[fase][cod]["suma"]
         ventas_relacionadas_factura_consolidado[cod] += ventas_relacionadas_factura[fase][cod]
 
 porcentual_faltante_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
@@ -777,6 +798,15 @@ def formatear_dinero_interfaz(total, cant_err, suma_err, pct_err):
     return f"${total:,.0f}"
 
 
+def formatear_dinero_ambulatorio(total, cant_err, suma_err):
+    if cant_err > 0:
+        return (
+            f"${total:,.0f} "
+            f"(Errores < 1000: ${suma_err:,.0f} en {cant_err} registros)"
+        )
+    return f"${total:,.0f}"
+
+
 tabla_consolidada = construir_tabla_resumen()
 for cod in CODIGOS_SEDE:
     columna = MAPA_CODIGO_A_COLUMNA[cod]
@@ -789,7 +819,11 @@ for cod in CODIGOS_SEDE:
         porcentaje_errores_consolidado[cod],
     )
     tabla_consolidada.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce_consolidado[cod]:,}"
-    tabla_consolidada.loc["Dinero ventas ambulatorio", columna] = f"${dinero_ambulatorio_consolidado[cod]:,.0f}"
+    tabla_consolidada.loc["Dinero ventas ambulatorio", columna] = formatear_dinero_ambulatorio(
+        dinero_ambulatorio_consolidado[cod],
+        errores_tarifa_consolidado[cod]["cantidad"],
+        errores_tarifa_consolidado[cod]["suma"],
+    )
     tabla_consolidada.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante_consolidado[cod]:,.2f}%"
     tabla_consolidada.loc["Ventas relacionadas en factura (FACTURADO)", columna] = f"{ventas_relacionadas_factura_consolidado[cod]:,}"
     tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%"
@@ -849,7 +883,11 @@ for fase in FASES:
             porcentaje_errores[fase][cod],
         )
         tabla.loc["Total ventas consulta externa (ACTIVO Y FACTURADO)", columna] = f"{total_ventas_ce[fase][cod]:,}"
-        tabla.loc["Dinero ventas ambulatorio", columna] = f"${dinero_ambulatorio[fase][cod]:,.0f}"
+        tabla.loc["Dinero ventas ambulatorio", columna] = formatear_dinero_ambulatorio(
+            dinero_ambulatorio[fase][cod],
+            errores_tarifa[fase][cod]["cantidad"],
+            errores_tarifa[fase][cod]["suma"],
+        )
         tabla.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante[fase][cod]:,.2f}%"
         tabla.loc["Ventas relacionadas en factura (FACTURADO)", columna] = f"{ventas_relacionadas_factura[fase][cod]:,}"
         tabla.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado[fase][cod]:,.2f}%"
