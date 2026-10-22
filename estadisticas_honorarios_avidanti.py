@@ -27,7 +27,7 @@ st.markdown(
 )
 
 # ============================================================
-# CONSTANTES GLOBALES (no cambian entre ejecuciones)
+# CONSTANTES GLOBALES
 # ============================================================
 ESTRUCTURAS = {
     "Ventas": [
@@ -558,14 +558,10 @@ def normalizar_etiqueta_hist(concepto):
 
 
 # ============================================================
-# FUNCIÓN CACHEADA: PROCESAMIENTO COMPLETO
+# PROCESAMIENTO CACHEADO
 # ============================================================
 @st.cache_data(show_spinner="Procesando archivos y calculando indicadores...")
 def procesar_todo(files_data):
-    """
-    files_data: tuple de tuplas (file_name, file_bytes).
-    Retorna un dict con todos los resultados calculados.
-    """
     bases = {nombre: [] for nombre in ESTRUCTURAS}
     no_clasificados = []
     errores = []
@@ -674,7 +670,6 @@ def procesar_todo(files_data):
     else:
         atenciones_df = pd.DataFrame()
 
-    # -------- INICIALIZAR --------
     conteos = {fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE} for fase in FASES}
     dinero_interfaz = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
     errores_valor_bajo = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
@@ -1072,7 +1067,7 @@ def procesar_todo(files_data):
         resumen_verifica["¿Coincide con Usuario / Sub Médico?"] = resumen_verifica["Nombre de Usuario que Verifica"].apply(comparar_con_submedico)
         resumen_verifica = resumen_verifica.sort_values("Registros", ascending=False).reset_index(drop=True)
 
-    # -------- CONSOLIDADOS POR PERIODO (para gráficas) --------
+    # -------- CONSOLIDADOS POR PERIODO --------
     consolidados_por_periodo = {}
 
     if periodo_etiqueta != "—":
@@ -1092,9 +1087,9 @@ def procesar_todo(files_data):
     for etiqueta_periodo, conceptos in historicos_detectados.items():
         data_periodo = {}
         for sede in COLUMNAS_RESUMEN:
-            revisadas = 0
-            avaladas = 0
-            total_ventas = 0
+            revisadas_p = 0
+            avaladas_p = 0
+            total_ventas_p = 0
             dinero_interfaz_p = 0.0
             dinero_ventas_p = 0.0
             ventas_relacionadas_p = 0
@@ -1110,11 +1105,11 @@ def procesar_todo(files_data):
 
                 c_norm = normalizar_etiqueta_hist(concepto)
                 if c_norm == "Revisadas por analistas":
-                    revisadas += num
+                    revisadas_p += num
                 elif c_norm == "Avaladas subgerencia médica":
-                    avaladas += num
+                    avaladas_p += num
                 elif c_norm == "Total ventas (ACTIVO Y FACTURADO)":
-                    total_ventas += num
+                    total_ventas_p += num
                 elif c_norm == "Dinero enviado por interfaz":
                     dinero_interfaz_p += num
                 elif c_norm == "Dinero ventas":
@@ -1125,9 +1120,9 @@ def procesar_todo(files_data):
                     dinero_facturado_p += num
 
             data_periodo[sede] = {
-                "revisadas": revisadas,
-                "avaladas": avaladas,
-                "total_ventas": total_ventas,
+                "revisadas": revisadas_p,
+                "avaladas": avaladas_p,
+                "total_ventas": total_ventas_p,
                 "dinero_interfaz": dinero_interfaz_p,
                 "dinero_ventas": dinero_ventas_p,
                 "ventas_relacionadas": ventas_relacionadas_p,
@@ -1157,14 +1152,29 @@ def procesar_todo(files_data):
 
 
 # ============================================================
-# FUNCIONES CACHEADAS: GRÁFICAS
+# FIRMA PARA CACHÉ DE GRÁFICAS
+# ============================================================
+def _firma_consolidados(consolidados_por_periodo):
+    partes = []
+    for periodo in sorted(consolidados_por_periodo.keys()):
+        sedes = consolidados_por_periodo[periodo]
+        for sede in sorted(sedes.keys()):
+            v = sedes[sede]
+            partes.append(
+                f"{periodo}|{sede}|{v['revisadas']}|{v['avaladas']}|"
+                f"{v['total_ventas']}|{v['dinero_interfaz']}|{v['dinero_ventas']}|"
+                f"{v['ventas_relacionadas']}|{v['dinero_facturado']}"
+            )
+    return hashlib.md5(";".join(partes).encode()).hexdigest()
+
+
+# ============================================================
+# GRÁFICAS CACHEADAS
 # ============================================================
 @st.cache_data(show_spinner=False)
-def generar_grafica_dinero(consolidados_tuple):
-    consolidados_por_periodo = dict(consolidados_tuple)
-
+def generar_grafica_dinero(_consolidados_por_periodo, firma):
     datos = []
-    for periodo, data_sedes in consolidados_por_periodo.items():
+    for periodo, data_sedes in _consolidados_por_periodo.items():
         for sede, vals in data_sedes.items():
             datos.append({
                 "Periodo": periodo,
@@ -1202,11 +1212,9 @@ def generar_grafica_dinero(consolidados_tuple):
 
 
 @st.cache_data(show_spinner=False)
-def generar_grafica_cobertura(consolidados_tuple):
-    consolidados_por_periodo = dict(consolidados_tuple)
-
+def generar_grafica_cobertura(_consolidados_por_periodo, firma):
     datos = []
-    for periodo, data_sedes in consolidados_por_periodo.items():
+    for periodo, data_sedes in _consolidados_por_periodo.items():
         for sede, vals in data_sedes.items():
             avaladas = vals["avaladas"]
             total_ventas = vals["total_ventas"]
@@ -1247,7 +1255,7 @@ def generar_grafica_cobertura(consolidados_tuple):
 
 
 # ============================================================
-# FUNCIÓN CACHEADA: EXCEL
+# EXCEL CACHEADO
 # ============================================================
 @st.cache_data(show_spinner="Generando Excel...")
 def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fin):
@@ -1398,7 +1406,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             ws.add_image(xl_img, f"A{fila}")
             return fila + int(alto / 20) + 3
 
-        # Gráfico 1
         datos_g1 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1428,7 +1435,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 1 — Dinero enviado por interfaz (COP)")
             plt.close(fig)
 
-        # Gráfico 2
         datos_g2 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1470,7 +1476,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
 
 
 # ============================================================
-# SIDEBAR (REGLA)
+# SIDEBAR
 # ============================================================
 with st.sidebar:
     st.header("📚 Reglas de procesamiento")
@@ -1510,7 +1516,7 @@ with st.sidebar:
 """)
 
 # ============================================================
-# CARGA DE ARCHIVOS
+# CARGA
 # ============================================================
 uploaded_files = st.file_uploader(
     "Selecciona los archivos Excel (.xlsx, .xls)",
@@ -1525,25 +1531,23 @@ if not uploaded_files:
         st.dataframe(construir_tabla_resumen(fase), use_container_width=True)
     st.stop()
 
-# Preparar tuple hashable para la caché
 files_data = tuple((f.name, f.getvalue()) for f in uploaded_files)
 
 # ============================================================
-# PROCESAR (cacheado)
+# PROCESAR
 # ============================================================
 resultados = procesar_todo(files_data)
 
 tablas_por_fase = resultados["tablas_por_fase"]
 tabla_consolidada = resultados["tabla_consolidada"]
 resumen_verifica = resultados["resumen_verifica"]
-historicos_detectados = resultados["historicos_detectados"]
 consolidados_por_periodo = resultados["consolidados_por_periodo"]
 periodo_etiqueta = resultados["periodo_etiqueta"]
 periodo_inicio = resultados["periodo_inicio"]
 periodo_fin = resultados["periodo_fin"]
 
 # ============================================================
-# PERIODO EN PANTALLA
+# PERIODO
 # ============================================================
 if periodo_etiqueta != "—":
     st.markdown(
@@ -1623,7 +1627,7 @@ else:
 st.divider()
 
 # ============================================================
-# ANÁLISIS HISTÓRICO (gráficas cacheadas)
+# ANÁLISIS HISTÓRICO
 # ============================================================
 if len(consolidados_por_periodo) > 0:
     with st.expander("📈 Análisis histórico comparativo entre periodos", expanded=True):
@@ -1634,28 +1638,24 @@ if len(consolidados_por_periodo) > 0:
 
         sns.set_theme(style="whitegrid")
 
-        # Convertir a tuple para hashabilidad de la caché
-        consolidados_tuple = tuple(
-            (periodo, tuple(sorted(sedes.items())))
-            for periodo, sedes in consolidados_por_periodo.items()
-        )
+        firma = _firma_consolidados(consolidados_por_periodo)
 
         st.markdown("### 💰 Dinero enviado por interfaz por periodo")
-        img_dinero = generar_grafica_dinero(consolidados_tuple)
+        img_dinero = generar_grafica_dinero(consolidados_por_periodo, firma)
         if img_dinero:
             st.image(img_dinero, use_container_width=True)
         else:
             st.info("No hay datos de 'Dinero enviado por interfaz' para graficar.")
 
         st.markdown("### 📈 Cobertura general de honorarios médicos")
-        img_cobertura = generar_grafica_cobertura(consolidados_tuple)
+        img_cobertura = generar_grafica_cobertura(consolidados_por_periodo, firma)
         if img_cobertura:
             st.image(img_cobertura, use_container_width=True)
         else:
             st.info("No hay datos de 'Cobertura' para graficar.")
 
 # ============================================================
-# EXPORTABLE EXCEL (cacheado)
+# EXPORTABLE EXCEL
 # ============================================================
 try:
     excel_bytes = generar_excel_bytes(
