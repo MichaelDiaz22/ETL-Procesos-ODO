@@ -587,7 +587,7 @@ def parsear_valor_generico(v):
     s = re.sub(r"\(.*?\)", "", s).strip()
     s = s.replace("$", "").replace(",", "").replace("%", "").strip()
     try:
-        return float(s) if s else None    
+        return float(s) if s else None
     except Exception:
         return None
 
@@ -1138,7 +1138,7 @@ def procesar_todo(files_data):
     # -------- CONSOLIDADOS POR PERIODO --------
     consolidados_por_periodo = {}
 
-    if periodo_etiqueta != "—":
+    if periodo_etiqueta != "—" and len(bases["Atenciones del especialista"]) > 0:
         consolidados_por_periodo[periodo_etiqueta] = {
             sede: {
                 "revisadas": conteos_consolidado[cod]["revisadas"],
@@ -2139,7 +2139,11 @@ if periodo_etiqueta != "—":
         unsafe_allow_html=True,
     )
 else:
-    st.warning("⚠️ No se pudo detectar el periodo desde el nombre de los archivos.")
+    # Si no hay periodo actual, pero hay históricos, mostrar un mensaje informativo en lugar de advertencia
+    if len(historicos_detectados) > 0:
+        st.info("ℹ️ No se detectó un periodo actual (archivos crudos), pero se cargó el histórico correctamente.")
+    else:
+        st.warning("⚠️ No se pudo detectar el periodo desde el nombre de los archivos.")
 
 # ============================================================
 # DIAGNÓSTICOS
