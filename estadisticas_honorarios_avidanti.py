@@ -278,6 +278,12 @@ TITULOS_FASES = {
     "Fase 3": "FASE 3 - QUIRÚRGICO",
 }
 
+NOMBRES_FASES_LARGOS = {
+    "Fase 1": "Fase 1 - Ambulatorio",
+    "Fase 2": "Fase 2 - Hospitalario",
+    "Fase 3": "Fase 3 - Quirúrgico",
+}
+
 ESTADOS_ACTIVA_FACTURADA = {"activa", "facturada"}
 ESTADO_FACTURADA = {"facturada"}
 
@@ -1301,9 +1307,9 @@ def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
             datos.append({
                 "Periodo": periodo,
                 "Sede": sede,
-                "Fase 1": vals.get("dinero_interfaz_fase_1", 0),
-                "Fase 2": vals.get("dinero_interfaz_fase_2", 0),
-                "Fase 3": vals.get("dinero_interfaz_fase_3", 0),
+                "Fase 1 - Ambulatorio": vals.get("dinero_interfaz_fase_1", 0),
+                "Fase 2 - Hospitalario": vals.get("dinero_interfaz_fase_2", 0),
+                "Fase 3 - Quirúrgico": vals.get("dinero_interfaz_fase_3", 0),
             })
     df = pd.DataFrame(datos)
 
@@ -1317,7 +1323,7 @@ def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
 
     df_melt = df_pct.melt(
         id_vars=["Periodo", "Sede"],
-        value_vars=["Fase 1", "Fase 2", "Fase 3"],
+        value_vars=["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"],
         var_name="Fase",
         value_name="Porcentaje"
     )
@@ -1335,7 +1341,7 @@ def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
             label_type="center", fontsize=8, padding=2
         )
 
-    ax.set_title("Participación por fase de cada sede y periodo", pad=15)
+    ax.set_title("Participación por fase de cada sede y periodo (Barras Apiladas)", pad=15)
     ax.set_ylabel("Participación (%)")
     ax.set_xlabel("")
     plt.xticks(rotation=45, ha="right", fontsize=8)
@@ -1498,7 +1504,7 @@ def generar_grafica_participacion_fase_total(_consolidados_por_periodo, firma):
         f3 = sum(vals.get("dinero_interfaz_fase_3", 0) for vals in data_sedes.values())
         datos.append({
             "Periodo": periodo,
-            "Fase 1": f1, "Fase 2": f2, "Fase 3": f3,
+            "Fase 1 - Ambulatorio": f1, "Fase 2 - Hospitalario": f2, "Fase 3 - Quirúrgico": f3,
         })
     df = pd.DataFrame(datos).set_index("Periodo")
 
@@ -1511,7 +1517,7 @@ def generar_grafica_participacion_fase_total(_consolidados_por_periodo, firma):
 
     df_melt = df_pct.melt(
         id_vars=["Periodo"],
-        value_vars=["Fase 1", "Fase 2", "Fase 3"],
+        value_vars=["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"],
         var_name="Fase",
         value_name="Porcentaje"
     )
@@ -1530,7 +1536,7 @@ def generar_grafica_participacion_fase_total(_consolidados_por_periodo, firma):
             label_type="center"
         )
 
-    ax.set_title("Participación por fase — Todas las sedes consolidadas", pad=15)
+    ax.set_title("Participación por fase — Todas las sedes consolidadas (Barras Apiladas)", pad=15)
     ax.set_ylabel("Participación (%)")
     ax.set_xlabel("Periodo")
     plt.xticks(rotation=30, ha="right")
@@ -1816,9 +1822,9 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 datos_g3.append({
                     "Periodo": periodo,
                     "Sede": sede,
-                    "Fase 1": vals.get("dinero_interfaz_fase_1", 0),
-                    "Fase 2": vals.get("dinero_interfaz_fase_2", 0),
-                    "Fase 3": vals.get("dinero_interfaz_fase_3", 0),
+                    "Fase 1 - Ambulatorio": vals.get("dinero_interfaz_fase_1", 0),
+                    "Fase 2 - Hospitalario": vals.get("dinero_interfaz_fase_2", 0),
+                    "Fase 3 - Quirúrgico": vals.get("dinero_interfaz_fase_3", 0),
                 })
         df_g3 = pd.DataFrame(datos_g3)
         if not df_g3.empty:
@@ -1826,7 +1832,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             total_fila = df_g3.sum(axis=1)
             df_g3_pct = df_g3.div(total_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
             df_g3_pct = df_g3_pct.reset_index()
-            df_g3_melt = df_g3_pct.melt(id_vars=["Periodo", "Sede"], value_vars=["Fase 1", "Fase 2", "Fase 3"],
+            df_g3_melt = df_g3_pct.melt(id_vars=["Periodo", "Sede"], value_vars=["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"],
                                         var_name="Fase", value_name="Porcentaje")
             df_g3_melt["Etiqueta"] = df_g3_melt["Periodo"] + "\n" + df_g3_melt["Sede"]
 
@@ -1836,7 +1842,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             for container in ax.containers:
                 ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
                              label_type="center", fontsize=8, padding=2)
-            ax.set_title("Participación por fase de cada sede y periodo", pad=15)
+            ax.set_title("Participación por fase de cada sede y periodo (Barras Apiladas)", pad=15)
             ax.set_ylabel("Participación (%)")
             plt.xticks(rotation=45, ha="right", fontsize=8)
             plt.ylim(0, 100)
@@ -1938,13 +1944,13 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 f1 = sum(vals.get("dinero_interfaz_fase_1", 0) for vals in data_sedes.values())
                 f2 = sum(vals.get("dinero_interfaz_fase_2", 0) for vals in data_sedes.values())
                 f3 = sum(vals.get("dinero_interfaz_fase_3", 0) for vals in data_sedes.values())
-                datos_g7.append({"Periodo": periodo, "Fase 1": f1, "Fase 2": f2, "Fase 3": f3})
+                datos_g7.append({"Periodo": periodo, "Fase 1 - Ambulatorio": f1, "Fase 2 - Hospitalario": f2, "Fase 3 - Quirúrgico": f3})
             df_g7 = pd.DataFrame(datos_g7).set_index("Periodo")
             if not df_g7.empty:
                 total_fila = df_g7.sum(axis=1)
                 df_g7_pct = df_g7.div(total_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
                 df_g7_pct = df_g7_pct.reset_index()
-                df_g7_melt = df_g7_pct.melt(id_vars=["Periodo"], value_vars=["Fase 1", "Fase 2", "Fase 3"],
+                df_g7_melt = df_g7_pct.melt(id_vars=["Periodo"], value_vars=["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"],
                                             var_name="Fase", value_name="Porcentaje")
 
                 fig, ax = plt.subplots(figsize=(12, 6))
@@ -1953,7 +1959,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 for container in ax.containers:
                     ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
                                  label_type="center", fontsize=9, padding=3)
-                ax.set_title("Participación por fase — Todas las sedes consolidadas", pad=15)
+                ax.set_title("Participación por fase — Todas las sedes consolidadas (Barras Apiladas)", pad=15)
                 ax.set_ylabel("Participación (%)")
                 plt.xticks(rotation=30, ha="right")
                 plt.ylim(0, 100)
@@ -2198,7 +2204,7 @@ if len(consolidados_por_periodo) > 0:
         if img_cobertura:
             st.image(img_cobertura, use_container_width=True)
 
-        st.markdown("##### 🥧 Participación por fase de cada sede y periodo")
+        st.markdown("##### 🥧 Participación por fase de cada sede y periodo (Barras Apiladas)")
         img_part_fase = generar_grafica_participacion_fase(consolidados_por_periodo, firma)
         if img_part_fase:
             st.image(img_part_fase, use_container_width=True)
@@ -2223,7 +2229,7 @@ if len(consolidados_por_periodo) > 0:
             if img_cobertura_total:
                 st.image(img_cobertura_total, use_container_width=True)
 
-            st.markdown("##### 🥧 Participación por fase (Todas las sedes consolidadas)")
+            st.markdown("##### 🥧 Participación por fase (Todas las sedes consolidadas - Barras Apiladas)")
             img_part_fase_total = generar_grafica_participacion_fase_total(consolidados_por_periodo, firma)
             if img_part_fase_total:
                 st.image(img_part_fase_total, use_container_width=True)
