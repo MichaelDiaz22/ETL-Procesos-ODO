@@ -676,7 +676,6 @@ def procesar_todo(files_data):
     df_filtrado_revisadas = pd.DataFrame()
     ubicaciones_no_mapeadas = pd.Series(dtype=int)
 
-    # -------- ATENCIONES --------
     if not atenciones_df.empty:
         col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
         col_verifica = obtener_columna(atenciones_df, "Nombre de Usuario que Verifica")
@@ -1151,9 +1150,6 @@ def procesar_todo(files_data):
     }
 
 
-# ============================================================
-# FIRMA PARA CACHÉ DE GRÁFICAS
-# ============================================================
 def _firma_consolidados(consolidados_por_periodo):
     partes = []
     for periodo in sorted(consolidados_por_periodo.keys()):
@@ -1169,7 +1165,7 @@ def _firma_consolidados(consolidados_por_periodo):
 
 
 # ============================================================
-# GRÁFICAS CACHEADAS
+# GRÁFICAS POR SEDE (etiquetas grandes)
 # ============================================================
 @st.cache_data(show_spinner=False)
 def generar_grafica_dinero(_consolidados_por_periodo, firma):
@@ -1193,7 +1189,7 @@ def generar_grafica_dinero(_consolidados_por_periodo, firma):
         ax.bar_label(
             container,
             labels=[f"${v:,.0f}" if v > 0 else "" for v in container.datavalues],
-            fontsize=7, rotation=90, padding=3,
+            fontsize=10, rotation=90, padding=3,
         )
 
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
@@ -1202,7 +1198,7 @@ def generar_grafica_dinero(_consolidados_por_periodo, firma):
     ax.set_ylabel("Valor (COP)")
     ax.set_xlabel("Periodo")
     plt.xticks(rotation=30, ha="right")
-    plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+    plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
     plt.tight_layout()
 
     buf = io.BytesIO()
@@ -1236,7 +1232,7 @@ def generar_grafica_cobertura(_consolidados_por_periodo, firma):
         ax.bar_label(
             container,
             labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
-            fontsize=7, rotation=90, padding=3,
+            fontsize=10, rotation=90, padding=3,
         )
 
     ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
@@ -1245,7 +1241,83 @@ def generar_grafica_cobertura(_consolidados_por_periodo, firma):
     ax.set_ylabel("Cobertura (%)")
     ax.set_xlabel("Periodo")
     plt.xticks(rotation=30, ha="right")
-    plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+    plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+# ============================================================
+# GRÁFICAS TOTALES (suma de todas las sedes)
+# ============================================================
+@st.cache_data(show_spinner=False)
+def generar_grafica_dinero_total(_consolidados_por_periodo, firma):
+    datos = []
+    for periodo, data_sedes in _consolidados_por_periodo.items():
+        total_periodo = sum(vals["dinero_interfaz"] for vals in data_sedes.values())
+        datos.append({"Periodo": periodo, "Valor": total_periodo})
+    df = pd.DataFrame(datos)
+
+    if df.empty or df["Valor"].sum() == 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.barplot(data=df, x="Periodo", y="Valor", ax=ax, color="#305496")
+
+    for container in ax.containers:
+        ax.bar_label(
+            container,
+            labels=[f"${v:,.0f}" if v > 0 else "" for v in container.datavalues],
+            fontsize=10, rotation=0, padding=4,
+        )
+
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
+
+    ax.set_title("Dinero enviado por interfaz por periodo (Todas las sedes consolidadas)")
+    ax.set_ylabel("Valor (COP)")
+    ax.set_xlabel("Periodo")
+    plt.xticks(rotation=30, ha="right")
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def generar_grafica_cobertura_total(_consolidados_por_periodo, firma):
+    datos = []
+    for periodo, data_sedes in _consolidados_por_periodo.items():
+        avaladas_total = sum(vals["avaladas"] for vals in data_sedes.values())
+        total_ventas_total = sum(vals["total_ventas"] for vals in data_sedes.values())
+        cobertura = (avaladas_total / total_ventas_total * 100.0) if total_ventas_total > 0 else 0.0
+        datos.append({"Periodo": periodo, "Cobertura": cobertura})
+    df = pd.DataFrame(datos)
+
+    if df.empty or df["Cobertura"].sum() == 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.barplot(data=df, x="Periodo", y="Cobertura", ax=ax, color="#305496")
+
+    for container in ax.containers:
+        ax.bar_label(
+            container,
+            labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+            fontsize=10, rotation=0, padding=4,
+        )
+
+    ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
+
+    ax.set_title("Cobertura general de honorarios médicos por periodo (Todas las sedes consolidadas)")
+    ax.set_ylabel("Cobertura (%)")
+    ax.set_xlabel("Periodo")
+    plt.xticks(rotation=30, ha="right")
+    ax.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
     plt.tight_layout()
 
     buf = io.BytesIO()
@@ -1369,7 +1441,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada."),
         ("9. Porcentual impactado (META 0%)", "(Total ventas − Ventas relacionadas) / Total ventas × 100."),
         ("Consolidado", "Suma de las 3 fases. Porcentajes recalculados."),
-        ("Análisis histórico", "2 gráficas: Dinero enviado por interfaz (COP) + Cobertura general (meta 70%). Basadas en consolidados por sede."),
+        ("Análisis histórico", "2 gráficas por sede + 2 gráficas consolidadas (solo si > 1 sede con datos)."),
     ]
     for i, (c1, c2) in enumerate(reglas, start=1):
         celda1 = ws4.cell(row=i, column=1, value=c1)
@@ -1423,14 +1495,14 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 ax.bar_label(
                     container,
                     labels=[f"${v:,.0f}" if v > 0 else "" for v in container.datavalues],
-                    fontsize=7, rotation=90, padding=3,
+                    fontsize=10, rotation=90, padding=3,
                 )
             ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
             ax.set_title("Dinero enviado por interfaz por periodo y sede (Consolidado)")
             ax.set_ylabel("Valor (COP)")
             ax.set_xlabel("Periodo")
             plt.xticks(rotation=30, ha="right")
-            plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+            plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
             plt.tight_layout()
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 1 — Dinero enviado por interfaz (COP)")
             plt.close(fig)
@@ -1455,17 +1527,76 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 ax.bar_label(
                     container,
                     labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
-                    fontsize=7, rotation=90, padding=3,
+                    fontsize=10, rotation=90, padding=3,
                 )
             ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
             ax.set_title("Cobertura general de honorarios médicos (Avaladas / Total ventas)")
             ax.set_ylabel("Cobertura (%)")
             ax.set_xlabel("Periodo")
             plt.xticks(rotation=30, ha="right")
-            plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+            plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
             plt.tight_layout()
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 2 — Cobertura general de honorarios médicos (meta 70%)")
             plt.close(fig)
+
+        # --- Gráficas consolidadas totales ---
+        sedes_con_datos = set()
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            for sede, vals in data_sedes.items():
+                if vals["dinero_interfaz"] > 0 or vals["total_ventas"] > 0 or vals["avaladas"] > 0:
+                    sedes_con_datos.add(sede)
+
+        if len(sedes_con_datos) > 1:
+            datos_g3 = []
+            for periodo, data_sedes in consolidados_por_periodo.items():
+                total_p = sum(vals["dinero_interfaz"] for vals in data_sedes.values())
+                datos_g3.append({"Periodo": periodo, "Valor": total_p})
+            df_g3 = pd.DataFrame(datos_g3)
+
+            if not df_g3.empty and df_g3["Valor"].sum() > 0:
+                fig, ax = plt.subplots(figsize=(12, 6))
+                sns.barplot(data=df_g3, x="Periodo", y="Valor", ax=ax, color="#305496")
+                for container in ax.containers:
+                    ax.bar_label(
+                        container,
+                        labels=[f"${v:,.0f}" if v > 0 else "" for v in container.datavalues],
+                        fontsize=10, rotation=0, padding=4,
+                    )
+                ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
+                ax.set_title("Dinero enviado por interfaz por periodo (Todas las sedes consolidadas)")
+                ax.set_ylabel("Valor (COP)")
+                ax.set_xlabel("Periodo")
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 3 — Dinero enviado por interfaz (TODAS LAS SEDES)")
+                plt.close(fig)
+
+            datos_g4 = []
+            for periodo, data_sedes in consolidados_por_periodo.items():
+                avaladas_t = sum(vals["avaladas"] for vals in data_sedes.values())
+                total_ventas_t = sum(vals["total_ventas"] for vals in data_sedes.values())
+                cobertura = (avaladas_t / total_ventas_t * 100.0) if total_ventas_t > 0 else 0.0
+                datos_g4.append({"Periodo": periodo, "Cobertura": cobertura})
+            df_g4 = pd.DataFrame(datos_g4)
+
+            if not df_g4.empty and df_g4["Cobertura"].sum() > 0:
+                fig, ax = plt.subplots(figsize=(12, 6))
+                sns.barplot(data=df_g4, x="Periodo", y="Cobertura", ax=ax, color="#305496")
+                for container in ax.containers:
+                    ax.bar_label(
+                        container,
+                        labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+                        fontsize=10, rotation=0, padding=4,
+                    )
+                ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
+                ax.set_title("Cobertura general de honorarios médicos por periodo (Todas las sedes consolidadas)")
+                ax.set_ylabel("Cobertura (%)")
+                ax.set_xlabel("Periodo")
+                plt.xticks(rotation=30, ha="right")
+                ax.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+                plt.tight_layout()
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 4 — Cobertura general de honorarios médicos (TODAS LAS SEDES)")
+                plt.close(fig)
 
         ws_analisis.column_dimensions["A"].width = 130
 
@@ -1510,9 +1641,9 @@ with st.sidebar:
 **Consolidado**
 - Suma de las 3 fases. Porcentajes recalculados.
 
-**Optimizaciones**
-- Procesamiento cacheado (`@st.cache_data`).
-- Excel y gráficas cacheados.
+**Gráficas**
+- Por sede (siempre que haya datos).
+- Consolidadas (sumando todas las sedes) solo si hay > 1 sede con datos.
 """)
 
 # ============================================================
@@ -1640,19 +1771,59 @@ if len(consolidados_por_periodo) > 0:
 
         firma = _firma_consolidados(consolidados_por_periodo)
 
-        st.markdown("### 💰 Dinero enviado por interfaz por periodo")
+        sedes_con_datos = set()
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            for sede, vals in data_sedes.items():
+                if (
+                    vals["dinero_interfaz"] > 0
+                    or vals["total_ventas"] > 0
+                    or vals["avaladas"] > 0
+                ):
+                    sedes_con_datos.add(sede)
+
+        mostrar_consolidado_total = len(sedes_con_datos) > 1
+
+        if mostrar_consolidado_total:
+            st.markdown(
+                f"**Gráficas por sede** (se detectaron {len(sedes_con_datos)} sedes con datos)"
+            )
+        else:
+            st.markdown(
+                f"**Gráficas por sede** (solo se detectó **{len(sedes_con_datos)}** sede con datos — "
+                "las gráficas consolidadas totales se muestran cuando hay más de 1 sede)"
+            )
+
+        st.markdown("#### 💰 Dinero enviado por interfaz por periodo (por sede)")
         img_dinero = generar_grafica_dinero(consolidados_por_periodo, firma)
         if img_dinero:
             st.image(img_dinero, use_container_width=True)
         else:
             st.info("No hay datos de 'Dinero enviado por interfaz' para graficar.")
 
-        st.markdown("### 📈 Cobertura general de honorarios médicos")
+        st.markdown("#### 📈 Cobertura general de honorarios médicos (por sede)")
         img_cobertura = generar_grafica_cobertura(consolidados_por_periodo, firma)
         if img_cobertura:
             st.image(img_cobertura, use_container_width=True)
         else:
             st.info("No hay datos de 'Cobertura' para graficar.")
+
+        if mostrar_consolidado_total:
+            st.markdown("---")
+            st.markdown("#### 📊 Vista consolidada — Todas las sedes sumadas")
+
+            st.markdown("##### 💰 Dinero enviado por interfaz (Total por periodo)")
+            img_dinero_total = generar_grafica_dinero_total(consolidados_por_periodo, firma)
+            if img_dinero_total:
+                st.image(img_dinero_total, use_container_width=True)
+            else:
+                st.info("No hay datos de 'Dinero enviado por interfaz' para consolidar.")
+
+            st.markdown("##### 📈 Cobertura general de honorarios médicos (Total por periodo)")
+            img_cobertura_total = generar_grafica_cobertura_total(consolidados_por_periodo, firma)
+            if img_cobertura_total:
+                st.image(img_cobertura_total, use_container_width=True)
+            else:
+                st.info("No hay datos de 'Cobertura' para consolidar.")
 
 # ============================================================
 # EXPORTABLE EXCEL
