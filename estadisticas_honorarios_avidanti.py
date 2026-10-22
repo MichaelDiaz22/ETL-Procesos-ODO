@@ -6,7 +6,7 @@ import io
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as XLImage
 import matplotlib
@@ -27,7 +27,7 @@ st.markdown(
 )
 
 # ============================================================
-# ESTRUCTURAS ESPERADAS
+# CONSTANTES GLOBALES (no cambian entre ejecuciones)
 # ============================================================
 ESTRUCTURAS = {
     "Ventas": [
@@ -81,11 +81,7 @@ ESTRUCTURAS = {
 
 UMBRAL_COINCIDENCIA = 0.60
 
-# ============================================================
-# MAPA DE FASES
-# ============================================================
 MAPA_FASES = [
-    # -------------------- Angiografía Villavicencio (ADC) --------------------
     ("ADC", "VILL-Oncología", "Fase 1"),
     ("ADC", "VILL-Rehabilitación Cardiaca", "Fase 1"),
     ("ADC", "VILL-Consulta Externa", "Fase 1"),
@@ -106,8 +102,6 @@ MAPA_FASES = [
     ("ADC", "uci intermedia vill", "Fase 2"),
     ("ADC", "salas de cirugia vill", "Fase 3"),
     ("ADC", "sala de cirugia cardiovascular vill", "Fase 3"),
-
-    # -------------------- Clínica Avidanti Armenia (CAA) --------------------
     ("CAA", "CAA-Hospitalización 5 Piso", "Fase 2"),
     ("CAA", "CAA-Urgencias", "Fase 2"),
     ("CAA", "CAA-Consulta Externa", "Fase 1"),
@@ -123,8 +117,6 @@ MAPA_FASES = [
     ("CAA", "caa uci adultos", "Fase 2"),
     ("CAA", "caa cons ext", "Fase 1"),
     ("CAA", "caa salas de cirugia", "Fase 3"),
-
-    # -------------------- Clínica Avidanti Ibagué (CAI) --------------------
     ("CAI", "CAI-Consulta Externa Nueva", "Fase 1"),
     ("CAI", "CAI-Sala de Cirugía 2", "Fase 3"),
     ("CAI", "CAI-Urgencias Nueva", "Fase 2"),
@@ -156,8 +148,6 @@ MAPA_FASES = [
     ("CAI", "salas de cirugia cai", "Fase 3"),
     ("CAI", "sala de cirugia cardiovascular cai", "Fase 3"),
     ("CAI", "trasplante renal cai", "Fase 3"),
-
-    # -------------------- Clínica Avidanti Manizales (CAM) --------------------
     ("CAM", "CAM-Consulta Externa", "Fase 1"),
     ("CAM", "CAM-Urgencias", "Fase 2"),
     ("CAM", "CAM-Hospitalización 7 Piso Sur", "Fase 2"),
@@ -196,8 +186,6 @@ MAPA_FASES = [
     ("CAM", "uci intermedio adultos cam", "Fase 2"),
     ("CAM", "salas de cirugia cam", "Fase 3"),
     ("CAM", "sala de cirugia cardiovascular cam", "Fase 3"),
-
-    # -------------------- Clínica Avidanti Santa Marta (CASM) --------------------
     ("CASM", "CASM- Consulta Externa", "Fase 1"),
     ("CASM", "CASM-Hospitalización VIP 2", "Fase 2"),
     ("CASM", "CASM-Hospitalización 2 Piso Norte", "Fase 2"),
@@ -231,8 +219,6 @@ MAPA_FASES = [
     ("CASM", "uci intermedia adulto casm", "Fase 2"),
     ("CASM", "salas de cirugia casm", "Fase 3"),
     ("CASM", "sala de cirugia cardiovascular casm", "Fase 3"),
-
-    # -------------------- Clínica Avidanti Ciudad Verde (CACV) --------------------
     ("CACV", "CACV-Hospitalización 5 Piso Norte", "Fase 2"),
     ("CACV", "CACV-Hospitalización 5 Piso Sur", "Fase 2"),
     ("CACV", "CACV-Laboratorio Clínico", "Fase 1"),
@@ -301,9 +287,6 @@ MESES_ES = {
     9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
 
-# ============================================================
-# ETIQUETAS DINÁMICAS
-# ============================================================
 SUFIJOS_POR_TABLA = {
     "Fase 1": "consulta externa",
     "Fase 2": "hospitalario",
@@ -317,32 +300,8 @@ PREFIJOS_POR_TABLA = {
     "Consolidado": "consolidado",
 }
 
-
-def filas_resumen(tipo_tabla):
-    sufijo = SUFIJOS_POR_TABLA.get(tipo_tabla, "consulta externa")
-    prefijo = PREFIJOS_POR_TABLA.get(tipo_tabla, "ambulatorio")
-    return [
-        "Revisadas por analistas",
-        "Avaladas subgerencia médica",
-        "Dinero enviado por interfaz",
-        f"Total ventas {sufijo} (ACTIVO Y FACTURADO)",
-        f"Dinero ventas {prefijo}",
-        "Porcentual faltante (META 30%)",
-        "Ventas relacionadas en factura (FACTURADO)",
-        "Dinero ventas (Facturado)",
-        "Porcentual impactado (META 0%)",
-    ]
-
-
-def construir_tabla_resumen(tipo_tabla="Fase 1"):
-    filas = filas_resumen(tipo_tabla)
-    df = pd.DataFrame("", index=filas, columns=COLUMNAS_RESUMEN)
-    df.index.name = "Concepto"
-    return df
-
-
 # ============================================================
-# NORMALIZACIÓN
+# FUNCIONES AUXILIARES
 # ============================================================
 def normalizar(s):
     if pd.isna(s):
@@ -426,9 +385,6 @@ def convertir_a_numero(serie):
     ).fillna(0)
 
 
-# ============================================================
-# MOTOR DE MATCH
-# ============================================================
 MAPA_UBICACION = {}
 for sede_cod, ubicacion, fase in MAPA_FASES:
     MAPA_UBICACION[normalizar(ubicacion)] = (sede_cod, str(fase).strip())
@@ -463,9 +419,6 @@ def detectar_ubicacion_flexible(valor):
     return mejor_match if mejor_match else (None, None)
 
 
-# ============================================================
-# EXTRACCIÓN DE PERIODO
-# ============================================================
 def extraer_periodo_desde_nombre(nombre_archivo):
     base = str(nombre_archivo).rsplit(".", 1)[0]
     base_norm = base.lower()
@@ -513,9 +466,6 @@ def formatear_periodo(anio, mes):
     return (etiqueta, fecha_inicio.date(), fecha_fin.date())
 
 
-# ============================================================
-# DETECCIÓN DE HOJAS HISTÓRICAS
-# ============================================================
 def es_hoja_de_resultados(df):
     if df is None or df.empty:
         return False
@@ -545,479 +495,27 @@ def parsear_hoja_resultados(df, nombre_hoja):
     return resultado
 
 
-# ============================================================
-# CARGA DE ARCHIVOS
-# ============================================================
-uploaded_files = st.file_uploader(
-    "Selecciona los archivos Excel (.xlsx, .xls)",
-    type=["xlsx", "xls"],
-    accept_multiple_files=True
-)
-
-if not uploaded_files:
-    st.info("👆 Carga al menos un archivo Excel para comenzar.")
-    for fase in FASES:
-        st.subheader(f"📋 {TITULOS_FASES[fase]}")
-        st.dataframe(construir_tabla_resumen(fase), use_container_width=True)
-    st.stop()
-
-
-@st.cache_data(show_spinner=False)
-def leer_excel(file_bytes, file_name):
-    try:
-        sheets = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
-        return {name: df for name, df in sheets.items() if not df.empty}, None
-    except Exception as e:
-        return {}, str(e)
-
-
-# ============================================================
-# PROCESAR
-# ============================================================
-bases = {nombre: [] for nombre in ESTRUCTURAS}
-no_clasificados = []
-errores = []
-archivos_duplicados = []
-hojas_duplicadas = []
-periodos_detectados = []
-historicos_detectados = {}
-
-hashes_archivos_vistos = {}
-hashes_hojas_vistos = {}
-
-progress = st.progress(0, text="Procesando archivos...")
-
-for idx, f in enumerate(uploaded_files):
-    file_bytes = f.getvalue()
-    hash_archivo = hashlib.md5(file_bytes).hexdigest()
-
-    if hash_archivo in hashes_archivos_vistos:
-        archivos_duplicados.append({
-            "Archivo": f.name,
-            "Ya cargado como": hashes_archivos_vistos[hash_archivo],
-        })
-        progress.progress((idx + 1) / len(uploaded_files))
-        continue
-
-    hashes_archivos_vistos[hash_archivo] = f.name
-
-    anio, mes = extraer_periodo_desde_nombre(f.name)
-    periodos_detectados.append((f.name, (anio, mes)))
-
-    hojas, err = leer_excel(file_bytes, f.name)
-    if err:
-        errores.append((f.name, err))
-        progress.progress((idx + 1) / len(uploaded_files))
-        continue
-
-    for hoja, df in hojas.items():
-        if es_hoja_de_resultados(df):
-            a_h, m_h = extraer_periodo_desde_nombre(hoja)
-            if a_h is None:
-                a_h, m_h = anio, mes
-            etiqueta, _, _ = formatear_periodo(a_h, m_h)
-            if etiqueta == "—":
-                etiqueta = hoja
-            historicos_detectados[etiqueta] = parsear_hoja_resultados(df, hoja)
-            continue
-
-        estructura, score = clasificar_estructura(df.columns)
-
-        if estructura is None or score < UMBRAL_COINCIDENCIA:
-            no_clasificados.append({
-                "Archivo": f.name,
-                "Hoja": hoja,
-                "Mejor candidato": estructura or "—",
-                "Coincidencia": f"{score:.0%}",
-                "Columnas": len(df.columns),
-                "Filas": len(df),
-            })
-            continue
-
-        if estructura == "Totales":
-            col_tot_tarifas = obtener_columna(df, "Total tarifas y recargos/descuentos")
-            if col_tot_tarifas is not None:
-                valores_tot = pd.to_numeric(
-                    df[col_tot_tarifas]
-                    .astype(str)
-                    .str.replace(",", "", regex=False)
-                    .str.replace("$", "", regex=False)
-                    .str.replace(" ", "", regex=False)
-                    .str.strip(),
-                    errors="coerce"
-                )
-                df = df[valores_tot >= 1000].copy()
-
-        h = hash_df(df)
-        if h in hashes_hojas_vistos:
-            hojas_duplicadas.append({
-                "Archivo": f.name,
-                "Hoja": hoja,
-                "Estructura": estructura,
-                "Duplicado de": hashes_hojas_vistos[h],
-            })
-            continue
-
-        hashes_hojas_vistos[h] = f"{f.name}::{hoja}"
-        bases[estructura].append((f.name, hoja, df.copy()))
-
-    progress.progress((idx + 1) / len(uploaded_files))
-
-progress.empty()
-
-
-if errores:
-    with st.expander("❌ Errores al leer archivos", expanded=False):
-        for nombre, err in errores:
-            st.write(f"- **{nombre}**: {err}")
-
-if no_clasificados:
-    with st.expander("⚠️ Archivos/hojas NO clasificados", expanded=False):
-        st.dataframe(pd.DataFrame(no_clasificados), use_container_width=True)
-
-
-# ============================================================
-# PERIODO
-# ============================================================
-periodos_validos = [(n, p) for n, p in periodos_detectados if p[0] is not None and p[1] is not None]
-
-if periodos_validos:
-    from collections import Counter
-    conteo = Counter(p for _, p in periodos_validos)
-    periodo_actual_tupla = conteo.most_common(1)[0][0]
-else:
-    periodo_actual_tupla = (None, None)
-
-periodo_etiqueta, periodo_inicio, periodo_fin = formatear_periodo(*periodo_actual_tupla)
-
-if periodo_etiqueta != "—":
-    st.markdown(
-        f"<div style='background-color:#D9E1F2; padding:10px 15px; border-radius:8px; "
-        f"border-left:5px solid #305496; margin-bottom:15px;'>"
-        f"<b>📅 Periodo analizado:</b> {periodo_etiqueta} "
-        f"&nbsp;&nbsp;|&nbsp;&nbsp; <b>Inicio:</b> {periodo_inicio} "
-        f"&nbsp;&nbsp;|&nbsp;&nbsp; <b>Fin:</b> {periodo_fin}"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-else:
-    st.warning(
-        "⚠️ No se pudo detectar el periodo desde el nombre de los archivos."
-    )
-
-
-# ============================================================
-# BASE ATENCIONES
-# ============================================================
-if bases["Atenciones del especialista"]:
-    partes = []
-    for arch, hoja, df in bases["Atenciones del especialista"]:
-        df_aux = df.copy()
-        df_aux["_archivo"] = arch
-        df_aux["_hoja"] = hoja
-        partes.append(df_aux)
-    atenciones_df = pd.concat(partes, ignore_index=True)
-else:
-    atenciones_df = pd.DataFrame()
-
-
-# ============================================================
-# CÁLCULOS
-# ============================================================
-conteos = {fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE} for fase in FASES}
-dinero_interfaz = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-errores_valor_bajo = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
-df_filtrado_revisadas = pd.DataFrame()
-ubicaciones_no_mapeadas = pd.Series(dtype=int)
-
-sede_serie = None
-fase_serie = None
-mask_verifica = None
-
-if not atenciones_df.empty:
-    col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
-    col_verifica = obtener_columna(atenciones_df, "Nombre de Usuario que Verifica")
-    col_submedico = obtener_columna(atenciones_df, "Usuario / Sub Medico")
-    col_valor_liquidado = obtener_columna(atenciones_df, "Valor liquidado")
-
-    if col_ubicacion is not None and col_verifica is not None:
-        ubicacion_norm_serie = atenciones_df[col_ubicacion].astype(str).map(normalizar)
-        sede_serie = ubicacion_norm_serie.map(lambda u: MAPA_UBICACION.get(u, (None, None))[0])
-        fase_serie = ubicacion_norm_serie.map(lambda u: MAPA_UBICACION.get(u, (None, None))[1])
-
-        mask_verifica = es_vacio(atenciones_df[col_verifica])
-        mask_submedico = (
-            es_vacio(atenciones_df[col_submedico])
-            if col_submedico is not None
-            else pd.Series(False, index=atenciones_df.index)
-        )
-
-        sin_match = ubicacion_norm_serie[sede_serie.isna()]
-        if not sin_match.empty:
-            ubicaciones_no_mapeadas = (
-                sin_match.value_counts()
-                .rename_axis("Ubicación (normalizada)")
-                .reset_index(name="Registros")
-            )
-
-        for fase in FASES:
-            for cod in CODIGOS_SEDE:
-                mask_sede_fase = (sede_serie == cod) & (fase_serie == fase)
-                mask_rev = mask_sede_fase & mask_verifica
-                mask_ava = mask_rev & mask_submedico
-                conteos[fase][cod]["revisadas"] = int(mask_rev.sum())
-                conteos[fase][cod]["avaladas"] = int(mask_ava.sum())
-
-        df_filtrado_revisadas = atenciones_df.loc[mask_verifica].copy()
-
-        if col_valor_liquidado is not None:
-            valor_liquidado_num = convertir_a_numero(atenciones_df[col_valor_liquidado])
-            for i in range(len(atenciones_df)):
-                sede_cod = sede_serie.iloc[i]
-                fase_val = fase_serie.iloc[i]
-                if fase_val is None or sede_cod is None:
-                    continue
-                fase_val = str(fase_val).strip()
-                if fase_val not in dinero_interfaz:
-                    continue
-                if sede_cod not in dinero_interfaz[fase_val]:
-                    continue
-                if not bool(mask_verifica.iloc[i]):
-                    continue
-
-                valor = float(valor_liquidado_num.iloc[i])
-                if valor < 1000:
-                    errores_valor_bajo[fase_val][sede_cod]["cantidad"] += 1
-                    errores_valor_bajo[fase_val][sede_cod]["suma"] += valor
-                else:
-                    dinero_interfaz[fase_val][sede_cod] += valor
-
-
-total_ventas_ce = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
-dinero_ambulatorio = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-errores_totales = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
-ubicaciones_totales_no_mapeadas = pd.Series(dtype=int)
-totales_sin_match_atenciones_df = pd.DataFrame()
-
-if bases["Totales"]:
-    totales_df = pd.concat([df for _, _, df in bases["Totales"]], ignore_index=True)
-
-    col_totales_venta_no = obtener_columna(totales_df, "No. de venta")
-    col_totales_centro_costo = obtener_columna(totales_df, "Centro De Costo")
-    col_totales_tarifa_reliq = obtener_columna(totales_df, "tarifas (reliquidado)")
-
-    if col_totales_venta_no is not None and col_totales_centro_costo is not None:
-        totales_df["_venta_no_norm"] = totales_df[col_totales_venta_no].map(normalizar_llave_venta)
-        totales_ubic = totales_df[col_totales_centro_costo].astype(str).map(detectar_ubicacion_flexible)
-        totales_df["_sede"] = totales_ubic.map(lambda x: x[0])
-        totales_df["_fase"] = totales_ubic.map(lambda x: x[1])
-
-        sin_match_totales = totales_df.loc[totales_df["_sede"].isna(), col_totales_centro_costo].astype(str).map(normalizar)
-        if not sin_match_totales.empty:
-            ubicaciones_totales_no_mapeadas = (
-                sin_match_totales.value_counts()
-                .rename_axis("Centro De Costo (normalizado)")
-                .reset_index(name="Registros")
-            )
-
-        if col_totales_tarifa_reliq is not None:
-            totales_tarifa_num = convertir_a_numero(totales_df[col_totales_tarifa_reliq])
-        else:
-            totales_tarifa_num = pd.Series(0.0, index=totales_df.index)
-
-        ventas_nos_existentes = set()
-        if bases["Ventas"]:
-            ventas_para_cruce = pd.concat([df for _, _, df in bases["Ventas"]], ignore_index=True)
-            col_venta_no_v = obtener_columna(ventas_para_cruce, "Venta No.")
-            if col_venta_no_v is not None:
-                ventas_nos_existentes = set(
-                    ventas_para_cruce[col_venta_no_v].map(normalizar_llave_venta).dropna().unique()
-                )
-
-        mask_venta_en_ventas = totales_df["_venta_no_norm"].isin(ventas_nos_existentes)
-
-        for fase in FASES:
-            for cod in CODIGOS_SEDE:
-                mask_sede_fase = (totales_df["_sede"] == cod) & (totales_df["_fase"] == fase)
-                mask_base = mask_sede_fase & mask_venta_en_ventas
-
-                if mask_base.any():
-                    tarifas_filtro = totales_tarifa_num[mask_base]
-                    indices = tarifas_filtro.index
-                    mask_valida = totales_tarifa_num.loc[indices] >= 1000
-                    mask_error = ~mask_valida
-
-                    total_ventas_ce[fase][cod] = int(mask_valida.sum())
-                    dinero_ambulatorio[fase][cod] = float(totales_tarifa_num.loc[indices][mask_valida].sum())
-
-                    if mask_error.any():
-                        errores_totales[fase][cod]["cantidad"] = int(mask_error.sum())
-                        errores_totales[fase][cod]["suma"] = float(totales_tarifa_num.loc[indices][mask_error].sum())
-
-        atenciones_nos_existentes = set()
-        if not atenciones_df.empty:
-            col_num_venta_at = obtener_columna(atenciones_df, "Numero Venta")
-            if col_num_venta_at is not None:
-                atenciones_nos_existentes = set(
-                    atenciones_df[col_num_venta_at].map(normalizar_llave_venta).dropna().unique()
-                )
-
-        mask_sin_match_atenciones = ~totales_df["_venta_no_norm"].isin(atenciones_nos_existentes)
-
-        if mask_sin_match_atenciones.any():
-            cols_mostrar = []
-            for nombre_col in ["No. de venta", "profesional", "producto", "Centro De Costo", "tarifas (reliquidado)"]:
-                col_real = obtener_columna(totales_df, nombre_col)
-                if col_real is not None:
-                    cols_mostrar.append(col_real)
-
-            if cols_mostrar:
-                totales_sin_match_atenciones_df = totales_df.loc[mask_sin_match_atenciones, cols_mostrar].copy()
-                totales_sin_match_atenciones_df = totales_sin_match_atenciones_df.rename(
-                    columns={"Centro De Costo": "Centro de costos"}
-                )
-
-
-ventas_relacionadas_factura = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
-dinero_ventas_facturado = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-errores_ventas = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
-ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
-estados_no_incluidos = pd.Series(dtype=int)
-
-if bases["Ventas"]:
-    ventas_df = pd.concat([df for _, _, df in bases["Ventas"]], ignore_index=True)
-    col_ventas_centro_costo = obtener_columna(ventas_df, "Centro de costo")
-    col_ventas_estado = obtener_columna(ventas_df, "Estado")
-    col_ventas_valor_facturado = obtener_columna(ventas_df, "Valor facturado")
-
-    if col_ventas_centro_costo is not None:
-        ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_flexible)
-        ventas_df["_sede"] = ventas_ubic.map(lambda x: x[0])
-        ventas_df["_fase"] = ventas_ubic.map(lambda x: x[1])
-
-        sin_match_ventas = ventas_df.loc[ventas_df["_sede"].isna(), col_ventas_centro_costo].astype(str).map(normalizar)
-        if not sin_match_ventas.empty:
-            ubicaciones_ventas_no_mapeadas = (
-                sin_match_ventas.value_counts()
-                .rename_axis("Centro de costo (normalizado)")
-                .reset_index(name="Registros")
-            )
-
-        if col_ventas_estado is not None:
-            estado_norm = ventas_df[col_ventas_estado].astype(str).str.strip().str.lower()
-            mask_estado_facturada = estado_norm.isin(ESTADO_FACTURADA)
-
-            estados_excluidos = estado_norm[~estado_norm.isin(ESTADOS_ACTIVA_FACTURADA)]
-            if not estados_excluidos.empty:
-                estados_no_incluidos = (
-                    estados_excluidos.value_counts()
-                    .rename_axis("Estado (normalizado)")
-                    .reset_index(name="Registros")
-                )
-        else:
-            mask_estado_facturada = pd.Series(False, index=ventas_df.index)
-
-        if col_ventas_valor_facturado is not None:
-            valor_facturado_num = convertir_a_numero(ventas_df[col_ventas_valor_facturado])
-        else:
-            valor_facturado_num = pd.Series(0.0, index=ventas_df.index)
-
-        for fase in FASES:
-            for cod in CODIGOS_SEDE:
-                mask_sede_fase = (ventas_df["_sede"] == cod) & (ventas_df["_fase"] == fase)
-                mask_base = mask_sede_fase & mask_estado_facturada
-
-                if mask_base.any():
-                    valores = valor_facturado_num[mask_base]
-                    indices = valores.index
-                    mask_valida = valor_facturado_num.loc[indices] >= 1000
-                    mask_error = ~mask_valida
-
-                    ventas_relacionadas_factura[fase][cod] = int(mask_valida.sum())
-                    dinero_ventas_facturado[fase][cod] = float(valor_facturado_num.loc[indices][mask_valida].sum())
-
-                    if mask_error.any():
-                        errores_ventas[fase][cod]["cantidad"] = int(mask_error.sum())
-                        errores_ventas[fase][cod]["suma"] = float(valor_facturado_num.loc[indices][mask_error].sum())
-
-
-# ============================================================
-# PORCENTUALES
-# ============================================================
-porcentual_faltante = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-porcentual_impactado = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-porcentaje_errores_valor = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-porcentaje_errores_totales = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-porcentaje_errores_ventas = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-
-for fase in FASES:
-    for cod in CODIGOS_SEDE:
-        avaladas = conteos[fase][cod]["avaladas"]
-        total_ventas = total_ventas_ce[fase][cod]
-        relacionadas = ventas_relacionadas_factura[fase][cod]
-        cant_err_v = errores_valor_bajo[fase][cod]["cantidad"]
-        cant_err_t = errores_totales[fase][cod]["cantidad"]
-        cant_err_vtas = errores_ventas[fase][cod]["cantidad"]
-
-        if total_ventas > 0:
-            porcentual_faltante[fase][cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
-            porcentual_impactado[fase][cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
-        if avaladas > 0:
-            porcentaje_errores_valor[fase][cod] = (cant_err_v / avaladas) * 100.0
-            porcentaje_errores_totales[fase][cod] = (cant_err_t / avaladas) * 100.0
-            porcentaje_errores_ventas[fase][cod] = (cant_err_vtas / avaladas) * 100.0
-
-
-# ============================================================
-# CONSOLIDADO
-# ============================================================
-conteos_consolidado = {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
-dinero_interfaz_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
-errores_valor_bajo_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
-total_ventas_ce_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
-dinero_ambulatorio_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
-errores_totales_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
-ventas_relacionadas_factura_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
-dinero_ventas_facturado_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
-errores_ventas_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
-
-for cod in CODIGOS_SEDE:
-    for fase in FASES:
-        conteos_consolidado[cod]["revisadas"] += conteos[fase][cod]["revisadas"]
-        conteos_consolidado[cod]["avaladas"] += conteos[fase][cod]["avaladas"]
-        dinero_interfaz_consolidado[cod] += dinero_interfaz[fase][cod]
-        errores_valor_bajo_consolidado[cod]["cantidad"] += errores_valor_bajo[fase][cod]["cantidad"]
-        errores_valor_bajo_consolidado[cod]["suma"] += errores_valor_bajo[fase][cod]["suma"]
-        total_ventas_ce_consolidado[cod] += total_ventas_ce[fase][cod]
-        dinero_ambulatorio_consolidado[cod] += dinero_ambulatorio[fase][cod]
-        errores_totales_consolidado[cod]["cantidad"] += errores_totales[fase][cod]["cantidad"]
-        errores_totales_consolidado[cod]["suma"] += errores_totales[fase][cod]["suma"]
-        ventas_relacionadas_factura_consolidado[cod] += ventas_relacionadas_factura[fase][cod]
-        dinero_ventas_facturado_consolidado[cod] += dinero_ventas_facturado[fase][cod]
-        errores_ventas_consolidado[cod]["cantidad"] += errores_ventas[fase][cod]["cantidad"]
-        errores_ventas_consolidado[cod]["suma"] += errores_ventas[fase][cod]["suma"]
-
-porcentual_faltante_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
-porcentual_impactado_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
-porcentaje_errores_valor_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
-porcentaje_errores_totales_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
-porcentaje_errores_ventas_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
-
-for cod in CODIGOS_SEDE:
-    avaladas = conteos_consolidado[cod]["avaladas"]
-    total_ventas = total_ventas_ce_consolidado[cod]
-    relacionadas = ventas_relacionadas_factura_consolidado[cod]
-    cant_err_v = errores_valor_bajo_consolidado[cod]["cantidad"]
-    cant_err_t = errores_totales_consolidado[cod]["cantidad"]
-    cant_err_vtas = errores_ventas_consolidado[cod]["cantidad"]
-
-    if total_ventas > 0:
-        porcentual_faltante_consolidado[cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
-        porcentual_impactado_consolidado[cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
-    if avaladas > 0:
-        porcentaje_errores_valor_consolidado[cod] = (cant_err_v / avaladas) * 100.0
-        porcentaje_errores_totales_consolidado[cod] = (cant_err_t / avaladas) * 100.0
-        porcentaje_errores_ventas_consolidado[cod] = (cant_err_vtas / avaladas) * 100.0
+def filas_resumen(tipo_tabla):
+    sufijo = SUFIJOS_POR_TABLA.get(tipo_tabla, "consulta externa")
+    prefijo = PREFIJOS_POR_TABLA.get(tipo_tabla, "ambulatorio")
+    return [
+        "Revisadas por analistas",
+        "Avaladas subgerencia médica",
+        "Dinero enviado por interfaz",
+        f"Total ventas {sufijo} (ACTIVO Y FACTURADO)",
+        f"Dinero ventas {prefijo}",
+        "Porcentual faltante (META 30%)",
+        "Ventas relacionadas en factura (FACTURADO)",
+        "Dinero ventas (Facturado)",
+        "Porcentual impactado (META 0%)",
+    ]
+
+
+def construir_tabla_resumen(tipo_tabla="Fase 1"):
+    filas = filas_resumen(tipo_tabla)
+    df = pd.DataFrame("", index=filas, columns=COLUMNAS_RESUMEN)
+    df.index.name = "Concepto"
+    return df
 
 
 def formatear_dinero_interfaz(total, cant_err, suma_err, pct_err):
@@ -1038,213 +536,6 @@ def formatear_dinero_con_error(total, cant_err, suma_err, pct_err):
     return f"${total:,.0f}"
 
 
-# ============================================================
-# CONSTRUIR TABLAS
-# ============================================================
-tablas_por_fase = {}
-for fase in FASES:
-    tabla = construir_tabla_resumen(fase)
-    filas = filas_resumen(fase)
-    for cod in CODIGOS_SEDE:
-        columna = MAPA_CODIGO_A_COLUMNA[cod]
-        tabla.loc["Revisadas por analistas", columna] = f"{conteos[fase][cod]['revisadas']:,}"
-        tabla.loc["Avaladas subgerencia médica", columna] = f"{conteos[fase][cod]['avaladas']:,}"
-        tabla.loc["Dinero enviado por interfaz", columna] = formatear_dinero_interfaz(
-            dinero_interfaz[fase][cod],
-            errores_valor_bajo[fase][cod]["cantidad"],
-            errores_valor_bajo[fase][cod]["suma"],
-            porcentaje_errores_valor[fase][cod],
-        )
-        tabla.loc[filas[3], columna] = formatear_conteo_con_error(
-            total_ventas_ce[fase][cod],
-            errores_totales[fase][cod]["cantidad"],
-            errores_totales[fase][cod]["suma"],
-            porcentaje_errores_totales[fase][cod],
-        )
-        tabla.loc[filas[4], columna] = formatear_dinero_con_error(
-            dinero_ambulatorio[fase][cod],
-            errores_totales[fase][cod]["cantidad"],
-            errores_totales[fase][cod]["suma"],
-            porcentaje_errores_totales[fase][cod],
-        )
-        tabla.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante[fase][cod]:,.2f}%"
-        tabla.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_conteo_con_error(
-            ventas_relacionadas_factura[fase][cod],
-            errores_ventas[fase][cod]["cantidad"],
-            errores_ventas[fase][cod]["suma"],
-            porcentaje_errores_ventas[fase][cod],
-        )
-        tabla.loc["Dinero ventas (Facturado)", columna] = formatear_dinero_con_error(
-            dinero_ventas_facturado[fase][cod],
-            errores_ventas[fase][cod]["cantidad"],
-            errores_ventas[fase][cod]["suma"],
-            porcentaje_errores_ventas[fase][cod],
-        )
-        tabla.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado[fase][cod]:,.2f}%"
-    tablas_por_fase[fase] = tabla
-
-tabla_consolidada = construir_tabla_resumen("Consolidado")
-filas_cons = filas_resumen("Consolidado")
-for cod in CODIGOS_SEDE:
-    columna = MAPA_CODIGO_A_COLUMNA[cod]
-    tabla_consolidada.loc["Revisadas por analistas", columna] = f"{conteos_consolidado[cod]['revisadas']:,}"
-    tabla_consolidada.loc["Avaladas subgerencia médica", columna] = f"{conteos_consolidado[cod]['avaladas']:,}"
-    tabla_consolidada.loc["Dinero enviado por interfaz", columna] = formatear_dinero_interfaz(
-        dinero_interfaz_consolidado[cod],
-        errores_valor_bajo_consolidado[cod]["cantidad"],
-        errores_valor_bajo_consolidado[cod]["suma"],
-        porcentaje_errores_valor_consolidado[cod],
-    )
-    tabla_consolidada.loc[filas_cons[3], columna] = formatear_conteo_con_error(
-        total_ventas_ce_consolidado[cod],
-        errores_totales_consolidado[cod]["cantidad"],
-        errores_totales_consolidado[cod]["suma"],
-        porcentaje_errores_totales_consolidado[cod],
-    )
-    tabla_consolidada.loc[filas_cons[4], columna] = formatear_dinero_con_error(
-        dinero_ambulatorio_consolidado[cod],
-        errores_totales_consolidado[cod]["cantidad"],
-        errores_totales_consolidado[cod]["suma"],
-        porcentaje_errores_totales_consolidado[cod],
-    )
-    tabla_consolidada.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante_consolidado[cod]:,.2f}%"
-    tabla_consolidada.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_conteo_con_error(
-        ventas_relacionadas_factura_consolidado[cod],
-        errores_ventas_consolidado[cod]["cantidad"],
-        errores_ventas_consolidado[cod]["suma"],
-        porcentaje_errores_ventas_consolidado[cod],
-    )
-    tabla_consolidada.loc["Dinero ventas (Facturado)", columna] = formatear_dinero_con_error(
-        dinero_ventas_facturado_consolidado[cod],
-        errores_ventas_consolidado[cod]["cantidad"],
-        errores_ventas_consolidado[cod]["suma"],
-        porcentaje_errores_ventas_consolidado[cod],
-    )
-    tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%"
-
-
-# NOVEDADES
-resumen_verifica = pd.DataFrame()
-if not df_filtrado_revisadas.empty:
-    col_verifica = obtener_columna(df_filtrado_revisadas, "Nombre de Usuario que Verifica")
-    col_submedico = obtener_columna(df_filtrado_revisadas, "Usuario / Sub Medico")
-
-    verificadores_limpios = df_filtrado_revisadas[col_verifica].astype(str).str.strip().replace({"nan": "", "None": "", "NaN": ""})
-    df_filtrado_revisadas = df_filtrado_revisadas.assign(_verifica_limpio=verificadores_limpios)
-
-    resumen_verifica = (
-        df_filtrado_revisadas.groupby("_verifica_limpio", dropna=False)
-        .size().reset_index(name="Registros")
-        .rename(columns={"_verifica_limpio": "Nombre de Usuario que Verifica"})
-    )
-
-    def comparar_con_submedico(nombre_verifica):
-        if not col_submedico:
-            return "Sin datos de Sub Médico"
-        valores_sub = df_filtrado_revisadas[col_submedico].dropna().astype(str).str.strip()
-        valores_sub = valores_sub[~valores_sub.isin(["", "nan", "None", "NaN"])]
-        if valores_sub.empty:
-            return "Sin datos de Sub Médico"
-        norm_verifica = normalizar(nombre_verifica)
-        set_sub_norm = {normalizar(v) for v in valores_sub.unique()}
-        return "Misma persona" if norm_verifica in set_sub_norm else "Diferente persona"
-
-    resumen_verifica["¿Coincide con Usuario / Sub Médico?"] = resumen_verifica["Nombre de Usuario que Verifica"].apply(comparar_con_submedico)
-    resumen_verifica = resumen_verifica.sort_values("Registros", ascending=False).reset_index(drop=True)
-
-
-# SIDEBAR
-with st.sidebar:
-    st.header("📚 Reglas de procesamiento")
-    st.markdown("""
-**Carga de archivos**
-- Se aceptan múltiples Excel (`.xlsx`, `.xls`).
-- Se clasifican: **Ventas**, **Atenciones del especialista**, **Totales** o **Histórico**.
-- Se descartan hojas/archivos duplicados por hash.
-
-**Periodo**
-- Se extrae del nombre del archivo (`YYYY-MM`, `MM-YYYY`, mes + año, etc.).
-
-**Filtros previos**
-- En **Totales**: `Total tarifas y recargos/descuentos >= 1000`.
-
-**Mapeo de (sede, fase)**
-- Match flexible contra el mapa `Sede + Ubicación → Fase`.
-
-**Cálculos por (sede, fase)**
-
-1. **Revisadas**: Ubicación mapea + `Usuario que Verifica` NO vacío.
-2. **Avaladas**: Revisadas + `Usuario / Sub Medico` NO vacío.
-3. **Dinero interfaz**: Σ `Valor liquidado` válido (>= 1000), errores reportados aparte.
-4. **Total ventas**: count(Totales ∩ Ventas con `tarifas` >= 1000). Errores reportados aparte.
-5. **Dinero ventas**: Σ `tarifas (reliquidado)` válidas (>= 1000). Errores reportados aparte.
-6. **Porcentual faltante**: `(Total ventas − Avaladas) / Total ventas × 100`.
-7. **Ventas relacionadas**: count(Ventas con Estado=Facturada y `Valor facturado` >= 1000).
-8. **Dinero ventas (Facturado)**: Σ `Valor facturado` válido (>= 1000) con Estado=Facturada.
-9. **Porcentual impactado**: `(Total ventas − Ventas relacionadas) / Total ventas × 100`.
-
-**Consolidado**
-- Suma de las 3 fases. Porcentajes recalculados.
-""")
-
-
-# DIAGNÓSTICOS
-if not ubicaciones_no_mapeadas.empty:
-    with st.expander("⚠️ Ubicaciones de la venta (Atenciones) sin coincidencia", expanded=False):
-        st.dataframe(ubicaciones_no_mapeadas, use_container_width=True)
-
-if not ubicaciones_totales_no_mapeadas.empty:
-    with st.expander("⚠️ Centros de Costo (Totales) sin coincidencia", expanded=False):
-        st.dataframe(ubicaciones_totales_no_mapeadas, use_container_width=True)
-
-if not ubicaciones_ventas_no_mapeadas.empty:
-    with st.expander("⚠️ Centros de costo (Ventas) sin coincidencia", expanded=False):
-        st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
-
-if not estados_no_incluidos.empty:
-    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo 'Facturada')", expanded=False):
-        st.dataframe(estados_no_incluidos, use_container_width=True)
-
-
-# TABLAS
-for fase in FASES:
-    st.subheader(f"📋 {TITULOS_FASES[fase]}")
-    st.dataframe(tablas_por_fase[fase], use_container_width=True, height=420)
-    st.download_button(
-        label=f"⬇️ Descargar {TITULOS_FASES[fase]} (CSV)",
-        data=tablas_por_fase[fase].to_csv().encode("utf-8"),
-        file_name=f"{TITULOS_FASES[fase].replace(' ', '_')}.csv",
-        mime="text/csv",
-        key=f"dl_{fase}",
-    )
-    st.divider()
-
-
-st.subheader("📋 CONSOLIDADO - TODAS LAS FASES")
-st.dataframe(tabla_consolidada, use_container_width=True, height=420)
-st.download_button(
-    label="⬇️ Descargar CONSOLIDADO (CSV)",
-    data=tabla_consolidada.to_csv().encode("utf-8"),
-    file_name="CONSOLIDADO_FASES.csv",
-    mime="text/csv",
-    key="dl_consolidado",
-)
-st.divider()
-
-
-# NOVEDADES
-st.subheader("🔎 Novedades")
-if resumen_verifica.empty:
-    st.info("No hay registros que cumplan los filtros de 'Revisadas por analistas'.")
-else:
-    st.markdown(f"**Total de registros que cumplen los filtros:** {len(df_filtrado_revisadas):,}")
-    st.dataframe(resumen_verifica, use_container_width=True)
-st.divider()
-
-
-# ============================================================
-# CONSTRUIR CONSOLIDADOS POR PERIODO (para gráficas)
-# ============================================================
 def parsear_valor_generico(v):
     if pd.isna(v):
         return None
@@ -1266,165 +557,706 @@ def normalizar_etiqueta_hist(concepto):
     return c
 
 
-consolidados_por_periodo = {}
-
-# Periodo actual
-if periodo_etiqueta != "—":
-    consolidados_por_periodo[periodo_etiqueta] = {
-        sede: {
-            "revisadas": conteos_consolidado[cod]["revisadas"],
-            "avaladas": conteos_consolidado[cod]["avaladas"],
-            "total_ventas": total_ventas_ce_consolidado[cod],
-            "dinero_interfaz": dinero_interfaz_consolidado[cod],
-            "dinero_ventas": dinero_ambulatorio_consolidado[cod],
-            "ventas_relacionadas": ventas_relacionadas_factura_consolidado[cod],
-            "dinero_facturado": dinero_ventas_facturado_consolidado[cod],
-        }
-        for cod, sede in zip(CODIGOS_SEDE, COLUMNAS_RESUMEN)
-    }
-
-# Periodos históricos
-for etiqueta_periodo, conceptos in historicos_detectados.items():
-    data_periodo = {}
-    for sede in COLUMNAS_RESUMEN:
-        revisadas = 0
-        avaladas = 0
-        total_ventas = 0
-        dinero_interfaz = 0.0
-        dinero_ventas = 0.0
-        ventas_relacionadas = 0
-        dinero_facturado = 0.0
-
-        for concepto, valores in conceptos.items():
-            valor = valores.get(sede)
-            if valor is None:
-                continue
-            num = parsear_valor_generico(valor)
-            if num is None:
-                continue
-
-            c_norm = normalizar_etiqueta_hist(concepto)
-            if c_norm == "Revisadas por analistas":
-                revisadas += num
-            elif c_norm == "Avaladas subgerencia médica":
-                avaladas += num
-            elif c_norm == "Total ventas (ACTIVO Y FACTURADO)":
-                total_ventas += num
-            elif c_norm == "Dinero enviado por interfaz":
-                dinero_interfaz += num
-            elif c_norm == "Dinero ventas":
-                dinero_ventas += num
-            elif c_norm == "Ventas relacionadas en factura (FACTURADO)":
-                ventas_relacionadas += num
-            elif c_norm == "Dinero ventas (Facturado)":
-                dinero_facturado += num
-
-        data_periodo[sede] = {
-            "revisadas": revisadas,
-            "avaladas": avaladas,
-            "total_ventas": total_ventas,
-            "dinero_interfaz": dinero_interfaz,
-            "dinero_ventas": dinero_ventas,
-            "ventas_relacionadas": ventas_relacionadas,
-            "dinero_facturado": dinero_facturado,
-        }
-    consolidados_por_periodo[etiqueta_periodo] = data_periodo
-
-
 # ============================================================
-# ANÁLISIS HISTÓRICO EN PANTALLA (2 gráficas)
+# FUNCIÓN CACHEADA: PROCESAMIENTO COMPLETO
 # ============================================================
-if len(consolidados_por_periodo) > 0:
-    with st.expander("📈 Análisis histórico comparativo entre periodos", expanded=True):
-        st.markdown(
-            f"Se encontraron **{len(consolidados_por_periodo)}** periodos: "
-            + ", ".join(sorted(consolidados_por_periodo.keys()))
+@st.cache_data(show_spinner="Procesando archivos y calculando indicadores...")
+def procesar_todo(files_data):
+    """
+    files_data: tuple de tuplas (file_name, file_bytes).
+    Retorna un dict con todos los resultados calculados.
+    """
+    bases = {nombre: [] for nombre in ESTRUCTURAS}
+    no_clasificados = []
+    errores = []
+    archivos_duplicados = []
+    hojas_duplicadas = []
+    periodos_detectados = []
+    historicos_detectados = {}
+
+    hashes_archivos_vistos = {}
+    hashes_hojas_vistos = {}
+
+    for f_name, f_bytes in files_data:
+        hash_archivo = hashlib.md5(f_bytes).hexdigest()
+
+        if hash_archivo in hashes_archivos_vistos:
+            archivos_duplicados.append({
+                "Archivo": f_name,
+                "Ya cargado como": hashes_archivos_vistos[hash_archivo],
+            })
+            continue
+
+        hashes_archivos_vistos[hash_archivo] = f_name
+
+        anio, mes = extraer_periodo_desde_nombre(f_name)
+        periodos_detectados.append((f_name, (anio, mes)))
+
+        try:
+            sheets = pd.read_excel(io.BytesIO(f_bytes), sheet_name=None)
+            hojas = {name: df for name, df in sheets.items() if not df.empty}
+        except Exception as e:
+            errores.append((f_name, str(e)))
+            continue
+
+        for hoja, df in hojas.items():
+            if es_hoja_de_resultados(df):
+                a_h, m_h = extraer_periodo_desde_nombre(hoja)
+                if a_h is None:
+                    a_h, m_h = anio, mes
+                etiqueta, _, _ = formatear_periodo(a_h, m_h)
+                if etiqueta == "—":
+                    etiqueta = hoja
+                historicos_detectados[etiqueta] = parsear_hoja_resultados(df, hoja)
+                continue
+
+            estructura, score = clasificar_estructura(df.columns)
+
+            if estructura is None or score < UMBRAL_COINCIDENCIA:
+                no_clasificados.append({
+                    "Archivo": f_name,
+                    "Hoja": hoja,
+                    "Mejor candidato": estructura or "—",
+                    "Coincidencia": f"{score:.0%}",
+                    "Columnas": len(df.columns),
+                    "Filas": len(df),
+                })
+                continue
+
+            if estructura == "Totales":
+                col_tot_tarifas = obtener_columna(df, "Total tarifas y recargos/descuentos")
+                if col_tot_tarifas is not None:
+                    valores_tot = pd.to_numeric(
+                        df[col_tot_tarifas]
+                        .astype(str)
+                        .str.replace(",", "", regex=False)
+                        .str.replace("$", "", regex=False)
+                        .str.replace(" ", "", regex=False)
+                        .str.strip(),
+                        errors="coerce"
+                    )
+                    df = df[valores_tot >= 1000].copy()
+
+            h = hash_df(df)
+            if h in hashes_hojas_vistos:
+                hojas_duplicadas.append({
+                    "Archivo": f_name,
+                    "Hoja": hoja,
+                    "Estructura": estructura,
+                    "Duplicado de": hashes_hojas_vistos[h],
+                })
+                continue
+
+            hashes_hojas_vistos[h] = f"{f_name}::{hoja}"
+            bases[estructura].append((f_name, hoja, df.copy()))
+
+    # -------- PERIODO ACTUAL --------
+    periodos_validos = [(n, p) for n, p in periodos_detectados if p[0] is not None and p[1] is not None]
+
+    if periodos_validos:
+        from collections import Counter
+        conteo = Counter(p for _, p in periodos_validos)
+        periodo_actual_tupla = conteo.most_common(1)[0][0]
+    else:
+        periodo_actual_tupla = (None, None)
+
+    periodo_etiqueta, periodo_inicio, periodo_fin = formatear_periodo(*periodo_actual_tupla)
+
+    # -------- BASE ATENCIONES --------
+    if bases["Atenciones del especialista"]:
+        partes = []
+        for arch, hoja, df in bases["Atenciones del especialista"]:
+            df_aux = df.copy()
+            df_aux["_archivo"] = arch
+            df_aux["_hoja"] = hoja
+            partes.append(df_aux)
+        atenciones_df = pd.concat(partes, ignore_index=True)
+    else:
+        atenciones_df = pd.DataFrame()
+
+    # -------- INICIALIZAR --------
+    conteos = {fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE} for fase in FASES}
+    dinero_interfaz = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+    errores_valor_bajo = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
+    df_filtrado_revisadas = pd.DataFrame()
+    ubicaciones_no_mapeadas = pd.Series(dtype=int)
+
+    # -------- ATENCIONES --------
+    if not atenciones_df.empty:
+        col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
+        col_verifica = obtener_columna(atenciones_df, "Nombre de Usuario que Verifica")
+        col_submedico = obtener_columna(atenciones_df, "Usuario / Sub Medico")
+        col_valor_liquidado = obtener_columna(atenciones_df, "Valor liquidado")
+
+        if col_ubicacion is not None and col_verifica is not None:
+            ubicacion_norm_serie = atenciones_df[col_ubicacion].astype(str).map(normalizar)
+            sede_serie = ubicacion_norm_serie.map(lambda u: MAPA_UBICACION.get(u, (None, None))[0])
+            fase_serie = ubicacion_norm_serie.map(lambda u: MAPA_UBICACION.get(u, (None, None))[1])
+
+            mask_verifica = es_vacio(atenciones_df[col_verifica])
+            mask_submedico = (
+                es_vacio(atenciones_df[col_submedico])
+                if col_submedico is not None
+                else pd.Series(False, index=atenciones_df.index)
+            )
+
+            sin_match = ubicacion_norm_serie[sede_serie.isna()]
+            if not sin_match.empty:
+                ubicaciones_no_mapeadas = (
+                    sin_match.value_counts()
+                    .rename_axis("Ubicación (normalizada)")
+                    .reset_index(name="Registros")
+                )
+
+            for fase in FASES:
+                for cod in CODIGOS_SEDE:
+                    mask_sede_fase = (sede_serie == cod) & (fase_serie == fase)
+                    mask_rev = mask_sede_fase & mask_verifica
+                    mask_ava = mask_rev & mask_submedico
+                    conteos[fase][cod]["revisadas"] = int(mask_rev.sum())
+                    conteos[fase][cod]["avaladas"] = int(mask_ava.sum())
+
+            df_filtrado_revisadas = atenciones_df.loc[mask_verifica].copy()
+
+            if col_valor_liquidado is not None:
+                valor_liquidado_num = convertir_a_numero(atenciones_df[col_valor_liquidado])
+                for i in range(len(atenciones_df)):
+                    sede_cod = sede_serie.iloc[i]
+                    fase_val = fase_serie.iloc[i]
+                    if fase_val is None or sede_cod is None:
+                        continue
+                    fase_val = str(fase_val).strip()
+                    if fase_val not in dinero_interfaz:
+                        continue
+                    if sede_cod not in dinero_interfaz[fase_val]:
+                        continue
+                    if not bool(mask_verifica.iloc[i]):
+                        continue
+
+                    valor = float(valor_liquidado_num.iloc[i])
+                    if valor < 1000:
+                        errores_valor_bajo[fase_val][sede_cod]["cantidad"] += 1
+                        errores_valor_bajo[fase_val][sede_cod]["suma"] += valor
+                    else:
+                        dinero_interfaz[fase_val][sede_cod] += valor
+
+    # -------- TOTALES --------
+    total_ventas_ce = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
+    dinero_ambulatorio = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+    errores_totales = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
+    ubicaciones_totales_no_mapeadas = pd.Series(dtype=int)
+    totales_sin_match_atenciones_df = pd.DataFrame()
+
+    if bases["Totales"]:
+        totales_df = pd.concat([df for _, _, df in bases["Totales"]], ignore_index=True)
+
+        col_totales_venta_no = obtener_columna(totales_df, "No. de venta")
+        col_totales_centro_costo = obtener_columna(totales_df, "Centro De Costo")
+        col_totales_tarifa_reliq = obtener_columna(totales_df, "tarifas (reliquidado)")
+
+        if col_totales_venta_no is not None and col_totales_centro_costo is not None:
+            totales_df["_venta_no_norm"] = totales_df[col_totales_venta_no].map(normalizar_llave_venta)
+            totales_ubic = totales_df[col_totales_centro_costo].astype(str).map(detectar_ubicacion_flexible)
+            totales_df["_sede"] = totales_ubic.map(lambda x: x[0])
+            totales_df["_fase"] = totales_ubic.map(lambda x: x[1])
+
+            sin_match_totales = totales_df.loc[totales_df["_sede"].isna(), col_totales_centro_costo].astype(str).map(normalizar)
+            if not sin_match_totales.empty:
+                ubicaciones_totales_no_mapeadas = (
+                    sin_match_totales.value_counts()
+                    .rename_axis("Centro De Costo (normalizado)")
+                    .reset_index(name="Registros")
+                )
+
+            if col_totales_tarifa_reliq is not None:
+                totales_tarifa_num = convertir_a_numero(totales_df[col_totales_tarifa_reliq])
+            else:
+                totales_tarifa_num = pd.Series(0.0, index=totales_df.index)
+
+            ventas_nos_existentes = set()
+            if bases["Ventas"]:
+                ventas_para_cruce = pd.concat([df for _, _, df in bases["Ventas"]], ignore_index=True)
+                col_venta_no_v = obtener_columna(ventas_para_cruce, "Venta No.")
+                if col_venta_no_v is not None:
+                    ventas_nos_existentes = set(
+                        ventas_para_cruce[col_venta_no_v].map(normalizar_llave_venta).dropna().unique()
+                    )
+
+            mask_venta_en_ventas = totales_df["_venta_no_norm"].isin(ventas_nos_existentes)
+
+            for fase in FASES:
+                for cod in CODIGOS_SEDE:
+                    mask_sede_fase = (totales_df["_sede"] == cod) & (totales_df["_fase"] == fase)
+                    mask_base = mask_sede_fase & mask_venta_en_ventas
+
+                    if mask_base.any():
+                        tarifas_filtro = totales_tarifa_num[mask_base]
+                        indices = tarifas_filtro.index
+                        mask_valida = totales_tarifa_num.loc[indices] >= 1000
+                        mask_error = ~mask_valida
+
+                        total_ventas_ce[fase][cod] = int(mask_valida.sum())
+                        dinero_ambulatorio[fase][cod] = float(totales_tarifa_num.loc[indices][mask_valida].sum())
+
+                        if mask_error.any():
+                            errores_totales[fase][cod]["cantidad"] = int(mask_error.sum())
+                            errores_totales[fase][cod]["suma"] = float(totales_tarifa_num.loc[indices][mask_error].sum())
+
+            atenciones_nos_existentes = set()
+            if not atenciones_df.empty:
+                col_num_venta_at = obtener_columna(atenciones_df, "Numero Venta")
+                if col_num_venta_at is not None:
+                    atenciones_nos_existentes = set(
+                        atenciones_df[col_num_venta_at].map(normalizar_llave_venta).dropna().unique()
+                    )
+
+            mask_sin_match_atenciones = ~totales_df["_venta_no_norm"].isin(atenciones_nos_existentes)
+
+            if mask_sin_match_atenciones.any():
+                cols_mostrar = []
+                for nombre_col in ["No. de venta", "profesional", "producto", "Centro De Costo", "tarifas (reliquidado)"]:
+                    col_real = obtener_columna(totales_df, nombre_col)
+                    if col_real is not None:
+                        cols_mostrar.append(col_real)
+
+                if cols_mostrar:
+                    totales_sin_match_atenciones_df = totales_df.loc[mask_sin_match_atenciones, cols_mostrar].copy()
+                    totales_sin_match_atenciones_df = totales_sin_match_atenciones_df.rename(
+                        columns={"Centro De Costo": "Centro de costos"}
+                    )
+
+    # -------- VENTAS --------
+    ventas_relacionadas_factura = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
+    dinero_ventas_facturado = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+    errores_ventas = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
+    ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
+    estados_no_incluidos = pd.Series(dtype=int)
+
+    if bases["Ventas"]:
+        ventas_df = pd.concat([df for _, _, df in bases["Ventas"]], ignore_index=True)
+        col_ventas_centro_costo = obtener_columna(ventas_df, "Centro de costo")
+        col_ventas_estado = obtener_columna(ventas_df, "Estado")
+        col_ventas_valor_facturado = obtener_columna(ventas_df, "Valor facturado")
+
+        if col_ventas_centro_costo is not None:
+            ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_flexible)
+            ventas_df["_sede"] = ventas_ubic.map(lambda x: x[0])
+            ventas_df["_fase"] = ventas_ubic.map(lambda x: x[1])
+
+            sin_match_ventas = ventas_df.loc[ventas_df["_sede"].isna(), col_ventas_centro_costo].astype(str).map(normalizar)
+            if not sin_match_ventas.empty:
+                ubicaciones_ventas_no_mapeadas = (
+                    sin_match_ventas.value_counts()
+                    .rename_axis("Centro de costo (normalizado)")
+                    .reset_index(name="Registros")
+                )
+
+            if col_ventas_estado is not None:
+                estado_norm = ventas_df[col_ventas_estado].astype(str).str.strip().str.lower()
+                mask_estado_facturada = estado_norm.isin(ESTADO_FACTURADA)
+
+                estados_excluidos = estado_norm[~estado_norm.isin(ESTADOS_ACTIVA_FACTURADA)]
+                if not estados_excluidos.empty:
+                    estados_no_incluidos = (
+                        estados_excluidos.value_counts()
+                        .rename_axis("Estado (normalizado)")
+                        .reset_index(name="Registros")
+                    )
+            else:
+                mask_estado_facturada = pd.Series(False, index=ventas_df.index)
+
+            if col_ventas_valor_facturado is not None:
+                valor_facturado_num = convertir_a_numero(ventas_df[col_ventas_valor_facturado])
+            else:
+                valor_facturado_num = pd.Series(0.0, index=ventas_df.index)
+
+            for fase in FASES:
+                for cod in CODIGOS_SEDE:
+                    mask_sede_fase = (ventas_df["_sede"] == cod) & (ventas_df["_fase"] == fase)
+                    mask_base = mask_sede_fase & mask_estado_facturada
+
+                    if mask_base.any():
+                        valores = valor_facturado_num[mask_base]
+                        indices = valores.index
+                        mask_valida = valor_facturado_num.loc[indices] >= 1000
+                        mask_error = ~mask_valida
+
+                        ventas_relacionadas_factura[fase][cod] = int(mask_valida.sum())
+                        dinero_ventas_facturado[fase][cod] = float(valor_facturado_num.loc[indices][mask_valida].sum())
+
+                        if mask_error.any():
+                            errores_ventas[fase][cod]["cantidad"] = int(mask_error.sum())
+                            errores_ventas[fase][cod]["suma"] = float(valor_facturado_num.loc[indices][mask_error].sum())
+
+    # -------- PORCENTUALES --------
+    porcentual_faltante = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+    porcentual_impactado = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+    porcentaje_errores_valor = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+    porcentaje_errores_totales = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+    porcentaje_errores_ventas = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+
+    for fase in FASES:
+        for cod in CODIGOS_SEDE:
+            avaladas = conteos[fase][cod]["avaladas"]
+            total_ventas = total_ventas_ce[fase][cod]
+            relacionadas = ventas_relacionadas_factura[fase][cod]
+            cant_err_v = errores_valor_bajo[fase][cod]["cantidad"]
+            cant_err_t = errores_totales[fase][cod]["cantidad"]
+            cant_err_vtas = errores_ventas[fase][cod]["cantidad"]
+
+            if total_ventas > 0:
+                porcentual_faltante[fase][cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
+                porcentual_impactado[fase][cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
+            if avaladas > 0:
+                porcentaje_errores_valor[fase][cod] = (cant_err_v / avaladas) * 100.0
+                porcentaje_errores_totales[fase][cod] = (cant_err_t / avaladas) * 100.0
+                porcentaje_errores_ventas[fase][cod] = (cant_err_vtas / avaladas) * 100.0
+
+    # -------- CONSOLIDADO --------
+    conteos_consolidado = {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
+    dinero_interfaz_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+    errores_valor_bajo_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
+    total_ventas_ce_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
+    dinero_ambulatorio_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+    errores_totales_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
+    ventas_relacionadas_factura_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
+    dinero_ventas_facturado_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+    errores_ventas_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
+
+    for cod in CODIGOS_SEDE:
+        for fase in FASES:
+            conteos_consolidado[cod]["revisadas"] += conteos[fase][cod]["revisadas"]
+            conteos_consolidado[cod]["avaladas"] += conteos[fase][cod]["avaladas"]
+            dinero_interfaz_consolidado[cod] += dinero_interfaz[fase][cod]
+            errores_valor_bajo_consolidado[cod]["cantidad"] += errores_valor_bajo[fase][cod]["cantidad"]
+            errores_valor_bajo_consolidado[cod]["suma"] += errores_valor_bajo[fase][cod]["suma"]
+            total_ventas_ce_consolidado[cod] += total_ventas_ce[fase][cod]
+            dinero_ambulatorio_consolidado[cod] += dinero_ambulatorio[fase][cod]
+            errores_totales_consolidado[cod]["cantidad"] += errores_totales[fase][cod]["cantidad"]
+            errores_totales_consolidado[cod]["suma"] += errores_totales[fase][cod]["suma"]
+            ventas_relacionadas_factura_consolidado[cod] += ventas_relacionadas_factura[fase][cod]
+            dinero_ventas_facturado_consolidado[cod] += dinero_ventas_facturado[fase][cod]
+            errores_ventas_consolidado[cod]["cantidad"] += errores_ventas[fase][cod]["cantidad"]
+            errores_ventas_consolidado[cod]["suma"] += errores_ventas[fase][cod]["suma"]
+
+    porcentual_faltante_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+    porcentual_impactado_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+    porcentaje_errores_valor_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+    porcentaje_errores_totales_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+    porcentaje_errores_ventas_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+
+    for cod in CODIGOS_SEDE:
+        avaladas = conteos_consolidado[cod]["avaladas"]
+        total_ventas = total_ventas_ce_consolidado[cod]
+        relacionadas = ventas_relacionadas_factura_consolidado[cod]
+        cant_err_v = errores_valor_bajo_consolidado[cod]["cantidad"]
+        cant_err_t = errores_totales_consolidado[cod]["cantidad"]
+        cant_err_vtas = errores_ventas_consolidado[cod]["cantidad"]
+
+        if total_ventas > 0:
+            porcentual_faltante_consolidado[cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
+            porcentual_impactado_consolidado[cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
+        if avaladas > 0:
+            porcentaje_errores_valor_consolidado[cod] = (cant_err_v / avaladas) * 100.0
+            porcentaje_errores_totales_consolidado[cod] = (cant_err_t / avaladas) * 100.0
+            porcentaje_errores_ventas_consolidado[cod] = (cant_err_vtas / avaladas) * 100.0
+
+    # -------- TABLAS --------
+    tablas_por_fase = {}
+    for fase in FASES:
+        tabla = construir_tabla_resumen(fase)
+        filas = filas_resumen(fase)
+        for cod in CODIGOS_SEDE:
+            columna = MAPA_CODIGO_A_COLUMNA[cod]
+            tabla.loc["Revisadas por analistas", columna] = f"{conteos[fase][cod]['revisadas']:,}"
+            tabla.loc["Avaladas subgerencia médica", columna] = f"{conteos[fase][cod]['avaladas']:,}"
+            tabla.loc["Dinero enviado por interfaz", columna] = formatear_dinero_interfaz(
+                dinero_interfaz[fase][cod],
+                errores_valor_bajo[fase][cod]["cantidad"],
+                errores_valor_bajo[fase][cod]["suma"],
+                porcentaje_errores_valor[fase][cod],
+            )
+            tabla.loc[filas[3], columna] = formatear_conteo_con_error(
+                total_ventas_ce[fase][cod],
+                errores_totales[fase][cod]["cantidad"],
+                errores_totales[fase][cod]["suma"],
+                porcentaje_errores_totales[fase][cod],
+            )
+            tabla.loc[filas[4], columna] = formatear_dinero_con_error(
+                dinero_ambulatorio[fase][cod],
+                errores_totales[fase][cod]["cantidad"],
+                errores_totales[fase][cod]["suma"],
+                porcentaje_errores_totales[fase][cod],
+            )
+            tabla.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante[fase][cod]:,.2f}%"
+            tabla.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_conteo_con_error(
+                ventas_relacionadas_factura[fase][cod],
+                errores_ventas[fase][cod]["cantidad"],
+                errores_ventas[fase][cod]["suma"],
+                porcentaje_errores_ventas[fase][cod],
+            )
+            tabla.loc["Dinero ventas (Facturado)", columna] = formatear_dinero_con_error(
+                dinero_ventas_facturado[fase][cod],
+                errores_ventas[fase][cod]["cantidad"],
+                errores_ventas[fase][cod]["suma"],
+                porcentaje_errores_ventas[fase][cod],
+            )
+            tabla.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado[fase][cod]:,.2f}%"
+        tablas_por_fase[fase] = tabla
+
+    tabla_consolidada = construir_tabla_resumen("Consolidado")
+    filas_cons = filas_resumen("Consolidado")
+    for cod in CODIGOS_SEDE:
+        columna = MAPA_CODIGO_A_COLUMNA[cod]
+        tabla_consolidada.loc["Revisadas por analistas", columna] = f"{conteos_consolidado[cod]['revisadas']:,}"
+        tabla_consolidada.loc["Avaladas subgerencia médica", columna] = f"{conteos_consolidado[cod]['avaladas']:,}"
+        tabla_consolidada.loc["Dinero enviado por interfaz", columna] = formatear_dinero_interfaz(
+            dinero_interfaz_consolidado[cod],
+            errores_valor_bajo_consolidado[cod]["cantidad"],
+            errores_valor_bajo_consolidado[cod]["suma"],
+            porcentaje_errores_valor_consolidado[cod],
+        )
+        tabla_consolidada.loc[filas_cons[3], columna] = formatear_conteo_con_error(
+            total_ventas_ce_consolidado[cod],
+            errores_totales_consolidado[cod]["cantidad"],
+            errores_totales_consolidado[cod]["suma"],
+            porcentaje_errores_totales_consolidado[cod],
+        )
+        tabla_consolidada.loc[filas_cons[4], columna] = formatear_dinero_con_error(
+            dinero_ambulatorio_consolidado[cod],
+            errores_totales_consolidado[cod]["cantidad"],
+            errores_totales_consolidado[cod]["suma"],
+            porcentaje_errores_totales_consolidado[cod],
+        )
+        tabla_consolidada.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante_consolidado[cod]:,.2f}%"
+        tabla_consolidada.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_conteo_con_error(
+            ventas_relacionadas_factura_consolidado[cod],
+            errores_ventas_consolidado[cod]["cantidad"],
+            errores_ventas_consolidado[cod]["suma"],
+            porcentaje_errores_ventas_consolidado[cod],
+        )
+        tabla_consolidada.loc["Dinero ventas (Facturado)", columna] = formatear_dinero_con_error(
+            dinero_ventas_facturado_consolidado[cod],
+            errores_ventas_consolidado[cod]["cantidad"],
+            errores_ventas_consolidado[cod]["suma"],
+            porcentaje_errores_ventas_consolidado[cod],
+        )
+        tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%"
+
+    # -------- NOVEDADES --------
+    resumen_verifica = pd.DataFrame()
+    if not df_filtrado_revisadas.empty:
+        col_verifica = obtener_columna(df_filtrado_revisadas, "Nombre de Usuario que Verifica")
+        col_submedico = obtener_columna(df_filtrado_revisadas, "Usuario / Sub Medico")
+
+        verificadores_limpios = df_filtrado_revisadas[col_verifica].astype(str).str.strip().replace({"nan": "", "None": "", "NaN": ""})
+        df_filtrado_revisadas = df_filtrado_revisadas.assign(_verifica_limpio=verificadores_limpios)
+
+        resumen_verifica = (
+            df_filtrado_revisadas.groupby("_verifica_limpio", dropna=False)
+            .size().reset_index(name="Registros")
+            .rename(columns={"_verifica_limpio": "Nombre de Usuario que Verifica"})
         )
 
-        sns.set_theme(style="whitegrid")
+        def comparar_con_submedico(nombre_verifica):
+            if not col_submedico:
+                return "Sin datos de Sub Médico"
+            valores_sub = df_filtrado_revisadas[col_submedico].dropna().astype(str).str.strip()
+            valores_sub = valores_sub[~valores_sub.isin(["", "nan", "None", "NaN"])]
+            if valores_sub.empty:
+                return "Sin datos de Sub Médico"
+            norm_verifica = normalizar(nombre_verifica)
+            set_sub_norm = {normalizar(v) for v in valores_sub.unique()}
+            return "Misma persona" if norm_verifica in set_sub_norm else "Diferente persona"
 
-        # ---------- Gráfica 1: Dinero enviado por interfaz ----------
-        st.markdown("### 💰 Dinero enviado por interfaz por periodo")
+        resumen_verifica["¿Coincide con Usuario / Sub Médico?"] = resumen_verifica["Nombre de Usuario que Verifica"].apply(comparar_con_submedico)
+        resumen_verifica = resumen_verifica.sort_values("Registros", ascending=False).reset_index(drop=True)
 
-        datos_g1 = []
-        for periodo, data_sedes in consolidados_por_periodo.items():
-            for sede, vals in data_sedes.items():
-                datos_g1.append({
-                    "Periodo": periodo,
-                    "Sede": sede,
-                    "Valor": vals["dinero_interfaz"],
-                })
-        df_g1 = pd.DataFrame(datos_g1)
+    # -------- CONSOLIDADOS POR PERIODO (para gráficas) --------
+    consolidados_por_periodo = {}
 
-        if not df_g1.empty and df_g1["Valor"].sum() > 0:
-            fig1, ax1 = plt.subplots(figsize=(14, 6))
-            sns.barplot(data=df_g1, x="Periodo", y="Valor", hue="Sede", ax=ax1)
+    if periodo_etiqueta != "—":
+        consolidados_por_periodo[periodo_etiqueta] = {
+            sede: {
+                "revisadas": conteos_consolidado[cod]["revisadas"],
+                "avaladas": conteos_consolidado[cod]["avaladas"],
+                "total_ventas": total_ventas_ce_consolidado[cod],
+                "dinero_interfaz": dinero_interfaz_consolidado[cod],
+                "dinero_ventas": dinero_ambulatorio_consolidado[cod],
+                "ventas_relacionadas": ventas_relacionadas_factura_consolidado[cod],
+                "dinero_facturado": dinero_ventas_facturado_consolidado[cod],
+            }
+            for cod, sede in zip(CODIGOS_SEDE, COLUMNAS_RESUMEN)
+        }
 
-            for container in ax1.containers:
-                ax1.bar_label(
-                    container,
-                    labels=[f"${v:,.0f}" if v > 0 else "" for v in container.datavalues],
-                    fontsize=7, rotation=90, padding=3,
-                )
+    for etiqueta_periodo, conceptos in historicos_detectados.items():
+        data_periodo = {}
+        for sede in COLUMNAS_RESUMEN:
+            revisadas = 0
+            avaladas = 0
+            total_ventas = 0
+            dinero_interfaz_p = 0.0
+            dinero_ventas_p = 0.0
+            ventas_relacionadas_p = 0
+            dinero_facturado_p = 0.0
 
-            ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
+            for concepto, valores in conceptos.items():
+                valor = valores.get(sede)
+                if valor is None:
+                    continue
+                num = parsear_valor_generico(valor)
+                if num is None:
+                    continue
 
-            ax1.set_title("Dinero enviado por interfaz por periodo y sede (Consolidado)")
-            ax1.set_ylabel("Valor (COP)")
-            ax1.set_xlabel("Periodo")
-            plt.xticks(rotation=30, ha="right")
-            plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
-            plt.tight_layout()
-            st.pyplot(fig1)
-            plt.close(fig1)
-        else:
-            st.info("No hay datos de 'Dinero enviado por interfaz' para graficar.")
+                c_norm = normalizar_etiqueta_hist(concepto)
+                if c_norm == "Revisadas por analistas":
+                    revisadas += num
+                elif c_norm == "Avaladas subgerencia médica":
+                    avaladas += num
+                elif c_norm == "Total ventas (ACTIVO Y FACTURADO)":
+                    total_ventas += num
+                elif c_norm == "Dinero enviado por interfaz":
+                    dinero_interfaz_p += num
+                elif c_norm == "Dinero ventas":
+                    dinero_ventas_p += num
+                elif c_norm == "Ventas relacionadas en factura (FACTURADO)":
+                    ventas_relacionadas_p += num
+                elif c_norm == "Dinero ventas (Facturado)":
+                    dinero_facturado_p += num
 
-        # ---------- Gráfica 2: Cobertura general de honorarios médicos ----------
-        st.markdown("### 📈 Cobertura general de honorarios médicos")
+            data_periodo[sede] = {
+                "revisadas": revisadas,
+                "avaladas": avaladas,
+                "total_ventas": total_ventas,
+                "dinero_interfaz": dinero_interfaz_p,
+                "dinero_ventas": dinero_ventas_p,
+                "ventas_relacionadas": ventas_relacionadas_p,
+                "dinero_facturado": dinero_facturado_p,
+            }
+        consolidados_por_periodo[etiqueta_periodo] = data_periodo
 
-        datos_g2 = []
-        for periodo, data_sedes in consolidados_por_periodo.items():
-            for sede, vals in data_sedes.items():
-                avaladas = vals["avaladas"]
-                total_ventas = vals["total_ventas"]
-                cobertura = (avaladas / total_ventas * 100.0) if total_ventas > 0 else 0.0
-                datos_g2.append({
-                    "Periodo": periodo,
-                    "Sede": sede,
-                    "Cobertura": cobertura,
-                })
-        df_g2 = pd.DataFrame(datos_g2)
-
-        if not df_g2.empty and df_g2["Cobertura"].sum() > 0:
-            fig2, ax2 = plt.subplots(figsize=(14, 6))
-            sns.barplot(data=df_g2, x="Periodo", y="Cobertura", hue="Sede", ax=ax2)
-
-            for container in ax2.containers:
-                ax2.bar_label(
-                    container,
-                    labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
-                    fontsize=7, rotation=90, padding=3,
-                )
-
-            ax2.axhline(70, color="red", linestyle="--", label="Meta 70%")
-
-            ax2.set_title("Cobertura general de honorarios médicos (Avaladas / Total ventas)")
-            ax2.set_ylabel("Cobertura (%)")
-            ax2.set_xlabel("Periodo")
-            plt.xticks(rotation=30, ha="right")
-            plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
-            plt.tight_layout()
-            st.pyplot(fig2)
-            plt.close(fig2)
-        else:
-            st.info("No hay datos de 'Cobertura' para graficar.")
+    return {
+        "tablas_por_fase": tablas_por_fase,
+        "tabla_consolidada": tabla_consolidada,
+        "resumen_verifica": resumen_verifica,
+        "historicos_detectados": historicos_detectados,
+        "consolidados_por_periodo": consolidados_por_periodo,
+        "periodo_etiqueta": periodo_etiqueta,
+        "periodo_inicio": str(periodo_inicio) if periodo_inicio else "—",
+        "periodo_fin": str(periodo_fin) if periodo_fin else "—",
+        "no_clasificados": no_clasificados,
+        "errores": errores,
+        "archivos_duplicados": archivos_duplicados,
+        "hojas_duplicadas": hojas_duplicadas,
+        "ubicaciones_no_mapeadas": ubicaciones_no_mapeadas,
+        "ubicaciones_totales_no_mapeadas": ubicaciones_totales_no_mapeadas,
+        "ubicaciones_ventas_no_mapeadas": ubicaciones_ventas_no_mapeadas,
+        "estados_no_incluidos": estados_no_incluidos,
+        "totales_sin_match_atenciones_df": totales_sin_match_atenciones_df,
+    }
 
 
 # ============================================================
-# EXPORTABLE EXCEL
+# FUNCIONES CACHEADAS: GRÁFICAS
 # ============================================================
-def generar_excel_completo():
+@st.cache_data(show_spinner=False)
+def generar_grafica_dinero(consolidados_tuple):
+    consolidados_por_periodo = dict(consolidados_tuple)
+
+    datos = []
+    for periodo, data_sedes in consolidados_por_periodo.items():
+        for sede, vals in data_sedes.items():
+            datos.append({
+                "Periodo": periodo,
+                "Sede": sede,
+                "Valor": vals["dinero_interfaz"],
+            })
+    df = pd.DataFrame(datos)
+
+    if df.empty or df["Valor"].sum() == 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+    sns.barplot(data=df, x="Periodo", y="Valor", hue="Sede", ax=ax)
+
+    for container in ax.containers:
+        ax.bar_label(
+            container,
+            labels=[f"${v:,.0f}" if v > 0 else "" for v in container.datavalues],
+            fontsize=7, rotation=90, padding=3,
+        )
+
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
+
+    ax.set_title("Dinero enviado por interfaz por periodo y sede (Consolidado)")
+    ax.set_ylabel("Valor (COP)")
+    ax.set_xlabel("Periodo")
+    plt.xticks(rotation=30, ha="right")
+    plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def generar_grafica_cobertura(consolidados_tuple):
+    consolidados_por_periodo = dict(consolidados_tuple)
+
+    datos = []
+    for periodo, data_sedes in consolidados_por_periodo.items():
+        for sede, vals in data_sedes.items():
+            avaladas = vals["avaladas"]
+            total_ventas = vals["total_ventas"]
+            cobertura = (avaladas / total_ventas * 100.0) if total_ventas > 0 else 0.0
+            datos.append({
+                "Periodo": periodo,
+                "Sede": sede,
+                "Cobertura": cobertura,
+            })
+    df = pd.DataFrame(datos)
+
+    if df.empty or df["Cobertura"].sum() == 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+    sns.barplot(data=df, x="Periodo", y="Cobertura", hue="Sede", ax=ax)
+
+    for container in ax.containers:
+        ax.bar_label(
+            container,
+            labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+            fontsize=7, rotation=90, padding=3,
+        )
+
+    ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
+
+    ax.set_title("Cobertura general de honorarios médicos (Avaladas / Total ventas)")
+    ax.set_ylabel("Cobertura (%)")
+    ax.set_xlabel("Periodo")
+    plt.xticks(rotation=30, ha="right")
+    plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+# ============================================================
+# FUNCIÓN CACHEADA: EXCEL
+# ============================================================
+@st.cache_data(show_spinner="Generando Excel...")
+def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fin):
+    tablas_por_fase = resultados["tablas_por_fase"]
+    tabla_consolidada = resultados["tabla_consolidada"]
+    resumen_verifica = resultados["resumen_verifica"]
+    totales_sin_match_atenciones_df = resultados["totales_sin_match_atenciones_df"]
+    consolidados_por_periodo = resultados["consolidados_por_periodo"]
+
     wb = Workbook()
     bold_white = Font(bold=True, size=11, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="305496")
@@ -1478,7 +1310,7 @@ def generar_excel_completo():
         ws1.column_dimensions[get_column_letter(col_idx)].width = 28 if col_idx == 1 else 22
 
     ws2 = wb.create_sheet("Totales sin match")
-    if totales_sin_match_atenciones_df.empty:
+    if totales_sin_match_atenciones_df is None or totales_sin_match_atenciones_df.empty:
         ws2.cell(row=1, column=1, value="No hay registros de Totales sin coincidencia en Atenciones.")
     else:
         for j, col in enumerate(totales_sin_match_atenciones_df.columns, start=1):
@@ -1492,7 +1324,7 @@ def generar_excel_completo():
             ws2.column_dimensions[get_column_letter(j)].width = 30
 
     ws3 = wb.create_sheet("Novedades")
-    if resumen_verifica.empty:
+    if resumen_verifica is None or resumen_verifica.empty:
         ws3.cell(row=1, column=1, value="No hay registros en Novedades.")
     else:
         for j, col in enumerate(resumen_verifica.columns, start=1):
@@ -1634,14 +1466,204 @@ def generar_excel_completo():
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
-    return buffer
+    return buffer.getvalue()
 
 
+# ============================================================
+# SIDEBAR (REGLA)
+# ============================================================
+with st.sidebar:
+    st.header("📚 Reglas de procesamiento")
+    st.markdown("""
+**Carga de archivos**
+- Se aceptan múltiples Excel (`.xlsx`, `.xls`).
+- Se clasifican: **Ventas**, **Atenciones del especialista**, **Totales** o **Histórico**.
+- Se descartan hojas/archivos duplicados por hash.
+
+**Periodo**
+- Se extrae del nombre del archivo (`YYYY-MM`, `MM-YYYY`, mes + año, etc.).
+
+**Filtros previos**
+- En **Totales**: `Total tarifas y recargos/descuentos >= 1000`.
+
+**Mapeo de (sede, fase)**
+- Match flexible contra el mapa `Sede + Ubicación → Fase`.
+
+**Cálculos por (sede, fase)**
+
+1. **Revisadas**: Ubicación mapea + `Usuario que Verifica` NO vacío.
+2. **Avaladas**: Revisadas + `Usuario / Sub Medico` NO vacío.
+3. **Dinero interfaz**: Σ `Valor liquidado` válido (>= 1000), errores reportados aparte.
+4. **Total ventas**: count(Totales ∩ Ventas con `tarifas` >= 1000). Errores reportados aparte.
+5. **Dinero ventas**: Σ `tarifas (reliquidado)` válidas (>= 1000). Errores reportados aparte.
+6. **Porcentual faltante**: `(Total ventas − Avaladas) / Total ventas × 100`.
+7. **Ventas relacionadas**: count(Ventas con Estado=Facturada y `Valor facturado` >= 1000).
+8. **Dinero ventas (Facturado)**: Σ `Valor facturado` válido (>= 1000) con Estado=Facturada.
+9. **Porcentual impactado**: `(Total ventas − Ventas relacionadas) / Total ventas × 100`.
+
+**Consolidado**
+- Suma de las 3 fases. Porcentajes recalculados.
+
+**Optimizaciones**
+- Procesamiento cacheado (`@st.cache_data`).
+- Excel y gráficas cacheados.
+""")
+
+# ============================================================
+# CARGA DE ARCHIVOS
+# ============================================================
+uploaded_files = st.file_uploader(
+    "Selecciona los archivos Excel (.xlsx, .xls)",
+    type=["xlsx", "xls"],
+    accept_multiple_files=True
+)
+
+if not uploaded_files:
+    st.info("👆 Carga al menos un archivo Excel para comenzar.")
+    for fase in FASES:
+        st.subheader(f"📋 {TITULOS_FASES[fase]}")
+        st.dataframe(construir_tabla_resumen(fase), use_container_width=True)
+    st.stop()
+
+# Preparar tuple hashable para la caché
+files_data = tuple((f.name, f.getvalue()) for f in uploaded_files)
+
+# ============================================================
+# PROCESAR (cacheado)
+# ============================================================
+resultados = procesar_todo(files_data)
+
+tablas_por_fase = resultados["tablas_por_fase"]
+tabla_consolidada = resultados["tabla_consolidada"]
+resumen_verifica = resultados["resumen_verifica"]
+historicos_detectados = resultados["historicos_detectados"]
+consolidados_por_periodo = resultados["consolidados_por_periodo"]
+periodo_etiqueta = resultados["periodo_etiqueta"]
+periodo_inicio = resultados["periodo_inicio"]
+periodo_fin = resultados["periodo_fin"]
+
+# ============================================================
+# PERIODO EN PANTALLA
+# ============================================================
+if periodo_etiqueta != "—":
+    st.markdown(
+        f"<div style='background-color:#D9E1F2; padding:10px 15px; border-radius:8px; "
+        f"border-left:5px solid #305496; margin-bottom:15px;'>"
+        f"<b>📅 Periodo analizado:</b> {periodo_etiqueta} "
+        f"&nbsp;&nbsp;|&nbsp;&nbsp; <b>Inicio:</b> {periodo_inicio} "
+        f"&nbsp;&nbsp;|&nbsp;&nbsp; <b>Fin:</b> {periodo_fin}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+else:
+    st.warning("⚠️ No se pudo detectar el periodo desde el nombre de los archivos.")
+
+# ============================================================
+# DIAGNÓSTICOS
+# ============================================================
+if resultados["errores"]:
+    with st.expander("❌ Errores al leer archivos", expanded=False):
+        for nombre, err in resultados["errores"]:
+            st.write(f"- **{nombre}**: {err}")
+
+if resultados["no_clasificados"]:
+    with st.expander("⚠️ Archivos/hojas NO clasificados", expanded=False):
+        st.dataframe(pd.DataFrame(resultados["no_clasificados"]), use_container_width=True)
+
+if not resultados["ubicaciones_no_mapeadas"].empty:
+    with st.expander("⚠️ Ubicaciones de la venta (Atenciones) sin coincidencia", expanded=False):
+        st.dataframe(resultados["ubicaciones_no_mapeadas"], use_container_width=True)
+
+if not resultados["ubicaciones_totales_no_mapeadas"].empty:
+    with st.expander("⚠️ Centros de Costo (Totales) sin coincidencia", expanded=False):
+        st.dataframe(resultados["ubicaciones_totales_no_mapeadas"], use_container_width=True)
+
+if not resultados["ubicaciones_ventas_no_mapeadas"].empty:
+    with st.expander("⚠️ Centros de costo (Ventas) sin coincidencia", expanded=False):
+        st.dataframe(resultados["ubicaciones_ventas_no_mapeadas"], use_container_width=True)
+
+if not resultados["estados_no_incluidos"].empty:
+    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo 'Facturada')", expanded=False):
+        st.dataframe(resultados["estados_no_incluidos"], use_container_width=True)
+
+# ============================================================
+# TABLAS
+# ============================================================
+for fase in FASES:
+    st.subheader(f"📋 {TITULOS_FASES[fase]}")
+    st.dataframe(tablas_por_fase[fase], use_container_width=True, height=420)
+    st.download_button(
+        label=f"⬇️ Descargar {TITULOS_FASES[fase]} (CSV)",
+        data=tablas_por_fase[fase].to_csv().encode("utf-8"),
+        file_name=f"{TITULOS_FASES[fase].replace(' ', '_')}.csv",
+        mime="text/csv",
+        key=f"dl_{fase}",
+    )
+    st.divider()
+
+st.subheader("📋 CONSOLIDADO - TODAS LAS FASES")
+st.dataframe(tabla_consolidada, use_container_width=True, height=420)
+st.download_button(
+    label="⬇️ Descargar CONSOLIDADO (CSV)",
+    data=tabla_consolidada.to_csv().encode("utf-8"),
+    file_name="CONSOLIDADO_FASES.csv",
+    mime="text/csv",
+    key="dl_consolidado",
+)
+st.divider()
+
+# ============================================================
+# NOVEDADES
+# ============================================================
+st.subheader("🔎 Novedades")
+if resumen_verifica.empty:
+    st.info("No hay registros que cumplan los filtros de 'Revisadas por analistas'.")
+else:
+    st.dataframe(resumen_verifica, use_container_width=True)
+st.divider()
+
+# ============================================================
+# ANÁLISIS HISTÓRICO (gráficas cacheadas)
+# ============================================================
+if len(consolidados_por_periodo) > 0:
+    with st.expander("📈 Análisis histórico comparativo entre periodos", expanded=True):
+        st.markdown(
+            f"Se encontraron **{len(consolidados_por_periodo)}** periodos: "
+            + ", ".join(sorted(consolidados_por_periodo.keys()))
+        )
+
+        sns.set_theme(style="whitegrid")
+
+        # Convertir a tuple para hashabilidad de la caché
+        consolidados_tuple = tuple(
+            (periodo, tuple(sorted(sedes.items())))
+            for periodo, sedes in consolidados_por_periodo.items()
+        )
+
+        st.markdown("### 💰 Dinero enviado por interfaz por periodo")
+        img_dinero = generar_grafica_dinero(consolidados_tuple)
+        if img_dinero:
+            st.image(img_dinero, use_container_width=True)
+        else:
+            st.info("No hay datos de 'Dinero enviado por interfaz' para graficar.")
+
+        st.markdown("### 📈 Cobertura general de honorarios médicos")
+        img_cobertura = generar_grafica_cobertura(consolidados_tuple)
+        if img_cobertura:
+            st.image(img_cobertura, use_container_width=True)
+        else:
+            st.info("No hay datos de 'Cobertura' para graficar.")
+
+# ============================================================
+# EXPORTABLE EXCEL (cacheado)
+# ============================================================
 try:
-    excel_buffer = generar_excel_completo()
+    excel_bytes = generar_excel_bytes(
+        resultados, periodo_etiqueta, periodo_inicio, periodo_fin
+    )
     st.download_button(
         label="📥 Descargar Excel completo (Resultados + Totales sin match + Novedades + Reglas + Análisis)",
-        data=excel_buffer,
+        data=excel_bytes,
         file_name=f"resultados_por_fase_{periodo_etiqueta.replace(' ', '_')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="dl_excel_completo",
