@@ -18,9 +18,9 @@ import seaborn as sns
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
-st.set_page_config(page_title="FASES DE EJECUCIÓN DE HONORARIOS MÉDICOS POR INTERFAZ", page_icon="📊", layout="wide")
+st.set_page_config(page_title="FASES 1 - 2 - 3", page_icon="📊", layout="wide")
 
-st.title("📊 SEGUIMIENTO A EJECUCIÓN DE HONORARIOS MÉDICOS POR INTERFAZ")
+st.title("📊 TABLEROS POR FASE")
 st.markdown(
     "Carga múltiples archivos Excel. Se clasificarán automáticamente en "
     "**Ventas**, **Atenciones del especialista**, **Totales** o **Histórico**."
@@ -475,29 +475,67 @@ def formatear_periodo(anio, mes):
 def es_hoja_de_resultados(df):
     if df is None or df.empty:
         return False
-    columnas_norm = {normalizar(c) for c in df.columns}
-    sedes_norm = {normalizar(s) for s in COLUMNAS_RESUMEN}
-    return sedes_norm.issubset(columnas_norm)
+
+    primera_col = df.iloc[:, 0].astype(str).tolist()
+    textos_norm = [normalizar(v) for v in primera_col]
+
+    titulos_clave = [
+        "fase 1 ambulatorio",
+        "fase 2 hospitalario",
+        "fase 3 quirurgico",
+        "consolidado todas las fases",
+    ]
+    coincidencias = sum(1 for t in titulos_clave if t in textos_norm)
+    return coincidencias >= 2
 
 
 def parsear_hoja_resultados(df, nombre_hoja):
     resultado = {}
-    col_concepto = df.columns[0]
-    mapa_col_a_sede = {}
-    for c in df.columns:
-        c_norm = normalizar(c)
-        for col_canon in COLUMNAS_RESUMEN:
-            if normalizar(col_canon) == c_norm:
-                mapa_col_a_sede[c] = col_canon
+
+    fases_map = {
+        "fase 1 ambulatorio": "Fase 1",
+        "fase 2 hospitalario": "Fase 2",
+        "fase 3 quirurgico": "Fase 3",
+        "consolidado todas las fases": "Consolidado",
+    }
+
+    sedes_por_columna = None
+    fase_actual = None
+
+    for idx_fila, row in df.iterrows():
+        valores = row.tolist()
+        primera_celda = str(valores[0]).strip() if valores else ""
+        primera_norm = normalizar(primera_celda)
+
+        fase_detectada = None
+        for patron, nombre_fase in fases_map.items():
+            if patron in primera_norm:
+                fase_detectada = nombre_fase
                 break
 
-    for _, row in df.iterrows():
-        concepto = str(row[col_concepto]).strip()
-        if not concepto or concepto.lower() == "nan":
+        if fase_detectada:
+            fase_actual = fase_detectada
+            sedes_por_columna = None
             continue
-        resultado[concepto] = {}
-        for c, sede_canon in mapa_col_a_sede.items():
-            resultado[concepto][sede_canon] = row[c]
+
+        if primera_norm == "concepto" and fase_actual:
+            sedes_por_columna = {}
+            for j, celda in enumerate(valores[1:], start=1):
+                celda_norm = normalizar(celda)
+                for col_canon in COLUMNAS_RESUMEN:
+                    if normalizar(col_canon) == celda_norm:
+                        sedes_por_columna[j] = col_canon
+                        break
+            continue
+
+        if fase_actual and sedes_por_columna and primera_celda and primera_norm not in ("nan", ""):
+            concepto_key = f"{fase_actual} - {primera_celda}"
+
+            resultado[concepto_key] = {}
+            for j, sede_canon in sedes_por_columna.items():
+                if j < len(valores):
+                    resultado[concepto_key][sede_canon] = valores[j]
+
     return resultado
 
 
@@ -549,8 +587,7 @@ def parsear_valor_generico(v):
     s = re.sub(r"\(.*?\)", "", s).strip()
     s = s.replace("$", "").replace(",", "").replace("%", "").strip()
     try:
-        return float(s) if s else None
-    except Exception:
+        return float(s) if s else None    except Exception:
         return None
 
 
@@ -595,7 +632,7 @@ def procesar_todo(files_data):
         periodos_detectados.append((f_name, (anio, mes)))
 
         try:
-            sheets = pd.read_excel(io.BytesIO(f_bytes), sheet_name=None)
+            sheets = pd.read_excel(io.BytesIO(f_bytes), sheet_name=None, header=None)
             hojas = {name: df for name, df in sheets.items() if not df.empty}
         except Exception as e:
             errores.append((f_name, str(e)))
@@ -612,7 +649,15 @@ def procesar_todo(files_data):
                 historicos_detectados[etiqueta] = parsear_hoja_resultados(df, hoja)
                 continue
 
-            estructura, score = clasificar_estructura(df.columns)
+            # Para hojas que no son de resultados, releer con header normal
+            try:
+                df_con_header = pd.read_excel(
+                    io.BytesIO(f_bytes), sheet_name=hoja, header=0
+                )
+            except Exception:
+                continue
+
+            estructura, score = clasificar_estructura(df_con_header.columns)
 
             if estructura is None or score < UMBRAL_COINCIDENCIA:
                 no_clasificados.append({
@@ -620,16 +665,16 @@ def procesar_todo(files_data):
                     "Hoja": hoja,
                     "Mejor candidato": estructura or "—",
                     "Coincidencia": f"{score:.0%}",
-                    "Columnas": len(df.columns),
-                    "Filas": len(df),
+                    "Columnas": len(df_con_header.columns),
+                    "Filas": len(df_con_header),
                 })
                 continue
 
             if estructura == "Totales":
-                col_tot_tarifas = obtener_columna(df, "Total tarifas y recargos/descuentos")
+                col_tot_tarifas = obtener_columna(df_con_header, "Total tarifas y recargos/descuentos")
                 if col_tot_tarifas is not None:
                     valores_tot = pd.to_numeric(
-                        df[col_tot_tarifas]
+                        df_con_header[col_tot_tarifas]
                         .astype(str)
                         .str.replace(",", "", regex=False)
                         .str.replace("$", "", regex=False)
@@ -637,9 +682,9 @@ def procesar_todo(files_data):
                         .str.strip(),
                         errors="coerce"
                     )
-                    df = df[valores_tot >= 1000].copy()
+                    df_con_header = df_con_header[valores_tot >= 1000].copy()
 
-            h = hash_df(df)
+            h = hash_df(df_con_header)
             if h in hashes_hojas_vistos:
                 hojas_duplicadas.append({
                     "Archivo": f_name,
@@ -650,7 +695,7 @@ def procesar_todo(files_data):
                 continue
 
             hashes_hojas_vistos[h] = f"{f_name}::{hoja}"
-            bases[estructura].append((f_name, hoja, df.copy()))
+            bases[estructura].append((f_name, hoja, df_con_header.copy()))
 
     # -------- PERIODO ACTUAL --------
     periodos_validos = [(n, p) for n, p in periodos_detectados if p[0] is not None and p[1] is not None]
@@ -1131,21 +1176,39 @@ def procesar_todo(files_data):
                 if num is None:
                     continue
 
-                c_norm = normalizar_etiqueta_hist(concepto)
-                if c_norm == "Revisadas por analistas":
+                concepto_lower = normalizar(concepto)
+
+                es_fase_1 = concepto_lower.startswith("fase 1")
+                es_fase_2 = concepto_lower.startswith("fase 2")
+                es_fase_3 = concepto_lower.startswith("fase 3")
+                es_consolidado = concepto_lower.startswith("consolidado")
+
+                if es_fase_1 or es_fase_2 or es_fase_3 or es_consolidado:
+                    concepto_sin_prefijo = " - ".join(concepto.split(" - ")[1:])
+                else:
+                    concepto_sin_prefijo = concepto
+
+                concepto_norm = normalizar_etiqueta_hist(concepto_sin_prefijo)
+
+                if concepto_norm == "Revisadas por analistas":
                     revisadas_p += num
-                elif c_norm == "Avaladas subgerencia médica":
+                elif concepto_norm == "Avaladas subgerencia médica":
                     avaladas_p += num
-                elif c_norm == "Total ventas (ACTIVO Y FACTURADO)":
+                elif concepto_norm == "Total ventas (ACTIVO Y FACTURADO)":
                     total_ventas_p += num
-                elif c_norm == "Dinero enviado por interfaz":
+                elif concepto_norm == "Dinero enviado por interfaz":
                     dinero_interfaz_p += num
-                    dinero_interfaz_fase_1_p += num
-                elif c_norm == "Dinero ventas":
+                    if es_fase_1:
+                        dinero_interfaz_fase_1_p += num
+                    elif es_fase_2:
+                        dinero_interfaz_fase_2_p += num
+                    elif es_fase_3:
+                        dinero_interfaz_fase_3_p += num
+                elif concepto_norm == "Dinero ventas":
                     dinero_ventas_p += num
-                elif c_norm == "Ventas relacionadas en factura (FACTURADO)":
+                elif concepto_norm == "Ventas relacionadas en factura (FACTURADO)":
                     ventas_relacionadas_p += num
-                elif c_norm == "Dinero ventas (Facturado)":
+                elif concepto_norm == "Dinero ventas (Facturado)":
                     dinero_facturado_p += num
 
             data_periodo[sede] = {
@@ -1809,7 +1872,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 2 — Cobertura general de honorarios médicos (meta 70%)")
             plt.close(fig)
 
-        # Gráfico 3: Participación por fase (por sede)
         datos_g3 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1844,7 +1906,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 3 — Participación por fase (por sede)")
             plt.close(fig)
 
-        # Gráfico 4: Participación de cada sede (por sede)
         if not df_g1.empty:
             df_g1["Total_Periodo"] = df_g1.groupby("Periodo")["Valor"].transform("sum")
             df_g1["Porcentaje"] = df_g1.apply(
@@ -1874,7 +1935,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                     sedes_con_datos.add(sede)
 
         if len(sedes_con_datos) > 1:
-            # Gráfico 5: Dinero total
             datos_g5 = []
             for periodo, data_sedes in consolidados_por_periodo.items():
                 total_p = sum(vals["dinero_interfaz"] for vals in data_sedes.values())
@@ -1901,7 +1961,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 5 — Dinero enviado por interfaz (TODAS LAS SEDES)")
                 plt.close(fig)
 
-            # Gráfico 6: Cobertura total
             datos_g6 = []
             for periodo, data_sedes in consolidados_por_periodo.items():
                 avaladas_t = sum(vals["avaladas"] for vals in data_sedes.values())
@@ -1931,7 +1990,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 6 — Cobertura general de honorarios médicos (TODAS LAS SEDES)")
                 plt.close(fig)
 
-            # Gráfico 7: Participación por fase (consolidado total)
             datos_g7 = []
             for periodo, data_sedes in consolidados_por_periodo.items():
                 f1 = sum(vals.get("dinero_interfaz_fase_1", 0) for vals in data_sedes.values())
@@ -1958,7 +2016,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 7 — Participación por fase (Todas las sedes)")
                 plt.close(fig)
 
-            # Gráfico 8: Participación de cada sede (consolidado total)
             datos_g8 = []
             for periodo, data_sedes in consolidados_por_periodo.items():
                 for sede, vals in data_sedes.items():
@@ -2005,7 +2062,7 @@ with st.sidebar:
 - Se descartan hojas/archivos duplicados por hash.
 
 **Periodo**
-- Se extrae del nombre del archivo (`YYYY-MM`, `MM-YYYY`, mes + año, etc.).
+- Se extrae del nombre del archivo (`YYYY-MM`, `MM-YYYY`, nombre de mes + año, etc.).
 
 **Filtros previos**
 - En **Totales**: `Total tarifas y recargos/descuentos >= 1000`.
@@ -2152,43 +2209,43 @@ st.divider()
 # ============================================================
 if len(consolidados_por_periodo) > 0:
     with st.expander("📈 Análisis histórico comparativo y Resumen Ejecutivo", expanded=True):
-        
+
         # ---------- NARRATIVA DEL RESUMEN EJECUTIVO ----------
         st.markdown("### 📝 Resumen Ejecutivo")
         periodos_ordenados = sorted(consolidados_por_periodo.keys())
         ultimo_periodo = periodos_ordenados[-1]
-        
+
         total_revisadas = sum(vals["revisadas"] for vals in consolidados_por_periodo[ultimo_periodo].values())
         total_avaladas = sum(vals["avaladas"] for vals in consolidados_por_periodo[ultimo_periodo].values())
         total_ventas = sum(vals["total_ventas"] for vals in consolidados_por_periodo[ultimo_periodo].values())
         total_dinero = sum(vals["dinero_interfaz"] for vals in consolidados_por_periodo[ultimo_periodo].values())
-        
+
         cobertura = (total_avaladas / total_ventas * 100) if total_ventas > 0 else 0
-        
+
         sede_top = max(
             consolidados_por_periodo[ultimo_periodo].items(),
             key=lambda x: x[1]["dinero_interfaz"]
         )
-        
+
         narrativa = f"""
-En el periodo **{ultimo_periodo}**, se procesaron un total de **{total_revisadas:,}** registros, de los cuales **{total_avaladas:,}** fueron avalados por la subgerencia médica. 
-El dinero total enviado por interfaz ascendió a **${total_dinero:,.0f}**. 
+En el periodo **{ultimo_periodo}**, se procesaron un total de **{total_revisadas:,}** registros, de los cuales **{total_avaladas:,}** fueron avalados por la subgerencia médica.
+El dinero total enviado por interfaz ascendió a **${total_dinero:,.0f}**.
 La cobertura general de honorarios médicos (Avaladas / Total Ventas) se situó en **{cobertura:.1f}%** frente a la meta del 70%.
 La sede con mayor participación en el envío de dinero por interfaz fue **{sede_top[0]}** con un monto de **${sede_top[1]['dinero_interfaz']:,.0f}**.
 """
         if len(periodos_ordenados) > 1:
             primer_periodo = periodos_ordenados[0]
             total_dinero_primero = sum(vals["dinero_interfaz"] for vals in consolidados_por_periodo[primer_periodo].values())
-            
+
             if total_dinero_primero > 0:
                 variacion = ((total_dinero - total_dinero_primero) / total_dinero_primero) * 100
                 tendencia = "un incremento" if variacion >= 0 else "una disminución"
                 narrativa += f"\n\nEn cuanto al histórico, al comparar **{ultimo_periodo}** con **{primer_periodo}**, se observa {tendencia} del **{abs(variacion):.1f}%** en el dinero total enviado por interfaz."
             else:
                 narrativa += f"\n\nEn cuanto al histórico, el primer periodo registrado ({primer_periodo}) no presentó datos base para calcular variaciones."
-                
+
         st.info(narrativa)
-        
+
         st.divider()
         st.markdown("### 📈 Gráficas Comparativas")
 
