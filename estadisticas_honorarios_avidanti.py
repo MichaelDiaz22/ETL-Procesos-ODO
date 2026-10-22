@@ -376,7 +376,9 @@ def normalizar_etiqueta_hist(concepto):
     c = str(concepto).strip()
     if c.startswith("Total ventas ") and "(ACTIVO Y FACTURADO)" in c: return "Total ventas (ACTIVO Y FACTURADO)"
     if c.startswith("Dinero ventas ") and "Facturado" not in c: return "Dinero ventas"
-    return c# ============================================================
+    return c
+
+# ============================================================
 # NUEVAS FUNCIONES DE AGRUPACIÓN
 # ============================================================
 def agrupar_consolidados(consolidados_por_periodo, agrupacion):
@@ -1609,9 +1611,6 @@ uploaded_files = st.file_uploader(
 
 if not uploaded_files:
     st.info("👆 Carga al menos un archivo Excel para comenzar.")
-    for fase in FASES:
-        st.subheader(f"📋 {TITULOS_FASES[fase]}")
-        st.dataframe(construir_tabla_resumen(fase), use_container_width=True)
     st.stop()
 
 files_data = tuple((f.name, f.getvalue()) for f in uploaded_files)
