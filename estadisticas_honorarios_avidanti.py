@@ -826,11 +826,23 @@ def procesar_todo(files_data):
     ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
     estados_no_incluidos = pd.Series(dtype=int)
 
+    # Conjunto de ventas presentes en Totales (por No. de venta)
+    totales_ventas_nos = set()
+    if bases["Totales"]:
+        totales_para_cruce = pd.concat([df for _, _, df in bases["Totales"]], ignore_index=True)
+        col_totales_vno = obtener_columna(totales_para_cruce, "No. de venta")
+        if col_totales_vno is not None:
+            totales_ventas_nos = set(
+                totales_para_cruce[col_totales_vno]
+                .map(normalizar_llave_venta).dropna().unique()
+            )
+
     if bases["Ventas"]:
         ventas_df = pd.concat([df for _, _, df in bases["Ventas"]], ignore_index=True)
         col_ventas_centro_costo = obtener_columna(ventas_df, "Centro de costo")
         col_ventas_estado = obtener_columna(ventas_df, "Estado")
         col_ventas_valor_facturado = obtener_columna(ventas_df, "Valor facturado")
+        col_ventas_venta_no = obtener_columna(ventas_df, "Venta No.")
 
         if col_ventas_centro_costo is not None:
             ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_flexible)
@@ -864,10 +876,16 @@ def procesar_todo(files_data):
             else:
                 valor_facturado_num = pd.Series(0.0, index=ventas_df.index)
 
+            if col_ventas_venta_no is not None:
+                venta_no_norm_serie = ventas_df[col_ventas_venta_no].map(normalizar_llave_venta)
+                mask_venta_en_totales = venta_no_norm_serie.isin(totales_ventas_nos)
+            else:
+                mask_venta_en_totales = pd.Series(False, index=ventas_df.index)
+
             for fase in FASES:
                 for cod in CODIGOS_SEDE:
                     mask_sede_fase = (ventas_df["_sede"] == cod) & (ventas_df["_fase"] == fase)
-                    mask_base = mask_sede_fase & mask_estado_facturada
+                    mask_base = mask_sede_fase & mask_estado_facturada & mask_venta_en_totales
 
                     if mask_base.any():
                         valores = valor_facturado_num[mask_base]
@@ -1467,8 +1485,8 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         ("4. Total ventas", "count(Totales ∩ Ventas con 'tarifas' >= 1000). Errores reportados aparte."),
         ("5. Dinero ventas", "Σ 'tarifas (reliquidado)' válidas (>= 1000). Errores reportados aparte."),
         ("6. Porcentual faltante (META 30%)", "(Total ventas − Avaladas) / Total ventas × 100."),
-        ("7. Ventas relacionadas en factura", "count(Ventas con Estado=Facturada y 'Valor facturado' >= 1000)."),
-        ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada."),
+        ("7. Ventas relacionadas en factura", "count(Ventas con Estado=Facturada, 'Valor facturado' >= 1000 y 'Venta No.' ∈ Totales)."),
+        ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada y 'Venta No.' ∈ Totales."),
         ("9. Porcentual impactado (META 0%)", "(Total ventas − Ventas relacionadas) / Total ventas × 100."),
         ("Consolidado", "Suma de las 3 fases. Porcentajes recalculados."),
         ("Análisis histórico", "2 gráficas por sede + 2 gráficas consolidadas (solo si > 1 sede con datos)."),
@@ -1671,8 +1689,10 @@ with st.sidebar:
 4. **Total ventas**: count(Totales ∩ Ventas con `tarifas` >= 1000). Errores reportados aparte.
 5. **Dinero ventas**: Σ `tarifas (reliquidado)` válidas (>= 1000). Errores reportados aparte.
 6. **Porcentual faltante**: `(Total ventas − Avaladas) / Total ventas × 100`.
-7. **Ventas relacionadas**: count(Ventas con Estado=Facturada y `Valor facturado` >= 1000).
-8. **Dinero ventas (Facturado)**: Σ `Valor facturado` válido (>= 1000) con Estado=Facturada.
+7. **Ventas relacionadas**: count(Ventas con Estado=Facturada y `Valor facturado` >= 1000)
+   **que además existan en Totales** (`Venta No.` ∈ `No. de venta`).
+8. **Dinero ventas (Facturado)**: Σ `Valor facturado` válido (>= 1000) con Estado=Facturada
+   y que además existan en Totales.
 9. **Porcentual impactado**: `(Total ventas − Ventas relacionadas) / Total ventas × 100`.
 
 **Consolidado**
