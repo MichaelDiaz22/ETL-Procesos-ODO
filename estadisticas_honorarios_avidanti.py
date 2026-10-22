@@ -81,9 +81,10 @@ ESTRUCTURAS = {
 UMBRAL_COINCIDENCIA = 0.60
 
 # ============================================================
-# MAPA DE FASES
+# MAPA DE FASES (ACTUALIZADO v36)
 # ============================================================
 MAPA_FASES = [
+    # -------------------- Angiografía Villavicencio (ADC) --------------------
     ("ADC", "VILL-Oncología", "Fase 1"),
     ("ADC", "VILL-Rehabilitación Cardiaca", "Fase 1"),
     ("ADC", "VILL-Consulta Externa", "Fase 1"),
@@ -97,8 +98,15 @@ MAPA_FASES = [
     ("ADC", "VILL-Hospitalización 6 Piso", "Fase 2"),
     ("ADC", "VILL-Sala de Cirugía 2", "Fase 3"),
     ("ADC", "VILL-Electrofisiologia", "Fase 1"),
-    ("ADC", "VILL-Gestión Pre-transfusional", "Fase 3"),
+    ("ADC", "VILL-Gestión Pre-transfusional", "Fase 1"),
     ("ADC", "SAN-Consulta Externa", "Fase 1"),
+    ("ADC", "uci adultos vill", "Fase 2"),
+    ("ADC", "estancia vill", "Fase 2"),
+    ("ADC", "uci intermedia vill", "Fase 2"),
+    ("ADC", "salas de cirugia vill", "Fase 3"),
+    ("ADC", "sala de cirugia cardiovascular vill", "Fase 3"),
+
+    # -------------------- Clínica Avidanti Armenia (CAA) --------------------
     ("CAA", "CAA-Hospitalización 5 Piso", "Fase 2"),
     ("CAA", "CAA-Urgencias", "Fase 2"),
     ("CAA", "CAA-Consulta Externa", "Fase 1"),
@@ -110,6 +118,12 @@ MAPA_FASES = [
     ("CAA", "CAA-Imagenología", "Fase 1"),
     ("CAA", "CAA-Cardiología No Invasiva", "Fase 1"),
     ("CAA", "CAA-Laboratorio Clínico", "Fase 1"),
+    ("CAA", "caa estancia piso 5", "Fase 2"),
+    ("CAA", "caa uci adultos", "Fase 2"),
+    ("CAA", "caa cons ext", "Fase 1"),
+    ("CAA", "caa salas de cirugia", "Fase 3"),
+
+    # -------------------- Clínica Avidanti Ibagué (CAI) --------------------
     ("CAI", "CAI-Consulta Externa Nueva", "Fase 1"),
     ("CAI", "CAI-Sala de Cirugía 2", "Fase 3"),
     ("CAI", "CAI-Urgencias Nueva", "Fase 2"),
@@ -130,8 +144,19 @@ MAPA_FASES = [
     ("CAI", "CAI-Hemodinamia", "Fase 3"),
     ("CAI", "CAI-Laboratorio Clínico", "Fase 1"),
     ("CAI", "CAI-TeleConsulta", "Fase 1"),
-    ("CAI", "CAI-Gestion pre transfusional", "Fase 3"),
+    ("CAI", "CAI-Gestion pre transfusional", "Fase 1"),
     ("CAI", "CAI-Terapias", "Fase 1"),
+    ("CAI", "urgencias cai", "Fase 2"),
+    ("CAI", "uci adultos 1 cai", "Fase 2"),
+    ("CAI", "estancia piso 6 cai", "Fase 2"),
+    ("CAI", "estancia piso 5 cai", "Fase 2"),
+    ("CAI", "estancia piso 4 cai", "Fase 2"),
+    ("CAI", "uci intermedio adultos cai", "Fase 2"),
+    ("CAI", "salas de cirugia cai", "Fase 3"),
+    ("CAI", "sala de cirugia cardiovascular cai", "Fase 3"),
+    ("CAI", "trasplante renal cai", "Fase 3"),
+
+    # -------------------- Clínica Avidanti Manizales (CAM) --------------------
     ("CAM", "CAM-Consulta Externa", "Fase 1"),
     ("CAM", "CAM-Urgencias", "Fase 2"),
     ("CAM", "CAM-Hospitalización 7 Piso Sur", "Fase 2"),
@@ -162,6 +187,16 @@ MAPA_FASES = [
     ("CAM", "CAM - Sala de Cirugía 8", "Fase 3"),
     ("CAM", "CAM - Terapias", "Fase 1"),
     ("CAM", "CAM - Hospitalizacion 4 piso norte", "Fase 2"),
+    ("CAM", "estancia piso 6 cam", "Fase 2"),
+    ("CAM", "estancia piso 3 cam", "Fase 2"),
+    ("CAM", "estancia piso 7 cam", "Fase 2"),
+    ("CAM", "estancia piso 4 cam", "Fase 2"),
+    ("CAM", "estancia piso 5 cam", "Fase 2"),
+    ("CAM", "uci intermedio adultos cam", "Fase 2"),
+    ("CAM", "salas de cirugia cam", "Fase 3"),
+    ("CAM", "sala de cirugia cardiovascular cam", "Fase 3"),
+
+    # -------------------- Clínica Avidanti Santa Marta (CASM) --------------------
     ("CASM", "CASM- Consulta Externa", "Fase 1"),
     ("CASM", "CASM-Hospitalización VIP 2", "Fase 2"),
     ("CASM", "CASM-Hospitalización 2 Piso Norte", "Fase 2"),
@@ -185,9 +220,18 @@ MAPA_FASES = [
     ("CASM", "CASM-Recuperación Cirugía", "Fase 3"),
     ("CASM", "CASM-Laboratorio Clínico", "Fase 1"),
     ("CASM", "CASM-Electrofisiología", "Fase 1"),
-    ("CASM", "CASM-Gestion pre transfusional", "Fase 3"),
+    ("CASM", "CASM-Gestion pre transfusional", "Fase 1"),
     ("CASM", "CASM-Hemodialisis", "Fase 3"),
     ("CASM", "CASM-Tomografia", "Fase 1"),
+    ("CASM", "estancia piso 1 casm", "Fase 2"),
+    ("CASM", "uci adultos 1 casm", "Fase 2"),
+    ("CASM", "estancia piso 2 casm", "Fase 2"),
+    ("CASM", "uci adultos 2 casm", "Fase 2"),
+    ("CASM", "uci intermedia adulto casm", "Fase 2"),
+    ("CASM", "salas de cirugia casm", "Fase 3"),
+    ("CASM", "sala de cirugia cardiovascular casm", "Fase 3"),
+
+    # -------------------- Clínica Avidanti Ciudad Verde (CACV) --------------------
     ("CACV", "CACV-Hospitalización 5 Piso Norte", "Fase 2"),
     ("CACV", "CACV-Hospitalización 5 Piso Sur", "Fase 2"),
     ("CACV", "CACV-Laboratorio Clínico", "Fase 1"),
@@ -195,9 +239,9 @@ MAPA_FASES = [
     ("CACV", "CACV-Imagenología", "Fase 1"),
     ("CACV", "CACV-Sala de Cirugía 3", "Fase 3"),
     ("CACV", "CACV-Sala de Cirugía 4", "Fase 3"),
-    ("CACV", "CACV-Unidad Basico Neonatal", "Fase 3"),
+    ("CACV", "CACV-Unidad Basico Neonatal", "Fase 2"),
     ("CACV", "CACV-Terapias", "Fase 1"),
-    ("CACV", "CACV-Gestión Pre-transfusional", "Fase 3"),
+    ("CACV", "CACV-Gestión Pre-transfusional", "Fase 1"),
     ("CACV", "CACV-Sala de Cirugía 5", "Fase 3"),
     ("CACV", "CACV-Hospitalización 6 Piso Norte", "Fase 2"),
     ("CACV", "CACV-Hospitalización 6 Piso Sur", "Fase 2"),
@@ -219,6 +263,13 @@ MAPA_FASES = [
     ("CACV", "CACV-Resonancia Magnética", "Fase 1"),
     ("CACV", "CACV-Recuperación Cirugía", "Fase 3"),
     ("CACV", "CACV-Cardiología No Invasiva", "Fase 1"),
+    ("CACV", "estancia piso 5 cacv", "Fase 2"),
+    ("CACV", "estancia piso 6 cacv", "Fase 2"),
+    ("CACV", "uci adultos cacv", "Fase 2"),
+    ("CACV", "sala de partos cacv", "Fase 3"),
+    ("CACV", "uci alto riesgo obstetrico uaro", "Fase 2"),
+    ("CACV", "salas de cirugia cacv", "Fase 3"),
+    ("CACV", "sala de cesarea cacv", "Fase 3"),
 ]
 
 COLUMNAS_RESUMEN = [
@@ -250,7 +301,7 @@ MESES_ES = {
 }
 
 # ============================================================
-# ETIQUETAS DINÁMICAS POR TABLA
+# ETIQUETAS DINÁMICAS
 # ============================================================
 SUFIJOS_POR_TABLA = {
     "Fase 1": "consulta externa",
@@ -258,7 +309,6 @@ SUFIJOS_POR_TABLA = {
     "Fase 3": "quirúrgico",
     "Consolidado": "consolidado",
 }
-
 PREFIJOS_POR_TABLA = {
     "Fase 1": "ambulatorio",
     "Fase 2": "hospitalario",
@@ -1258,7 +1308,7 @@ if len(periodos_historicos) > 0:
 
 
 # ============================================================
-# EXPORTABLE EXCEL (incluye hoja "Análisis" con gráficos)
+# EXPORTABLE EXCEL
 # ============================================================
 def generar_excel_completo():
     wb = Workbook()
@@ -1291,7 +1341,6 @@ def generar_excel_completo():
             fila += 1
         return fila + 2
 
-    # --- Hoja 1: Resultados ---
     ws1 = wb.active
     ws1.title = "Resultados"
 
@@ -1314,7 +1363,6 @@ def generar_excel_completo():
     for col_idx in range(1, len(COLUMNAS_RESUMEN) + 2):
         ws1.column_dimensions[get_column_letter(col_idx)].width = 28 if col_idx == 1 else 22
 
-    # --- Hoja 2: Totales sin match ---
     ws2 = wb.create_sheet("Totales sin match")
     if totales_sin_match_atenciones_df.empty:
         ws2.cell(row=1, column=1, value="No hay registros de Totales sin coincidencia en Atenciones.")
@@ -1329,7 +1377,6 @@ def generar_excel_completo():
         for j in range(1, len(totales_sin_match_atenciones_df.columns) + 1):
             ws2.column_dimensions[get_column_letter(j)].width = 30
 
-    # --- Hoja 3: Novedades ---
     ws3 = wb.create_sheet("Novedades")
     if resumen_verifica.empty:
         ws3.cell(row=1, column=1, value="No hay registros en Novedades.")
@@ -1345,7 +1392,6 @@ def generar_excel_completo():
         ws3.column_dimensions["B"].width = 15
         ws3.column_dimensions["C"].width = 30
 
-    # --- Hoja 4: Reglas ---
     ws4 = wb.create_sheet("Reglas")
     reglas = [
         ("Carga de archivos", ""),
@@ -1379,7 +1425,6 @@ def generar_excel_completo():
     ws4.column_dimensions["A"].width = 40
     ws4.column_dimensions["B"].width = 100
 
-    # --- Hoja 5: Análisis con gráficos ---
     ws_analisis = wb.create_sheet("Análisis")
     ws_analisis.cell(
         row=1, column=1,
