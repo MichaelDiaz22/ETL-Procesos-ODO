@@ -81,7 +81,7 @@ ESTRUCTURAS = {
 UMBRAL_COINCIDENCIA = 0.60
 
 # ============================================================
-# MAPA DE FASES (ACTUALIZADO v36)
+# MAPA DE FASES
 # ============================================================
 MAPA_FASES = [
     # -------------------- Angiografía Villavicencio (ADC) --------------------
@@ -328,6 +328,7 @@ def filas_resumen(tipo_tabla):
         f"Dinero ventas {prefijo}",
         "Porcentual faltante (META 30%)",
         "Ventas relacionadas en factura (FACTURADO)",
+        "Dinero ventas (Facturado)",     # NUEVA FILA
         "Porcentual impactado (META 0%)",
     ]
 
@@ -720,7 +721,7 @@ else:
 
 
 # ============================================================
-# CÁLCULOS
+# CÁLCULOS: Revisadas / Avaladas / Dinero interfaz
 # ============================================================
 conteos = {fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE} for fase in FASES}
 dinero_interfaz = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
@@ -791,10 +792,12 @@ if not atenciones_df.empty:
                     dinero_interfaz[fase_val][sede_cod] += valor
 
 
+# ============================================================
+# CÁLCULOS SOBRE "Totales"
+# ============================================================
 total_ventas_ce = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
 dinero_ambulatorio = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-ventas_relacionadas_factura = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
-errores_tarifa = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
+errores_totales = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
 ubicaciones_totales_no_mapeadas = pd.Series(dtype=int)
 totales_sin_match_atenciones_df = pd.DataFrame()
 
@@ -838,21 +841,26 @@ if bases["Totales"]:
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (totales_df["_sede"] == cod) & (totales_df["_fase"] == fase)
-                mask_final = mask_sede_fase & mask_venta_en_ventas
+                mask_base = mask_sede_fase & mask_venta_en_ventas
 
-                total_ventas_ce[fase][cod] = int(mask_final.sum())
-                dinero_ambulatorio[fase][cod] = float(totales_tarifa_num[mask_final].sum())
+                if mask_base.any():
+                    tarifas_filtro = totales_tarifa_num[mask_base]
+                    indices = tarifas_filtro.index
 
-                tarifas_para_analisis = totales_tarifa_num[mask_final]
-                indices = tarifas_para_analisis.index
-                mask_valida = totales_tarifa_num.loc[indices] >= 1000
-                mask_error = ~mask_valida
+                    # Válidos: tarifa >= 1000
+                    mask_valida = totales_tarifa_num.loc[indices] >= 1000
+                    # Errores: tarifa < 1000
+                    mask_error = ~mask_valida
 
-                ventas_relacionadas_factura[fase][cod] = int(mask_valida.sum())
+                    # Conteo de válidos
+                    total_ventas_ce[fase][cod] = int(mask_valida.sum())
+                    # Suma de válidos (Dinero ventas)
+                    dinero_ambulatorio[fase][cod] = float(totales_tarifa_num.loc[indices][mask_valida].sum())
 
-                if mask_error.any():
-                    errores_tarifa[fase][cod]["cantidad"] = int(mask_error.sum())
-                    errores_tarifa[fase][cod]["suma"] = float(totales_tarifa_num.loc[indices][mask_error].sum())
+                    # Errores (< 1000)
+                    if mask_error.any():
+                        errores_totales[fase][cod]["cantidad"] = int(mask_error.sum())
+                        errores_totales[fase][cod]["suma"] = float(totales_tarifa_num.loc[indices][mask_error].sum())
 
         atenciones_nos_existentes = set()
         if not atenciones_df.empty:
@@ -878,6 +886,12 @@ if bases["Totales"]:
                 )
 
 
+# ============================================================
+# CÁLCULOS SOBRE "Ventas"
+# ============================================================
+ventas_relacionadas_factura = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
+dinero_ventas_facturado = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+errores_ventas = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
 ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
 estados_no_incluidos = pd.Series(dtype=int)
 
@@ -885,6 +899,7 @@ if bases["Ventas"]:
     ventas_df = pd.concat([df for _, _, df in bases["Ventas"]], ignore_index=True)
     col_ventas_centro_costo = obtener_columna(ventas_df, "Centro de costo")
     col_ventas_estado = obtener_columna(ventas_df, "Estado")
+    col_ventas_valor_facturado = obtener_columna(ventas_df, "Valor facturado")
 
     if col_ventas_centro_costo is not None:
         ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_flexible)
@@ -913,17 +928,44 @@ if bases["Ventas"]:
         else:
             mask_estado_facturada = pd.Series(False, index=ventas_df.index)
 
+        if col_ventas_valor_facturado is not None:
+            valor_facturado_num = convertir_a_numero(ventas_df[col_ventas_valor_facturado])
+        else:
+            valor_facturado_num = pd.Series(0.0, index=ventas_df.index)
+
         for fase in FASES:
             for cod in CODIGOS_SEDE:
                 mask_sede_fase = (ventas_df["_sede"] == cod) & (ventas_df["_fase"] == fase)
-                mask_fact = mask_sede_fase & mask_estado_facturada
-                ventas_relacionadas_factura[fase][cod] += int(mask_fact.sum())
+                mask_base = mask_sede_fase & mask_estado_facturada
+
+                if mask_base.any():
+                    valores = valor_facturado_num[mask_base]
+                    indices = valores.index
+
+                    # Válidos: valor facturado >= 1000
+                    mask_valida = valor_facturado_num.loc[indices] >= 1000
+                    # Errores: valor facturado < 1000
+                    mask_error = ~mask_valida
+
+                    # Conteo de válidos
+                    ventas_relacionadas_factura[fase][cod] = int(mask_valida.sum())
+                    # Suma de válidos (Dinero ventas facturado)
+                    dinero_ventas_facturado[fase][cod] = float(valor_facturado_num.loc[indices][mask_valida].sum())
+
+                    # Errores (< 1000)
+                    if mask_error.any():
+                        errores_ventas[fase][cod]["cantidad"] = int(mask_error.sum())
+                        errores_ventas[fase][cod]["suma"] = float(valor_facturado_num.loc[indices][mask_error].sum())
 
 
+# ============================================================
+# PORCENTUALES
+# ============================================================
 porcentual_faltante = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 porcentual_impactado = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 porcentaje_errores_valor = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
-porcentaje_errores_tarifa = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+porcentaje_errores_totales = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+porcentaje_errores_ventas = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 
 for fase in FASES:
     for cod in CODIGOS_SEDE:
@@ -931,24 +973,33 @@ for fase in FASES:
         total_ventas = total_ventas_ce[fase][cod]
         relacionadas = ventas_relacionadas_factura[fase][cod]
         cant_err_v = errores_valor_bajo[fase][cod]["cantidad"]
-        cant_err_t = errores_tarifa[fase][cod]["cantidad"]
+        cant_err_t = errores_totales[fase][cod]["cantidad"]
+        cant_err_vtas = errores_ventas[fase][cod]["cantidad"]
 
+        # Porcentual faltante: (Total ventas - Avaladas) / Total ventas
         if total_ventas > 0:
-            porcentual_faltante[fase][cod] = (avaladas / total_ventas) * 100.0
-            porcentual_impactado[fase][cod] = (relacionadas / total_ventas) * 100.0
+            porcentual_faltante[fase][cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
+            porcentual_impactado[fase][cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
+
+        # Porcentajes de errores (respecto a Avaladas)
         if avaladas > 0:
             porcentaje_errores_valor[fase][cod] = (cant_err_v / avaladas) * 100.0
-            porcentaje_errores_tarifa[fase][cod] = (cant_err_t / avaladas) * 100.0
+            porcentaje_errores_totales[fase][cod] = (cant_err_t / avaladas) * 100.0
+            porcentaje_errores_ventas[fase][cod] = (cant_err_vtas / avaladas) * 100.0
 
 
+# ============================================================
 # CONSOLIDADO
+# ============================================================
 conteos_consolidado = {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
 dinero_interfaz_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
 errores_valor_bajo_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
 total_ventas_ce_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
 dinero_ambulatorio_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+errores_totales_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
 ventas_relacionadas_factura_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
-errores_tarifa_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
+dinero_ventas_facturado_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+errores_ventas_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
 
 for cod in CODIGOS_SEDE:
     for fase in FASES:
@@ -959,28 +1010,34 @@ for cod in CODIGOS_SEDE:
         errores_valor_bajo_consolidado[cod]["suma"] += errores_valor_bajo[fase][cod]["suma"]
         total_ventas_ce_consolidado[cod] += total_ventas_ce[fase][cod]
         dinero_ambulatorio_consolidado[cod] += dinero_ambulatorio[fase][cod]
+        errores_totales_consolidado[cod]["cantidad"] += errores_totales[fase][cod]["cantidad"]
+        errores_totales_consolidado[cod]["suma"] += errores_totales[fase][cod]["suma"]
         ventas_relacionadas_factura_consolidado[cod] += ventas_relacionadas_factura[fase][cod]
-        errores_tarifa_consolidado[cod]["cantidad"] += errores_tarifa[fase][cod]["cantidad"]
-        errores_tarifa_consolidado[cod]["suma"] += errores_tarifa[fase][cod]["suma"]
+        dinero_ventas_facturado_consolidado[cod] += dinero_ventas_facturado[fase][cod]
+        errores_ventas_consolidado[cod]["cantidad"] += errores_ventas[fase][cod]["cantidad"]
+        errores_ventas_consolidado[cod]["suma"] += errores_ventas[fase][cod]["suma"]
 
 porcentual_faltante_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
 porcentual_impactado_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
 porcentaje_errores_valor_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
-porcentaje_errores_tarifa_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+porcentaje_errores_totales_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+porcentaje_errores_ventas_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
 
 for cod in CODIGOS_SEDE:
     avaladas = conteos_consolidado[cod]["avaladas"]
     total_ventas = total_ventas_ce_consolidado[cod]
     relacionadas = ventas_relacionadas_factura_consolidado[cod]
     cant_err_v = errores_valor_bajo_consolidado[cod]["cantidad"]
-    cant_err_t = errores_tarifa_consolidado[cod]["cantidad"]
+    cant_err_t = errores_totales_consolidado[cod]["cantidad"]
+    cant_err_vtas = errores_ventas_consolidado[cod]["cantidad"]
 
     if total_ventas > 0:
-        porcentual_faltante_consolidado[cod] = (avaladas / total_ventas) * 100.0
-        porcentual_impactado_consolidado[cod] = (relacionadas / total_ventas) * 100.0
+        porcentual_faltante_consolidado[cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
+        porcentual_impactado_consolidado[cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
     if avaladas > 0:
         porcentaje_errores_valor_consolidado[cod] = (cant_err_v / avaladas) * 100.0
-        porcentaje_errores_tarifa_consolidado[cod] = (cant_err_t / avaladas) * 100.0
+        porcentaje_errores_totales_consolidado[cod] = (cant_err_t / avaladas) * 100.0
+        porcentaje_errores_ventas_consolidado[cod] = (cant_err_vtas / avaladas) * 100.0
 
 
 def formatear_dinero_interfaz(total, cant_err, suma_err, pct_err):
@@ -989,10 +1046,16 @@ def formatear_dinero_interfaz(total, cant_err, suma_err, pct_err):
     return f"${total:,.0f}"
 
 
-def formatear_ventas_relacionadas(total, cant_err, suma_err, pct_err):
+def formatear_conteo_con_error(total, cant_err, suma_err, pct_err):
     if cant_err > 0:
         return f"{total:,} (Errores: ${suma_err:,.0f} en {cant_err} registros — {pct_err:.2f}%)"
     return f"{total:,}"
+
+
+def formatear_dinero_con_error(total, cant_err, suma_err, pct_err):
+    if cant_err > 0:
+        return f"${total:,.0f} (Errores: ${suma_err:,.0f} en {cant_err} registros — {pct_err:.2f}%)"
+    return f"${total:,.0f}"
 
 
 # ============================================================
@@ -1012,14 +1075,30 @@ for fase in FASES:
             errores_valor_bajo[fase][cod]["suma"],
             porcentaje_errores_valor[fase][cod],
         )
-        tabla.loc[filas[3], columna] = f"{total_ventas_ce[fase][cod]:,}"
-        tabla.loc[filas[4], columna] = f"${dinero_ambulatorio[fase][cod]:,.0f}"
+        tabla.loc[filas[3], columna] = formatear_conteo_con_error(
+            total_ventas_ce[fase][cod],
+            errores_totales[fase][cod]["cantidad"],
+            errores_totales[fase][cod]["suma"],
+            porcentaje_errores_totales[fase][cod],
+        )
+        tabla.loc[filas[4], columna] = formatear_dinero_con_error(
+            dinero_ambulatorio[fase][cod],
+            errores_totales[fase][cod]["cantidad"],
+            errores_totales[fase][cod]["suma"],
+            porcentaje_errores_totales[fase][cod],
+        )
         tabla.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante[fase][cod]:,.2f}%"
-        tabla.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_ventas_relacionadas(
+        tabla.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_conteo_con_error(
             ventas_relacionadas_factura[fase][cod],
-            errores_tarifa[fase][cod]["cantidad"],
-            errores_tarifa[fase][cod]["suma"],
-            porcentaje_errores_tarifa[fase][cod],
+            errores_ventas[fase][cod]["cantidad"],
+            errores_ventas[fase][cod]["suma"],
+            porcentaje_errores_ventas[fase][cod],
+        )
+        tabla.loc["Dinero ventas (Facturado)", columna] = formatear_dinero_con_error(
+            dinero_ventas_facturado[fase][cod],
+            errores_ventas[fase][cod]["cantidad"],
+            errores_ventas[fase][cod]["suma"],
+            porcentaje_errores_ventas[fase][cod],
         )
         tabla.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado[fase][cod]:,.2f}%"
     tablas_por_fase[fase] = tabla
@@ -1036,14 +1115,30 @@ for cod in CODIGOS_SEDE:
         errores_valor_bajo_consolidado[cod]["suma"],
         porcentaje_errores_valor_consolidado[cod],
     )
-    tabla_consolidada.loc[filas_cons[3], columna] = f"{total_ventas_ce_consolidado[cod]:,}"
-    tabla_consolidada.loc[filas_cons[4], columna] = f"${dinero_ambulatorio_consolidado[cod]:,.0f}"
+    tabla_consolidada.loc[filas_cons[3], columna] = formatear_conteo_con_error(
+        total_ventas_ce_consolidado[cod],
+        errores_totales_consolidado[cod]["cantidad"],
+        errores_totales_consolidado[cod]["suma"],
+        porcentaje_errores_totales_consolidado[cod],
+    )
+    tabla_consolidada.loc[filas_cons[4], columna] = formatear_dinero_con_error(
+        dinero_ambulatorio_consolidado[cod],
+        errores_totales_consolidado[cod]["cantidad"],
+        errores_totales_consolidado[cod]["suma"],
+        porcentaje_errores_totales_consolidado[cod],
+    )
     tabla_consolidada.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante_consolidado[cod]:,.2f}%"
-    tabla_consolidada.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_ventas_relacionadas(
+    tabla_consolidada.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_conteo_con_error(
         ventas_relacionadas_factura_consolidado[cod],
-        errores_tarifa_consolidado[cod]["cantidad"],
-        errores_tarifa_consolidado[cod]["suma"],
-        porcentaje_errores_tarifa_consolidado[cod],
+        errores_ventas_consolidado[cod]["cantidad"],
+        errores_ventas_consolidado[cod]["suma"],
+        porcentaje_errores_ventas_consolidado[cod],
+    )
+    tabla_consolidada.loc["Dinero ventas (Facturado)", columna] = formatear_dinero_con_error(
+        dinero_ventas_facturado_consolidado[cod],
+        errores_ventas_consolidado[cod]["cantidad"],
+        errores_ventas_consolidado[cod]["suma"],
+        porcentaje_errores_ventas_consolidado[cod],
     )
     tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%"
 
@@ -1101,11 +1196,12 @@ with st.sidebar:
 1. **Revisadas**: Ubicación mapea + `Usuario que Verifica` NO vacío.
 2. **Avaladas**: Revisadas + `Usuario / Sub Medico` NO vacío.
 3. **Dinero interfaz**: Σ `Valor liquidado` (valores < 1000 reportados como errores).
-4. **Total ventas**: count(Totales ∩ Ventas) sin filtro de tarifa.
-5. **Dinero ventas**: Σ `tarifas (reliquidado)` sin filtro de tarifa.
-6. **Porcentual faltante**: `Avaladas / Total ventas × 100`.
-7. **Ventas relacionadas**: count(Ventas con Estado=Facturada y Centro de costo mapeado).
-8. **Porcentual impactado**: `Ventas relacionadas / Total ventas × 100`.
+4. **Total ventas**: conteo de Totales ∩ Ventas con `tarifas >= 1000` (valores < 1000 como errores).
+5. **Dinero ventas**: Σ `tarifas (reliquidado)` válidas (>= 1000), errores reportados aparte.
+6. **Porcentual faltante**: `(Total ventas − Avaladas) / Total ventas × 100`.
+7. **Ventas relacionadas**: conteo de Ventas con `Estado=Facturada` y `Valor facturado >= 1000`.
+8. **Dinero ventas (Facturado)**: Σ `Valor facturado` válido (>= 1000) con `Estado=Facturada`.
+9. **Porcentual impactado**: `(Total ventas − Ventas relacionadas) / Total ventas × 100`.
 
 **Consolidado**
 - Suma de las 3 fases. Porcentajes recalculados.
@@ -1126,14 +1222,14 @@ if not ubicaciones_ventas_no_mapeadas.empty:
         st.dataframe(ubicaciones_ventas_no_mapeadas, use_container_width=True)
 
 if not estados_no_incluidos.empty:
-    with st.expander("ℹ️ Estados en Ventas NO incluidos", expanded=False):
+    with st.expander("ℹ️ Estados en Ventas NO incluidos (solo 'Facturada')", expanded=False):
         st.dataframe(estados_no_incluidos, use_container_width=True)
 
 
 # TABLAS
 for fase in FASES:
     st.subheader(f"📋 {TITULOS_FASES[fase]}")
-    st.dataframe(tablas_por_fase[fase], use_container_width=True, height=380)
+    st.dataframe(tablas_por_fase[fase], use_container_width=True, height=420)
     st.download_button(
         label=f"⬇️ Descargar {TITULOS_FASES[fase]} (CSV)",
         data=tablas_por_fase[fase].to_csv().encode("utf-8"),
@@ -1145,7 +1241,7 @@ for fase in FASES:
 
 
 st.subheader("📋 CONSOLIDADO - TODAS LAS FASES")
-st.dataframe(tabla_consolidada, use_container_width=True, height=380)
+st.dataframe(tabla_consolidada, use_container_width=True, height=420)
 st.download_button(
     label="⬇️ Descargar CONSOLIDADO (CSV)",
     data=tabla_consolidada.to_csv().encode("utf-8"),
@@ -1189,7 +1285,7 @@ if len(periodos_historicos) > 0:
             c = str(concepto).strip()
             if c.startswith("Total ventas ") and "(ACTIVO Y FACTURADO)" in c:
                 return "Total ventas (ACTIVO Y FACTURADO)"
-            if c.startswith("Dinero ventas "):
+            if c.startswith("Dinero ventas ") and "Facturado" not in c:
                 return "Dinero ventas"
             return c
 
@@ -1407,13 +1503,14 @@ def generar_excel_completo():
         ("Cálculos por (sede, fase)", ""),
         ("1. Revisadas por analistas", "Ubicación mapea + 'Nombre de Usuario que Verifica' NO vacío."),
         ("2. Avaladas subgerencia médica", "Revisadas + 'Usuario / Sub Medico' NO vacío."),
-        ("3. Dinero enviado por interfaz", "Σ 'Valor liquidado' (errores < 1000 reportados aparte)."),
-        ("4. Total ventas", "count(Totales ∩ Ventas). Sin filtro de tarifa. (Sufijo según fase)."),
-        ("5. Dinero ventas", "Σ 'tarifas (reliquidado)'. Sin filtro de tarifa. (Sufijo según fase)."),
-        ("6. Porcentual faltante (META 30%)", "Avaladas / Total ventas × 100."),
-        ("7. Ventas relacionadas en factura", "count(Ventas con Estado=Facturada y Centro de costo mapeado)."),
-        ("8. Porcentual impactado (META 0%)", "Ventas relacionadas / Total ventas × 100."),
-        ("Consolidado", "Suma de las 3 fases. Porcentajes recalculados. Etiquetas con sufijo 'consolidado'."),
+        ("3. Dinero enviado por interfaz", "Σ 'Valor liquidado' válido (>= 1000), errores reportados aparte."),
+        ("4. Total ventas", "count(Totales ∩ Ventas con 'tarifas' >= 1000). Errores (< 1000) reportados aparte."),
+        ("5. Dinero ventas", "Σ 'tarifas (reliquidado)' válidas (>= 1000). Errores reportados aparte."),
+        ("6. Porcentual faltante (META 30%)", "(Total ventas − Avaladas) / Total ventas × 100."),
+        ("7. Ventas relacionadas en factura", "count(Ventas con Estado=Facturada y 'Valor facturado' >= 1000)."),
+        ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada."),
+        ("9. Porcentual impactado (META 0%)", "(Total ventas − Ventas relacionadas) / Total ventas × 100."),
+        ("Consolidado", "Suma de las 3 fases. Porcentajes recalculados."),
     ]
     for i, (c1, c2) in enumerate(reglas, start=1):
         celda1 = ws4.cell(row=i, column=1, value=c1)
@@ -1447,7 +1544,7 @@ def generar_excel_completo():
             c = str(concepto).strip()
             if c.startswith("Total ventas ") and "(ACTIVO Y FACTURADO)" in c:
                 return "Total ventas (ACTIVO Y FACTURADO)"
-            if c.startswith("Dinero ventas "):
+            if c.startswith("Dinero ventas ") and "Facturado" not in c:
                 return "Dinero ventas"
             return c
 
