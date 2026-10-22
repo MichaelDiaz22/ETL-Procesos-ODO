@@ -826,7 +826,6 @@ def procesar_todo(files_data):
     ubicaciones_ventas_no_mapeadas = pd.Series(dtype=int)
     estados_no_incluidos = pd.Series(dtype=int)
 
-    # Conjunto de ventas presentes en Totales (por No. de venta)
     totales_ventas_nos = set()
     if bases["Totales"]:
         totales_para_cruce = pd.concat([df for _, _, df in bases["Totales"]], ignore_index=True)
@@ -1097,6 +1096,9 @@ def procesar_todo(files_data):
                 "dinero_ventas": dinero_ambulatorio_consolidado[cod],
                 "ventas_relacionadas": ventas_relacionadas_factura_consolidado[cod],
                 "dinero_facturado": dinero_ventas_facturado_consolidado[cod],
+                "dinero_interfaz_fase_1": dinero_interfaz["Fase 1"][cod],
+                "dinero_interfaz_fase_2": dinero_interfaz["Fase 2"][cod],
+                "dinero_interfaz_fase_3": dinero_interfaz["Fase 3"][cod],
             }
             for cod, sede in zip(CODIGOS_SEDE, COLUMNAS_RESUMEN)
         }
@@ -1111,6 +1113,9 @@ def procesar_todo(files_data):
             dinero_ventas_p = 0.0
             ventas_relacionadas_p = 0
             dinero_facturado_p = 0.0
+            dinero_interfaz_fase_1_p = 0.0
+            dinero_interfaz_fase_2_p = 0.0
+            dinero_interfaz_fase_3_p = 0.0
 
             for concepto, valores in conceptos.items():
                 valor = valores.get(sede)
@@ -1129,6 +1134,7 @@ def procesar_todo(files_data):
                     total_ventas_p += num
                 elif c_norm == "Dinero enviado por interfaz":
                     dinero_interfaz_p += num
+                    dinero_interfaz_fase_1_p += num
                 elif c_norm == "Dinero ventas":
                     dinero_ventas_p += num
                 elif c_norm == "Ventas relacionadas en factura (FACTURADO)":
@@ -1144,6 +1150,9 @@ def procesar_todo(files_data):
                 "dinero_ventas": dinero_ventas_p,
                 "ventas_relacionadas": ventas_relacionadas_p,
                 "dinero_facturado": dinero_facturado_p,
+                "dinero_interfaz_fase_1": dinero_interfaz_fase_1_p,
+                "dinero_interfaz_fase_2": dinero_interfaz_fase_2_p,
+                "dinero_interfaz_fase_3": dinero_interfaz_fase_3_p,
             }
         consolidados_por_periodo[etiqueta_periodo] = data_periodo
 
@@ -1177,13 +1186,14 @@ def _firma_consolidados(consolidados_por_periodo):
             partes.append(
                 f"{periodo}|{sede}|{v['revisadas']}|{v['avaladas']}|"
                 f"{v['total_ventas']}|{v['dinero_interfaz']}|{v['dinero_ventas']}|"
-                f"{v['ventas_relacionadas']}|{v['dinero_facturado']}"
+                f"{v['ventas_relacionadas']}|{v['dinero_facturado']}|"
+                f"{v.get('dinero_interfaz_fase_1', 0)}|{v.get('dinero_interfaz_fase_2', 0)}|{v.get('dinero_interfaz_fase_3', 0)}"
             )
     return hashlib.md5(";".join(partes).encode()).hexdigest()
 
 
 # ============================================================
-# GRÁFICAS POR SEDE (ETIQUETAS DENTRO DE LA BARRA)
+# GRÁFICAS POR SEDE
 # ============================================================
 @st.cache_data(show_spinner=False)
 def generar_grafica_dinero(_consolidados_por_periodo, firma):
@@ -1283,8 +1293,113 @@ def generar_grafica_cobertura(_consolidados_por_periodo, firma):
     return buf.getvalue()
 
 
+@st.cache_data(show_spinner=False)
+def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
+    datos = []
+    for periodo, data_sedes in _consolidados_por_periodo.items():
+        for sede, vals in data_sedes.items():
+            datos.append({
+                "Periodo": periodo,
+                "Sede": sede,
+                "Fase 1": vals.get("dinero_interfaz_fase_1", 0),
+                "Fase 2": vals.get("dinero_interfaz_fase_2", 0),
+                "Fase 3": vals.get("dinero_interfaz_fase_3", 0),
+            })
+    df = pd.DataFrame(datos)
+
+    if df.empty:
+        return None
+
+    df = df.set_index(["Periodo", "Sede"])
+    total_por_fila = df.sum(axis=1)
+    df_pct = df.div(total_por_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
+    df_pct = df_pct.reset_index()
+
+    df_melt = df_pct.melt(
+        id_vars=["Periodo", "Sede"],
+        value_vars=["Fase 1", "Fase 2", "Fase 3"],
+        var_name="Fase",
+        value_name="Porcentaje"
+    )
+    df_melt["Etiqueta"] = df_melt["Periodo"] + "\n" + df_melt["Sede"]
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+    sns.barplot(
+        data=df_melt, x="Etiqueta", y="Porcentaje", hue="Fase",
+        palette=["#305496", "#D1615D", "#85C17E"], ax=ax
+    )
+
+    for container in ax.containers:
+        ax.bar_label(
+            container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+            label_type="center", fontsize=8, padding=2
+        )
+
+    ax.set_title("Participación por fase de cada sede y periodo", pad=15)
+    ax.set_ylabel("Participación (%)")
+    ax.set_xlabel("")
+    plt.xticks(rotation=45, ha="right", fontsize=8)
+    plt.legend(title="Fase", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+    plt.ylim(0, 100)
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.88)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def generar_grafica_participacion_sede(_consolidados_por_periodo, firma):
+    datos = []
+    for periodo, data_sedes in _consolidados_por_periodo.items():
+        for sede, vals in data_sedes.items():
+            datos.append({
+                "Periodo": periodo,
+                "Sede": sede,
+                "Valor": vals["dinero_interfaz"],
+            })
+    df = pd.DataFrame(datos)
+
+    if df.empty:
+        return None
+
+    df["Total_Periodo"] = df.groupby("Periodo")["Valor"].transform("sum")
+    df["Porcentaje"] = df.apply(
+        lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0,
+        axis=1
+    )
+    df["Etiqueta"] = df["Periodo"] + "\n" + df["Sede"]
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+    sns.barplot(data=df, x="Etiqueta", y="Porcentaje", hue="Sede", ax=ax)
+
+    for container in ax.containers:
+        ax.bar_label(
+            container,
+            labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+            fontsize=9, rotation=0, padding=3,
+            label_type="center"
+        )
+
+    ax.set_title("Participación de cada sede respecto al total general por periodo", pad=15)
+    ax.set_ylabel("Participación (%)")
+    ax.set_xlabel("")
+    plt.xticks(rotation=45, ha="right", fontsize=8)
+    plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+    plt.ylim(0, 105)
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.88)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
+    plt.close(fig)
+    return buf.getvalue()
+
+
 # ============================================================
-# GRÁFICAS TOTALES (SUMA DE TODAS LAS SEDES)
+# GRÁFICAS CONSOLIDADAS TOTALES
 # ============================================================
 @st.cache_data(show_spinner=False)
 def generar_grafica_dinero_total(_consolidados_por_periodo, firma):
@@ -1365,6 +1480,109 @@ def generar_grafica_cobertura_total(_consolidados_por_periodo, firma):
     ax.set_xlabel("Periodo")
     plt.xticks(rotation=30, ha="right")
     ax.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.88)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def generar_grafica_participacion_fase_total(_consolidados_por_periodo, firma):
+    datos = []
+    for periodo, data_sedes in _consolidados_por_periodo.items():
+        f1 = sum(vals.get("dinero_interfaz_fase_1", 0) for vals in data_sedes.values())
+        f2 = sum(vals.get("dinero_interfaz_fase_2", 0) for vals in data_sedes.values())
+        f3 = sum(vals.get("dinero_interfaz_fase_3", 0) for vals in data_sedes.values())
+        datos.append({
+            "Periodo": periodo,
+            "Fase 1": f1, "Fase 2": f2, "Fase 3": f3,
+        })
+    df = pd.DataFrame(datos).set_index("Periodo")
+
+    if df.empty:
+        return None
+
+    total_por_fila = df.sum(axis=1)
+    df_pct = df.div(total_por_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
+    df_pct = df_pct.reset_index()
+
+    df_melt = df_pct.melt(
+        id_vars=["Periodo"],
+        value_vars=["Fase 1", "Fase 2", "Fase 3"],
+        var_name="Fase",
+        value_name="Porcentaje"
+    )
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.barplot(
+        data=df_melt, x="Periodo", y="Porcentaje", hue="Fase",
+        palette=["#305496", "#D1615D", "#85C17E"], ax=ax
+    )
+
+    for container in ax.containers:
+        ax.bar_label(
+            container,
+            labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+            fontsize=9, rotation=0, padding=3,
+            label_type="center"
+        )
+
+    ax.set_title("Participación por fase — Todas las sedes consolidadas", pad=15)
+    ax.set_ylabel("Participación (%)")
+    ax.set_xlabel("Periodo")
+    plt.xticks(rotation=30, ha="right")
+    plt.legend(title="Fase", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+    plt.ylim(0, 100)
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.88)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def generar_grafica_participacion_sede_total(_consolidados_por_periodo, firma):
+    datos = []
+    for periodo, data_sedes in _consolidados_por_periodo.items():
+        for sede, vals in data_sedes.items():
+            datos.append({
+                "Periodo": periodo,
+                "Sede": sede,
+                "Valor": vals["dinero_interfaz"],
+            })
+    df = pd.DataFrame(datos)
+
+    if df.empty:
+        return None
+
+    df["Total_Periodo"] = df.groupby("Periodo")["Valor"].transform("sum")
+    df["Porcentaje"] = df.apply(
+        lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0,
+        axis=1
+    )
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.barplot(data=df, x="Periodo", y="Porcentaje", hue="Sede", ax=ax)
+
+    for container in ax.containers:
+        ax.bar_label(
+            container,
+            labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+            fontsize=9, rotation=0, padding=3,
+            label_type="center"
+        )
+
+    ax.set_title("Participación de cada sede en el total general por periodo", pad=15)
+    ax.set_ylabel("Participación (%)")
+    ax.set_xlabel("Periodo")
+    plt.xticks(rotation=30, ha="right")
+    plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+    plt.ylim(0, 105)
     plt.tight_layout()
     plt.subplots_adjust(top=0.88)
 
@@ -1489,7 +1707,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada y 'Venta No.' ∈ Totales."),
         ("9. Porcentual impactado (META 0%)", "(Total ventas − Ventas relacionadas) / Total ventas × 100."),
         ("Consolidado", "Suma de las 3 fases. Porcentajes recalculados."),
-        ("Análisis histórico", "2 gráficas por sede + 2 gráficas consolidadas (solo si > 1 sede con datos)."),
+        ("Análisis histórico", "4 gráficas por sede + 4 gráficas consolidadas (solo si > 1 sede con datos)."),
     ]
     for i, (c1, c2) in enumerate(reglas, start=1):
         celda1 = ws4.cell(row=i, column=1, value=c1)
@@ -1591,6 +1809,65 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 2 — Cobertura general de honorarios médicos (meta 70%)")
             plt.close(fig)
 
+        # Gráfico 3: Participación por fase (por sede)
+        datos_g3 = []
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            for sede, vals in data_sedes.items():
+                datos_g3.append({
+                    "Periodo": periodo,
+                    "Sede": sede,
+                    "Fase 1": vals.get("dinero_interfaz_fase_1", 0),
+                    "Fase 2": vals.get("dinero_interfaz_fase_2", 0),
+                    "Fase 3": vals.get("dinero_interfaz_fase_3", 0),
+                })
+        df_g3 = pd.DataFrame(datos_g3)
+        if not df_g3.empty:
+            df_g3 = df_g3.set_index(["Periodo", "Sede"])
+            total_fila = df_g3.sum(axis=1)
+            df_g3_pct = df_g3.div(total_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
+            df_g3_pct = df_g3_pct.reset_index()
+            df_g3_melt = df_g3_pct.melt(id_vars=["Periodo", "Sede"], value_vars=["Fase 1", "Fase 2", "Fase 3"],
+                                        var_name="Fase", value_name="Porcentaje")
+            df_g3_melt["Etiqueta"] = df_g3_melt["Periodo"] + "\n" + df_g3_melt["Sede"]
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+            sns.barplot(data=df_g3_melt, x="Etiqueta", y="Porcentaje", hue="Fase",
+                        palette=["#305496", "#D1615D", "#85C17E"], ax=ax)
+            for container in ax.containers:
+                ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+                             label_type="center", fontsize=8, padding=2)
+            ax.set_title("Participación por fase de cada sede y periodo", pad=15)
+            ax.set_ylabel("Participación (%)")
+            plt.xticks(rotation=45, ha="right", fontsize=8)
+            plt.ylim(0, 100)
+            plt.tight_layout()
+            plt.subplots_adjust(top=0.88)
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 3 — Participación por fase (por sede)")
+            plt.close(fig)
+
+        # Gráfico 4: Participación de cada sede (por sede)
+        if not df_g1.empty:
+            df_g1["Total_Periodo"] = df_g1.groupby("Periodo")["Valor"].transform("sum")
+            df_g1["Porcentaje"] = df_g1.apply(
+                lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0,
+                axis=1
+            )
+            df_g1["Etiqueta"] = df_g1["Periodo"] + "\n" + df_g1["Sede"]
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+            sns.barplot(data=df_g1, x="Etiqueta", y="Porcentaje", hue="Sede", ax=ax)
+            for container in ax.containers:
+                ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+                             label_type="center", fontsize=9, padding=3)
+            ax.set_title("Participación de cada sede respecto al total general por periodo", pad=15)
+            ax.set_ylabel("Participación (%)")
+            plt.xticks(rotation=45, ha="right", fontsize=8)
+            plt.ylim(0, 105)
+            plt.tight_layout()
+            plt.subplots_adjust(top=0.88)
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 4 — Participación de cada sede en el total")
+            plt.close(fig)
+
         sedes_con_datos = set()
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1598,15 +1875,16 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                     sedes_con_datos.add(sede)
 
         if len(sedes_con_datos) > 1:
-            datos_g3 = []
+            # Gráfico 5: Dinero total
+            datos_g5 = []
             for periodo, data_sedes in consolidados_por_periodo.items():
                 total_p = sum(vals["dinero_interfaz"] for vals in data_sedes.values())
-                datos_g3.append({"Periodo": periodo, "Valor": total_p})
-            df_g3 = pd.DataFrame(datos_g3)
+                datos_g5.append({"Periodo": periodo, "Valor": total_p})
+            df_g5 = pd.DataFrame(datos_g5)
 
-            if not df_g3.empty and df_g3["Valor"].sum() > 0:
+            if not df_g5.empty and df_g5["Valor"].sum() > 0:
                 fig, ax = plt.subplots(figsize=(12, 6))
-                sns.barplot(data=df_g3, x="Periodo", y="Valor", ax=ax, color="#305496")
+                sns.barplot(data=df_g5, x="Periodo", y="Valor", ax=ax, color="#305496")
                 for container in ax.containers:
                     ax.bar_label(
                         container,
@@ -1614,27 +1892,28 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                         fontsize=9, rotation=0, padding=2, label_type="center",
                     )
                 ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-                ax.set_ylim(0, df_g3["Valor"].max() * 1.05)
+                ax.set_ylim(0, df_g5["Valor"].max() * 1.05)
                 ax.set_title("Dinero enviado por interfaz por periodo (Todas las sedes consolidadas)", pad=15)
                 ax.set_ylabel("Valor (COP)")
                 ax.set_xlabel("Periodo")
                 plt.xticks(rotation=30, ha="right")
                 plt.tight_layout()
                 plt.subplots_adjust(top=0.88)
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 3 — Dinero enviado por interfaz (TODAS LAS SEDES)")
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 5 — Dinero enviado por interfaz (TODAS LAS SEDES)")
                 plt.close(fig)
 
-            datos_g4 = []
+            # Gráfico 6: Cobertura total
+            datos_g6 = []
             for periodo, data_sedes in consolidados_por_periodo.items():
                 avaladas_t = sum(vals["avaladas"] for vals in data_sedes.values())
                 total_ventas_t = sum(vals["total_ventas"] for vals in data_sedes.values())
                 cobertura = (avaladas_t / total_ventas_t * 100.0) if total_ventas_t > 0 else 0.0
-                datos_g4.append({"Periodo": periodo, "Cobertura": cobertura})
-            df_g4 = pd.DataFrame(datos_g4)
+                datos_g6.append({"Periodo": periodo, "Cobertura": cobertura})
+            df_g6 = pd.DataFrame(datos_g6)
 
-            if not df_g4.empty and df_g4["Cobertura"].sum() > 0:
+            if not df_g6.empty and df_g6["Cobertura"].sum() > 0:
                 fig, ax = plt.subplots(figsize=(12, 6))
-                sns.barplot(data=df_g4, x="Periodo", y="Cobertura", ax=ax, color="#305496")
+                sns.barplot(data=df_g6, x="Periodo", y="Cobertura", ax=ax, color="#305496")
                 for container in ax.containers:
                     ax.bar_label(
                         container,
@@ -1650,7 +1929,64 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 ax.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
                 plt.tight_layout()
                 plt.subplots_adjust(top=0.88)
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 4 — Cobertura general de honorarios médicos (TODAS LAS SEDES)")
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 6 — Cobertura general de honorarios médicos (TODAS LAS SEDES)")
+                plt.close(fig)
+
+            # Gráfico 7: Participación por fase (consolidado total)
+            datos_g7 = []
+            for periodo, data_sedes in consolidados_por_periodo.items():
+                f1 = sum(vals.get("dinero_interfaz_fase_1", 0) for vals in data_sedes.values())
+                f2 = sum(vals.get("dinero_interfaz_fase_2", 0) for vals in data_sedes.values())
+                f3 = sum(vals.get("dinero_interfaz_fase_3", 0) for vals in data_sedes.values())
+                datos_g7.append({"Periodo": periodo, "Fase 1": f1, "Fase 2": f2, "Fase 3": f3})
+            df_g7 = pd.DataFrame(datos_g7).set_index("Periodo")
+            if not df_g7.empty:
+                total_fila = df_g7.sum(axis=1)
+                df_g7_pct = df_g7.div(total_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
+                df_g7_pct = df_g7_pct.reset_index()
+                df_g7_melt = df_g7_pct.melt(id_vars=["Periodo"], value_vars=["Fase 1", "Fase 2", "Fase 3"],
+                                            var_name="Fase", value_name="Porcentaje")
+
+                fig, ax = plt.subplots(figsize=(12, 6))
+                sns.barplot(data=df_g7_melt, x="Periodo", y="Porcentaje", hue="Fase",
+                            palette=["#305496", "#D1615D", "#85C17E"], ax=ax)
+                for container in ax.containers:
+                    ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+                                 label_type="center", fontsize=9, padding=3)
+                ax.set_title("Participación por fase — Todas las sedes consolidadas", pad=15)
+                ax.set_ylabel("Participación (%)")
+                plt.xticks(rotation=30, ha="right")
+                plt.ylim(0, 100)
+                plt.tight_layout()
+                plt.subplots_adjust(top=0.88)
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 7 — Participación por fase (Todas las sedes)")
+                plt.close(fig)
+
+            # Gráfico 8: Participación de cada sede (consolidado total)
+            datos_g8 = []
+            for periodo, data_sedes in consolidados_por_periodo.items():
+                for sede, vals in data_sedes.items():
+                    datos_g8.append({"Periodo": periodo, "Sede": sede, "Valor": vals["dinero_interfaz"]})
+            df_g8 = pd.DataFrame(datos_g8)
+            if not df_g8.empty:
+                df_g8["Total_Periodo"] = df_g8.groupby("Periodo")["Valor"].transform("sum")
+                df_g8["Porcentaje"] = df_g8.apply(
+                    lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0,
+                    axis=1
+                )
+
+                fig, ax = plt.subplots(figsize=(12, 6))
+                sns.barplot(data=df_g8, x="Periodo", y="Porcentaje", hue="Sede", ax=ax)
+                for container in ax.containers:
+                    ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+                                 label_type="center", fontsize=9, padding=3)
+                ax.set_title("Participación de cada sede en el total general por periodo", pad=15)
+                ax.set_ylabel("Participación (%)")
+                plt.xticks(rotation=30, ha="right")
+                plt.ylim(0, 105)
+                plt.tight_layout()
+                plt.subplots_adjust(top=0.88)
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 8 — Participación de cada sede (Todas las sedes)")
                 plt.close(fig)
 
         ws_analisis.column_dimensions["A"].width = 130
@@ -1841,30 +2177,38 @@ if len(consolidados_por_periodo) > 0:
 
         mostrar_consolidado_total = len(sedes_con_datos) > 1
 
+        # ---------- GRÁFICAS POR SEDE ----------
         if mostrar_consolidado_total:
             st.markdown(
-                f"**Gráficas por sede** (se detectaron {len(sedes_con_datos)} sedes con datos)"
+                f"#### Gráficas por sede (se detectaron {len(sedes_con_datos)} sedes con datos)"
             )
         else:
             st.markdown(
-                f"**Gráficas por sede** (solo se detectó **{len(sedes_con_datos)}** sede con datos — "
+                f"#### Gráficas por sede (solo se detectó **{len(sedes_con_datos)}** sede con datos — "
                 "las gráficas consolidadas totales se muestran cuando hay más de 1 sede)"
             )
 
-        st.markdown("#### 💰 Dinero enviado por interfaz por periodo (por sede)")
+        st.markdown("##### 💰 Dinero enviado por interfaz por periodo (por sede)")
         img_dinero = generar_grafica_dinero(consolidados_por_periodo, firma)
         if img_dinero:
             st.image(img_dinero, use_container_width=True)
-        else:
-            st.info("No hay datos de 'Dinero enviado por interfaz' para graficar.")
 
-        st.markdown("#### 📈 Cobertura general de honorarios médicos (por sede)")
+        st.markdown("##### 📈 Cobertura general de honorarios médicos (por sede)")
         img_cobertura = generar_grafica_cobertura(consolidados_por_periodo, firma)
         if img_cobertura:
             st.image(img_cobertura, use_container_width=True)
-        else:
-            st.info("No hay datos de 'Cobertura' para graficar.")
 
+        st.markdown("##### 🥧 Participación por fase de cada sede y periodo")
+        img_part_fase = generar_grafica_participacion_fase(consolidados_por_periodo, firma)
+        if img_part_fase:
+            st.image(img_part_fase, use_container_width=True)
+
+        st.markdown("##### 🥧 Participación de cada sede en el total general")
+        img_part_sede = generar_grafica_participacion_sede(consolidados_por_periodo, firma)
+        if img_part_sede:
+            st.image(img_part_sede, use_container_width=True)
+
+        # ---------- GRÁFICAS CONSOLIDADAS TOTALES ----------
         if mostrar_consolidado_total:
             st.markdown("---")
             st.markdown("#### 📊 Vista consolidada — Todas las sedes sumadas")
@@ -1873,15 +2217,21 @@ if len(consolidados_por_periodo) > 0:
             img_dinero_total = generar_grafica_dinero_total(consolidados_por_periodo, firma)
             if img_dinero_total:
                 st.image(img_dinero_total, use_container_width=True)
-            else:
-                st.info("No hay datos de 'Dinero enviado por interfaz' para consolidar.")
 
             st.markdown("##### 📈 Cobertura general de honorarios médicos (Total por periodo)")
             img_cobertura_total = generar_grafica_cobertura_total(consolidados_por_periodo, firma)
             if img_cobertura_total:
                 st.image(img_cobertura_total, use_container_width=True)
-            else:
-                st.info("No hay datos de 'Cobertura' para consolidar.")
+
+            st.markdown("##### 🥧 Participación por fase (Todas las sedes consolidadas)")
+            img_part_fase_total = generar_grafica_participacion_fase_total(consolidados_por_periodo, firma)
+            if img_part_fase_total:
+                st.image(img_part_fase_total, use_container_width=True)
+
+            st.markdown("##### 🥧 Participación de cada sede (Todas las sedes consolidadas)")
+            img_part_sede_total = generar_grafica_participacion_sede_total(consolidados_por_periodo, firma)
+            if img_part_sede_total:
+                st.image(img_part_sede_total, use_container_width=True)
 
 # ============================================================
 # EXPORTABLE EXCEL
