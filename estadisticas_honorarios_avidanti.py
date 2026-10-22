@@ -1342,7 +1342,7 @@ def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
         labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
         ax.bar_label(container, labels=labels, label_type="center", fontsize=9, color="white", weight="bold")
 
-    ax.set_title("Participación por fase de cada sede y periodo (Barras Apiladas)", pad=15)
+    ax.set_title("Participación por fase de cada sede y periodo", pad=15)
     ax.set_ylabel("Participación (%)")
     ax.set_xlabel("")
     plt.xticks(rotation=45, ha="right", fontsize=9)
@@ -1530,7 +1530,7 @@ def generar_grafica_participacion_fase_total(_consolidados_por_periodo, firma):
         labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
         ax.bar_label(container, labels=labels, label_type="center", fontsize=10, color="white", weight="bold")
 
-    ax.set_title("Participación por fase — Todas las sedes consolidadas (Barras Apiladas)", pad=15)
+    ax.set_title("Participación por fase — Todas las sedes consolidadas", pad=15)
     ax.set_ylabel("Participación (%)")
     ax.set_xlabel("Periodo")
     plt.xticks(rotation=30, ha="right", fontsize=9)
@@ -1835,7 +1835,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 vals = [v.get_height() for v in container]
                 labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
                 ax.bar_label(container, labels=labels, label_type="center", fontsize=9, color="white", weight="bold")
-            ax.set_title("Participación por fase de cada sede y periodo (Barras Apiladas)", pad=15)
+            ax.set_title("Participación por fase de cada sede y periodo", pad=15)
             ax.set_ylabel("Participación (%)")
             plt.xticks(rotation=45, ha="right", fontsize=9)
             plt.ylim(0, 100)
@@ -1949,7 +1949,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                     vals = [v.get_height() for v in container]
                     labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
                     ax.bar_label(container, labels=labels, label_type="center", fontsize=10, color="white", weight="bold")
-                ax.set_title("Participación por fase — Todas las sedes consolidadas (Barras Apiladas)", pad=15)
+                ax.set_title("Participación por fase — Todas las sedes consolidadas", pad=15)
                 ax.set_ylabel("Participación (%)")
                 plt.xticks(rotation=30, ha="right", fontsize=9)
                 plt.ylim(0, 100)
@@ -2148,14 +2148,49 @@ else:
 st.divider()
 
 # ============================================================
-# ANÁLISIS HISTÓRICO
+# ANÁLISIS HISTÓRICO Y RESUMEN
 # ============================================================
 if len(consolidados_por_periodo) > 0:
-    with st.expander("📈 Análisis histórico comparativo entre periodos", expanded=True):
-        st.markdown(
-            f"Se encontraron **{len(consolidados_por_periodo)}** periodos: "
-            + ", ".join(sorted(consolidados_por_periodo.keys()))
+    with st.expander("📈 Análisis histórico comparativo y Resumen Ejecutivo", expanded=True):
+        
+        # ---------- NARRATIVA DEL RESUMEN EJECUTIVO ----------
+        st.markdown("### 📝 Resumen Ejecutivo")
+        periodos_ordenados = sorted(consolidados_por_periodo.keys())
+        ultimo_periodo = periodos_ordenados[-1]
+        
+        total_revisadas = sum(vals["revisadas"] for vals in consolidados_por_periodo[ultimo_periodo].values())
+        total_avaladas = sum(vals["avaladas"] for vals in consolidados_por_periodo[ultimo_periodo].values())
+        total_ventas = sum(vals["total_ventas"] for vals in consolidados_por_periodo[ultimo_periodo].values())
+        total_dinero = sum(vals["dinero_interfaz"] for vals in consolidados_por_periodo[ultimo_periodo].values())
+        
+        cobertura = (total_avaladas / total_ventas * 100) if total_ventas > 0 else 0
+        
+        sede_top = max(
+            consolidados_por_periodo[ultimo_periodo].items(),
+            key=lambda x: x[1]["dinero_interfaz"]
         )
+        
+        narrativa = f"""
+En el periodo **{ultimo_periodo}**, se procesaron un total de **{total_revisadas:,}** registros, de los cuales **{total_avaladas:,}** fueron avalados por la subgerencia médica. 
+El dinero total enviado por interfaz ascendió a **${total_dinero:,.0f}**. 
+La cobertura general de honorarios médicos (Avaladas / Total Ventas) se situó en **{cobertura:.1f}%** frente a la meta del 70%.
+La sede con mayor participación en el envío de dinero por interfaz fue **{sede_top[0]}** con un monto de **${sede_top[1]['dinero_interfaz']:,.0f}**.
+"""
+        if len(periodos_ordenados) > 1:
+            primer_periodo = periodos_ordenados[0]
+            total_dinero_primero = sum(vals["dinero_interfaz"] for vals in consolidados_por_periodo[primer_periodo].values())
+            
+            if total_dinero_primero > 0:
+                variacion = ((total_dinero - total_dinero_primero) / total_dinero_primero) * 100
+                tendencia = "un incremento" if variacion >= 0 else "una disminución"
+                narrativa += f"\n\nEn cuanto al histórico, al comparar **{ultimo_periodo}** con **{primer_periodo}**, se observa {tendencia} del **{abs(variacion):.1f}%** en el dinero total enviado por interfaz."
+            else:
+                narrativa += f"\n\nEn cuanto al histórico, el primer periodo registrado ({primer_periodo}) no presentó datos base para calcular variaciones."
+                
+        st.info(narrativa)
+        
+        st.divider()
+        st.markdown("### 📈 Gráficas Comparativas")
 
         sns.set_theme(style="whitegrid")
 
@@ -2194,7 +2229,7 @@ if len(consolidados_por_periodo) > 0:
         if img_cobertura:
             st.image(img_cobertura, use_container_width=True)
 
-        st.markdown("##### 🥧 Participación por fase de cada sede y periodo (Barras Apiladas)")
+        st.markdown("##### 🥧 Participación por fase de cada sede y periodo")
         img_part_fase = generar_grafica_participacion_fase(consolidados_por_periodo, firma)
         if img_part_fase:
             st.image(img_part_fase, use_container_width=True)
@@ -2219,7 +2254,7 @@ if len(consolidados_por_periodo) > 0:
             if img_cobertura_total:
                 st.image(img_cobertura_total, use_container_width=True)
 
-            st.markdown("##### 🥧 Participación por fase (Todas las sedes consolidadas - Barras Apiladas)")
+            st.markdown("##### 🥧 Participación por fase (Todas las sedes consolidadas)")
             img_part_fase_total = generar_grafica_participacion_fase_total(consolidados_por_periodo, firma)
             if img_part_fase_total:
                 st.image(img_part_fase_total, use_container_width=True)
