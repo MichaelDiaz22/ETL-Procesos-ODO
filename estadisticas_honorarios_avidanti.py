@@ -12,6 +12,7 @@ from openpyxl.drawing.image import Image as XLImage
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import seaborn as sns
 
 # ============================================================
@@ -328,7 +329,7 @@ def filas_resumen(tipo_tabla):
         f"Dinero ventas {prefijo}",
         "Porcentual faltante (META 30%)",
         "Ventas relacionadas en factura (FACTURADO)",
-        "Dinero ventas (Facturado)",     # NUEVA FILA
+        "Dinero ventas (Facturado)",
         "Porcentual impactado (META 0%)",
     ]
 
@@ -721,7 +722,7 @@ else:
 
 
 # ============================================================
-# CÁLCULOS: Revisadas / Avaladas / Dinero interfaz
+# CÁLCULOS
 # ============================================================
 conteos = {fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE} for fase in FASES}
 dinero_interfaz = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
@@ -792,9 +793,6 @@ if not atenciones_df.empty:
                     dinero_interfaz[fase_val][sede_cod] += valor
 
 
-# ============================================================
-# CÁLCULOS SOBRE "Totales"
-# ============================================================
 total_ventas_ce = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
 dinero_ambulatorio = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 errores_totales = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
@@ -846,18 +844,12 @@ if bases["Totales"]:
                 if mask_base.any():
                     tarifas_filtro = totales_tarifa_num[mask_base]
                     indices = tarifas_filtro.index
-
-                    # Válidos: tarifa >= 1000
                     mask_valida = totales_tarifa_num.loc[indices] >= 1000
-                    # Errores: tarifa < 1000
                     mask_error = ~mask_valida
 
-                    # Conteo de válidos
                     total_ventas_ce[fase][cod] = int(mask_valida.sum())
-                    # Suma de válidos (Dinero ventas)
                     dinero_ambulatorio[fase][cod] = float(totales_tarifa_num.loc[indices][mask_valida].sum())
 
-                    # Errores (< 1000)
                     if mask_error.any():
                         errores_totales[fase][cod]["cantidad"] = int(mask_error.sum())
                         errores_totales[fase][cod]["suma"] = float(totales_tarifa_num.loc[indices][mask_error].sum())
@@ -886,9 +878,6 @@ if bases["Totales"]:
                 )
 
 
-# ============================================================
-# CÁLCULOS SOBRE "Ventas"
-# ============================================================
 ventas_relacionadas_factura = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
 dinero_ventas_facturado = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 errores_ventas = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
@@ -941,18 +930,12 @@ if bases["Ventas"]:
                 if mask_base.any():
                     valores = valor_facturado_num[mask_base]
                     indices = valores.index
-
-                    # Válidos: valor facturado >= 1000
                     mask_valida = valor_facturado_num.loc[indices] >= 1000
-                    # Errores: valor facturado < 1000
                     mask_error = ~mask_valida
 
-                    # Conteo de válidos
                     ventas_relacionadas_factura[fase][cod] = int(mask_valida.sum())
-                    # Suma de válidos (Dinero ventas facturado)
                     dinero_ventas_facturado[fase][cod] = float(valor_facturado_num.loc[indices][mask_valida].sum())
 
-                    # Errores (< 1000)
                     if mask_error.any():
                         errores_ventas[fase][cod]["cantidad"] = int(mask_error.sum())
                         errores_ventas[fase][cod]["suma"] = float(valor_facturado_num.loc[indices][mask_error].sum())
@@ -976,12 +959,9 @@ for fase in FASES:
         cant_err_t = errores_totales[fase][cod]["cantidad"]
         cant_err_vtas = errores_ventas[fase][cod]["cantidad"]
 
-        # Porcentual faltante: (Total ventas - Avaladas) / Total ventas
         if total_ventas > 0:
             porcentual_faltante[fase][cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
             porcentual_impactado[fase][cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
-
-        # Porcentajes de errores (respecto a Avaladas)
         if avaladas > 0:
             porcentaje_errores_valor[fase][cod] = (cant_err_v / avaladas) * 100.0
             porcentaje_errores_totales[fase][cod] = (cant_err_t / avaladas) * 100.0
@@ -1195,12 +1175,12 @@ with st.sidebar:
 
 1. **Revisadas**: Ubicación mapea + `Usuario que Verifica` NO vacío.
 2. **Avaladas**: Revisadas + `Usuario / Sub Medico` NO vacío.
-3. **Dinero interfaz**: Σ `Valor liquidado` (valores < 1000 reportados como errores).
-4. **Total ventas**: conteo de Totales ∩ Ventas con `tarifas >= 1000` (valores < 1000 como errores).
-5. **Dinero ventas**: Σ `tarifas (reliquidado)` válidas (>= 1000), errores reportados aparte.
+3. **Dinero interfaz**: Σ `Valor liquidado` válido (>= 1000), errores reportados aparte.
+4. **Total ventas**: count(Totales ∩ Ventas con `tarifas` >= 1000). Errores reportados aparte.
+5. **Dinero ventas**: Σ `tarifas (reliquidado)` válidas (>= 1000). Errores reportados aparte.
 6. **Porcentual faltante**: `(Total ventas − Avaladas) / Total ventas × 100`.
-7. **Ventas relacionadas**: conteo de Ventas con `Estado=Facturada` y `Valor facturado >= 1000`.
-8. **Dinero ventas (Facturado)**: Σ `Valor facturado` válido (>= 1000) con `Estado=Facturada`.
+7. **Ventas relacionadas**: count(Ventas con Estado=Facturada y `Valor facturado` >= 1000).
+8. **Dinero ventas (Facturado)**: Σ `Valor facturado` válido (>= 1000) con Estado=Facturada.
 9. **Porcentual impactado**: `(Total ventas − Ventas relacionadas) / Total ventas × 100`.
 
 **Consolidado**
@@ -1263,144 +1243,182 @@ st.divider()
 
 
 # ============================================================
-# ANÁLISIS HISTÓRICO EN PANTALLA
+# CONSTRUIR CONSOLIDADOS POR PERIODO (para gráficas)
 # ============================================================
-periodos_historicos = dict(historicos_detectados)
-if periodo_etiqueta != "—":
-    def _tabla_a_dict(tabla_df):
-        d = {}
-        for idx, row in tabla_df.iterrows():
-            d[idx] = {col: row[col] for col in tabla_df.columns}
-        return d
-    periodos_historicos[periodo_etiqueta] = _tabla_a_dict(tabla_consolidada)
+def parsear_valor_generico(v):
+    if pd.isna(v):
+        return None
+    s = str(v).strip()
+    s = re.sub(r"\(.*?\)", "", s).strip()
+    s = s.replace("$", "").replace(",", "").replace("%", "").strip()
+    try:
+        return float(s) if s else None
+    except Exception:
+        return None
 
-if len(periodos_historicos) > 0:
+
+def normalizar_etiqueta_hist(concepto):
+    c = str(concepto).strip()
+    if c.startswith("Total ventas ") and "(ACTIVO Y FACTURADO)" in c:
+        return "Total ventas (ACTIVO Y FACTURADO)"
+    if c.startswith("Dinero ventas ") and "Facturado" not in c:
+        return "Dinero ventas"
+    return c
+
+
+consolidados_por_periodo = {}
+
+# Periodo actual
+if periodo_etiqueta != "—":
+    consolidados_por_periodo[periodo_etiqueta] = {
+        sede: {
+            "revisadas": conteos_consolidado[cod]["revisadas"],
+            "avaladas": conteos_consolidado[cod]["avaladas"],
+            "total_ventas": total_ventas_ce_consolidado[cod],
+            "dinero_interfaz": dinero_interfaz_consolidado[cod],
+            "dinero_ventas": dinero_ambulatorio_consolidado[cod],
+            "ventas_relacionadas": ventas_relacionadas_factura_consolidado[cod],
+            "dinero_facturado": dinero_ventas_facturado_consolidado[cod],
+        }
+        for cod, sede in zip(CODIGOS_SEDE, COLUMNAS_RESUMEN)
+    }
+
+# Periodos históricos
+for etiqueta_periodo, conceptos in historicos_detectados.items():
+    data_periodo = {}
+    for sede in COLUMNAS_RESUMEN:
+        revisadas = 0
+        avaladas = 0
+        total_ventas = 0
+        dinero_interfaz = 0.0
+        dinero_ventas = 0.0
+        ventas_relacionadas = 0
+        dinero_facturado = 0.0
+
+        for concepto, valores in conceptos.items():
+            valor = valores.get(sede)
+            if valor is None:
+                continue
+            num = parsear_valor_generico(valor)
+            if num is None:
+                continue
+
+            c_norm = normalizar_etiqueta_hist(concepto)
+            if c_norm == "Revisadas por analistas":
+                revisadas += num
+            elif c_norm == "Avaladas subgerencia médica":
+                avaladas += num
+            elif c_norm == "Total ventas (ACTIVO Y FACTURADO)":
+                total_ventas += num
+            elif c_norm == "Dinero enviado por interfaz":
+                dinero_interfaz += num
+            elif c_norm == "Dinero ventas":
+                dinero_ventas += num
+            elif c_norm == "Ventas relacionadas en factura (FACTURADO)":
+                ventas_relacionadas += num
+            elif c_norm == "Dinero ventas (Facturado)":
+                dinero_facturado += num
+
+        data_periodo[sede] = {
+            "revisadas": revisadas,
+            "avaladas": avaladas,
+            "total_ventas": total_ventas,
+            "dinero_interfaz": dinero_interfaz,
+            "dinero_ventas": dinero_ventas,
+            "ventas_relacionadas": ventas_relacionadas,
+            "dinero_facturado": dinero_facturado,
+        }
+    consolidados_por_periodo[etiqueta_periodo] = data_periodo
+
+
+# ============================================================
+# ANÁLISIS HISTÓRICO EN PANTALLA (2 gráficas)
+# ============================================================
+if len(consolidados_por_periodo) > 0:
     with st.expander("📈 Análisis histórico comparativo entre periodos", expanded=True):
         st.markdown(
-            f"Se encontraron **{len(periodos_historicos)}** periodos: "
-            + ", ".join(sorted(periodos_historicos.keys()))
+            f"Se encontraron **{len(consolidados_por_periodo)}** periodos: "
+            + ", ".join(sorted(consolidados_por_periodo.keys()))
         )
 
-        def normalizar_etiqueta(concepto):
-            c = str(concepto).strip()
-            if c.startswith("Total ventas ") and "(ACTIVO Y FACTURADO)" in c:
-                return "Total ventas (ACTIVO Y FACTURADO)"
-            if c.startswith("Dinero ventas ") and "Facturado" not in c:
-                return "Dinero ventas"
-            return c
+        sns.set_theme(style="whitegrid")
 
-        filas = []
-        for periodo, conceptos in periodos_historicos.items():
-            for concepto, valores in conceptos.items():
-                concepto_norm = normalizar_etiqueta(concepto)
-                for sede, valor in valores.items():
-                    filas.append({
-                        "Periodo": periodo,
-                        "Concepto": concepto_norm,
-                        "Sede": sede,
-                        "ValorCrudo": valor,
-                    })
+        # ---------- Gráfica 1: Dinero enviado por interfaz ----------
+        st.markdown("### 💰 Dinero enviado por interfaz por periodo")
 
-        df_hist = pd.DataFrame(filas)
+        datos_g1 = []
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            for sede, vals in data_sedes.items():
+                datos_g1.append({
+                    "Periodo": periodo,
+                    "Sede": sede,
+                    "Valor": vals["dinero_interfaz"],
+                })
+        df_g1 = pd.DataFrame(datos_g1)
 
-        def parsear_valor(v):
-            if pd.isna(v):
-                return None
-            s = str(v).strip()
-            s = re.sub(r"\(.*?\)", "", s).strip()
-            s = s.replace("$", "").replace(",", "").replace("%", "").strip()
-            try:
-                return float(s) if s else None
-            except Exception:
-                return None
+        if not df_g1.empty and df_g1["Valor"].sum() > 0:
+            fig1, ax1 = plt.subplots(figsize=(14, 6))
+            sns.barplot(data=df_g1, x="Periodo", y="Valor", hue="Sede", ax=ax1)
 
-        df_hist["Valor"] = df_hist["ValorCrudo"].apply(parsear_valor)
-        df_hist = df_hist.dropna(subset=["Valor"])
+            for container in ax1.containers:
+                ax1.bar_label(
+                    container,
+                    labels=[f"${v:,.0f}" if v > 0 else "" for v in container.datavalues],
+                    fontsize=7, rotation=90, padding=3,
+                )
 
-        if df_hist.empty:
-            st.warning("No se pudieron parsear valores numéricos del histórico.")
+            ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
+
+            ax1.set_title("Dinero enviado por interfaz por periodo y sede (Consolidado)")
+            ax1.set_ylabel("Valor (COP)")
+            ax1.set_xlabel("Periodo")
+            plt.xticks(rotation=30, ha="right")
+            plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+            plt.tight_layout()
+            st.pyplot(fig1)
+            plt.close(fig1)
         else:
-            sns.set_theme(style="whitegrid")
+            st.info("No hay datos de 'Dinero enviado por interfaz' para graficar.")
 
-            st.markdown("### 💰 Dinero enviado por interfaz por periodo")
-            df_g1 = df_hist[df_hist["Concepto"] == "Dinero enviado por interfaz"]
-            if not df_g1.empty:
-                fig1, ax1 = plt.subplots(figsize=(12, 5))
-                sns.barplot(data=df_g1, x="Periodo", y="Valor", hue="Sede", ax=ax1)
-                ax1.set_title("Dinero enviado por interfaz por periodo y sede")
-                ax1.set_ylabel("Valor ($)")
-                plt.xticks(rotation=30, ha="right")
-                plt.tight_layout()
-                st.pyplot(fig1)
-                plt.close(fig1)
+        # ---------- Gráfica 2: Cobertura general de honorarios médicos ----------
+        st.markdown("### 📈 Cobertura general de honorarios médicos")
 
-            st.markdown("### 📊 Total ventas vs Ventas relacionadas en factura")
-            df_g2 = df_hist[df_hist["Concepto"].isin([
-                "Total ventas (ACTIVO Y FACTURADO)",
-                "Ventas relacionadas en factura (FACTURADO)",
-            ])]
-            if not df_g2.empty:
-                fig2, ax2 = plt.subplots(figsize=(12, 5))
-                sns.barplot(data=df_g2, x="Periodo", y="Valor", hue="Concepto", ax=ax2)
-                ax2.set_title("Total ventas vs Ventas relacionadas en factura")
-                ax2.set_ylabel("Registros")
-                plt.xticks(rotation=30, ha="right")
-                plt.tight_layout()
-                st.pyplot(fig2)
-                plt.close(fig2)
+        datos_g2 = []
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            for sede, vals in data_sedes.items():
+                avaladas = vals["avaladas"]
+                total_ventas = vals["total_ventas"]
+                cobertura = (avaladas / total_ventas * 100.0) if total_ventas > 0 else 0.0
+                datos_g2.append({
+                    "Periodo": periodo,
+                    "Sede": sede,
+                    "Cobertura": cobertura,
+                })
+        df_g2 = pd.DataFrame(datos_g2)
 
-            st.markdown("### 📉 Porcentual faltante (META 30%) por periodo")
-            df_g3 = df_hist[df_hist["Concepto"] == "Porcentual faltante (META 30%)"]
-            if not df_g3.empty:
-                fig3, ax3 = plt.subplots(figsize=(12, 5))
-                sns.lineplot(data=df_g3, x="Periodo", y="Valor", hue="Sede", marker="o", ax=ax3)
-                ax3.axhline(30, color="red", linestyle="--", label="Meta 30%")
-                ax3.set_title("Porcentual faltante por periodo y sede")
-                ax3.set_ylabel("%")
-                plt.xticks(rotation=30, ha="right")
-                plt.tight_layout()
-                st.pyplot(fig3)
-                plt.close(fig3)
+        if not df_g2.empty and df_g2["Cobertura"].sum() > 0:
+            fig2, ax2 = plt.subplots(figsize=(14, 6))
+            sns.barplot(data=df_g2, x="Periodo", y="Cobertura", hue="Sede", ax=ax2)
 
-            st.markdown("### 📉 Porcentual impactado (META 0%) por periodo")
-            df_g4 = df_hist[df_hist["Concepto"] == "Porcentual impactado (META 0%)"]
-            if not df_g4.empty:
-                fig4, ax4 = plt.subplots(figsize=(12, 5))
-                sns.lineplot(data=df_g4, x="Periodo", y="Valor", hue="Sede", marker="o", ax=ax4)
-                ax4.axhline(0, color="red", linestyle="--", label="Meta 0%")
-                ax4.set_title("Porcentual impactado por periodo y sede")
-                ax4.set_ylabel("%")
-                plt.xticks(rotation=30, ha="right")
-                plt.tight_layout()
-                st.pyplot(fig4)
-                plt.close(fig4)
+            for container in ax2.containers:
+                ax2.bar_label(
+                    container,
+                    labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+                    fontsize=7, rotation=90, padding=3,
+                )
 
-            st.markdown("### 👥 Revisadas vs Avaladas por periodo")
-            df_g5 = df_hist[df_hist["Concepto"].isin([
-                "Revisadas por analistas",
-                "Avaladas subgerencia médica",
-            ])]
-            if not df_g5.empty:
-                fig5, ax5 = plt.subplots(figsize=(12, 5))
-                sns.barplot(data=df_g5, x="Periodo", y="Valor", hue="Concepto", ax=ax5)
-                ax5.set_title("Revisadas vs Avaladas por periodo")
-                ax5.set_ylabel("Registros")
-                plt.xticks(rotation=30, ha="right")
-                plt.tight_layout()
-                st.pyplot(fig5)
-                plt.close(fig5)
+            ax2.axhline(70, color="red", linestyle="--", label="Meta 70%")
 
-            st.markdown("### 🔥 Heatmap Porcentual impactado (sede × periodo)")
-            df_heat = df_hist[df_hist["Concepto"] == "Porcentual impactado (META 0%)"]
-            if not df_heat.empty:
-                pivot = df_heat.pivot_table(index="Sede", columns="Periodo", values="Valor", aggfunc="mean")
-                if not pivot.empty:
-                    fig6, ax6 = plt.subplots(figsize=(12, 5))
-                    sns.heatmap(pivot, annot=True, fmt=".1f", cmap="RdYlGn_r", ax=ax6, cbar_kws={"label": "%"})
-                    ax6.set_title("Heatmap Porcentual impactado")
-                    plt.tight_layout()
-                    st.pyplot(fig6)
-                    plt.close(fig6)
+            ax2.set_title("Cobertura general de honorarios médicos (Avaladas / Total ventas)")
+            ax2.set_ylabel("Cobertura (%)")
+            ax2.set_xlabel("Periodo")
+            plt.xticks(rotation=30, ha="right")
+            plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+            plt.tight_layout()
+            st.pyplot(fig2)
+            plt.close(fig2)
+        else:
+            st.info("No hay datos de 'Cobertura' para graficar.")
 
 
 # ============================================================
@@ -1504,13 +1522,14 @@ def generar_excel_completo():
         ("1. Revisadas por analistas", "Ubicación mapea + 'Nombre de Usuario que Verifica' NO vacío."),
         ("2. Avaladas subgerencia médica", "Revisadas + 'Usuario / Sub Medico' NO vacío."),
         ("3. Dinero enviado por interfaz", "Σ 'Valor liquidado' válido (>= 1000), errores reportados aparte."),
-        ("4. Total ventas", "count(Totales ∩ Ventas con 'tarifas' >= 1000). Errores (< 1000) reportados aparte."),
+        ("4. Total ventas", "count(Totales ∩ Ventas con 'tarifas' >= 1000). Errores reportados aparte."),
         ("5. Dinero ventas", "Σ 'tarifas (reliquidado)' válidas (>= 1000). Errores reportados aparte."),
         ("6. Porcentual faltante (META 30%)", "(Total ventas − Avaladas) / Total ventas × 100."),
         ("7. Ventas relacionadas en factura", "count(Ventas con Estado=Facturada y 'Valor facturado' >= 1000)."),
         ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada."),
         ("9. Porcentual impactado (META 0%)", "(Total ventas − Ventas relacionadas) / Total ventas × 100."),
         ("Consolidado", "Suma de las 3 fases. Porcentajes recalculados."),
+        ("Análisis histórico", "2 gráficas: Dinero enviado por interfaz (COP) + Cobertura general (meta 70%). Basadas en consolidados por sede."),
     ]
     for i, (c1, c2) in enumerate(reglas, start=1):
         celda1 = ws4.cell(row=i, column=1, value=c1)
@@ -1525,151 +1544,92 @@ def generar_excel_completo():
     ws_analisis = wb.create_sheet("Análisis")
     ws_analisis.cell(
         row=1, column=1,
-        value="Análisis histórico comparativo entre periodos"
+        value="Análisis histórico comparativo entre periodos (Consolidado por sede)"
     ).font = Font(bold=True, size=14, color="305496")
 
-    periodos_historicos_exp = dict(historicos_detectados)
-    if periodo_etiqueta != "—":
-        def _tabla_a_dict_exp(tabla_df):
-            d = {}
-            for idx, row in tabla_df.iterrows():
-                d[idx] = {col: row[col] for col in tabla_df.columns}
-            return d
-        periodos_historicos_exp[periodo_etiqueta] = _tabla_a_dict_exp(tabla_consolidada)
-
-    if len(periodos_historicos_exp) == 0:
+    if len(consolidados_por_periodo) == 0:
         ws_analisis.cell(row=3, column=1, value="No hay datos suficientes para generar el análisis.")
     else:
-        def normalizar_etiqueta_exp(concepto):
-            c = str(concepto).strip()
-            if c.startswith("Total ventas ") and "(ACTIVO Y FACTURADO)" in c:
-                return "Total ventas (ACTIVO Y FACTURADO)"
-            if c.startswith("Dinero ventas ") and "Facturado" not in c:
-                return "Dinero ventas"
-            return c
+        sns.set_theme(style="whitegrid")
+        fila_actual = 3
 
-        filas_exp = []
-        for periodo, conceptos in periodos_historicos_exp.items():
-            for concepto, valores in conceptos.items():
-                concepto_norm = normalizar_etiqueta_exp(concepto)
-                for sede, valor in valores.items():
-                    filas_exp.append({
-                        "Periodo": periodo,
-                        "Concepto": concepto_norm,
-                        "Sede": sede,
-                        "ValorCrudo": valor,
-                    })
+        def insertar_grafico(ws, fig, fila, ancho=900, alto=420, titulo=None):
+            if titulo:
+                ws.cell(row=fila, column=1, value=titulo).font = Font(bold=True, size=12, color="1F4E78")
+                fila += 1
+            img_buffer = io.BytesIO()
+            fig.savefig(img_buffer, format="png", dpi=110, bbox_inches="tight")
+            img_buffer.seek(0)
+            xl_img = XLImage(img_buffer)
+            xl_img.width = ancho
+            xl_img.height = alto
+            ws.add_image(xl_img, f"A{fila}")
+            return fila + int(alto / 20) + 3
 
-        df_hist_exp = pd.DataFrame(filas_exp)
+        # Gráfico 1
+        datos_g1 = []
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            for sede, vals in data_sedes.items():
+                datos_g1.append({
+                    "Periodo": periodo,
+                    "Sede": sede,
+                    "Valor": vals["dinero_interfaz"],
+                })
+        df_g1 = pd.DataFrame(datos_g1)
 
-        def parsear_valor_exp(v):
-            if pd.isna(v):
-                return None
-            s = str(v).strip()
-            s = re.sub(r"\(.*?\)", "", s).strip()
-            s = s.replace("$", "").replace(",", "").replace("%", "").strip()
-            try:
-                return float(s) if s else None
-            except Exception:
-                return None
+        if not df_g1.empty and df_g1["Valor"].sum() > 0:
+            fig, ax = plt.subplots(figsize=(14, 6))
+            sns.barplot(data=df_g1, x="Periodo", y="Valor", hue="Sede", ax=ax)
+            for container in ax.containers:
+                ax.bar_label(
+                    container,
+                    labels=[f"${v:,.0f}" if v > 0 else "" for v in container.datavalues],
+                    fontsize=7, rotation=90, padding=3,
+                )
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
+            ax.set_title("Dinero enviado por interfaz por periodo y sede (Consolidado)")
+            ax.set_ylabel("Valor (COP)")
+            ax.set_xlabel("Periodo")
+            plt.xticks(rotation=30, ha="right")
+            plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+            plt.tight_layout()
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 1 — Dinero enviado por interfaz (COP)")
+            plt.close(fig)
 
-        df_hist_exp["Valor"] = df_hist_exp["ValorCrudo"].apply(parsear_valor_exp)
-        df_hist_exp = df_hist_exp.dropna(subset=["Valor"])
+        # Gráfico 2
+        datos_g2 = []
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            for sede, vals in data_sedes.items():
+                avaladas = vals["avaladas"]
+                total_ventas = vals["total_ventas"]
+                cobertura = (avaladas / total_ventas * 100.0) if total_ventas > 0 else 0.0
+                datos_g2.append({
+                    "Periodo": periodo,
+                    "Sede": sede,
+                    "Cobertura": cobertura,
+                })
+        df_g2 = pd.DataFrame(datos_g2)
 
-        if df_hist_exp.empty:
-            ws_analisis.cell(row=3, column=1, value="No se pudieron parsear los valores para graficar.")
-        else:
-            sns.set_theme(style="whitegrid")
-            fila_actual = 3
+        if not df_g2.empty and df_g2["Cobertura"].sum() > 0:
+            fig, ax = plt.subplots(figsize=(14, 6))
+            sns.barplot(data=df_g2, x="Periodo", y="Cobertura", hue="Sede", ax=ax)
+            for container in ax.containers:
+                ax.bar_label(
+                    container,
+                    labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
+                    fontsize=7, rotation=90, padding=3,
+                )
+            ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
+            ax.set_title("Cobertura general de honorarios médicos (Avaladas / Total ventas)")
+            ax.set_ylabel("Cobertura (%)")
+            ax.set_xlabel("Periodo")
+            plt.xticks(rotation=30, ha="right")
+            plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+            plt.tight_layout()
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 2 — Cobertura general de honorarios médicos (meta 70%)")
+            plt.close(fig)
 
-            def insertar_grafico(ws, fig, fila, ancho=900, alto=420, titulo=None):
-                if titulo:
-                    ws.cell(row=fila, column=1, value=titulo).font = Font(bold=True, size=12, color="1F4E78")
-                    fila += 1
-                img_buffer = io.BytesIO()
-                fig.savefig(img_buffer, format="png", dpi=110, bbox_inches="tight")
-                img_buffer.seek(0)
-                xl_img = XLImage(img_buffer)
-                xl_img.width = ancho
-                xl_img.height = alto
-                ws.add_image(xl_img, f"A{fila}")
-                return fila + int(alto / 20) + 3
-
-            df_g1 = df_hist_exp[df_hist_exp["Concepto"] == "Dinero enviado por interfaz"]
-            if not df_g1.empty:
-                fig, ax = plt.subplots(figsize=(12, 5))
-                sns.barplot(data=df_g1, x="Periodo", y="Valor", hue="Sede", ax=ax)
-                ax.set_title("Dinero enviado por interfaz por periodo y sede")
-                ax.set_ylabel("Valor ($)")
-                plt.xticks(rotation=30, ha="right")
-                plt.tight_layout()
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 1 — Dinero enviado por interfaz")
-                plt.close(fig)
-
-            df_g2 = df_hist_exp[df_hist_exp["Concepto"].isin([
-                "Total ventas (ACTIVO Y FACTURADO)",
-                "Ventas relacionadas en factura (FACTURADO)",
-            ])]
-            if not df_g2.empty:
-                fig, ax = plt.subplots(figsize=(12, 5))
-                sns.barplot(data=df_g2, x="Periodo", y="Valor", hue="Concepto", ax=ax)
-                ax.set_title("Total ventas vs Ventas relacionadas en factura")
-                ax.set_ylabel("Registros")
-                plt.xticks(rotation=30, ha="right")
-                plt.tight_layout()
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 2 — Total ventas vs Ventas relacionadas en factura")
-                plt.close(fig)
-
-            df_g3 = df_hist_exp[df_hist_exp["Concepto"] == "Porcentual faltante (META 30%)"]
-            if not df_g3.empty:
-                fig, ax = plt.subplots(figsize=(12, 5))
-                sns.lineplot(data=df_g3, x="Periodo", y="Valor", hue="Sede", marker="o", ax=ax)
-                ax.axhline(30, color="red", linestyle="--", label="Meta 30%")
-                ax.set_title("Porcentual faltante por periodo y sede")
-                ax.set_ylabel("%")
-                plt.xticks(rotation=30, ha="right")
-                plt.tight_layout()
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 3 — Porcentual faltante (META 30%)")
-                plt.close(fig)
-
-            df_g4 = df_hist_exp[df_hist_exp["Concepto"] == "Porcentual impactado (META 0%)"]
-            if not df_g4.empty:
-                fig, ax = plt.subplots(figsize=(12, 5))
-                sns.lineplot(data=df_g4, x="Periodo", y="Valor", hue="Sede", marker="o", ax=ax)
-                ax.axhline(0, color="red", linestyle="--", label="Meta 0%")
-                ax.set_title("Porcentual impactado por periodo y sede")
-                ax.set_ylabel("%")
-                plt.xticks(rotation=30, ha="right")
-                plt.tight_layout()
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 4 — Porcentual impactado (META 0%)")
-                plt.close(fig)
-
-            df_g5 = df_hist_exp[df_hist_exp["Concepto"].isin([
-                "Revisadas por analistas",
-                "Avaladas subgerencia médica",
-            ])]
-            if not df_g5.empty:
-                fig, ax = plt.subplots(figsize=(12, 5))
-                sns.barplot(data=df_g5, x="Periodo", y="Valor", hue="Concepto", ax=ax)
-                ax.set_title("Revisadas vs Avaladas por periodo")
-                ax.set_ylabel("Registros")
-                plt.xticks(rotation=30, ha="right")
-                plt.tight_layout()
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 5 — Revisadas vs Avaladas")
-                plt.close(fig)
-
-            df_heat = df_hist_exp[df_hist_exp["Concepto"] == "Porcentual impactado (META 0%)"]
-            if not df_heat.empty:
-                pivot = df_heat.pivot_table(index="Sede", columns="Periodo", values="Valor", aggfunc="mean")
-                if not pivot.empty:
-                    fig, ax = plt.subplots(figsize=(12, 5))
-                    sns.heatmap(pivot, annot=True, fmt=".1f", cmap="RdYlGn_r", ax=ax, cbar_kws={"label": "%"})
-                    ax.set_title("Heatmap Porcentual impactado (sede × periodo)")
-                    plt.tight_layout()
-                    fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 6 — Heatmap Porcentual impactado")
-                    plt.close(fig)
-
-            ws_analisis.column_dimensions["A"].width = 130
+        ws_analisis.column_dimensions["A"].width = 130
 
     buffer = io.BytesIO()
     wb.save(buffer)
