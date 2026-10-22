@@ -1299,6 +1299,9 @@ def generar_grafica_cobertura(_consolidados_por_periodo, firma):
     return buf.getvalue()
 
 
+# ============================================================
+# GRÁFICAS DE PARTICIPACIÓN (APILADAS REALES)
+# ============================================================
 @st.cache_data(show_spinner=False)
 def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
     datos = []
@@ -1319,36 +1322,34 @@ def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
     df = df.set_index(["Periodo", "Sede"])
     total_por_fila = df.sum(axis=1)
     df_pct = df.div(total_por_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
-    df_pct = df_pct.reset_index()
 
-    df_melt = df_pct.melt(
-        id_vars=["Periodo", "Sede"],
-        value_vars=["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"],
-        var_name="Fase",
-        value_name="Porcentaje"
-    )
-    df_melt["Etiqueta"] = df_melt["Periodo"] + "\n" + df_melt["Sede"]
+    df_pct = df_pct.reset_index()
+    df_pct["Etiqueta"] = df_pct["Periodo"] + "\n" + df_pct["Sede"]
+    df_pct = df_pct.set_index("Etiqueta")[["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"]]
 
     fig, ax = plt.subplots(figsize=(14, 7))
-    sns.barplot(
-        data=df_melt, x="Etiqueta", y="Porcentaje", hue="Fase",
-        palette=["#305496", "#D1615D", "#85C17E"], ax=ax
+
+    df_pct.plot(
+        kind="bar",
+        stacked=True,
+        ax=ax,
+        color=["#305496", "#D1615D", "#85C17E"],
+        width=0.6
     )
 
     for container in ax.containers:
-        ax.bar_label(
-            container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
-            label_type="center", fontsize=8, padding=2
-        )
+        vals = [v.get_height() for v in container]
+        labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
+        ax.bar_label(container, labels=labels, label_type="center", fontsize=9, color="white", weight="bold")
 
     ax.set_title("Participación por fase de cada sede y periodo (Barras Apiladas)", pad=15)
     ax.set_ylabel("Participación (%)")
     ax.set_xlabel("")
-    plt.xticks(rotation=45, ha="right", fontsize=8)
+    plt.xticks(rotation=45, ha="right", fontsize=9)
     plt.legend(title="Fase", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
     plt.ylim(0, 100)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
+    plt.subplots_adjust(top=0.90)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
@@ -1513,33 +1514,26 @@ def generar_grafica_participacion_fase_total(_consolidados_por_periodo, firma):
 
     total_por_fila = df.sum(axis=1)
     df_pct = df.div(total_por_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
-    df_pct = df_pct.reset_index()
-
-    df_melt = df_pct.melt(
-        id_vars=["Periodo"],
-        value_vars=["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"],
-        var_name="Fase",
-        value_name="Porcentaje"
-    )
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    sns.barplot(
-        data=df_melt, x="Periodo", y="Porcentaje", hue="Fase",
-        palette=["#305496", "#D1615D", "#85C17E"], ax=ax
+
+    df_pct.plot(
+        kind="bar",
+        stacked=True,
+        ax=ax,
+        color=["#305496", "#D1615D", "#85C17E"],
+        width=0.5
     )
 
     for container in ax.containers:
-        ax.bar_label(
-            container,
-            labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
-            fontsize=9, rotation=0, padding=3,
-            label_type="center"
-        )
+        vals = [v.get_height() for v in container]
+        labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
+        ax.bar_label(container, labels=labels, label_type="center", fontsize=10, color="white", weight="bold")
 
     ax.set_title("Participación por fase — Todas las sedes consolidadas (Barras Apiladas)", pad=15)
     ax.set_ylabel("Participación (%)")
     ax.set_xlabel("Periodo")
-    plt.xticks(rotation=30, ha="right")
+    plt.xticks(rotation=30, ha="right", fontsize=9)
     plt.legend(title="Fase", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
     plt.ylim(0, 100)
     plt.tight_layout()
@@ -1832,22 +1826,21 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             total_fila = df_g3.sum(axis=1)
             df_g3_pct = df_g3.div(total_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
             df_g3_pct = df_g3_pct.reset_index()
-            df_g3_melt = df_g3_pct.melt(id_vars=["Periodo", "Sede"], value_vars=["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"],
-                                        var_name="Fase", value_name="Porcentaje")
-            df_g3_melt["Etiqueta"] = df_g3_melt["Periodo"] + "\n" + df_g3_melt["Sede"]
+            df_g3_pct["Etiqueta"] = df_g3_pct["Periodo"] + "\n" + df_g3_pct["Sede"]
+            df_g3_pct = df_g3_pct.set_index("Etiqueta")[["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"]]
 
             fig, ax = plt.subplots(figsize=(14, 7))
-            sns.barplot(data=df_g3_melt, x="Etiqueta", y="Porcentaje", hue="Fase",
-                        palette=["#305496", "#D1615D", "#85C17E"], ax=ax)
+            df_g3_pct.plot(kind="bar", stacked=True, ax=ax, color=["#305496", "#D1615D", "#85C17E"], width=0.6)
             for container in ax.containers:
-                ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
-                             label_type="center", fontsize=8, padding=2)
+                vals = [v.get_height() for v in container]
+                labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
+                ax.bar_label(container, labels=labels, label_type="center", fontsize=9, color="white", weight="bold")
             ax.set_title("Participación por fase de cada sede y periodo (Barras Apiladas)", pad=15)
             ax.set_ylabel("Participación (%)")
-            plt.xticks(rotation=45, ha="right", fontsize=8)
+            plt.xticks(rotation=45, ha="right", fontsize=9)
             plt.ylim(0, 100)
             plt.tight_layout()
-            plt.subplots_adjust(top=0.88)
+            plt.subplots_adjust(top=0.90)
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 3 — Participación por fase (por sede)")
             plt.close(fig)
 
@@ -1949,19 +1942,16 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             if not df_g7.empty:
                 total_fila = df_g7.sum(axis=1)
                 df_g7_pct = df_g7.div(total_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
-                df_g7_pct = df_g7_pct.reset_index()
-                df_g7_melt = df_g7_pct.melt(id_vars=["Periodo"], value_vars=["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"],
-                                            var_name="Fase", value_name="Porcentaje")
 
                 fig, ax = plt.subplots(figsize=(12, 6))
-                sns.barplot(data=df_g7_melt, x="Periodo", y="Porcentaje", hue="Fase",
-                            palette=["#305496", "#D1615D", "#85C17E"], ax=ax)
+                df_g7_pct.plot(kind="bar", stacked=True, ax=ax, color=["#305496", "#D1615D", "#85C17E"], width=0.5)
                 for container in ax.containers:
-                    ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues],
-                                 label_type="center", fontsize=9, padding=3)
+                    vals = [v.get_height() for v in container]
+                    labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
+                    ax.bar_label(container, labels=labels, label_type="center", fontsize=10, color="white", weight="bold")
                 ax.set_title("Participación por fase — Todas las sedes consolidadas (Barras Apiladas)", pad=15)
                 ax.set_ylabel("Participación (%)")
-                plt.xticks(rotation=30, ha="right")
+                plt.xticks(rotation=30, ha="right", fontsize=9)
                 plt.ylim(0, 100)
                 plt.tight_layout()
                 plt.subplots_adjust(top=0.88)
