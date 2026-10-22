@@ -587,7 +587,8 @@ def parsear_valor_generico(v):
     s = re.sub(r"\(.*?\)", "", s).strip()
     s = s.replace("$", "").replace(",", "").replace("%", "").strip()
     try:
-        return float(s) if s else None    except Exception:
+        return float(s) if s else None    
+            except Exception:
         return None
 
 
