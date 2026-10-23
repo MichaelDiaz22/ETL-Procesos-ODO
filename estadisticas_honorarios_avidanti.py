@@ -250,46 +250,41 @@ def _palabras_clave(texto):
 
 MAPA_UBICACION_TOKENS = {ubi_norm: (sede, fase, _palabras_clave(ubi_norm)) for ubi_norm, (sede, fase) in MAPA_UBICACION.items()}
 
-def detectar_ubicacion_flexible(valor):
+def detectar_ubicacion_robusta(valor):
+    """
+    Primero intenta hacer match exacto.
+    Si no, busca el código de la sede explícitamente en el texto (ej. 'cai', 'cam').
+    Si lo encuentra, restringe la búsqueda de fase solo a esa sede.
+    Si no, busca difusamente entre todas las sedes.
+    """
     if pd.isna(valor): return (None, None)
     txt_norm = normalizar(valor)
-    if txt_norm in MAPA_UBICACION: return MAPA_UBICACION[txt_norm]
+    
+    # 1. Coincidencia exacta directa
+    if txt_norm in MAPA_UBICACION: 
+        return MAPA_UBICACION[txt_norm]
+        
     tokens_valor = _palabras_clave(txt_norm)
     mejor_match, mejor_score = None, 0
+    
+    # 2. Identificar si el texto menciona una sede explícitamente
+    sedes_mencionadas = [cod for cod in CODIGOS_SEDE if cod.lower() in tokens_valor]
+    
+    # 3. Buscar la mejor coincidencia
     for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
+        # Si el texto menciona una sede, ignorar las ubicaciones de otras sedes
+        if sedes_mencionadas and sede not in sedes_mencionadas:
+            continue
+            
         if tokens_ubi and tokens_ubi.issubset(tokens_valor):
             score = len(tokens_ubi)
             if score > mejor_score:
                 mejor_score, mejor_match = score, (sede, fase)
-    return mejor_match if mejor_match else (None, None)
+                
+    # 4. Si no se encontró nada pero menciona una sede (ej. solo dice "CAI"), asignar Fase 2 por defecto
+    if not mejor_match and sedes_mencionadas:
+        return (sedes_mencionadas[0], "Fase 2")
 
-def detectar_ubicacion_por_sede(valor):
-    """Primero busca el código de sede en el texto y luego determina la fase."""
-    if pd.isna(valor): return (None, None)
-    txt_norm = normalizar(valor)
-    if txt_norm in MAPA_UBICACION: return MAPA_UBICACION[txt_norm]
-    
-    tokens_valor = _palabras_clave(txt_norm)
-    mejor_match, mejor_score = None, 0
-
-    for cod in CODIGOS_SEDE:
-        # Si el texto contiene el código de la sede
-        if cod.lower() in tokens_valor:
-            # Buscar la mejor coincidencia de palabras clave solo dentro de esa sede
-            for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
-                if sede == cod and tokens_ubi.issubset(tokens_valor):
-                    score = len(tokens_ubi)
-                    if score > mejor_score:
-                        mejor_score, mejor_match = score, (sede, fase)
-
-    # Si no se encontró por sede, usar el método anterior por defecto
-    if not mejor_match:
-        for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
-            if tokens_ubi and tokens_ubi.issubset(tokens_valor):
-                score = len(tokens_ubi)
-                if score > mejor_score:
-                    mejor_score, mejor_match = score, (sede, fase)
-                    
     return mejor_match if mejor_match else (None, None)
 
 def extraer_periodo_desde_nombre(nombre_archivo):
@@ -666,8 +661,8 @@ def procesar_todo(files_data):
         if col_totales_venta_no is not None and col_totales_centro_costo is not None:
             totales_df["_venta_no_norm"] = totales_df[col_totales_venta_no].map(normalizar_llave_venta)
             
-            # Usamos la nueva función detectar_ubicacion_por_sede aquí:
-            totales_ubic = totales_df[col_totales_centro_costo].astype(str).map(detectar_ubicacion_por_sede)
+            # Usamos la nueva función robusta aquí:
+            totales_ubic = totales_df[col_totales_centro_costo].astype(str).map(detectar_ubicacion_robusta)
             
             totales_df["_sede"] = totales_ubic.map(lambda x: x[0])
             totales_df["_fase"] = totales_ubic.map(lambda x: x[1])
@@ -744,8 +739,8 @@ def procesar_todo(files_data):
         col_ventas_venta_no = obtener_columna(ventas_df, "Venta No.")
 
         if col_ventas_centro_costo is not None:
-            # Usamos la nueva función detectar_ubicacion_por_sede aquí:
-            ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_por_sede)
+            # Usamos la nueva función robusta aquí:
+            ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_robusta)
             
             ventas_df["_sede"] = ventas_ubic.map(lambda x: x[0])
             ventas_df["_fase"] = ventas_ubic.map(lambda x: x[1])
@@ -810,9 +805,13 @@ def procesar_todo(files_data):
             cant_err_rev = errores_revisadas[fase][cod]["cantidad"]
             cant_err_ava = errores_avaladas[fase][cod]["cantidad"]
 
+            # Acotar porcentajes para evitar negativos absurdos (ej. CAI -2137%)
             if total_ventas > 0:
-                porcentual_faltante[fase][cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
-                porcentual_impactado[fase][cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
+                faltante_calc = ((total_ventas - avaladas) / total_ventas) * 100.0
+                porcentual_faltante[fase][cod] = max(faltante_calc, 0.0) 
+                impactado_calc = ((total_ventas - relacionadas) / total_ventas) * 100.0
+                porcentual_impactado[fase][cod] = max(impactado_calc, 0.0)
+
             if revisadas > 0:
                 porcentaje_errores_revisadas[fase][cod] = (cant_err_rev / revisadas) * 100.0
             if avaladas > 0:
@@ -874,8 +873,10 @@ def procesar_todo(files_data):
         cant_err_ava = errores_avaladas_consolidado[cod]["cantidad"]
 
         if total_ventas > 0:
-            porcentual_faltante_consolidado[cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
-            porcentual_impactado_consolidado[cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
+            faltante_calc = ((total_ventas - avaladas) / total_ventas) * 100.0
+            porcentual_faltante_consolidado[cod] = max(faltante_calc, 0.0)
+            impactado_calc = ((total_ventas - relacionadas) / total_ventas) * 100.0
+            porcentual_impactado_consolidado[cod] = max(impactado_calc, 0.0)
         if revisadas > 0:
             porcentaje_errores_revisadas_consolidado[cod] = (cant_err_rev / revisadas) * 100.0
         if avaladas > 0:
@@ -1782,24 +1783,10 @@ if not resultados["estados_no_incluidos"].empty:
 for fase in FASES:
     st.subheader(f"📋 {TITULOS_FASES[fase]}")
     st.dataframe(tablas_por_fase[fase], use_container_width=True, height=420)
-    st.download_button(
-        label=f"⬇️ Descargar {TITULOS_FASES[fase]} (CSV)",
-        data=tablas_por_fase[fase].to_csv().encode("utf-8"),
-        file_name=f"{TITULOS_FASES[fase].replace(' ', '_')}.csv",
-        mime="text/csv",
-        key=f"dl_{fase}",
-    )
     st.divider()
 
 st.subheader("📋 CONSOLIDADO - TODAS LAS FASES")
 st.dataframe(tabla_consolidada, use_container_width=True, height=420)
-st.download_button(
-    label="⬇️ Descargar CONSOLIDADO (CSV)",
-    data=tabla_consolidada.to_csv().encode("utf-8"),
-    file_name="CONSOLIDADO_FASES.csv",
-    mime="text/csv",
-    key="dl_consolidado",
-)
 st.divider()
 
 # ============================================================
