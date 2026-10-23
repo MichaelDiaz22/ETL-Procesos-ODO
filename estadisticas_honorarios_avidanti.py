@@ -18,9 +18,9 @@ import seaborn as sns
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
-st.set_page_config(page_title="FASES 1 - 2 - 3", page_icon="📊", layout="wide")
+st.set_page_config(page_title="ANÁLISIS DE HONORARIOS MÉDICOS", page_icon="📊", layout="wide")
 
-st.title("📊 TABLEROS POR FASE")
+st.title("📊 ANÁLISIS DE GESTIÓN DE HONORARIOS MÉDICOS POR INTERFAZ")
 st.markdown(
     "Carga múltiples archivos Excel. Se clasificarán automáticamente en "
     "**Ventas**, **Atenciones del especialista**, **Totales** o **Histórico**."
