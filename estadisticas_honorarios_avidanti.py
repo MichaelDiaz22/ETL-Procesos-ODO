@@ -251,7 +251,16 @@ def _palabras_clave(texto):
 MAPA_UBICACION_TOKENS = {ubi_norm: (sede, fase, _palabras_clave(ubi_norm)) for ubi_norm, (sede, fase) in MAPA_UBICACION.items()}
 
 def detectar_ubicacion_robusta(valor):
-    if pd.isna(valor): return (None, None)
+    """
+    Primero intenta hacer match exacto.
+    Si no, busca el código de la sede explícitamente en el texto (ej. 'cai', 'cam').
+    Si lo encuentra, restringe la búsqueda de fase solo a esa sede.
+    Si no hay match estricto (todos los tokens del mapa en el valor),
+    acepta un match por intersección significativa (al menos 2 tokens comunes
+    y que cubran >= 50% de los tokens del mapa).
+    """
+    if pd.isna(valor): 
+        return (None, None)
     txt_norm = normalizar(valor)
     if txt_norm in MAPA_UBICACION: 
         return MAPA_UBICACION[txt_norm]
@@ -260,6 +269,7 @@ def detectar_ubicacion_robusta(valor):
     mejor_match, mejor_score = None, 0
     sedes_mencionadas = [cod for cod in CODIGOS_SEDE if cod.lower() in tokens_valor]
     
+    # 1. Match estricto (todos los tokens del mapa están en el valor)
     for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
         if sedes_mencionadas and sede not in sedes_mencionadas:
             continue
@@ -267,6 +277,23 @@ def detectar_ubicacion_robusta(valor):
             score = len(tokens_ubi)
             if score > mejor_score:
                 mejor_score, mejor_match = score, (sede, fase)
+    
+    # 2. Si no hubo match estricto, intentar match por intersección significativa
+    if not mejor_match:
+        for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
+            if sedes_mencionadas and sede not in sedes_mencionadas:
+                continue
+            if not tokens_ubi:
+                continue
+            interseccion = tokens_ubi & tokens_valor
+            # Ignorar tokens genéricos que no aportan (como números de centro de costo)
+            interseccion_sig = {t for t in interseccion if not t.isdigit()}
+            if len(interseccion_sig) >= 2:
+                cobertura = len(interseccion_sig) / len(tokens_ubi)
+                if cobertura >= 0.5:
+                    score = len(interseccion_sig)
+                    if score > mejor_score:
+                        mejor_score, mejor_match = score, (sede, fase)
                 
     if not mejor_match and sedes_mencionadas:
         return (sedes_mencionadas[0], "Fase 2")
