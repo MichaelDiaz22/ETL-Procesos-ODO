@@ -1088,9 +1088,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         df_graf1 = df_graf1.sort_values('Fecha').reset_index(drop=True)
         
         # ======================== CONSTRUCCIÓN DE ETIQUETAS SEGÚN AGRUPADOR ========================
-        def construir_etiquetas_grafico1(df_graf, agrupacion):
+        def construir_etiquetas_grafico1(df_graf, agrupacion, fecha_inicio_real, fecha_fin_real):
             """Construye las etiquetas del eje X (rango de días según el agrupador)
-            y una etiqueta corta para usar en la narrativa."""
+            recortando los rangos a las fechas reales existentes en los datos."""
             etiquetas_eje = []
             etiquetas_narrativa = []
             
@@ -1099,8 +1099,11 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 7: 'jul', 8: 'ago', 9: 'sep', 10: 'oct', 11: 'nov', 12: 'dic'
             }
             
+            fi = pd.Timestamp(fecha_inicio_real).normalize()
+            ff = pd.Timestamp(fecha_fin_real).normalize()
+            
             for fecha in df_graf['Fecha']:
-                fecha_ts = pd.Timestamp(fecha)
+                fecha_ts = pd.Timestamp(fecha).normalize()
                 
                 if agrupacion == "Día":
                     etiqueta = fecha_ts.strftime('%d/%m')
@@ -1108,39 +1111,67 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     etiquetas_narrativa.append(etiqueta)
                 
                 elif agrupacion == "Semana":
-                    inicio = fecha_ts
-                    fin = fecha_ts + pd.Timedelta(days=6)
+                    # Rango de la semana, recortado a los límites reales de los datos
+                    inicio = max(fecha_ts, fi)
+                    fin = min(fecha_ts + pd.Timedelta(days=6), ff)
                     ini_str = f"{inicio.day}/{meses_es[inicio.month]}"
                     fin_str = f"{fin.day}/{meses_es[fin.month]}"
-                    etiqueta = f"{ini_str} a {fin_str}"
+                    if inicio.date() == fin.date():
+                        etiqueta = ini_str
+                    else:
+                        etiqueta = f"{ini_str} a {fin_str}"
                     etiquetas_eje.append(etiqueta)
                     etiquetas_narrativa.append(etiqueta)
                 
                 elif agrupacion == "Quincena":
+                    # Rango de la quincena, recortado a los límites reales de los datos
                     dia = fecha_ts.day
                     mes = fecha_ts.month
                     anio = fecha_ts.year
                     if dia == 1:
-                        inicio = fecha_ts
-                        fin = fecha_ts + pd.Timedelta(days=14)
+                        inicio_real = fecha_ts
+                        fin_real = fecha_ts + pd.Timedelta(days=14)
                     else:
-                        inicio = fecha_ts
+                        inicio_real = fecha_ts
                         ultimo_dia_mes = pd.Timestamp(anio, mes, 1) + pd.offsets.MonthEnd(0)
-                        fin = ultimo_dia_mes
+                        fin_real = ultimo_dia_mes
+                    
+                    inicio = max(inicio_real, fi)
+                    fin = min(fin_real, ff)
+                    
                     ini_str = f"{inicio.day}/{meses_es[inicio.month]}"
                     fin_str = f"{fin.day}/{meses_es[fin.month]}"
-                    etiqueta = f"{ini_str} a {fin_str}"
+                    if inicio.date() == fin.date():
+                        etiqueta = ini_str
+                    else:
+                        etiqueta = f"{ini_str} a {fin_str}"
                     etiquetas_eje.append(etiqueta)
                     etiquetas_narrativa.append(etiqueta)
                 
                 elif agrupacion == "Mes":
-                    etiqueta = f"{meses_es[fecha_ts.month]} {fecha_ts.year}"
+                    # Para el mes, recortamos el rango al primer y último día con datos
+                    primer_dia_mes = fecha_ts
+                    ultimo_dia_mes = fecha_ts + pd.offsets.MonthEnd(0)
+                    inicio = max(primer_dia_mes, fi)
+                    fin = min(ultimo_dia_mes, ff)
+                    ini_str = f"{inicio.day}/{meses_es[inicio.month]}"
+                    fin_str = f"{fin.day}/{meses_es[fin.month]}"
+                    if inicio.date() == fin.date():
+                        etiqueta = ini_str
+                    else:
+                        etiqueta = f"{ini_str} a {fin_str}"
                     etiquetas_eje.append(etiqueta)
                     etiquetas_narrativa.append(etiqueta)
             
             return etiquetas_eje, etiquetas_narrativa
         
-        etiquetas_eje, etiquetas_narrativa = construir_etiquetas_grafico1(df_graf1, agrupacion)
+        # Fechas reales del conjunto filtrado (para recortar rangos)
+        fecha_inicio_real = df_filtrado['Solicitado'].min().normalize()
+        fecha_fin_real = df_filtrado['Solicitado'].max().normalize()
+        
+        etiquetas_eje, etiquetas_narrativa = construir_etiquetas_grafico1(
+            df_graf1, agrupacion, fecha_inicio_real, fecha_fin_real
+        )
         df_graf1['Etiqueta'] = etiquetas_eje
         
         # ======================== GRÁFICO ========================
