@@ -547,6 +547,8 @@ def procesar_todo(files_data):
         atenciones_df = pd.DataFrame()
 
     conteos = {fase: {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE} for fase in FASES}
+    errores_revisadas = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
+    errores_avaladas = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
     dinero_interfaz = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
     errores_valor_bajo = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
     df_filtrado_revisadas = pd.DataFrame()
@@ -570,18 +572,40 @@ def procesar_todo(files_data):
             if not sin_match.empty:
                 ubicaciones_no_mapeadas = (sin_match.value_counts().rename_axis("Ubicación (normalizada)").reset_index(name="Registros"))
 
+            # Convertir valor liquidado a número
+            valor_liquidado_num = convertir_a_numero(atenciones_df[col_valor_liquidado]) if col_valor_liquidado is not None else pd.Series(0.0, index=atenciones_df.index)
+
+            # MÁSCARA BASE: valor liquidado > 1000
+            mask_valor_mayor_1000 = valor_liquidado_num > 1000
+
             for fase in FASES:
                 for cod in CODIGOS_SEDE:
                     mask_sede_fase = (sede_serie == cod) & (fase_serie == fase)
-                    mask_rev = mask_sede_fase & mask_verifica
-                    mask_ava = mask_rev & mask_submedico
+                    # Revisadas: sede+fase + verifica NO vacío + valor > 1000
+                    mask_rev_total = mask_sede_fase & mask_verifica
+                    mask_rev = mask_rev_total & mask_valor_mayor_1000
+                    # Avaladas: revisadas + submedico NO vacío + valor > 1000
+                    mask_ava_total = mask_rev_total & mask_submedico
+                    mask_ava = mask_ava_total & mask_valor_mayor_1000
+
                     conteos[fase][cod]["revisadas"] = int(mask_rev.sum())
                     conteos[fase][cod]["avaladas"] = int(mask_ava.sum())
+
+                    # Errores de revisadas: los que cumplen condición pero valor <= 1000
+                    mask_rev_error = mask_rev_total & ~mask_valor_mayor_1000
+                    if mask_rev_error.any():
+                        errores_revisadas[fase][cod]["cantidad"] = int(mask_rev_error.sum())
+                        errores_revisadas[fase][cod]["suma"] = float(valor_liquidado_num[mask_rev_error].sum())
+
+                    # Errores de avaladas: los que cumplen condición pero valor <= 1000
+                    mask_ava_error = mask_ava_total & ~mask_valor_mayor_1000
+                    if mask_ava_error.any():
+                        errores_avaladas[fase][cod]["cantidad"] = int(mask_ava_error.sum())
+                        errores_avaladas[fase][cod]["suma"] = float(valor_liquidado_num[mask_ava_error].sum())
 
             df_filtrado_revisadas = atenciones_df.loc[mask_verifica].copy()
 
             if col_valor_liquidado is not None:
-                valor_liquidado_num = convertir_a_numero(atenciones_df[col_valor_liquidado])
                 for i in range(len(atenciones_df)):
                     sede_cod = sede_serie.iloc[i]
                     fase_val = fase_serie.iloc[i]
@@ -737,26 +761,36 @@ def procesar_todo(files_data):
     porcentaje_errores_valor = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
     porcentaje_errores_totales = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
     porcentaje_errores_ventas = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+    porcentaje_errores_revisadas = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
+    porcentaje_errores_avaladas = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
 
     for fase in FASES:
         for cod in CODIGOS_SEDE:
             avaladas = conteos[fase][cod]["avaladas"]
+            revisadas = conteos[fase][cod]["revisadas"]
             total_ventas = total_ventas_ce[fase][cod]
             relacionadas = ventas_relacionadas_factura[fase][cod]
             cant_err_v = errores_valor_bajo[fase][cod]["cantidad"]
             cant_err_t = errores_totales[fase][cod]["cantidad"]
             cant_err_vtas = errores_ventas[fase][cod]["cantidad"]
+            cant_err_rev = errores_revisadas[fase][cod]["cantidad"]
+            cant_err_ava = errores_avaladas[fase][cod]["cantidad"]
 
             if total_ventas > 0:
                 porcentual_faltante[fase][cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
                 porcentual_impactado[fase][cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
+            if revisadas > 0:
+                porcentaje_errores_revisadas[fase][cod] = (cant_err_rev / revisadas) * 100.0
             if avaladas > 0:
                 porcentaje_errores_valor[fase][cod] = (cant_err_v / avaladas) * 100.0
                 porcentaje_errores_totales[fase][cod] = (cant_err_t / avaladas) * 100.0
                 porcentaje_errores_ventas[fase][cod] = (cant_err_vtas / avaladas) * 100.0
+                porcentaje_errores_avaladas[fase][cod] = (cant_err_ava / avaladas) * 100.0
 
     # -------- CONSOLIDADO --------
     conteos_consolidado = {cod: {"revisadas": 0, "avaladas": 0} for cod in CODIGOS_SEDE}
+    errores_revisadas_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
+    errores_avaladas_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
     dinero_interfaz_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
     errores_valor_bajo_consolidado = {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE}
     total_ventas_ce_consolidado = {cod: 0 for cod in CODIGOS_SEDE}
@@ -770,6 +804,10 @@ def procesar_todo(files_data):
         for fase in FASES:
             conteos_consolidado[cod]["revisadas"] += conteos[fase][cod]["revisadas"]
             conteos_consolidado[cod]["avaladas"] += conteos[fase][cod]["avaladas"]
+            errores_revisadas_consolidado[cod]["cantidad"] += errores_revisadas[fase][cod]["cantidad"]
+            errores_revisadas_consolidado[cod]["suma"] += errores_revisadas[fase][cod]["suma"]
+            errores_avaladas_consolidado[cod]["cantidad"] += errores_avaladas[fase][cod]["cantidad"]
+            errores_avaladas_consolidado[cod]["suma"] += errores_avaladas[fase][cod]["suma"]
             dinero_interfaz_consolidado[cod] += dinero_interfaz[fase][cod]
             errores_valor_bajo_consolidado[cod]["cantidad"] += errores_valor_bajo[fase][cod]["cantidad"]
             errores_valor_bajo_consolidado[cod]["suma"] += errores_valor_bajo[fase][cod]["suma"]
@@ -787,22 +825,30 @@ def procesar_todo(files_data):
     porcentaje_errores_valor_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
     porcentaje_errores_totales_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
     porcentaje_errores_ventas_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+    porcentaje_errores_revisadas_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
+    porcentaje_errores_avaladas_consolidado = {cod: 0.0 for cod in CODIGOS_SEDE}
 
     for cod in CODIGOS_SEDE:
         avaladas = conteos_consolidado[cod]["avaladas"]
+        revisadas = conteos_consolidado[cod]["revisadas"]
         total_ventas = total_ventas_ce_consolidado[cod]
         relacionadas = ventas_relacionadas_factura_consolidado[cod]
         cant_err_v = errores_valor_bajo_consolidado[cod]["cantidad"]
         cant_err_t = errores_totales_consolidado[cod]["cantidad"]
         cant_err_vtas = errores_ventas_consolidado[cod]["cantidad"]
+        cant_err_rev = errores_revisadas_consolidado[cod]["cantidad"]
+        cant_err_ava = errores_avaladas_consolidado[cod]["cantidad"]
 
         if total_ventas > 0:
             porcentual_faltante_consolidado[cod] = ((total_ventas - avaladas) / total_ventas) * 100.0
             porcentual_impactado_consolidado[cod] = ((total_ventas - relacionadas) / total_ventas) * 100.0
+        if revisadas > 0:
+            porcentaje_errores_revisadas_consolidado[cod] = (cant_err_rev / revisadas) * 100.0
         if avaladas > 0:
             porcentaje_errores_valor_consolidado[cod] = (cant_err_v / avaladas) * 100.0
             porcentaje_errores_totales_consolidado[cod] = (cant_err_t / avaladas) * 100.0
             porcentaje_errores_ventas_consolidado[cod] = (cant_err_vtas / avaladas) * 100.0
+            porcentaje_errores_avaladas_consolidado[cod] = (cant_err_ava / avaladas) * 100.0
 
     # -------- TABLAS --------
     tablas_por_fase = {}
@@ -811,8 +857,18 @@ def procesar_todo(files_data):
         filas = filas_resumen(fase)
         for cod in CODIGOS_SEDE:
             columna = MAPA_CODIGO_A_COLUMNA[cod]
-            tabla.loc["Revisadas por analistas", columna] = f"{conteos[fase][cod]['revisadas']:,}"
-            tabla.loc["Avaladas subgerencia médica", columna] = f"{conteos[fase][cod]['avaladas']:,}"
+            tabla.loc["Revisadas por analistas", columna] = formatear_conteo_con_error(
+                conteos[fase][cod]['revisadas'],
+                errores_revisadas[fase][cod]["cantidad"],
+                errores_revisadas[fase][cod]["suma"],
+                porcentaje_errores_revisadas[fase][cod]
+            )
+            tabla.loc["Avaladas subgerencia médica", columna] = formatear_conteo_con_error(
+                conteos[fase][cod]['avaladas'],
+                errores_avaladas[fase][cod]["cantidad"],
+                errores_avaladas[fase][cod]["suma"],
+                porcentaje_errores_avaladas[fase][cod]
+            )
             tabla.loc["Dinero enviado por interfaz", columna] = formatear_dinero_interfaz(dinero_interfaz[fase][cod], errores_valor_bajo[fase][cod]["cantidad"], errores_valor_bajo[fase][cod]["suma"], porcentaje_errores_valor[fase][cod])
             tabla.loc[filas[3], columna] = formatear_conteo_con_error(total_ventas_ce[fase][cod], errores_totales[fase][cod]["cantidad"], errores_totales[fase][cod]["suma"], porcentaje_errores_totales[fase][cod])
             tabla.loc[filas[4], columna] = formatear_dinero_con_error(dinero_ambulatorio[fase][cod], errores_totales[fase][cod]["cantidad"], errores_totales[fase][cod]["suma"], porcentaje_errores_totales[fase][cod])
@@ -826,8 +882,18 @@ def procesar_todo(files_data):
     filas_cons = filas_resumen("Consolidado")
     for cod in CODIGOS_SEDE:
         columna = MAPA_CODIGO_A_COLUMNA[cod]
-        tabla_consolidada.loc["Revisadas por analistas", columna] = f"{conteos_consolidado[cod]['revisadas']:,}"
-        tabla_consolidada.loc["Avaladas subgerencia médica", columna] = f"{conteos_consolidado[cod]['avaladas']:,}"
+        tabla_consolidada.loc["Revisadas por analistas", columna] = formatear_conteo_con_error(
+            conteos_consolidado[cod]['revisadas'],
+            errores_revisadas_consolidado[cod]["cantidad"],
+            errores_revisadas_consolidado[cod]["suma"],
+            porcentaje_errores_revisadas_consolidado[cod]
+        )
+        tabla_consolidada.loc["Avaladas subgerencia médica", columna] = formatear_conteo_con_error(
+            conteos_consolidado[cod]['avaladas'],
+            errores_avaladas_consolidado[cod]["cantidad"],
+            errores_avaladas_consolidado[cod]["suma"],
+            porcentaje_errores_avaladas_consolidado[cod]
+        )
         tabla_consolidada.loc["Dinero enviado por interfaz", columna] = formatear_dinero_interfaz(dinero_interfaz_consolidado[cod], errores_valor_bajo_consolidado[cod]["cantidad"], errores_valor_bajo_consolidado[cod]["suma"], porcentaje_errores_valor_consolidado[cod])
         tabla_consolidada.loc[filas_cons[3], columna] = formatear_conteo_con_error(total_ventas_ce_consolidado[cod], errores_totales_consolidado[cod]["cantidad"], errores_totales_consolidado[cod]["suma"], porcentaje_errores_totales_consolidado[cod])
         tabla_consolidada.loc[filas_cons[4], columna] = formatear_dinero_con_error(dinero_ambulatorio_consolidado[cod], errores_totales_consolidado[cod]["cantidad"], errores_totales_consolidado[cod]["suma"], porcentaje_errores_totales_consolidado[cod])
@@ -841,6 +907,7 @@ def procesar_todo(files_data):
     if not df_filtrado_revisadas.empty:
         col_verifica = obtener_columna(df_filtrado_revisadas, "Nombre de Usuario que Verifica")
         col_submedico = obtener_columna(df_filtrado_revisadas, "Usuario / Sub Medico")
+        col_valor_liq = obtener_columna(df_filtrado_revisadas, "Valor liquidado")
         verificadores_limpios = df_filtrado_revisadas[col_verifica].astype(str).str.strip().replace({"nan": "", "None": "", "NaN": ""})
         df_filtrado_revisadas = df_filtrado_revisadas.assign(_verifica_limpio=verificadores_limpios)
         resumen_verifica = (df_filtrado_revisadas.groupby("_verifica_limpio", dropna=False).size().reset_index(name="Registros").rename(columns={"_verifica_limpio": "Nombre de Usuario que Verifica"}))
@@ -1300,8 +1367,8 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         ("Filtros previos", ""), ("", "En Totales: 'Total tarifas y recargos/descuentos' >= 1000."),
         ("Mapeo de (sede, fase)", ""), ("", "Match flexible contra el mapa Sede + Ubicación → Fase."),
         ("Cálculos por (sede, fase)", ""),
-        ("1. Revisadas por analistas", "Ubicación mapea + 'Nombre de Usuario que Verifica' NO vacío."),
-        ("2. Avaladas subgerencia médica", "Revisadas + 'Usuario / Sub Medico' NO vacío."),
+        ("1. Revisadas por analistas", "Ubicación mapea + 'Nombre de Usuario que Verifica' NO vacío + 'Valor liquidado' > 1000."),
+        ("2. Avaladas subgerencia médica", "Revisadas + 'Usuario / Sub Medico' NO vacío + 'Valor liquidado' > 1000."),
         ("3. Dinero enviado por interfaz", "Σ 'Valor liquidado' válido (>= 1000), errores reportados aparte."),
         ("4. Total ventas", "count(Totales ∩ Ventas con 'tarifas' >= 1000). Errores reportados aparte."),
         ("5. Dinero ventas", "Σ 'tarifas (reliquidado)' válidas (>= 1000). Errores reportados aparte."),
@@ -1581,8 +1648,8 @@ with st.sidebar:
 
 **Cálculos por (sede, fase)**
 
-1. **Revisadas**: Ubicación mapea + `Usuario que Verifica` NO vacío.
-2. **Avaladas**: Revisadas + `Usuario / Sub Medico` NO vacío.
+1. **Revisadas**: Ubicación mapea + `Usuario que Verifica` NO vacío + `Valor liquidado > 1000`.
+2. **Avaladas**: Revisadas + `Usuario / Sub Medico` NO vacío + `Valor liquidado > 1000`.
 3. **Dinero interfaz**: Σ `Valor liquidado` válido (>= 1000), errores reportados aparte.
 4. **Total ventas**: count(Totales ∩ Ventas con `tarifas` >= 1000). Errores reportados aparte.
 5. **Dinero ventas**: Σ `tarifas (reliquidado)` válidas (>= 1000). Errores reportados aparte.
