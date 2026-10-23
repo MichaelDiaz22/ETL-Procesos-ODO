@@ -263,6 +263,35 @@ def detectar_ubicacion_flexible(valor):
                 mejor_score, mejor_match = score, (sede, fase)
     return mejor_match if mejor_match else (None, None)
 
+def detectar_ubicacion_por_sede(valor):
+    """Primero busca el código de sede en el texto y luego determina la fase."""
+    if pd.isna(valor): return (None, None)
+    txt_norm = normalizar(valor)
+    if txt_norm in MAPA_UBICACION: return MAPA_UBICACION[txt_norm]
+    
+    tokens_valor = _palabras_clave(txt_norm)
+    mejor_match, mejor_score = None, 0
+
+    for cod in CODIGOS_SEDE:
+        # Si el texto contiene el código de la sede
+        if cod.lower() in tokens_valor:
+            # Buscar la mejor coincidencia de palabras clave solo dentro de esa sede
+            for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
+                if sede == cod and tokens_ubi.issubset(tokens_valor):
+                    score = len(tokens_ubi)
+                    if score > mejor_score:
+                        mejor_score, mejor_match = score, (sede, fase)
+
+    # Si no se encontró por sede, usar el método anterior por defecto
+    if not mejor_match:
+        for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
+            if tokens_ubi and tokens_ubi.issubset(tokens_valor):
+                score = len(tokens_ubi)
+                if score > mejor_score:
+                    mejor_score, mejor_match = score, (sede, fase)
+                    
+    return mejor_match if mejor_match else (None, None)
+
 def extraer_periodo_desde_nombre(nombre_archivo):
     base = str(nombre_archivo).rsplit(".", 1)[0]
     base_norm = base.lower()
@@ -636,7 +665,10 @@ def procesar_todo(files_data):
 
         if col_totales_venta_no is not None and col_totales_centro_costo is not None:
             totales_df["_venta_no_norm"] = totales_df[col_totales_venta_no].map(normalizar_llave_venta)
-            totales_ubic = totales_df[col_totales_centro_costo].astype(str).map(detectar_ubicacion_flexible)
+            
+            # Usamos la nueva función detectar_ubicacion_por_sede aquí:
+            totales_ubic = totales_df[col_totales_centro_costo].astype(str).map(detectar_ubicacion_por_sede)
+            
             totales_df["_sede"] = totales_ubic.map(lambda x: x[0])
             totales_df["_fase"] = totales_ubic.map(lambda x: x[1])
 
@@ -712,7 +744,9 @@ def procesar_todo(files_data):
         col_ventas_venta_no = obtener_columna(ventas_df, "Venta No.")
 
         if col_ventas_centro_costo is not None:
-            ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_flexible)
+            # Usamos la nueva función detectar_ubicacion_por_sede aquí:
+            ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_por_sede)
+            
             ventas_df["_sede"] = ventas_ubic.map(lambda x: x[0])
             ventas_df["_fase"] = ventas_ubic.map(lambda x: x[1])
 
