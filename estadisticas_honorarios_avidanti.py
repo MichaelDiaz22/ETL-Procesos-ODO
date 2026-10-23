@@ -251,37 +251,23 @@ def _palabras_clave(texto):
 MAPA_UBICACION_TOKENS = {ubi_norm: (sede, fase, _palabras_clave(ubi_norm)) for ubi_norm, (sede, fase) in MAPA_UBICACION.items()}
 
 def detectar_ubicacion_robusta(valor):
-    """
-    Primero intenta hacer match exacto.
-    Si no, busca el código de la sede explícitamente en el texto (ej. 'cai', 'cam').
-    Si lo encuentra, restringe la búsqueda de fase solo a esa sede.
-    Si no, busca difusamente entre todas las sedes.
-    """
     if pd.isna(valor): return (None, None)
     txt_norm = normalizar(valor)
-    
-    # 1. Coincidencia exacta directa
     if txt_norm in MAPA_UBICACION: 
         return MAPA_UBICACION[txt_norm]
         
     tokens_valor = _palabras_clave(txt_norm)
     mejor_match, mejor_score = None, 0
-    
-    # 2. Identificar si el texto menciona una sede explícitamente
     sedes_mencionadas = [cod for cod in CODIGOS_SEDE if cod.lower() in tokens_valor]
     
-    # 3. Buscar la mejor coincidencia
     for ubi_norm, (sede, fase, tokens_ubi) in MAPA_UBICACION_TOKENS.items():
-        # Si el texto menciona una sede, ignorar las ubicaciones de otras sedes
         if sedes_mencionadas and sede not in sedes_mencionadas:
             continue
-            
         if tokens_ubi and tokens_ubi.issubset(tokens_valor):
             score = len(tokens_ubi)
             if score > mejor_score:
                 mejor_score, mejor_match = score, (sede, fase)
                 
-    # 4. Si no se encontró nada pero menciona una sede (ej. solo dice "CAI"), asignar Fase 2 por defecto
     if not mejor_match and sedes_mencionadas:
         return (sedes_mencionadas[0], "Fase 2")
 
@@ -406,7 +392,6 @@ def normalizar_etiqueta_hist(concepto):
 # NUEVAS FUNCIONES DE AGRUPACIÓN
 # ============================================================
 def agrupar_consolidados(consolidados_por_periodo, agrupacion):
-    """Agrupa el diccionario mensual según la opción elegida."""
     if agrupacion == "Mes":
         return consolidados_por_periodo
 
@@ -449,7 +434,6 @@ def agrupar_consolidados(consolidados_por_periodo, agrupacion):
     return agrupado
 
 def _ordenar_llaves_cronologicamente(diccionario):
-    """Ordena las llaves del diccionario según el orden cronológico."""
     def clave_orden(llave):
         llave_lower = normalizar(llave)
         m_anio = re.search(r"(20\d{2})", llave_lower)
@@ -548,7 +532,6 @@ def procesar_todo(files_data):
             hashes_hojas_vistos[h] = f"{f_name}::{hoja}"
             bases[estructura].append((f_name, hoja, df_con_header.copy()))
 
-    # -------- PERIODO ACTUAL --------
     periodos_validos = [(n, p) for n, p in periodos_detectados if p[0] is not None and p[1] is not None]
     if periodos_validos:
         from collections import Counter
@@ -558,7 +541,6 @@ def procesar_todo(files_data):
         periodo_actual_tupla = (None, None)
     periodo_etiqueta, periodo_inicio, periodo_fin = formatear_periodo(*periodo_actual_tupla)
 
-    # -------- BASE ATENCIONES --------
     if bases["Atenciones del especialista"]:
         partes = []
         for arch, hoja, df in bases["Atenciones del especialista"]:
@@ -575,8 +557,19 @@ def procesar_todo(files_data):
     errores_avaladas = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
     dinero_interfaz = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
     errores_valor_bajo = {fase: {cod: {"cantidad": 0, "suma": 0.0} for cod in CODIGOS_SEDE} for fase in FASES}
+    
     df_filtrado_revisadas = pd.DataFrame()
     ubicaciones_no_mapeadas = pd.Series(dtype=int)
+
+    # Inicializar dataframes fuente para exportación detallada
+    fuentes_data = {
+        "Revisadas": pd.DataFrame(), "Avaladas": pd.DataFrame(),
+        "Dinero enviado por interfaz": pd.DataFrame(),
+        "Total ventas (ACTIVO Y FACTURADO)": pd.DataFrame(),
+        "Dinero ventas (ambulatorio)": pd.DataFrame(),
+        "Ventas relacionadas en factura (FACTURADO)": pd.DataFrame(),
+        "Dinero ventas (Facturado)": pd.DataFrame()
+    }
 
     if not atenciones_df.empty:
         col_ubicacion = obtener_columna(atenciones_df, "Ubicación de la venta")
@@ -596,32 +589,47 @@ def procesar_todo(files_data):
             if not sin_match.empty:
                 ubicaciones_no_mapeadas = (sin_match.value_counts().rename_axis("Ubicación (normalizada)").reset_index(name="Registros"))
 
-            # Convertir valor liquidado a número
             valor_liquidado_num = convertir_a_numero(atenciones_df[col_valor_liquidado]) if col_valor_liquidado is not None else pd.Series(0.0, index=atenciones_df.index)
-
-            # MÁSCARA BASE: valor liquidado > 1000
             mask_valor_mayor_1000 = valor_liquidado_num > 1000
+
+            dfs_rev = []
+            dfs_ava = []
+            dfs_dinero = []
 
             for fase in FASES:
                 for cod in CODIGOS_SEDE:
                     mask_sede_fase = (sede_serie == cod) & (fase_serie == fase)
-                    # Revisadas: sede+fase + verifica NO vacío + valor > 1000
                     mask_rev_total = mask_sede_fase & mask_verifica
                     mask_rev = mask_rev_total & mask_valor_mayor_1000
-                    # Avaladas: revisadas + submedico NO vacío + valor > 1000
                     mask_ava_total = mask_rev_total & mask_submedico
                     mask_ava = mask_ava_total & mask_valor_mayor_1000
+                    mask_dinero = mask_sede_fase & mask_verifica & mask_valor_mayor_1000
 
                     conteos[fase][cod]["revisadas"] = int(mask_rev.sum())
                     conteos[fase][cod]["avaladas"] = int(mask_ava.sum())
 
-                    # Errores de revisadas: los que cumplen condición pero valor <= 1000
+                    # Fuentes
+                    if mask_rev.any():
+                        df_temp = atenciones_df[mask_rev].copy()
+                        df_temp.insert(0, "Fase", fase)
+                        dfs_rev.append(df_temp)
+                    
+                    if mask_ava.any():
+                        df_temp = atenciones_df[mask_ava].copy()
+                        df_temp.insert(0, "Fase", fase)
+                        dfs_ava.append(df_temp)
+
+                    if mask_dinero.any():
+                        df_temp = atenciones_df[mask_dinero].copy()
+                        df_temp.insert(0, "Fase", fase)
+                        dfs_dinero.append(df_temp)
+
+                    # Errores
                     mask_rev_error = mask_rev_total & ~mask_valor_mayor_1000
                     if mask_rev_error.any():
                         errores_revisadas[fase][cod]["cantidad"] = int(mask_rev_error.sum())
                         errores_revisadas[fase][cod]["suma"] = float(valor_liquidado_num[mask_rev_error].sum())
 
-                    # Errores de avaladas: los que cumplen condición pero valor <= 1000
                     mask_ava_error = mask_ava_total & ~mask_valor_mayor_1000
                     if mask_ava_error.any():
                         errores_avaladas[fase][cod]["cantidad"] = int(mask_ava_error.sum())
@@ -645,6 +653,10 @@ def procesar_todo(files_data):
                     else:
                         dinero_interfaz[fase_val][sede_cod] += valor
 
+            if dfs_rev: fuentes_data["Revisadas"] = pd.concat(dfs_rev, ignore_index=True)
+            if dfs_ava: fuentes_data["Avaladas"] = pd.concat(dfs_ava, ignore_index=True)
+            if dfs_dinero: fuentes_data["Dinero enviado por interfaz"] = pd.concat(dfs_dinero, ignore_index=True)
+
     # -------- TOTALES --------
     total_ventas_ce = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
     dinero_ambulatorio = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
@@ -660,10 +672,7 @@ def procesar_todo(files_data):
 
         if col_totales_venta_no is not None and col_totales_centro_costo is not None:
             totales_df["_venta_no_norm"] = totales_df[col_totales_venta_no].map(normalizar_llave_venta)
-            
-            # Usamos la nueva función robusta aquí:
             totales_ubic = totales_df[col_totales_centro_costo].astype(str).map(detectar_ubicacion_robusta)
-            
             totales_df["_sede"] = totales_ubic.map(lambda x: x[0])
             totales_df["_fase"] = totales_ubic.map(lambda x: x[1])
 
@@ -684,6 +693,9 @@ def procesar_todo(files_data):
                     ventas_nos_existentes = set(ventas_para_cruce[col_venta_no_v].map(normalizar_llave_venta).dropna().unique())
 
             mask_venta_en_ventas = totales_df["_venta_no_norm"].isin(ventas_nos_existentes)
+            
+            dfs_tot_ventas = []
+            dfs_din_ventas = []
 
             for fase in FASES:
                 for cod in CODIGOS_SEDE:
@@ -693,12 +705,25 @@ def procesar_todo(files_data):
                         tarifas_filtro = totales_tarifa_num[mask_base]
                         indices = tarifas_filtro.index
                         mask_valida = totales_tarifa_num.loc[indices] >= 1000
-                        mask_error = ~mask_valida
+                        
+                        mask_valida_idx = indices[mask_valida]
+                        mask_error_idx = indices[~mask_valida]
+
                         total_ventas_ce[fase][cod] = int(mask_valida.sum())
-                        dinero_ambulatorio[fase][cod] = float(totales_tarifa_num.loc[indices][mask_valida].sum())
-                        if mask_error.any():
-                            errores_totales[fase][cod]["cantidad"] = int(mask_error.sum())
-                            errores_totales[fase][cod]["suma"] = float(totales_tarifa_num.loc[indices][mask_error].sum())
+                        dinero_ambulatorio[fase][cod] = float(totales_tarifa_num.loc[mask_valida_idx].sum())
+
+                        if len(mask_valida_idx) > 0:
+                            df_temp = totales_df.loc[mask_valida_idx].copy()
+                            df_temp.insert(0, "Fase", fase)
+                            dfs_tot_ventas.append(df_temp)
+                            dfs_din_ventas.append(df_temp)
+
+                        if len(mask_error_idx) > 0:
+                            errores_totales[fase][cod]["cantidad"] = int(len(mask_error_idx))
+                            errores_totales[fase][cod]["suma"] = float(totales_tarifa_num.loc[mask_error_idx].sum())
+            
+            if dfs_tot_ventas: fuentes_data["Total ventas (ACTIVO Y FACTURADO)"] = pd.concat(dfs_tot_ventas, ignore_index=True)
+            if dfs_din_ventas: fuentes_data["Dinero ventas (ambulatorio)"] = pd.concat(dfs_din_ventas, ignore_index=True)
 
             atenciones_nos_existentes = set()
             if not atenciones_df.empty:
@@ -739,9 +764,7 @@ def procesar_todo(files_data):
         col_ventas_venta_no = obtener_columna(ventas_df, "Venta No.")
 
         if col_ventas_centro_costo is not None:
-            # Usamos la nueva función robusta aquí:
             ventas_ubic = ventas_df[col_ventas_centro_costo].astype(str).map(detectar_ubicacion_robusta)
-            
             ventas_df["_sede"] = ventas_ubic.map(lambda x: x[0])
             ventas_df["_fase"] = ventas_ubic.map(lambda x: x[1])
 
@@ -769,6 +792,9 @@ def procesar_todo(files_data):
             else:
                 mask_venta_en_totales = pd.Series(False, index=ventas_df.index)
 
+            dfs_ven_rel = []
+            dfs_din_fact = []
+
             for fase in FASES:
                 for cod in CODIGOS_SEDE:
                     mask_sede_fase = (ventas_df["_sede"] == cod) & (ventas_df["_fase"] == fase)
@@ -777,12 +803,25 @@ def procesar_todo(files_data):
                         valores = valor_facturado_num[mask_base]
                         indices = valores.index
                         mask_valida = valor_facturado_num.loc[indices] >= 1000
-                        mask_error = ~mask_valida
+                        
+                        mask_valida_idx = indices[mask_valida]
+                        mask_error_idx = indices[~mask_valida]
+
                         ventas_relacionadas_factura[fase][cod] = int(mask_valida.sum())
-                        dinero_ventas_facturado[fase][cod] = float(valor_facturado_num.loc[indices][mask_valida].sum())
-                        if mask_error.any():
-                            errores_ventas[fase][cod]["cantidad"] = int(mask_error.sum())
-                            errores_ventas[fase][cod]["suma"] = float(valor_facturado_num.loc[indices][mask_error].sum())
+                        dinero_ventas_facturado[fase][cod] = float(valor_facturado_num.loc[mask_valida_idx].sum())
+
+                        if len(mask_valida_idx) > 0:
+                            df_temp = ventas_df.loc[mask_valida_idx].copy()
+                            df_temp.insert(0, "Fase", fase)
+                            dfs_ven_rel.append(df_temp)
+                            dfs_din_fact.append(df_temp)
+
+                        if len(mask_error_idx) > 0:
+                            errores_ventas[fase][cod]["cantidad"] = int(len(mask_error_idx))
+                            errores_ventas[fase][cod]["suma"] = float(valor_facturado_num.loc[mask_error_idx].sum())
+
+            if dfs_ven_rel: fuentes_data["Ventas relacionadas en factura (FACTURADO)"] = pd.concat(dfs_ven_rel, ignore_index=True)
+            if dfs_din_fact: fuentes_data["Dinero ventas (Facturado)"] = pd.concat(dfs_din_fact, ignore_index=True)
 
     # -------- PORCENTUALES --------
     porcentual_faltante = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
@@ -805,7 +844,6 @@ def procesar_todo(files_data):
             cant_err_rev = errores_revisadas[fase][cod]["cantidad"]
             cant_err_ava = errores_avaladas[fase][cod]["cantidad"]
 
-            # Acotar porcentajes para evitar negativos absurdos (ej. CAI -2137%)
             if total_ventas > 0:
                 faltante_calc = ((total_ventas - avaladas) / total_ventas) * 100.0
                 porcentual_faltante[fase][cod] = max(faltante_calc, 0.0) 
@@ -1026,6 +1064,7 @@ def procesar_todo(files_data):
         "ubicaciones_no_mapeadas": ubicaciones_no_mapeadas, "ubicaciones_totales_no_mapeadas": ubicaciones_totales_no_mapeadas,
         "ubicaciones_ventas_no_mapeadas": ubicaciones_ventas_no_mapeadas, "estados_no_incluidos": estados_no_incluidos,
         "totales_sin_match_atenciones_df": totales_sin_match_atenciones_df,
+        "fuentes_data": fuentes_data
     }
 
 def _firma_consolidados(consolidados_por_periodo):
@@ -1304,7 +1343,7 @@ def generar_grafica_participacion_sede_total(_consolidados_por_periodo, firma):
 # ============================================================
 # EXCEL CACHEADO
 # ============================================================
-@st.cache_data(show_spinner="Generando Excel...")
+@st.cache_data(show_spinner="Generando Excel de resultados...")
 def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fin):
     tablas_por_fase = resultados["tablas_por_fase"]
     tabla_consolidada = resultados["tabla_consolidada"]
@@ -1661,6 +1700,50 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
     return buffer.getvalue()
 
 
+@st.cache_data(show_spinner="Generando Excel con registros detallados...")
+def generar_excel_detallado_bytes(fuentes_data):
+    wb = Workbook()
+    wb.remove(wb.active) # Eliminar la hoja por defecto
+    
+    bold_white = Font(bold=True, size=11, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="305496")
+
+    for nombre_hoja, df in fuentes_data.items():
+        # Sanitizar nombre de la hoja (Excel tiene límite de 31 caracteres y no permite ciertos caracteres)
+        nombre_limpio = re.sub(r'[\\/*?:\[\]]', '', nombre_hoja)[:31]
+        
+        ws = wb.create_sheet(title=nombre_limpio)
+        
+        if df is None or df.empty:
+            ws.cell(row=1, column=1, value="No hay registros para esta variable.")
+            continue
+
+        # Escribir cabeceras
+        for j, col in enumerate(df.columns, start=1):
+            c = ws.cell(row=1, column=j, value=str(col))
+            c.font = bold_white
+            c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
+            
+        # Escribir datos
+        for i, (_, row) in enumerate(df.iterrows(), start=2):
+            for j, col in enumerate(df.columns, start=1):
+                val = row[col]
+                # Manejo de posibles nulos o tipos de datos problemáticos para Excel
+                if pd.isna(val):
+                    val = ""
+                ws.cell(row=i, column=j, value=val)
+                
+        # Autoajustar anchos de columna de forma básica
+        for col_letter in [get_column_letter(j) for j in range(1, len(df.columns) + 1)]:
+            ws.column_dimensions[col_letter].width = 20
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 # ============================================================
 # SIDEBAR
 # ============================================================
@@ -1729,6 +1812,7 @@ consolidados_por_periodo = resultados["consolidados_por_periodo"]
 periodo_etiqueta = resultados["periodo_etiqueta"]
 periodo_inicio = resultados["periodo_inicio"]
 periodo_fin = resultados["periodo_fin"]
+fuentes_data = resultados["fuentes_data"]
 
 # ============================================================
 # PERIODO
@@ -1909,14 +1993,33 @@ La sede con mayor participación en el envío de dinero por interfaz fue **{sede
 # ============================================================
 # EXPORTABLE EXCEL
 # ============================================================
-try:
-    excel_bytes = generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fin)
-    st.download_button(
-        label="📥 Descargar Excel completo (Resultados + Totales sin match + Novedades + Reglas + Análisis)",
-        data=excel_bytes,
-        file_name=f"resultados_por_fase_{periodo_etiqueta.replace(' ', '_')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="dl_excel_completo",
-    )
-except Exception as e:
-    st.error(f"❌ Error generando el Excel: {e}")
+st.subheader("📥 Descargas Excel")
+col1, col2 = st.columns(2)
+
+with col1:
+    try:
+        excel_bytes = generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fin)
+        st.download_button(
+            label="📊 Descargar Resumen y Análisis",
+            data=excel_bytes,
+            file_name=f"Resultados_Resumen_{periodo_etiqueta.replace(' ', '_')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_excel_resumen",
+            use_container_width=True
+        )
+    except Exception as e:
+        st.error(f"❌ Error generando el Excel: {e}")
+
+with col2:
+    try:
+        excel_det_bytes = generar_excel_detallado_bytes(fuentes_data)
+        st.download_button(
+            label="🗂️ Descargar Registros Fuente (Detalle por variable)",
+            data=excel_det_bytes,
+            file_name=f"Registros_Fuente_{periodo_etiqueta.replace(' ', '_')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_excel_detalle",
+            use_container_width=True
+        )
+    except Exception as e:
+        st.error(f"❌ Error generando el Excel detallado: {e}")
