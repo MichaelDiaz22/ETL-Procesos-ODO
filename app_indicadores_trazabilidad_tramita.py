@@ -1085,8 +1085,65 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         ordenes_gestionadas.columns = ['Fecha', 'Gestionadas']
         
         df_graf1 = pd.merge(ordenes_generadas, ordenes_gestionadas, on='Fecha', how='outer').fillna(0)
-        df_graf1 = df_graf1.sort_values('Fecha')
+        df_graf1 = df_graf1.sort_values('Fecha').reset_index(drop=True)
         
+        # ======================== CONSTRUCCIÓN DE ETIQUETAS SEGÚN AGRUPADOR ========================
+        def construir_etiquetas_grafico1(df_graf, agrupacion):
+            """Construye las etiquetas del eje X (rango de días según el agrupador)
+            y una etiqueta corta para usar en la narrativa."""
+            etiquetas_eje = []
+            etiquetas_narrativa = []
+            
+            meses_es = {
+                1: 'ene', 2: 'feb', 3: 'mar', 4: 'abr', 5: 'may', 6: 'jun',
+                7: 'jul', 8: 'ago', 9: 'sep', 10: 'oct', 11: 'nov', 12: 'dic'
+            }
+            
+            for fecha in df_graf['Fecha']:
+                fecha_ts = pd.Timestamp(fecha)
+                
+                if agrupacion == "Día":
+                    etiqueta = fecha_ts.strftime('%d/%m')
+                    etiquetas_eje.append(etiqueta)
+                    etiquetas_narrativa.append(etiqueta)
+                
+                elif agrupacion == "Semana":
+                    inicio = fecha_ts
+                    fin = fecha_ts + pd.Timedelta(days=6)
+                    ini_str = f"{inicio.day}/{meses_es[inicio.month]}"
+                    fin_str = f"{fin.day}/{meses_es[fin.month]}"
+                    etiqueta = f"{ini_str} a {fin_str}"
+                    etiquetas_eje.append(etiqueta)
+                    etiquetas_narrativa.append(etiqueta)
+                
+                elif agrupacion == "Quincena":
+                    dia = fecha_ts.day
+                    mes = fecha_ts.month
+                    anio = fecha_ts.year
+                    if dia == 1:
+                        inicio = fecha_ts
+                        fin = fecha_ts + pd.Timedelta(days=14)
+                    else:
+                        inicio = fecha_ts
+                        ultimo_dia_mes = pd.Timestamp(anio, mes, 1) + pd.offsets.MonthEnd(0)
+                        fin = ultimo_dia_mes
+                    ini_str = f"{inicio.day}/{meses_es[inicio.month]}"
+                    fin_str = f"{fin.day}/{meses_es[fin.month]}"
+                    etiqueta = f"{ini_str} a {fin_str}"
+                    etiquetas_eje.append(etiqueta)
+                    etiquetas_narrativa.append(etiqueta)
+                
+                elif agrupacion == "Mes":
+                    etiqueta = f"{meses_es[fecha_ts.month]} {fecha_ts.year}"
+                    etiquetas_eje.append(etiqueta)
+                    etiquetas_narrativa.append(etiqueta)
+            
+            return etiquetas_eje, etiquetas_narrativa
+        
+        etiquetas_eje, etiquetas_narrativa = construir_etiquetas_grafico1(df_graf1, agrupacion)
+        df_graf1['Etiqueta'] = etiquetas_eje
+        
+        # ======================== GRÁFICO ========================
         fig1, ax1 = plt.subplots(figsize=(12, 5))
         x = np.arange(len(df_graf1['Fecha']))
         width = 0.35
@@ -1098,7 +1155,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         ax1.set_ylabel('Cantidad')
         ax1.set_title(f'Órdenes Generadas vs Gestionadas - {sufijo_sede}')
         ax1.set_xticks(x)
-        ax1.set_xticklabels(df_graf1['Fecha'], rotation=45, ha='right', fontsize=9)
+        ax1.set_xticklabels(df_graf1['Etiqueta'], rotation=45, ha='right', fontsize=9)
         ax1.legend()
         
         for i, v in enumerate(df_graf1['Generadas']):
@@ -1109,14 +1166,38 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         plt.tight_layout()
         st.pyplot(fig1)
         
+        # ======================== NARRATIVA ADAPTADA AL AGRUPADOR ========================
         total_generadas = df_graf1['Generadas'].sum()
         total_gestionadas = df_graf1['Gestionadas'].sum()
         pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
         pct_pendientes = 100 - pct_gestionadas
-        dia_pico = df_graf1.loc[df_graf1['Generadas'].idxmax(), 'Fecha'] if len(df_graf1) > 0 else "N/A"
-        max_generadas = int(df_graf1['Generadas'].max()) if len(df_graf1) > 0 else 0
         
-        texto_interpretacion1 = f'Se generaron <strong>{int(total_generadas)}</strong> órdenes en total, de las cuales <strong>{int(total_gestionadas)} (<span class="stat">{pct_gestionadas:.1f}%</span>)</strong> ya fueron gestionadas y <strong>{int(total_generadas - total_gestionadas)} (<span class="stat">{pct_pendientes:.1f}%</span>)</strong> aún se encuentran pendientes de gestión. El día con mayor actividad fue <strong>{dia_pico}</strong> con <strong>{max_generadas}</strong> órdenes generadas.'
+        if len(df_graf1) > 0:
+            idx_pico = df_graf1['Generadas'].idxmax()
+            etiqueta_pico = etiquetas_narrativa[idx_pico]
+            max_generadas = int(df_graf1['Generadas'].max())
+        else:
+            etiqueta_pico = "N/A"
+            max_generadas = 0
+        
+        if agrupacion == "Día":
+            sujeto_periodo = "El día con mayor actividad fue"
+        elif agrupacion == "Semana":
+            sujeto_periodo = "La semana con mayor actividad fue"
+        elif agrupacion == "Quincena":
+            sujeto_periodo = "La quincena con mayor actividad fue"
+        elif agrupacion == "Mes":
+            sujeto_periodo = "El mes con mayor actividad fue"
+        else:
+            sujeto_periodo = "El período con mayor actividad fue"
+        
+        texto_interpretacion1 = (
+            f'Se generaron <strong>{int(total_generadas)}</strong> órdenes en total, de las cuales '
+            f'<strong>{int(total_gestionadas)} (<span class="stat">{pct_gestionadas:.1f}%</span>)</strong> '
+            f'ya fueron gestionadas y <strong>{int(total_generadas - total_gestionadas)} '
+            f'(<span class="stat">{pct_pendientes:.1f}%</span>)</strong> aún se encuentran pendientes de gestión. '
+            f'{sujeto_periodo} <strong>{etiqueta_pico}</strong> con <strong>{max_generadas}</strong> órdenes generadas.'
+        )
         
         st.markdown(generar_interpretacion("Interpretación", texto_interpretacion1), unsafe_allow_html=True)
         
@@ -1573,7 +1654,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         <p class="metric-value">N/A</p>
                     </div>
                 """, unsafe_allow_html=True)
-
         
         # ======================== RESUMEN EJECUTIVO DE SOLICITUDES EXTERNAS ========================
         st.markdown("#### 📋 Resumen Ejecutivo - Solicitudes Externas")
@@ -1729,7 +1809,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         st.info("No hay datos de procesos para mostrar por mes")
                     st.markdown('</div>', unsafe_allow_html=True)
 
-                        # ======================== GRÁFICO 5C: TOP 10 SERVICIOS POR MES ========================
+            # ======================== GRÁFICO 5C: TOP 10 SERVICIOS POR MES ========================
             if 'servicio' in df_externas_filtrado.columns:
                 with st.container():
                     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -1761,20 +1841,16 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             total_periodo = len(df_top10)
                         
                         if len(df_top10) > 0:
-                            # Agrupar por servicio Y proceso para incluir el proceso en la etiqueta
                             tiene_proceso = 'proceso' in df_top10.columns
                             
                             if tiene_proceso:
-                                # Agrupar por (servicio, proceso) para contar combinaciones
                                 conteo_servicios = df_top10.groupby(['servicio', 'proceso']).size().reset_index(name='Cantidad')
                                 conteo_servicios = conteo_servicios.sort_values('Cantidad', ascending=False).head(10).reset_index(drop=True)
-                                # Crear etiqueta combinada: "SERVICIO - PROCESO"
                                 conteo_servicios['Etiqueta'] = conteo_servicios.apply(
                                     lambda row: f"{str(row['servicio']).strip()} - {str(row['proceso']).strip()}", 
                                     axis=1
                                 )
                             else:
-                                # Si no hay proceso, usar solo el servicio
                                 conteo_servicios = df_top10['servicio'].value_counts().head(10).reset_index()
                                 conteo_servicios.columns = ['servicio', 'Cantidad']
                                 conteo_servicios['Etiqueta'] = conteo_servicios['servicio'].astype(str)
@@ -1789,7 +1865,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             bars = ax5c.barh(y_pos, conteo_servicios['Cantidad'], 
                                             color=colores_barras, edgecolor='white', linewidth=1.5)
                             
-                            # Usar la etiqueta combinada (Servicio - Proceso), truncada a 75 caracteres
                             etiquetas_y = [f"{str(e)[:75]}{'...' if len(str(e)) > 75 else ''}" 
                                           for e in conteo_servicios['Etiqueta']]
                             ax5c.set_yticks(y_pos)
@@ -1814,7 +1889,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             plt.tight_layout()
                             st.pyplot(fig5c)
                             
-                            # Interpretación ampliada
                             texto_interpretacion5c = (
                                 f'<strong>Análisis del Top 10 de servicios - {titulo_mes}:</strong> '
                                 f'Se analizaron <strong>{total_periodo}</strong> solicitudes en el período seleccionado. '
@@ -1842,7 +1916,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                 else:
                                     texto_interpretacion5c += f'La demanda está <strong>bastante diversificada</strong> entre múltiples servicios, reflejando una atención amplia.'
                                 
-                                # Distribución de los 10 servicios
                                 if len(conteo_servicios) >= 5:
                                     top5_cant = conteo_servicios.head(5)['Cantidad'].sum()
                                     pct_top5 = top5_cant / total_periodo * 100
@@ -1888,7 +1961,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             n_procesos = len(procesos_ordenados)
                             n_meses = len(meses_unicos_ep)
                             
-                            # Reducimos el alto total disponible para dejar espacio a la leyenda superior
                             altura_total_disponible = 0.70
                             ancho_barra = altura_total_disponible / n_meses if n_meses > 0 else altura_total_disponible
                             
@@ -1898,12 +1970,10 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             colores_estados_mes = colores_estados_mes[:len(estados_unicos_mes)]
                             dict_color_estado = {estado: colores_estados_mes[i] for i, estado in enumerate(estados_unicos_mes)}
                             
-                            # Figura con altura suficiente para que quepan las barras y la leyenda
                             fig5d, ax5d = plt.subplots(figsize=(16, max(8, n_procesos * 0.9)))
                             
                             y_pos = np.arange(n_procesos)
                             
-                            # Calcular el máximo total para ajustar el límite del eje X
                             max_total = 0
                             for p_idx, proceso in enumerate(procesos_ordenados):
                                 df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
@@ -1912,7 +1982,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                     if total_celda > max_total:
                                         max_total = total_celda
                             
-                            # Dibujar las barras y añadir etiquetas de mes
                             for p_idx, proceso in enumerate(procesos_ordenados):
                                 df_proceso = df_ext_ep_top[df_ext_ep_top['proceso'] == proceso]
                                 
@@ -1936,12 +2005,10 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                     
                                     total_celda = len(df_celda)
                                     if total_celda > 0:
-                                        # Etiqueta del total al final de la barra
                                         ax5d.text(total_celda + 0.3, p_idx + offset, f'{total_celda}',
                                                  ha='left', va='center', fontsize=8, 
                                                  fontweight='bold', color='black')
                                         
-                                        # Etiqueta del mes a la izquierda de la barra
                                         mes_str = mes.strftime('%Y-%m')
                                         ax5d.text(-max_total * 0.02 if max_total > 0 else -0.5, 
                                                  p_idx + offset, mes_str,
@@ -1957,7 +2024,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             ax5d.set_yticks(y_pos)
                             ax5d.set_yticklabels(etiquetas_proc, fontsize=10)
                             
-                            # Ampliamos ligeramente el rango del eje Y para dejar espacio arriba donde irá la leyenda
                             ax5d.set_ylim(-0.6, n_procesos - 0.2 + max(0.5, n_procesos * 0.07))
                             
                             ax5d.set_xlabel('Cantidad de Solicitudes', fontsize=12)
@@ -1965,7 +2031,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             ax5d.set_title(f'Solicitudes Externas: Distribución de Estados por Proceso - Agrupado por Mes - {sufijo_sede}',
                                           fontsize=14, fontweight='bold')
                             
-                            # ===== LEYENDA ÚNICA: ESTADOS (colores de las barras) — ubicada en la parte superior, justo debajo del título =====
                             legend_estados = [Patch(facecolor=dict_color_estado[estado], edgecolor='white', 
                                                     label=str(estado)[:35])
                                               for estado in estados_unicos_mes]
@@ -1980,7 +2045,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                         edgecolor='#7c3aed',
                                         borderpad=0.7)
                             
-                            # Ajustar el límite del eje X para dejar espacio a las etiquetas de mes a la izquierda
                             limite_izq = -max_total * 0.10 if max_total > 0 else -1
                             limite_der = max_total * 1.18 if max_total > 0 else 10
                             ax5d.set_xlim(limite_izq, limite_der)
@@ -1988,7 +2052,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             plt.tight_layout()
                             st.pyplot(fig5d, use_container_width=True)
                             
-                            # Interpretación ampliada
                             total_analizado = len(df_ext_ep_top)
                             total_general = len(df_externas_filtrado)
                             pct_analizado = total_analizado/total_general*100
@@ -2115,7 +2178,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             plt.tight_layout()
                             st.pyplot(fig5d)
                             
-                            # Interpretación ampliada
                             total_analizado = int(pivot_ep.values.sum())
                             total_general = len(df_externas_filtrado)
                             pct_analizado = total_analizado/total_general*100
@@ -2192,7 +2254,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         plt.tight_layout()
                         st.pyplot(fig5e)
                         
-                        # Interpretación ampliada
                         total_hm = int(pivot_hm.values.sum())
                         max_valor = pivot_hm.values.max()
                         idx_max = np.unravel_index(pivot_hm.values.argmax(), pivot_hm.values.shape)
