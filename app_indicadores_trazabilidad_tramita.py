@@ -236,10 +236,36 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                             else:
                                 df_externas = pd.read_excel(archivo, sheet_name='Solicitudes Externas')
                                 
-                                columnas_externas = ['fechaRegistroFormulario', 'ciudad', 'proceso', 'idPaciente', 
-                                                    'nombrePaciente', 'entidad', 'servicio', 'cups', 'estado', 
-                                                    'fechaEntregaProceso', 'motivoCancelacion']
-                                columnas_externas_faltantes = [col for col in columnas_externas if col not in df_externas.columns]
+                                # ======================== VALIDACIÓN DE COLUMNAS FLEXIBLE ========================
+                                # Aceptamos variantes de nombres para fechaRegistroFormulario y fechaEntregaProceso
+                                columnas_externas_requeridas = ['ciudad', 'proceso', 'idPaciente', 'nombrePaciente',
+                                                                'entidad', 'servicio', 'cups', 'estado',
+                                                                'motivoCancelacion']
+                                
+                                # Detectar columna de fecha de registro (acepta variantes)
+                                posibles_fecha_registro = ['fechaRegistroFormulario', 'fechaSolicitud', 'fecha Registro',
+                                                           'fechaRegistro', 'fecha_solicitud', 'Fecha Solicitud']
+                                col_fecha_registro = None
+                                for c in posibles_fecha_registro:
+                                    if c in df_externas.columns:
+                                        col_fecha_registro = c
+                                        break
+                                
+                                # Detectar columna de fecha de entrega (acepta variantes)
+                                posibles_fecha_entrega = ['fechaEntregaProceso', 'fecha entrega/cancelación',
+                                                          'fecha entrega/cancelacion', 'fechaEntrega',
+                                                          'fecha_entrega', 'Fecha Entrega']
+                                col_fecha_entrega = None
+                                for c in posibles_fecha_entrega:
+                                    if c in df_externas.columns:
+                                        col_fecha_entrega = c
+                                        break
+                                
+                                columnas_externas_faltantes = [col for col in columnas_externas_requeridas if col not in df_externas.columns]
+                                if col_fecha_registro is None:
+                                    columnas_externas_faltantes.append('fechaRegistroFormulario')
+                                if col_fecha_entrega is None:
+                                    columnas_externas_faltantes.append('fechaEntregaProceso')
                                 
                                 if columnas_externas_faltantes:
                                     st.warning(f"⚠️ La hoja 'Solicitudes Externas' no contiene las columnas requeridas. Se omitirá.")
@@ -247,6 +273,12 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                                     st.session_state.df_externas = None
                                 else:
                                     df_externas = df_externas.dropna(how='all')
+                                    
+                                    # Renombrar a nombres estándar
+                                    if col_fecha_registro != 'fechaRegistroFormulario':
+                                        df_externas = df_externas.rename(columns={col_fecha_registro: 'fechaRegistroFormulario'})
+                                    if col_fecha_entrega != 'fechaEntregaProceso':
+                                        df_externas = df_externas.rename(columns={col_fecha_entrega: 'fechaEntregaProceso'})
                                     
                                     df_externas['fechaRegistroFormulario'] = pd.to_datetime(df_externas['fechaRegistroFormulario'], errors='coerce')
                                     df_externas['fechaEntregaProceso'] = pd.to_datetime(df_externas['fechaEntregaProceso'], errors='coerce')
@@ -440,7 +472,7 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
     pct_pendientes = (total_no_gestionados_ext / total_externas * 100) if total_externas > 0 else 0
     
     # MÉTRICAS DE TIEMPO
-    entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA'].copy()
+    entregados = df_ext_temp[df_ext_temp['estado_norm'].isin(['ENTREGADA', 'ENTREGADO'])].copy()
     promedio_dias_entrega_ext = None
     num_entregados_validos = 0
     mediana_dias_entrega_ext = None
@@ -593,9 +625,9 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
             resumen += ' <strong style="color: #dc2626;">Se requiere revisar los procesos</strong> para reducir los tiempos de entrega.'
         resumen += '</p>'
     elif len(entregados) > 0:
-        resumen += f'<p><strong>🔹 Tiempos de Entrega a Proceso:</strong> Existen <strong>{len(entregados)}</strong> registros con estado "ENTREGADA", pero no se encontraron fechas válidas para calcular el tiempo promedio de entrega.</p>'
+        resumen += f'<p><strong>🔹 Tiempos de Entrega a Proceso:</strong> Existen <strong>{len(entregados)}</strong> registros con estado de entrega, pero no se encontraron fechas válidas para calcular el tiempo promedio de entrega.</p>'
     else:
-        resumen += f'<p><strong>🔹 Tiempos de Entrega a Proceso:</strong> No hay registros con estado "ENTREGADA" en el período filtrado, por lo que no es posible calcular tiempos de entrega.</p>'
+        resumen += f'<p><strong>🔹 Tiempos de Entrega a Proceso:</strong> No hay registros con estado de entrega en el período filtrado, por lo que no es posible calcular tiempos de entrega.</p>'
     
     # Sección 4: Distribución Mensual
     if distribucion_mensual_txt:
@@ -1597,7 +1629,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             pct_gestionados_ext = (total_gestionados_ext / total_externas * 100) if total_externas > 0 else 0
             pct_pendientes_ext = (total_pendientes_ext / total_externas * 100) if total_externas > 0 else 0
             
-            entregados = df_ext_temp[df_ext_temp['estado_norm'] == 'ENTREGADA'].copy()
+            # ======================== CÁLCULO DE TIEMPOS DE ENTREGA ========================
+            # Se acepta tanto 'ENTREGADO' como 'ENTREGADA' en estado_norm para robustez
+            entregados = df_ext_temp[df_ext_temp['estado_norm'].isin(['ENTREGADA', 'ENTREGADO'])].copy()
             if len(entregados) > 0:
                 entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
                 entregados_validos = entregados[entregados['dias_entrega_ext'].notna() & (entregados['dias_entrega_ext'] >= 0)]
@@ -2565,6 +2599,8 @@ else:
         
         **Hoja 3: 'Solicitudes Externas'** - Debe contener las siguientes columnas:
         - fechaRegistroFormulario, ciudad, proceso, idPaciente, nombrePaciente, entidad, servicio, cups, estado, fechaEntregaProceso, motivoCancelacion
+        
+        > 💡 Se aceptan variantes de nombres como `fechaSolicitud`, `paciente`, `idCups`, `fecha entrega/cancelación`. El sistema las renombra automáticamente al formato esperado.
         """)
 
 st.divider()
