@@ -1463,7 +1463,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
 
                     pivot_motivos = df_motivos_validos.groupby(['Motivo', 'Area']).size().reset_index(name='Cantidad')
 
-                    # MODIFICACIÓN: Se quita el límite del Top 8 y se muestran todos los motivos
                     motivos_top = top_motivos_global.index.tolist()
                     pivot_top = pivot_motivos.copy()
 
@@ -1481,7 +1480,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     columnas_ordenadas = [m for m in motivos_unicos if m in pivot_matriz.columns]
                     pivot_matriz = pivot_matriz[columnas_ordenadas]
 
-                    # MODIFICACIÓN: Ajuste dinámico de la altura de la figura para soportar todos los motivos en la leyenda
                     altura_figura = max(6, len(orden_areas) * 0.8)
                     fig2b, ax2b = plt.subplots(figsize=(14, altura_figura))
 
@@ -1519,7 +1517,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         fontsize=14, fontweight='bold'
                     )
 
-                    # MODIFICACIÓN: Ajuste para que la leyenda quede fuera del área del gráfico si son muchos motivos
                     ncol_leyenda = 1
                     if len(motivos_unicos) > 15:
                         ncol_leyenda = 2
@@ -2717,10 +2714,20 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
     def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, 
                                    ordenes_area_data, estados_serv_data, entidad_data, 
                                    df_ext_proceso_mes_export, df_ext_top_serv_export, 
-                                   df_ext_estado_proceso_export, df_motivos_area_export,
-                                   df_motivos_grupo_export):
-        datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
-        datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
+                                   df_ext_estado_proceso_export):
+        # MODIFICACIÓN: Agregar columnas 'Motivo' y 'Grupo_Motivo' justo después de 'Estado_Gestion'
+        df_export_clean = df_export.copy()
+        
+        # Calcular Motivo y Grupo_Motivo para el exportable
+        df_export_clean['Motivo'] = df_export_clean['Observación'].apply(extraer_motivo) if 'Observación' in df_export_clean.columns else None
+        df_export_clean['Grupo_Motivo'] = df_export_clean.apply(clasificar_grupo_final, axis=1)
+        
+        columnas_export = ['Estado', 'Estado_Gestion', 'Motivo', 'Grupo_Motivo', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']
+        columnas_export_existentes = [col for col in columnas_export if col in df_export_clean.columns]
+        
+        datos_detalle = df_export_clean[columnas_export_existentes].copy()
+        if 'Solicitado' in datos_detalle.columns:
+            datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
         
         resumen_data = []
         
@@ -2737,18 +2744,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             for _, row in estado_gestion_data.iterrows():
                 resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
         resumen_data.append(['', '', '', ''])
-        
-        if df_motivos_area_export is not None and len(df_motivos_area_export) > 0:
-            for _, row in df_motivos_area_export.iterrows():
-                resumen_data.append(['Gráfico 2B', 'Motivos por Área (Gestionado desde programación)', 
-                                    f'{row["Motivo"]} - {row["Area"]}: {row["Cantidad"]}', ''])
-            resumen_data.append(['', '', '', ''])
-        
-        if df_motivos_grupo_export is not None and len(df_motivos_grupo_export) > 0:
-            for _, row in df_motivos_grupo_export.iterrows():
-                resumen_data.append(['Gráfico 2C', 'Motivos Agrupados (Sede vs Contactive vs Solicitud del paciente)', 
-                                    f'{row["Grupo_Motivo"]} - {row["Area"]}: {row["Cantidad"]}', ''])
-            resumen_data.append(['', '', '', ''])
         
         if pendientes_data is not None and len(pendientes_data) > 0:
             total_pend = pendientes_data['Cantidad'].sum()
@@ -2805,24 +2800,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             estados_serv_data = estados_counts.copy()
             entidad_data = entidad_counts.copy()
             
-            df_motivos_area_export = None
-            df_motivos_export_check = df_filtrado[df_filtrado['Estado_Gestion'] == "Gestionado desde programación"].copy()
-            if len(df_motivos_export_check) > 0 and 'Observación' in df_motivos_export_check.columns:
-                df_motivos_export_check['Motivo'] = df_motivos_export_check['Observación'].apply(extraer_motivo)
-                df_motivos_export_check = df_motivos_export_check[df_motivos_export_check['Motivo'].notna()]
-                if len(df_motivos_export_check) > 0:
-                    df_motivos_area_export = df_motivos_export_check.groupby(['Motivo', 'Area']).size().reset_index(name='Cantidad')
-                    df_motivos_area_export = df_motivos_area_export.sort_values('Cantidad', ascending=False)
-            
-            df_motivos_grupo_export = None
-            if len(df_motivos_export_check) > 0:
-                df_motivos_export_check_g = df_motivos_export_check.copy()
-                df_motivos_export_check_g['Grupo_Motivo'] = df_motivos_export_check_g.apply(clasificar_grupo_final, axis=1)
-                df_motivos_export_check_g = df_motivos_export_check_g[df_motivos_export_check_g['Grupo_Motivo'].notna()]
-                if len(df_motivos_export_check_g) > 0:
-                    df_motivos_grupo_export = df_motivos_export_check_g.groupby(['Grupo_Motivo', 'Area']).size().reset_index(name='Cantidad')
-                    df_motivos_grupo_export = df_motivos_grupo_export.sort_values('Cantidad', ascending=False)
-            
             df_ext_proceso_mes_export = None
             df_ext_top_serv_export = None
             df_ext_estado_proceso_export = None
@@ -2859,8 +2836,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             datos_detalle, resumen_graficos = preparar_datos_exportacion(
                 df_export, df_graf1, estado_gestion_data, pendientes_data, 
                 ordenes_area_data, estados_serv_data, entidad_data,
-                df_ext_proceso_mes_export, df_ext_top_serv_export, df_ext_estado_proceso_export,
-                df_motivos_area_export, df_motivos_grupo_export
+                df_ext_proceso_mes_export, df_ext_top_serv_export, df_ext_estado_proceso_export
             )
             
             output = BytesIO()
@@ -2920,51 +2896,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         pass
                 adjusted_length = min(max_length + 2, 50)
                 ws2.column_dimensions[column_letter].width = adjusted_length
-            
-            if df_motivos_area_export is not None and len(df_motivos_area_export) > 0:
-                ws_motivos = wb.create_sheet("Motivos por Área")
-                for r_idx, row in enumerate(dataframe_to_rows(df_motivos_area_export, index=False, header=True), 1):
-                    for c_idx, value in enumerate(row, 1):
-                        cell = ws_motivos.cell(row=r_idx, column=c_idx, value=value)
-                        if r_idx == 1:
-                            cell.fill = header_fill
-                            cell.font = header_font
-                            cell.alignment = Alignment(horizontal='center', vertical='center')
-                        cell.border = thin_border
-                
-                for column in ws_motivos.columns:
-                    max_length = 0
-                    column_letter = column[0].column_letter
-                    for cell in column:
-                        try:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                        except:
-                            pass
-                    adjusted_length = min(max_length + 2, 50)
-                    ws_motivos.column_dimensions[column_letter].width = adjusted_length
-            
-            if df_motivos_grupo_export is not None and len(df_motivos_grupo_export) > 0:
-                ws_grupo = wb.create_sheet("Motivos Agrupados")
-                for r_idx, row in enumerate(dataframe_to_rows(df_motivos_grupo_export, index=False, header=True), 1):
-                    for c_idx, value in enumerate(row, 1):
-                        cell = ws_grupo.cell(row=r_idx, column=c_idx, value=value)
-                        if r_idx == 1:
-                            cell.fill = header_fill
-                            cell.font = header_font
-                            cell.alignment = Alignment(horizontal='center', vertical='center')
-                        cell.border = thin_border
-                for column in ws_grupo.columns:
-                    max_length = 0
-                    column_letter = column[0].column_letter
-                    for cell in column:
-                        try:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                        except:
-                            pass
-                    adjusted_length = min(max_length + 2, 50)
-                    ws_grupo.column_dimensions[column_letter].width = adjusted_length
             
             if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
                 ws3 = wb.create_sheet("Solicitudes Externas")
