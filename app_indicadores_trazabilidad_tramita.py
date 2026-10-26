@@ -1463,9 +1463,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
 
                     pivot_motivos = df_motivos_validos.groupby(['Motivo', 'Area']).size().reset_index(name='Cantidad')
 
-                    top_n_motivos = 8
-                    motivos_top = top_motivos_global.head(top_n_motivos).index.tolist()
-                    pivot_top = pivot_motivos[pivot_motivos['Motivo'].isin(motivos_top)].copy()
+                    # MODIFICACIÓN: Se quita el límite del Top 8 y se muestran todos los motivos
+                    motivos_top = top_motivos_global.index.tolist()
+                    pivot_top = pivot_motivos.copy()
 
                     orden_areas = pivot_top.groupby('Area')['Cantidad'].sum().sort_values(ascending=True).index.tolist()
                     motivos_unicos = motivos_top
@@ -1481,7 +1481,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     columnas_ordenadas = [m for m in motivos_unicos if m in pivot_matriz.columns]
                     pivot_matriz = pivot_matriz[columnas_ordenadas]
 
-                    fig2b, ax2b = plt.subplots(figsize=(14, max(6, len(orden_areas) * 0.8)))
+                    # MODIFICACIÓN: Ajuste dinámico de la altura de la figura para soportar todos los motivos en la leyenda
+                    altura_figura = max(6, len(orden_areas) * 0.8)
+                    fig2b, ax2b = plt.subplots(figsize=(14, altura_figura))
 
                     y_pos = np.arange(len(pivot_matriz.index))
                     left = np.zeros(len(pivot_matriz.index))
@@ -1517,8 +1519,12 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         fontsize=14, fontweight='bold'
                     )
 
+                    # MODIFICACIÓN: Ajuste para que la leyenda quede fuera del área del gráfico si son muchos motivos
+                    ncol_leyenda = 1
+                    if len(motivos_unicos) > 15:
+                        ncol_leyenda = 2
                     ax2b.legend(loc='lower right', fontsize=9, title='Motivo',
-                               title_fontsize=11, framealpha=0.95, edgecolor='#7c3aed')
+                               title_fontsize=11, framealpha=0.95, edgecolor='#7c3aed', ncol=ncol_leyenda)
 
                     ax2b.set_xlim(0, max_left * 1.15 if max_left > 0 else 10)
 
@@ -1620,7 +1626,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     for grupo in columnas_grupo:
                         valores_c = pivot_matriz_c[grupo].values
                         color_grupo = COLORES_GRUPOS_MAP.get(grupo, '#CCCCCC')
-                        # Para el grupo amarillo el texto va en negro para visibilidad
                         text_color_val = 'black' if grupo == GRUPO_PACIENTE else 'white'
                         ax2c.barh(y_pos_c, valores_c, left=left_c, height=0.65,
                                  label=grupo, color=color_grupo,
@@ -1659,7 +1664,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     plt.tight_layout()
                     st.pyplot(fig2c)
 
-                    # Totales por grupo
                     total_por_grupo = df_motivos_grupo['Grupo_Motivo'].value_counts()
                     total_sede = int(total_por_grupo.get(GRUPO_SEDE, 0))
                     total_contactive = int(total_por_grupo.get(GRUPO_CONTACTIVE, 0))
@@ -1668,7 +1672,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     pct_contactive = total_contactive / total_con_motivo_c * 100 if total_con_motivo_c > 0 else 0
                     pct_paciente = total_paciente / total_con_motivo_c * 100 if total_con_motivo_c > 0 else 0
 
-                    # Grupo predominante
                     grupos_totales = {
                         'Sede': total_sede,
                         'Contactive': total_contactive,
@@ -1677,7 +1680,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     grupo_top_nombre = max(grupos_totales, key=grupos_totales.get)
                     pct_grupo_top = grupos_totales[grupo_top_nombre] / total_con_motivo_c * 100 if total_con_motivo_c > 0 else 0
 
-                    # Área top por grupo
                     area_top_por_grupo = {}
                     for grupo_key, grupo_nombre in [(GRUPO_SEDE, 'Sede'), (GRUPO_CONTACTIVE, 'Contactive'), (GRUPO_PACIENTE, 'Solicitud del paciente')]:
                         df_g = pivot_grupo[pivot_grupo['Grupo_Motivo'] == grupo_key]
