@@ -237,7 +237,6 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                             else:
                                 df_externas = pd.read_excel(archivo, sheet_name='Solicitudes Externas')
                                 
-                                # ======================== VALIDACIÓN DE COLUMNAS FLEXIBLE ========================
                                 columnas_externas_requeridas = ['ciudad', 'proceso', 'idPaciente', 'nombrePaciente',
                                                                 'entidad', 'servicio', 'cups', 'estado',
                                                                 'motivoCancelacion']
@@ -410,15 +409,55 @@ MOTIVOS_SEDE = {
     'PENDIENTE AGENDAMIENTO/CONFIRMACION DEL ESPECIALISTA',
 }
 
+# ======================== CONJUNTO DE ÁREAS QUE SIEMPRE SON "SEDE" ========================
+AREAS_SIEMPRE_SEDE = {
+    'CIRUGÍA',
+    'CIRUGIA',
+    'HEMODINAMIA',
+    'ELECTROFISIOLOGÍA',
+    'ELECTROFISIOLOGIA',
+    'CARDIOLOGÍA NO INVASIVA',
+    'CARDIOLOGIA NO INVASIVA',
+}
+
+def normalizar_texto(txt):
+    """Normaliza un texto: strip + colapso espacios + mayúsculas."""
+    if pd.isna(txt):
+        return ''
+    return re.sub(r'\s+', ' ', str(txt)).strip().upper()
+
 def clasificar_motivo_grupo(motivo):
-    """Clasifica un motivo en 'Pendientes de gestión Sede' o 'Pendientes de gestión Contactive'."""
+    """Clasifica SOLO por motivo (sin considerar área)."""
     if pd.isna(motivo):
         return None
-    motivo_norm = str(motivo).strip().upper()
+    motivo_norm = normalizar_texto(motivo)
     if motivo_norm in MOTIVOS_SEDE:
         return 'Pendientes de gestión Sede'
     else:
         return 'Pendientes de gestión Contactive'
+
+def clasificar_area_es_sede(area):
+    """Devuelve True si el área pertenece al conjunto AREAS_SIEMPRE_SEDE."""
+    area_norm = normalizar_texto(area)
+    return area_norm in AREAS_SIEMPRE_SEDE
+
+def clasificar_grupo_final(row):
+    """
+    Clasificación final:
+    - Si el área está en AREAS_SIEMPRE_SEDE → 'Pendientes de gestión Sede' (regla prioritaria)
+    - Si no, se evalúa el motivo:
+        * Motivo en MOTIVOS_SEDE → 'Pendientes de gestión Sede'
+        * En otro caso → 'Pendientes de gestión Contactive'
+    """
+    area = row.get('Area', '')
+    motivo = row.get('Motivo', '')
+    
+    # Regla prioritaria: área siempre Sede
+    if clasificar_area_es_sede(area):
+        return 'Pendientes de gestión Sede'
+    
+    # Regla por motivo
+    return clasificar_motivo_grupo(motivo)
 
 # ======================== FUNCIÓN PARA GENERAR RESUMEN EJECUTIVO GENERAL ========================
 def generar_resumen_ejecutivo(df):
@@ -1531,7 +1570,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     df_motivos_grupo['Motivo'] = df_motivos_grupo['Observación'].apply(extraer_motivo)
 
                 df_motivos_grupo = df_motivos_grupo[df_motivos_grupo['Motivo'].notna()].copy()
-                df_motivos_grupo['Grupo_Motivo'] = df_motivos_grupo['Motivo'].apply(clasificar_motivo_grupo)
+                # Clasificación final con prioridad de área
+                df_motivos_grupo['Grupo_Motivo'] = df_motivos_grupo.apply(clasificar_grupo_final, axis=1)
                 df_motivos_grupo = df_motivos_grupo[df_motivos_grupo['Grupo_Motivo'].notna()].copy()
 
                 total_gestionados_prog_c = len(df_motivos)
@@ -2739,11 +2779,11 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     df_motivos_area_export = df_motivos_export_check.groupby(['Motivo', 'Area']).size().reset_index(name='Cantidad')
                     df_motivos_area_export = df_motivos_area_export.sort_values('Cantidad', ascending=False)
             
-            # Exportar motivos agrupados (Sede vs Contactive)
+            # Exportar motivos agrupados (Sede vs Contactive) CON la nueva regla de área
             df_motivos_grupo_export = None
             if len(df_motivos_export_check) > 0:
                 df_motivos_export_check_g = df_motivos_export_check.copy()
-                df_motivos_export_check_g['Grupo_Motivo'] = df_motivos_export_check_g['Motivo'].apply(clasificar_motivo_grupo)
+                df_motivos_export_check_g['Grupo_Motivo'] = df_motivos_export_check_g.apply(clasificar_grupo_final, axis=1)
                 df_motivos_export_check_g = df_motivos_export_check_g[df_motivos_export_check_g['Grupo_Motivo'].notna()]
                 if len(df_motivos_export_check_g) > 0:
                     df_motivos_grupo_export = df_motivos_export_check_g.groupby(['Grupo_Motivo', 'Area']).size().reset_index(name='Cantidad')
