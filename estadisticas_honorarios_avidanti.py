@@ -440,7 +440,7 @@ def normalizar_etiqueta_hist(concepto):
     return c
 
 # ============================================================
-# NUEVAS FUNCIONES DE AGRUPACIÓN
+# NUEVAS FUNCIONES DE AGRUPACIÓN Y ORDEN
 # ============================================================
 def agrupar_consolidados(consolidados_por_periodo, agrupacion):
     if agrupacion == "Mes":
@@ -1076,7 +1076,6 @@ def generar_grafica_dinero(_consolidados_por_periodo, firma):
     df = pd.DataFrame(datos)
     if df.empty or df["Valor"].sum() == 0: return None
     
-    # Altura estandarizada para evitar gráficas alargadas
     fig, ax = plt.subplots(figsize=(12, 7))
     sns.barplot(data=df, x="Periodo", y="Valor", hue="Sede", ax=ax) 
     
@@ -1090,7 +1089,7 @@ def generar_grafica_dinero(_consolidados_por_periodo, firma):
         ax.bar_label(container, labels=[_fmt_corto(v) for v in container.datavalues], fontsize=8, rotation=90, padding=3, label_type="edge", fontweight="bold")
         
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}".replace(",", ".")))
-    ax.set_ylim(0, df["Valor"].max() * 1.25) # Espacio extra para etiquetas
+    ax.set_ylim(0, df["Valor"].max() * 1.25)
     ax.set_title("Dinero enviado por interfaz por periodo y sede (Consolidado)", pad=15)
     ax.set_ylabel("Valor (COP)")
     ax.set_xlabel("Periodo")
@@ -1120,7 +1119,7 @@ def generar_grafica_cobertura(_consolidados_por_periodo, firma):
     for container in ax.containers:
         ax.bar_label(container, labels=[f"{v:.1f}%".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=8, rotation=90, padding=3, label_type="edge", fontweight="bold")
     ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
-    ax.set_ylim(0, max(df["Cobertura"].max() * 1.25, 120)) # Espacio extra
+    ax.set_ylim(0, max(df["Cobertura"].max() * 1.25, 120)) 
     ax.set_title("Cobertura general de honorarios médicos (Avaladas / Total ventas)", pad=15)
     ax.set_ylabel("Cobertura (%)")
     ax.set_xlabel("Periodo")
@@ -1150,7 +1149,14 @@ def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
     total_por_fila = df.sum(axis=1)
     df_pct = df.div(total_por_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
     df_pct = df_pct.reset_index()
-    df_pct["Etiqueta"] = df_pct["Periodo"] + "\n" + df_pct["Sede"]
+    
+    # Ordenar cronológicamente los periodos
+    periodos_unicos = list(df_pct["Periodo"].unique())
+    ordenados_dict = _ordenar_llaves_cronologicamente({p: {} for p in periodos_unicos})
+    df_pct["Periodo"] = pd.Categorical(df_pct["Periodo"], categories=list(ordenados_dict.keys()), ordered=True)
+    
+    df_pct["Etiqueta"] = df_pct["Periodo"].astype(str) + "\n" + df_pct["Sede"]
+    df_pct = df_pct.sort_values(["Periodo", "Sede"])
     df_pct = df_pct.set_index("Etiqueta")[["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"]]
 
     fig, ax = plt.subplots(figsize=(12, 7))
@@ -1166,7 +1172,7 @@ def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
     plt.legend(title="Fase", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
     plt.ylim(0, 105)
     plt.tight_layout()
-    plt.subplots_adjust(right=0.80)
+    plt.subplots_adjust(right=0.80, bottom=0.25) # Espacio extra para las etiquetas
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
@@ -1182,7 +1188,14 @@ def generar_grafica_participacion_sede(_consolidados_por_periodo, firma):
     if df.empty: return None
     df["Total_Periodo"] = df.groupby("Periodo")["Valor"].transform("sum")
     df["Porcentaje"] = df.apply(lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0, axis=1)
-    df["Etiqueta"] = df["Periodo"] + "\n" + df["Sede"]
+    
+    # Ordenar cronológicamente los periodos
+    periodos_unicos = list(df["Periodo"].unique())
+    ordenados_dict = _ordenar_llaves_cronologicamente({p: {} for p in periodos_unicos})
+    df["Periodo"] = pd.Categorical(df["Periodo"], categories=list(ordenados_dict.keys()), ordered=True)
+    
+    df["Etiqueta"] = df["Periodo"].astype(str) + "\n" + df["Sede"]
+    df = df.sort_values(["Periodo", "Sede"])
     
     fig, ax = plt.subplots(figsize=(12, 7))
     sns.barplot(data=df, x="Etiqueta", y="Porcentaje", hue="Sede", ax=ax) 
@@ -1195,7 +1208,7 @@ def generar_grafica_participacion_sede(_consolidados_por_periodo, firma):
     plt.ylim(0, 120)
     plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
     plt.tight_layout()
-    plt.subplots_adjust(right=0.80)
+    plt.subplots_adjust(right=0.80, bottom=0.25) # Espacio extra para las etiquetas
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
@@ -1274,6 +1287,12 @@ def generar_grafica_participacion_fase_total(_consolidados_por_periodo, firma):
         datos.append({"Periodo": periodo, "Fase 1 - Ambulatorio": f1, "Fase 2 - Hospitalario": f2, "Fase 3 - Quirúrgico": f3})
     df = pd.DataFrame(datos).set_index("Periodo")
     if df.empty: return None
+    
+    # Ordenar cronológicamente
+    periodos_unicos = list(df.index)
+    ordenados_dict = _ordenar_llaves_cronologicamente({p: {} for p in periodos_unicos})
+    df = df.reindex(list(ordenados_dict.keys()))
+
     total_por_fila = df.sum(axis=1)
     df_pct = df.div(total_por_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
     
@@ -1304,6 +1323,12 @@ def generar_grafica_participacion_sede_total(_consolidados_por_periodo, firma):
             datos.append({"Periodo": periodo, "Sede": sede, "Valor": vals["dinero_interfaz"]})
     df = pd.DataFrame(datos)
     if df.empty: return None
+    
+    # Ordenar cronológicamente
+    periodos_unicos = list(df["Periodo"].unique())
+    ordenados_dict = _ordenar_llaves_cronologicamente({p: {} for p in periodos_unicos})
+    df["Periodo"] = pd.Categorical(df["Periodo"], categories=list(ordenados_dict.keys()), ordered=True)
+
     df["Total_Periodo"] = df.groupby("Periodo")["Valor"].transform("sum")
     df["Porcentaje"] = df.apply(lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0, axis=1)
     df_melt = df.pivot_table(index="Periodo", columns="Sede", values="Porcentaje", fill_value=0)
@@ -1536,7 +1561,13 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             total_fila = df_g3.sum(axis=1)
             df_g3_pct = df_g3.div(total_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
             df_g3_pct = df_g3_pct.reset_index()
-            df_g3_pct["Etiqueta"] = df_g3_pct["Periodo"] + "\n" + df_g3_pct["Sede"]
+            
+            periodos_unicos = list(df_g3_pct["Periodo"].unique())
+            ordenados_dict = _ordenar_llaves_cronologicamente({p: {} for p in periodos_unicos})
+            df_g3_pct["Periodo"] = pd.Categorical(df_g3_pct["Periodo"], categories=list(ordenados_dict.keys()), ordered=True)
+            
+            df_g3_pct["Etiqueta"] = df_g3_pct["Periodo"].astype(str) + "\n" + df_g3_pct["Sede"]
+            df_g3_pct = df_g3_pct.sort_values(["Periodo", "Sede"])
             df_g3_pct = df_g3_pct.set_index("Etiqueta")[["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"]]
 
             fig, ax = plt.subplots(figsize=(12, 7))
@@ -1550,14 +1581,20 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             plt.xticks(rotation=45, ha="right", fontsize=9)
             plt.ylim(0, 105)
             plt.tight_layout()
-            plt.subplots_adjust(right=0.80)
+            plt.subplots_adjust(right=0.80, bottom=0.25)
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 3 — Participación por fase (por sede)")
             plt.close(fig)
 
         if not df_g1.empty:
             df_g1["Total_Periodo"] = df_g1.groupby("Periodo")["Valor"].transform("sum")
             df_g1["Porcentaje"] = df_g1.apply(lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0, axis=1)
-            df_g1["Etiqueta"] = df_g1["Periodo"] + "\n" + df_g1["Sede"]
+            
+            periodos_unicos = list(df_g1["Periodo"].unique())
+            ordenados_dict = _ordenar_llaves_cronologicamente({p: {} for p in periodos_unicos})
+            df_g1["Periodo"] = pd.Categorical(df_g1["Periodo"], categories=list(ordenados_dict.keys()), ordered=True)
+            
+            df_g1["Etiqueta"] = df_g1["Periodo"].astype(str) + "\n" + df_g1["Sede"]
+            df_g1 = df_g1.sort_values(["Periodo", "Sede"])
 
             fig, ax = plt.subplots(figsize=(12, 7))
             sns.barplot(data=df_g1, x="Etiqueta", y="Porcentaje", hue="Sede", ax=ax) 
@@ -1568,7 +1605,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             plt.xticks(rotation=45, ha="right", fontsize=8)
             plt.ylim(0, 120)
             plt.tight_layout()
-            plt.subplots_adjust(right=0.80)
+            plt.subplots_adjust(right=0.80, bottom=0.25)
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 4 — Participación de cada sede en el total")
             plt.close(fig)
 
@@ -1635,6 +1672,10 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             df_g7 = pd.DataFrame(datos_g7).set_index("Periodo")
 
             if not df_g7.empty:
+                periodos_unicos = list(df_g7.index)
+                ordenados_dict = _ordenar_llaves_cronologicamente({p: {} for p in periodos_unicos})
+                df_g7 = df_g7.reindex(list(ordenados_dict.keys()))
+
                 total_fila = df_g7.sum(axis=1)
                 df_g7_pct = df_g7.div(total_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
 
@@ -1661,6 +1702,10 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             df_g8 = pd.DataFrame(datos_g8)
 
             if not df_g8.empty:
+                periodos_unicos = list(df_g8["Periodo"].unique())
+                ordenados_dict = _ordenar_llaves_cronologicamente({p: {} for p in periodos_unicos})
+                df_g8["Periodo"] = pd.Categorical(df_g8["Periodo"], categories=list(ordenados_dict.keys()), ordered=True)
+
                 df_g8["Total_Periodo"] = df_g8.groupby("Periodo")["Valor"].transform("sum")
                 df_g8["Porcentaje"] = df_g8.apply(lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0, axis=1)
                 df_g8_melt = df_g8.pivot_table(index="Periodo", columns="Sede", values="Porcentaje", fill_value=0)
@@ -1908,10 +1953,6 @@ La sede con mayor participación en el envío de dinero por interfaz fue **{sede
         st.markdown("##### 🥧 Participación por fase de cada sede y periodo")
         img_part_fase = generar_grafica_participacion_fase(consolidados_agrupados, firma)
         if img_part_fase: st.image(img_part_fase, use_container_width=True)
-
-        st.markdown("##### 🥧 Participación de cada sede en el total general")
-        img_part_sede = generar_grafica_participacion_sede(consolidados_agrupados, firma)
-        if img_part_sede: st.image(img_part_sede, use_container_width=True)
 
         if mostrar_consolidado_total:
             st.markdown("---")
