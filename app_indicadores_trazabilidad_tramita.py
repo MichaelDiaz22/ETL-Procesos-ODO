@@ -10,6 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from matplotlib.patches import Patch
 import unicodedata
+import re
 
 # Configuración de la página
 st.set_page_config(
@@ -237,12 +238,10 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                                 df_externas = pd.read_excel(archivo, sheet_name='Solicitudes Externas')
                                 
                                 # ======================== VALIDACIÓN DE COLUMNAS FLEXIBLE ========================
-                                # Aceptamos variantes de nombres para fechaRegistroFormulario y fechaEntregaProceso
                                 columnas_externas_requeridas = ['ciudad', 'proceso', 'idPaciente', 'nombrePaciente',
                                                                 'entidad', 'servicio', 'cups', 'estado',
                                                                 'motivoCancelacion']
                                 
-                                # Detectar columna de fecha de registro (acepta variantes)
                                 posibles_fecha_registro = ['fechaRegistroFormulario', 'fechaSolicitud', 'fecha Registro',
                                                            'fechaRegistro', 'fecha_solicitud', 'Fecha Solicitud']
                                 col_fecha_registro = None
@@ -251,7 +250,6 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                                         col_fecha_registro = c
                                         break
                                 
-                                # Detectar columna de fecha de entrega (acepta variantes)
                                 posibles_fecha_entrega = ['fechaEntregaProceso', 'fecha entrega/cancelación',
                                                           'fecha entrega/cancelacion', 'fechaEntrega',
                                                           'fecha_entrega', 'Fecha Entrega']
@@ -274,7 +272,6 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                                 else:
                                     df_externas = df_externas.dropna(how='all')
                                     
-                                    # Renombrar a nombres estándar
                                     if col_fecha_registro != 'fechaRegistroFormulario':
                                         df_externas = df_externas.rename(columns={col_fecha_registro: 'fechaRegistroFormulario'})
                                     if col_fecha_entrega != 'fechaEntregaProceso':
@@ -382,6 +379,23 @@ def obtener_sufijo_sede(sedes_seleccionadas, df_filtrado):
             else:
                 return f"Todas las sedes ({len(sedes_unicas)})"
         return "Todas las sedes"
+
+# ======================== FUNCIÓN PARA EXTRAER MOTIVO DE OBSERVACIÓN ========================
+def extraer_motivo(observacion):
+    """Extrae el texto entre la palabra 'Motivo' y el signo '-' en la Observación."""
+    if pd.isna(observacion):
+        return None
+    texto = str(observacion)
+    # Patrón: 'Motivo' seguido de cualquier texto (no codicioso) hasta el primer '-'
+    match = re.search(r'Motivo[:\s]*(.+?)\s*-', texto, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+    motivo = match.group(1).strip()
+    if len(motivo) == 0:
+        return None
+    # Normalizar: colapsar espacios múltiples y estandarizar a mayúsculas
+    motivo = re.sub(r'\s+', ' ', motivo).strip().upper()
+    return motivo
 
 # ======================== FUNCIÓN PARA GENERAR RESUMEN EJECUTIVO GENERAL ========================
 def generar_resumen_ejecutivo(df):
@@ -593,13 +607,11 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
     resumen = '<div class="executive-summary">'
     resumen += '<h3>📋 Resumen Ejecutivo - Solicitudes Externas</h3>'
     
-    # Sección 1: Visión General (sin ciudades ni pacientes únicos)
     resumen += f'<p><strong>🔹 Visión General ({sufijo_sede}):</strong> Se identificaron <span class="stat">{total_externas:,}</span> solicitudes externas en total.'
     if entidades_txt:
         resumen += f' {entidades_txt}'
     resumen += '</p>'
     
-    # Sección 2: Estado de Gestión (sin el mensaje de "Buen desempeño")
     resumen += f'<p><strong>🔹 Estado de Gestión:</strong> Del total, <span class="stat">{total_gestionados_ext:,} ({pct_gestionados:.1f}%)</span> ya han sido gestionadas y <span class="stat">{total_no_gestionados_ext:,} ({pct_pendientes:.1f}%)</span> se encuentran pendientes de gestión.'
     if pct_pendientes >= 50:
         resumen += f' <strong style="color: #dc2626;">⚠️ Atención:</strong> Más de la mitad de las solicitudes están pendientes, lo que representa un <strong>riesgo operativo alto</strong> que requiere priorización inmediata.'
@@ -607,7 +619,6 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
         resumen += f' <strong style="color: #ea580c;">⚠️ Nota:</strong> La proporción de pendientes es significativa ({pct_pendientes:.1f}%), se recomienda monitorear de cerca la gestión.'
     resumen += '</p>'
     
-    # Sección 3: Tiempos de Entrega (sin el mensaje de "satisfactorio")
     if promedio_dias_entrega_ext is not None and num_entregados_validos > 0:
         resumen += f'<p><strong>🔹 Tiempos de Entrega a Proceso:</strong> El tiempo promedio de entrega es de <span class="stat">{promedio_dias_entrega_ext:.1f}</span> días (mediana: <span class="stat">{mediana_dias_entrega_ext:.1f}</span> días), calculado sobre <strong>{num_entregados_validos}</strong> registros con fechas válidas. El rango oscila entre <strong>{min_dias_entrega_ext:.1f}</strong> y <strong>{max_dias_entrega_ext:.1f}</strong> días.'
         
@@ -629,14 +640,12 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
     else:
         resumen += f'<p><strong>🔹 Tiempos de Entrega a Proceso:</strong> No hay registros con estado de entrega en el período filtrado, por lo que no es posible calcular tiempos de entrega.</p>'
     
-    # Sección 4: Distribución Mensual
     if distribucion_mensual_txt:
         resumen += f'<p><strong>🔹 Distribución Mensual:</strong> {distribucion_mensual_txt}'
         if mes_pico_txt:
             resumen += f' {mes_pico_txt}'
         resumen += '</p>'
     
-    # Sección 5: Hallazgos Principales
     if top_proceso_txt or top_servicio_txt or top_estado_txt:
         resumen += f'<p><strong>🔹 Hallazgos Principales:</strong></p>'
         resumen += '<ul style="margin-top: 5px; line-height: 1.8;">'
@@ -648,7 +657,6 @@ def generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede):
             resumen += f'<li><strong>Estados:</strong> {top_estado_txt}</li>'
         resumen += '</ul>'
     
-    # Sección 6: Recomendaciones Automáticas (sin "Mantener el ritmo actual")
     resumen += '<p><strong>🔹 Recomendaciones Sugeridas:</strong></p>'
     resumen += '<ul style="margin-top: 5px; line-height: 1.8;">'
     
@@ -1121,8 +1129,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         
         # ======================== CONSTRUCCIÓN DE ETIQUETAS SEGÚN AGRUPADOR ========================
         def construir_etiquetas_grafico1(df_graf, agrupacion, fecha_inicio_real, fecha_fin_real):
-            """Construye las etiquetas del eje X (rango de días según el agrupador)
-            recortando los rangos a las fechas reales existentes en los datos."""
             etiquetas_eje = []
             etiquetas_narrativa = []
             
@@ -1143,7 +1149,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     etiquetas_narrativa.append(etiqueta)
                 
                 elif agrupacion == "Semana":
-                    # Rango de la semana, recortado a los límites reales de los datos
                     inicio = max(fecha_ts, fi)
                     fin = min(fecha_ts + pd.Timedelta(days=6), ff)
                     ini_str = f"{inicio.day}/{meses_es[inicio.month]}"
@@ -1156,7 +1161,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     etiquetas_narrativa.append(etiqueta)
                 
                 elif agrupacion == "Quincena":
-                    # Rango de la quincena, recortado a los límites reales de los datos
                     dia = fecha_ts.day
                     mes = fecha_ts.month
                     anio = fecha_ts.year
@@ -1181,7 +1185,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     etiquetas_narrativa.append(etiqueta)
                 
                 elif agrupacion == "Mes":
-                    # Para el mes, recortamos el rango al primer y último día con datos
                     primer_dia_mes = fecha_ts
                     ultimo_dia_mes = fecha_ts + pd.offsets.MonthEnd(0)
                     inicio = max(primer_dia_mes, fi)
@@ -1197,7 +1200,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             
             return etiquetas_eje, etiquetas_narrativa
         
-        # Fechas reales del conjunto filtrado (para recortar rangos)
         fecha_inicio_real = df_filtrado['Solicitado'].min().normalize()
         fecha_fin_real = df_filtrado['Solicitado'].max().normalize()
         
@@ -1206,7 +1208,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         )
         df_graf1['Etiqueta'] = etiquetas_eje
         
-        # ======================== GRÁFICO ========================
         fig1, ax1 = plt.subplots(figsize=(12, 5))
         x = np.arange(len(df_graf1['Fecha']))
         width = 0.35
@@ -1229,7 +1230,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         plt.tight_layout()
         st.pyplot(fig1)
         
-        # ======================== NARRATIVA ADAPTADA AL AGRUPADOR ========================
         total_generadas = df_graf1['Generadas'].sum()
         total_gestionadas = df_graf1['Gestionadas'].sum()
         pct_gestionadas = (total_gestionadas / total_generadas * 100) if total_generadas > 0 else 0
@@ -1368,6 +1368,156 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             
             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion2), unsafe_allow_html=True)
             
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # ======================== GRÁFICO 2B: MOTIVOS POR ÁREA (GESTIONADO DESDE PROGRAMACIÓN) ========================
+        with st.container():
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.subheader("📊 Análisis de Motivos por Área - Gestionado desde programación")
+
+            # Filtrar registros gestionados desde programación
+            df_motivos = df_filtrado[df_filtrado['Estado_Gestion'] == "Gestionado desde programación"].copy()
+
+            if len(df_motivos) > 0 and 'Observación' in df_motivos.columns:
+                df_motivos['Motivo'] = df_motivos['Observación'].apply(extraer_motivo)
+                df_motivos_validos = df_motivos[df_motivos['Motivo'].notna()].copy()
+
+                total_gestionados_prog = len(df_motivos)
+                total_con_motivo = len(df_motivos_validos)
+
+                if total_con_motivo > 0:
+                    # Top motivos globales
+                    top_motivos_global = df_motivos_validos['Motivo'].value_counts()
+
+                    # Pivot: Motivo x Área
+                    pivot_motivos = df_motivos_validos.groupby(['Motivo', 'Area']).size().reset_index(name='Cantidad')
+
+                    # Limitar a los motivos más frecuentes (ej. top 8) para legibilidad
+                    top_n_motivos = 8
+                    motivos_top = top_motivos_global.head(top_n_motivos).index.tolist()
+                    pivot_top = pivot_motivos[pivot_motivos['Motivo'].isin(motivos_top)].copy()
+
+                    # Ordenar motivos por total ascendente (para barras horizontales: mayor arriba)
+                    orden_motivos = pivot_top.groupby('Motivo')['Cantidad'].sum().sort_values(ascending=True).index.tolist()
+                    areas_unicas = sorted(pivot_top['Area'].unique().tolist())
+
+                    # Colores por área
+                    colores_areas = colores_diferenciados[:len(areas_unicas)]
+                    while len(colores_areas) < len(areas_unicas):
+                        colores_areas = colores_areas + colores_diferenciados
+                    colores_areas = colores_areas[:len(areas_unicas)]
+                    dict_color_area = {area: colores_areas[i] for i, area in enumerate(areas_unicas)}
+
+                    # Construir matriz Motivo x Área
+                    pivot_matriz = pivot_top.pivot(index='Motivo', columns='Area', values='Cantidad').fillna(0)
+                    pivot_matriz = pivot_matriz.reindex(index=orden_motivos).fillna(0)
+
+                    fig2b, ax2b = plt.subplots(figsize=(14, max(6, len(orden_motivos) * 0.8)))
+
+                    y_pos = np.arange(len(pivot_matriz.index))
+                    left = np.zeros(len(pivot_matriz.index))
+
+                    for area in areas_unicas:
+                        if area in pivot_matriz.columns:
+                            valores = pivot_matriz[area].values
+                            ax2b.barh(y_pos, valores, left=left, height=0.65,
+                                     label=str(area)[:40], color=dict_color_area[area],
+                                     edgecolor='white', linewidth=1.2)
+                            for j, v in enumerate(valores):
+                                if v > 0:
+                                    ax2b.text(left[j] + v/2, y_pos[j], f'{int(v)}',
+                                             ha='center', va='center', fontsize=9,
+                                             fontweight='bold', color='white')
+                            left += valores
+
+                    # Totales al final de cada barra
+                    max_left = left.max() if len(left) > 0 else 0
+                    for j, total in enumerate(left):
+                        offset = max_left * 0.01 if max_left > 0 else 0.3
+                        ax2b.text(total + offset, y_pos[j], f'{int(total)}',
+                                 ha='left', va='center', fontsize=10,
+                                 fontweight='bold', color='black')
+
+                    # Etiquetas Y (motivos truncados)
+                    etiquetas_y_mot = [f"{str(m)[:70]}{'...' if len(str(m)) > 70 else ''}"
+                                      for m in pivot_matriz.index]
+                    ax2b.set_yticks(y_pos)
+                    ax2b.set_yticklabels(etiquetas_y_mot, fontsize=9)
+
+                    ax2b.set_xlabel('Cantidad de Órdenes', fontsize=12)
+                    ax2b.set_ylabel('Motivo', fontsize=12)
+                    ax2b.set_title(
+                        f'Motivos por Área - Gestionado desde programación - {sufijo_sede}',
+                        fontsize=14, fontweight='bold'
+                    )
+
+                    ax2b.legend(loc='lower right', fontsize=10, title='Área',
+                               title_fontsize=11, framealpha=0.95, edgecolor='#7c3aed')
+
+                    ax2b.set_xlim(0, max_left * 1.15 if max_left > 0 else 10)
+
+                    plt.tight_layout()
+                    st.pyplot(fig2b)
+
+                    # ======================== INTERPRETACIÓN ========================
+                    motivo_top = top_motivos_global.index[0]
+                    motivo_top_cant = top_motivos_global.iloc[0]
+                    pct_motivo_top = motivo_top_cant / total_con_motivo * 100
+
+                    area_con_mas_motivos = pivot_top.groupby('Area')['Cantidad'].sum().sort_values(ascending=False)
+                    area_top_mot = area_con_mas_motivos.index[0]
+                    area_top_mot_cant = area_con_mas_motivos.iloc[0]
+                    pct_area_top = area_top_mot_cant / total_con_motivo * 100
+
+                    if len(top_motivos_global) >= 3:
+                        top3_cant = top_motivos_global.head(3).sum()
+                        pct_top3 = top3_cant / total_con_motivo * 100
+                    else:
+                        pct_top3 = 100.0
+
+                    pct_con_motivo = (total_con_motivo / total_gestionados_prog * 100) if total_gestionados_prog > 0 else 0
+
+                    texto_interpretacion2b = (
+                        f'De las <strong>{total_gestionados_prog}</strong> órdenes gestionadas desde programación, '
+                        f'<strong>{total_con_motivo}</strong> (<span class="stat">{pct_con_motivo:.1f}%</span>) '
+                        f'contienen un motivo estandarizado identificable en la Observación. '
+                        f'El motivo más frecuente es <span class="stat">"{str(motivo_top)[:80]}"</span> con '
+                        f'<strong>{int(motivo_top_cant)}</strong> registros (<span class="stat">{pct_motivo_top:.1f}%</span> de los motivos identificados). '
+                        f'El área con mayor volumen de motivos registrados es <span class="stat">"{str(area_top_mot)[:50]}"</span> '
+                        f'con <strong>{int(area_top_mot_cant)}</strong> registros (<span class="stat">{pct_area_top:.1f}%</span> del total). '
+                    )
+
+                    if pct_top3 > 70:
+                        texto_interpretacion2b += (
+                            f'Los 3 motivos principales concentran el <span class="stat">{pct_top3:.1f}%</span> de los casos, '
+                            f'lo que indica una <strong>alta estandarización</strong> en las causas de gestión. '
+                        )
+                    elif pct_top3 > 40:
+                        texto_interpretacion2b += (
+                            f'Los 3 motivos principales concentran el <span class="stat">{pct_top3:.1f}%</span> de los casos, '
+                            f'reflejando una <strong>concentración moderada</strong> de causas. '
+                        )
+                    else:
+                        texto_interpretacion2b += (
+                            f'Los 3 motivos principales solo concentran el <span class="stat">{pct_top3:.1f}%</span>, '
+                            f'lo que sugiere una <strong>alta diversidad de causas</strong> de gestión. '
+                        )
+
+                    st.markdown(generar_interpretacion("Interpretación", texto_interpretacion2b), unsafe_allow_html=True)
+
+                    # Tabla de detalle expandible
+                    with st.expander("📋 Ver tabla detallada Motivo × Área", expanded=False):
+                        tabla_motivos = pivot_top.pivot(index='Motivo', columns='Area', values='Cantidad').fillna(0).astype(int)
+                        tabla_motivos['TOTAL'] = tabla_motivos.sum(axis=1)
+                        tabla_motivos = tabla_motivos.sort_values('TOTAL', ascending=False)
+                        tabla_motivos = tabla_motivos.reset_index()
+                        st.dataframe(tabla_motivos, use_container_width=True, height=350)
+                        st.caption(f"📊 {total_con_motivo} registros con motivo identificado de {total_gestionados_prog} gestionados desde programación")
+                else:
+                    st.info("No se pudieron extraer motivos estandarizados del campo Observación para los registros gestionados desde programación.")
+            else:
+                st.info("No hay órdenes gestionadas desde programación en el período filtrado, por lo que no es posible analizar motivos.")
+
             st.markdown('</div>', unsafe_allow_html=True)
         
         # ======================== GRÁFICO 3 ========================
@@ -1608,7 +1758,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
     st.divider()
     
     with st.expander("📂 Solicitudes Externas - Análisis Completo", expanded=False):
-        # ======================== CÁLCULO DE MÉTRICAS DE EXTERNAS ========================
         total_externas = 0
         total_gestionados_ext = 0
         pct_gestionados_ext = 0
@@ -1629,8 +1778,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             pct_gestionados_ext = (total_gestionados_ext / total_externas * 100) if total_externas > 0 else 0
             pct_pendientes_ext = (total_pendientes_ext / total_externas * 100) if total_externas > 0 else 0
             
-            # ======================== CÁLCULO DE TIEMPOS DE ENTREGA ========================
-            # Se acepta tanto 'ENTREGADO' como 'ENTREGADA' en estado_norm para robustez
             entregados = df_ext_temp[df_ext_temp['estado_norm'].isin(['ENTREGADA', 'ENTREGADO'])].copy()
             if len(entregados) > 0:
                 entregados['dias_entrega_ext'] = (entregados['fechaEntregaProceso'] - entregados['fechaRegistroFormulario']).dt.total_seconds() / (24 * 3600)
@@ -1647,10 +1794,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         
         sufijo_sede_ext = obtener_sufijo_sede(sedes_seleccionadas, df_filtrado)
         
-        # ======================== INDICADORES CLAVE DE SOLICITUDES EXTERNAS (6 TARJETAS) ========================
         st.markdown("#### 📊 Indicadores clave de solicitudes externas")
         
-        # Primera fila: 3 tarjetas principales
         col_ext_k1, col_ext_k2, col_ext_k3 = st.columns(3)
         
         with col_ext_k1:
@@ -1693,7 +1838,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     </div>
                 """, unsafe_allow_html=True)
         
-        # Segunda fila: 3 tarjetas adicionales
         col_ext_k4, col_ext_k5, col_ext_k6 = st.columns(3)
         
         with col_ext_k4:
@@ -1720,12 +1864,10 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     </div>
                 """, unsafe_allow_html=True)
         
-        # ======================== RESUMEN EJECUTIVO DE SOLICITUDES EXTERNAS ========================
         st.markdown("#### 📋 Resumen Ejecutivo - Solicitudes Externas")
         resumen_ext_html = generar_resumen_ejecutivo_externas(df_externas_filtrado, sufijo_sede_ext)
         st.markdown(resumen_ext_html, unsafe_allow_html=True)
         
-        # ======================== TABLA DE SOLICITUDES EXTERNAS ========================
         with st.expander("📋 Ver Detalle de Solicitudes Externas", expanded=False):
             if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
                 columnas_ext = ['fechaRegistroFormulario', 'ciudad', 'proceso', 'idPaciente', 'nombrePaciente', 'entidad', 'servicio', 'estado']
@@ -1759,11 +1901,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             else:
                 st.info("No hay datos de solicitudes externas para mostrar")
         
-        # ======================== GRÁFICOS DE SOLICITUDES EXTERNAS ========================
         if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
             st.markdown("#### 📈 Análisis Visual - Solicitudes Externas")
             
-            # ======================== GRÁFICO 5B: PROCESOS POR MES ========================
             if 'proceso' in df_externas_filtrado.columns:
                 with st.container():
                     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -1822,7 +1962,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         plt.tight_layout()
                         st.pyplot(fig5b)
                         
-                        # Interpretación ampliada
                         total_solicitudes = procesos_por_mes['Cantidad'].sum()
                         mes_pico = procesos_por_mes.groupby('mes')['Cantidad'].sum().idxmax()
                         cantidad_pico = procesos_por_mes.groupby('mes')['Cantidad'].sum().max()
@@ -1874,7 +2013,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         st.info("No hay datos de procesos para mostrar por mes")
                     st.markdown('</div>', unsafe_allow_html=True)
 
-            # ======================== GRÁFICO 5C: TOP 10 SERVICIOS POR MES ========================
             if 'servicio' in df_externas_filtrado.columns:
                 with st.container():
                     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -1993,7 +2131,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         st.info("No hay datos de servicios para mostrar por mes")
                     st.markdown('</div>', unsafe_allow_html=True)
 
-            # ======================== GRÁFICO 5D: DISTRIBUCIÓN DE ESTADOS POR PROCESO ========================
             if 'proceso' in df_externas_filtrado.columns and 'estado' in df_externas_filtrado.columns:
                 with st.container():
                     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -2013,7 +2150,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     df_ext_ep_top = df_ext_ep[df_ext_ep['proceso'].isin(top_procesos_ep)].copy()
                     
                     if len(df_ext_ep_top) > 0:
-                        # CASO ESPECIAL: AGRUPACIÓN POR MES
                         if agrupacion_ep == "Mes":
                             df_ext_ep_top['periodo'] = df_ext_ep_top['fechaRegistroFormulario'].dt.to_period('M').dt.start_time
                             
@@ -2166,7 +2302,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             
                             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion5d), unsafe_allow_html=True)
                         
-                        # OTROS CASOS: TOTAL / DÍA / SEMANA
                         else:
                             if agrupacion_ep == "Total":
                                 pivot_ep = df_ext_ep_top.groupby(['proceso', 'estado']).size().unstack(fill_value=0)
@@ -2274,7 +2409,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         st.info("No hay datos de procesos para mostrar")
                     st.markdown('</div>', unsafe_allow_html=True)
 
-            # ======================== GRÁFICO 5E: MATRIZ DE CALOR ========================
             if 'proceso' in df_externas_filtrado.columns:
                 with st.container():
                     st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -2356,7 +2490,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
     def preparar_datos_exportacion(df_export, df_graf1_data, estado_gestion_data, pendientes_data, 
                                    ordenes_area_data, estados_serv_data, entidad_data, 
                                    df_ext_proceso_mes_export, df_ext_top_serv_export, 
-                                   df_ext_estado_proceso_export):
+                                   df_ext_estado_proceso_export, df_motivos_area_export):
         datos_detalle = df_export[['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']].copy()
         datos_detalle['Solicitado'] = datos_detalle['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
         
@@ -2375,6 +2509,12 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             for _, row in estado_gestion_data.iterrows():
                 resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
         resumen_data.append(['', '', '', ''])
+        
+        if df_motivos_area_export is not None and len(df_motivos_area_export) > 0:
+            for _, row in df_motivos_area_export.iterrows():
+                resumen_data.append(['Gráfico 2B', 'Motivos por Área (Gestionado desde programación)', 
+                                    f'{row["Motivo"]} - {row["Area"]}: {row["Cantidad"]}', ''])
+            resumen_data.append(['', '', '', ''])
         
         if pendientes_data is not None and len(pendientes_data) > 0:
             total_pend = pendientes_data['Cantidad'].sum()
@@ -2431,6 +2571,16 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             estados_serv_data = estados_counts.copy()
             entidad_data = entidad_counts.copy()
             
+            # Exportar motivos por área
+            df_motivos_area_export = None
+            df_motivos_export_check = df_filtrado[df_filtrado['Estado_Gestion'] == "Gestionado desde programación"].copy()
+            if len(df_motivos_export_check) > 0 and 'Observación' in df_motivos_export_check.columns:
+                df_motivos_export_check['Motivo'] = df_motivos_export_check['Observación'].apply(extraer_motivo)
+                df_motivos_export_check = df_motivos_export_check[df_motivos_export_check['Motivo'].notna()]
+                if len(df_motivos_export_check) > 0:
+                    df_motivos_area_export = df_motivos_export_check.groupby(['Motivo', 'Area']).size().reset_index(name='Cantidad')
+                    df_motivos_area_export = df_motivos_area_export.sort_values('Cantidad', ascending=False)
+            
             df_ext_proceso_mes_export = None
             df_ext_top_serv_export = None
             df_ext_estado_proceso_export = None
@@ -2467,7 +2617,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             datos_detalle, resumen_graficos = preparar_datos_exportacion(
                 df_export, df_graf1, estado_gestion_data, pendientes_data, 
                 ordenes_area_data, estados_serv_data, entidad_data,
-                df_ext_proceso_mes_export, df_ext_top_serv_export, df_ext_estado_proceso_export
+                df_ext_proceso_mes_export, df_ext_top_serv_export, df_ext_estado_proceso_export,
+                df_motivos_area_export
             )
             
             output = BytesIO()
@@ -2527,6 +2678,30 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         pass
                 adjusted_length = min(max_length + 2, 50)
                 ws2.column_dimensions[column_letter].width = adjusted_length
+            
+            # Hoja Motivos por Área
+            if df_motivos_area_export is not None and len(df_motivos_area_export) > 0:
+                ws_motivos = wb.create_sheet("Motivos por Área")
+                for r_idx, row in enumerate(dataframe_to_rows(df_motivos_area_export, index=False, header=True), 1):
+                    for c_idx, value in enumerate(row, 1):
+                        cell = ws_motivos.cell(row=r_idx, column=c_idx, value=value)
+                        if r_idx == 1:
+                            cell.fill = header_fill
+                            cell.font = header_font
+                            cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.border = thin_border
+                
+                for column in ws_motivos.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_length = min(max_length + 2, 50)
+                    ws_motivos.column_dimensions[column_letter].width = adjusted_length
             
             if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
                 ws3 = wb.create_sheet("Solicitudes Externas")
