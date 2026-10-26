@@ -1444,6 +1444,16 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             
             st.markdown('</div>', unsafe_allow_html=True)
         
+        # ======================== NUEVO AGRUPADOR PARA GRÁFICOS 2B Y 2C ========================
+        st.markdown("### 📅 Agrupación Temporal para Motivos")
+        agrupacion_motivos = st.radio(
+            "Selecciona el nivel de detalle temporal para las gráficas de Motivos (2B y 2C):",
+            options=["Total", "Día", "Semana", "Mes"],
+            horizontal=True,
+            index=0,
+            key="agrupacion_motivos_dashboard"
+        )
+
         # ======================== GRÁFICO 2B: MOTIVOS POR ÁREA (GESTIONADO DESDE PROGRAMACIÓN) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -1455,18 +1465,39 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 df_motivos['Motivo'] = df_motivos['Observación'].apply(extraer_motivo)
                 df_motivos_validos = df_motivos[df_motivos['Motivo'].notna()].copy()
 
+                # Creación de la columna Periodo según el agrupador seleccionado
+                if agrupacion_motivos == "Total":
+                    df_motivos_validos['Periodo'] = 'Total'
+                elif agrupacion_motivos == "Día":
+                    df_motivos_validos['Periodo'] = df_motivos_validos['Solicitado'].dt.strftime('%Y-%m-%d')
+                elif agrupacion_motivos == "Semana":
+                    df_motivos_validos['Periodo'] = df_motivos_validos['Solicitado'].dt.to_period('W').dt.start_time.dt.strftime('%Y-%m-%d')
+                elif agrupacion_motivos == "Mes":
+                    df_motivos_validos['Periodo'] = df_motivos_validos['Solicitado'].dt.strftime('%Y-%m')
+
                 total_gestionados_prog = len(df_motivos)
                 total_con_motivo = len(df_motivos_validos)
 
                 if total_con_motivo > 0:
                     top_motivos_global = df_motivos_validos['Motivo'].value_counts()
 
-                    pivot_motivos = df_motivos_validos.groupby(['Motivo', 'Area']).size().reset_index(name='Cantidad')
+                    # Agrupamos por Area, Periodo y Motivo
+                    pivot_motivos = df_motivos_validos.groupby(['Area', 'Periodo', 'Motivo']).size().reset_index(name='Cantidad')
 
                     motivos_top = top_motivos_global.index.tolist()
                     pivot_top = pivot_motivos.copy()
 
-                    orden_areas = pivot_top.groupby('Area')['Cantidad'].sum().sort_values(ascending=True).index.tolist()
+                    # Creamos etiquetas combinadas Area | Periodo
+                    if agrupacion_motivos == "Total":
+                        pivot_top['Etiqueta_Y'] = pivot_top['Area']
+                        orden_areas = pivot_top.groupby('Etiqueta_Y')['Cantidad'].sum().sort_values(ascending=True).index.tolist()
+                    else:
+                        pivot_top['Etiqueta_Y'] = pivot_top['Area'] + ' | ' + pivot_top['Periodo']
+                        # Ordenamos primero por Periodo y luego por total de Area para mantener una estructura coherente
+                        pivot_top['Total_Area'] = pivot_top.groupby('Area')['Cantidad'].transform('sum')
+                        pivot_top = pivot_top.sort_values(['Periodo', 'Total_Area', 'Area'], ascending=[True, True, True])
+                        orden_areas = pivot_top['Etiqueta_Y'].unique().tolist()
+
                     motivos_unicos = motivos_top
 
                     colores_motivos = colores_diferenciados[:len(motivos_unicos)]
@@ -1475,7 +1506,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     colores_motivos = colores_motivos[:len(motivos_unicos)]
                     dict_color_motivo = {motivo: colores_motivos[i] for i, motivo in enumerate(motivos_unicos)}
 
-                    pivot_matriz = pivot_top.pivot(index='Area', columns='Motivo', values='Cantidad').fillna(0)
+                    pivot_matriz = pivot_top.pivot(index='Etiqueta_Y', columns='Motivo', values='Cantidad').fillna(0)
                     pivot_matriz = pivot_matriz.reindex(index=orden_areas).fillna(0)
                     columnas_ordenadas = [m for m in motivos_unicos if m in pivot_matriz.columns]
                     pivot_matriz = pivot_matriz[columnas_ordenadas]
@@ -1511,9 +1542,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     ax2b.set_yticklabels(etiquetas_y_area, fontsize=10)
 
                     ax2b.set_xlabel('Cantidad de Órdenes', fontsize=12)
-                    ax2b.set_ylabel('Área', fontsize=12)
+                    ax2b.set_ylabel('Área | Periodo', fontsize=12)
                     ax2b.set_title(
-                        f'Motivos por Área - Gestionado desde programación - {sufijo_sede}',
+                        f'Motivos por Área - Gestionado desde programación ({agrupacion_motivos}) - {sufijo_sede}',
                         fontsize=14, fontweight='bold'
                     )
 
@@ -1532,11 +1563,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     motivo_top_cant = top_motivos_global.iloc[0]
                     pct_motivo_top = motivo_top_cant / total_con_motivo * 100
 
-                    area_con_mas_motivos = pivot_top.groupby('Area')['Cantidad'].sum().sort_values(ascending=False)
-                    area_top_mot = area_con_mas_motivos.index[0]
-                    area_top_mot_cant = area_con_mas_motivos.iloc[0]
-                    pct_area_top = area_top_mot_cant / total_con_motivo * 100
-
                     if len(top_motivos_global) >= 3:
                         top3_cant = top_motivos_global.head(3).sum()
                         pct_top3 = top3_cant / total_con_motivo * 100
@@ -1551,8 +1577,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         f'se encuentran pendientes de programar y se les relacionó el motivo por el cual no se pudo realizar la programación. '
                         f'El motivo más frecuente es <span class="stat">"{str(motivo_top)[:80]}"</span> con '
                         f'<strong>{int(motivo_top_cant)}</strong> registros (<span class="stat">{pct_motivo_top:.1f}%</span> de los motivos identificados). '
-                        f'El área con mayor volumen de motivos registrados es <span class="stat">"{str(area_top_mot)[:50]}"</span> '
-                        f'con <strong>{int(area_top_mot_cant)}</strong> registros (<span class="stat">{pct_area_top:.1f}%</span> del total). '
                     )
 
                     if pct_top3 > 70:
@@ -1573,8 +1597,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
 
                     st.markdown(generar_interpretacion("Interpretación", texto_interpretacion2b), unsafe_allow_html=True)
 
-                    with st.expander("📋 Ver tabla detallada Motivo × Área", expanded=False):
-                        tabla_motivos = pivot_top.pivot(index='Motivo', columns='Area', values='Cantidad').fillna(0).astype(int)
+                    with st.expander("📋 Ver tabla detallada Motivo × Área | Periodo", expanded=False):
+                        tabla_motivos = pivot_top.pivot(index='Motivo', columns='Etiqueta_Y', values='Cantidad').fillna(0).astype(int)
                         tabla_motivos['TOTAL'] = tabla_motivos.sum(axis=1)
                         tabla_motivos = tabla_motivos.sort_values('TOTAL', ascending=False)
                         tabla_motivos = tabla_motivos.reset_index()
@@ -1599,6 +1623,17 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     df_motivos_grupo['Motivo'] = df_motivos_grupo['Observación'].apply(extraer_motivo)
 
                 df_motivos_grupo = df_motivos_grupo[df_motivos_grupo['Motivo'].notna()].copy()
+
+                # Creación de la columna Periodo según el agrupador seleccionado
+                if agrupacion_motivos == "Total":
+                    df_motivos_grupo['Periodo'] = 'Total'
+                elif agrupacion_motivos == "Día":
+                    df_motivos_grupo['Periodo'] = df_motivos_grupo['Solicitado'].dt.strftime('%Y-%m-%d')
+                elif agrupacion_motivos == "Semana":
+                    df_motivos_grupo['Periodo'] = df_motivos_grupo['Solicitado'].dt.to_period('W').dt.start_time.dt.strftime('%Y-%m-%d')
+                elif agrupacion_motivos == "Mes":
+                    df_motivos_grupo['Periodo'] = df_motivos_grupo['Solicitado'].dt.strftime('%Y-%m')
+
                 df_motivos_grupo['Grupo_Motivo'] = df_motivos_grupo.apply(clasificar_grupo_final, axis=1)
                 df_motivos_grupo = df_motivos_grupo[df_motivos_grupo['Grupo_Motivo'].notna()].copy()
 
@@ -1606,11 +1641,20 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 total_con_motivo_c = len(df_motivos_grupo)
 
                 if total_con_motivo_c > 0:
-                    pivot_grupo = df_motivos_grupo.groupby(['Area', 'Grupo_Motivo']).size().reset_index(name='Cantidad')
+                    # Agrupamos por Area, Periodo y Grupo
+                    pivot_grupo = df_motivos_grupo.groupby(['Area', 'Periodo', 'Grupo_Motivo']).size().reset_index(name='Cantidad')
 
-                    orden_areas_c = pivot_grupo.groupby('Area')['Cantidad'].sum().sort_values(ascending=True).index.tolist()
+                    # Creamos etiquetas combinadas Area | Periodo
+                    if agrupacion_motivos == "Total":
+                        pivot_grupo['Etiqueta_Y'] = pivot_grupo['Area']
+                        orden_areas_c = pivot_grupo.groupby('Etiqueta_Y')['Cantidad'].sum().sort_values(ascending=True).index.tolist()
+                    else:
+                        pivot_grupo['Etiqueta_Y'] = pivot_grupo['Area'] + ' | ' + pivot_grupo['Periodo']
+                        pivot_grupo['Total_Area'] = pivot_grupo.groupby('Area')['Cantidad'].transform('sum')
+                        pivot_grupo = pivot_grupo.sort_values(['Periodo', 'Total_Area', 'Area'], ascending=[True, True, True])
+                        orden_areas_c = pivot_grupo['Etiqueta_Y'].unique().tolist()
 
-                    pivot_matriz_c = pivot_grupo.pivot(index='Area', columns='Grupo_Motivo', values='Cantidad').fillna(0)
+                    pivot_matriz_c = pivot_grupo.pivot(index='Etiqueta_Y', columns='Grupo_Motivo', values='Cantidad').fillna(0)
                     pivot_matriz_c = pivot_matriz_c.reindex(index=orden_areas_c).fillna(0)
                     columnas_grupo = [g for g in GRUPOS_ORDEN if g in pivot_matriz_c.columns]
                     pivot_matriz_c = pivot_matriz_c[columnas_grupo]
@@ -1647,9 +1691,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     ax2c.set_yticklabels(etiquetas_y_area_c, fontsize=10)
 
                     ax2c.set_xlabel('Cantidad de Órdenes', fontsize=12)
-                    ax2c.set_ylabel('Área', fontsize=12)
+                    ax2c.set_ylabel('Área | Periodo', fontsize=12)
                     ax2c.set_title(
-                        f'Motivos Agrupados por Área - Sede / Contactive / Solicitud del paciente - {sufijo_sede}',
+                        f'Motivos Agrupados por Área - Sede / Contactive / Solicitud del paciente ({agrupacion_motivos}) - {sufijo_sede}',
                         fontsize=14, fontweight='bold'
                     )
 
@@ -1661,6 +1705,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     plt.tight_layout()
                     st.pyplot(fig2c)
 
+                    # Para los totales por grupo, usamos df_motivos_grupo que ya tiene la columna Periodo
                     total_por_grupo = df_motivos_grupo['Grupo_Motivo'].value_counts()
                     total_sede = int(total_por_grupo.get(GRUPO_SEDE, 0))
                     total_contactive = int(total_por_grupo.get(GRUPO_CONTACTIVE, 0))
@@ -1677,13 +1722,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     grupo_top_nombre = max(grupos_totales, key=grupos_totales.get)
                     pct_grupo_top = grupos_totales[grupo_top_nombre] / total_con_motivo_c * 100 if total_con_motivo_c > 0 else 0
 
-                    area_top_por_grupo = {}
-                    for grupo_key, grupo_nombre in [(GRUPO_SEDE, 'Sede'), (GRUPO_CONTACTIVE, 'Contactive'), (GRUPO_PACIENTE, 'Solicitud del paciente')]:
-                        df_g = pivot_grupo[pivot_grupo['Grupo_Motivo'] == grupo_key]
-                        if len(df_g) > 0:
-                            idx_g = df_g['Cantidad'].idxmax()
-                            area_top_por_grupo[grupo_nombre] = (df_g.loc[idx_g, 'Area'], int(df_g.loc[idx_g, 'Cantidad']))
-
                     texto_interpretacion2c = (
                         f'Se clasificaron <strong>{total_con_motivo_c}</strong> motivos de las '
                         f'<strong>{total_gestionados_prog_c}</strong> órdenes gestionadas desde programación. '
@@ -1695,22 +1733,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         f'(<span class="stat">{pct_paciente:.1f}%</span>). '
                         f'El grupo predominante es <strong>{grupo_top_nombre}</strong> con <span class="stat">{pct_grupo_top:.1f}%</span> del total. '
                     )
-
-                    if 'Sede' in area_top_por_grupo:
-                        texto_interpretacion2c += (
-                            f'El área con mayor volumen de motivos de Sede es '
-                            f'<span class="stat">"{str(area_top_por_grupo["Sede"][0])[:50]}"</span> con <strong>{area_top_por_grupo["Sede"][1]}</strong> registros. '
-                        )
-                    if 'Contactive' in area_top_por_grupo:
-                        texto_interpretacion2c += (
-                            f'El área con mayor volumen de motivos de Contactive es '
-                            f'<span class="stat">"{str(area_top_por_grupo["Contactive"][0])[:50]}"</span> con <strong>{area_top_por_grupo["Contactive"][1]}</strong> registros. '
-                        )
-                    if 'Solicitud del paciente' in area_top_por_grupo:
-                        texto_interpretacion2c += (
-                            f'El área con mayor volumen de motivos por solicitud/condición del paciente es '
-                            f'<span class="stat">"{str(area_top_por_grupo["Solicitud del paciente"][0])[:50]}"</span> con <strong>{area_top_por_grupo["Solicitud del paciente"][1]}</strong> registros. '
-                        )
 
                     if pct_grupo_top >= 70:
                         texto_interpretacion2c += (
@@ -1730,8 +1752,8 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
 
                     st.markdown(generar_interpretacion("Interpretación", texto_interpretacion2c), unsafe_allow_html=True)
 
-                    with st.expander("📋 Ver tabla detallada Área × Grupo de Motivo", expanded=False):
-                        tabla_grupo = pivot_grupo.pivot(index='Area', columns='Grupo_Motivo', values='Cantidad').fillna(0).astype(int)
+                    with st.expander("📋 Ver tabla detallada Área | Periodo × Grupo de Motivo", expanded=False):
+                        tabla_grupo = pivot_grupo.pivot(index='Etiqueta_Y', columns='Grupo_Motivo', values='Cantidad').fillna(0).astype(int)
                         tabla_grupo['TOTAL'] = tabla_grupo.sum(axis=1)
                         tabla_grupo = tabla_grupo.sort_values('TOTAL', ascending=False)
                         tabla_grupo = tabla_grupo.reset_index()
