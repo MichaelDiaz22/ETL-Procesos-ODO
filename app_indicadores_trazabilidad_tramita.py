@@ -1370,7 +1370,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 2B: MOTIVOS POR ÁREA (GESTIONADO DESDE PROGRAMACIÓN) ========================
+                # ======================== GRÁFICO 2B: MOTIVOS POR ÁREA (GESTIONADO DESDE PROGRAMACIÓN) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             st.subheader("📊 Análisis de Motivos por Área - Gestionado desde programación")
@@ -1386,49 +1386,51 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 total_con_motivo = len(df_motivos_validos)
 
                 if total_con_motivo > 0:
-                    # Top motivos globales
+                    # Top motivos globales (para limitar la leyenda a los más frecuentes)
                     top_motivos_global = df_motivos_validos['Motivo'].value_counts()
 
                     # Pivot: Motivo x Área
                     pivot_motivos = df_motivos_validos.groupby(['Motivo', 'Area']).size().reset_index(name='Cantidad')
 
-                    # Limitar a los motivos más frecuentes (ej. top 8) para legibilidad
+                    # Limitar a los motivos más frecuentes (top 8) para legibilidad de la leyenda
                     top_n_motivos = 8
                     motivos_top = top_motivos_global.head(top_n_motivos).index.tolist()
                     pivot_top = pivot_motivos[pivot_motivos['Motivo'].isin(motivos_top)].copy()
 
-                    # Ordenar motivos por total ascendente (para barras horizontales: mayor arriba)
-                    orden_motivos = pivot_top.groupby('Motivo')['Cantidad'].sum().sort_values(ascending=True).index.tolist()
-                    areas_unicas = sorted(pivot_top['Area'].unique().tolist())
+                    # AHORA: eje Y = Áreas, colores = Motivos
+                    orden_areas = pivot_top.groupby('Area')['Cantidad'].sum().sort_values(ascending=True).index.tolist()
+                    motivos_unicos = motivos_top  # mantener orden por frecuencia global
 
-                    # Colores por área
-                    colores_areas = colores_diferenciados[:len(areas_unicas)]
-                    while len(colores_areas) < len(areas_unicas):
-                        colores_areas = colores_areas + colores_diferenciados
-                    colores_areas = colores_areas[:len(areas_unicas)]
-                    dict_color_area = {area: colores_areas[i] for i, area in enumerate(areas_unicas)}
+                    # Colores por motivo
+                    colores_motivos = colores_diferenciados[:len(motivos_unicos)]
+                    while len(colores_motivos) < len(motivos_unicos):
+                        colores_motivos = colores_motivos + colores_diferenciados
+                    colores_motivos = colores_motivos[:len(motivos_unicos)]
+                    dict_color_motivo = {motivo: colores_motivos[i] for i, motivo in enumerate(motivos_unicos)}
 
-                    # Construir matriz Motivo x Área
-                    pivot_matriz = pivot_top.pivot(index='Motivo', columns='Area', values='Cantidad').fillna(0)
-                    pivot_matriz = pivot_matriz.reindex(index=orden_motivos).fillna(0)
+                    # Construir matriz Área x Motivo
+                    pivot_matriz = pivot_top.pivot(index='Area', columns='Motivo', values='Cantidad').fillna(0)
+                    pivot_matriz = pivot_matriz.reindex(index=orden_areas).fillna(0)
+                    # Reordenar columnas (motivos) por frecuencia global descendente
+                    columnas_ordenadas = [m for m in motivos_unicos if m in pivot_matriz.columns]
+                    pivot_matriz = pivot_matriz[columnas_ordenadas]
 
-                    fig2b, ax2b = plt.subplots(figsize=(14, max(6, len(orden_motivos) * 0.8)))
+                    fig2b, ax2b = plt.subplots(figsize=(14, max(6, len(orden_areas) * 0.8)))
 
                     y_pos = np.arange(len(pivot_matriz.index))
                     left = np.zeros(len(pivot_matriz.index))
 
-                    for area in areas_unicas:
-                        if area in pivot_matriz.columns:
-                            valores = pivot_matriz[area].values
-                            ax2b.barh(y_pos, valores, left=left, height=0.65,
-                                     label=str(area)[:40], color=dict_color_area[area],
-                                     edgecolor='white', linewidth=1.2)
-                            for j, v in enumerate(valores):
-                                if v > 0:
-                                    ax2b.text(left[j] + v/2, y_pos[j], f'{int(v)}',
-                                             ha='center', va='center', fontsize=9,
-                                             fontweight='bold', color='white')
-                            left += valores
+                    for motivo in columnas_ordenadas:
+                        valores = pivot_matriz[motivo].values
+                        ax2b.barh(y_pos, valores, left=left, height=0.65,
+                                 label=str(motivo)[:45], color=dict_color_motivo[motivo],
+                                 edgecolor='white', linewidth=1.2)
+                        for j, v in enumerate(valores):
+                            if v > 0:
+                                ax2b.text(left[j] + v/2, y_pos[j], f'{int(v)}',
+                                         ha='center', va='center', fontsize=9,
+                                         fontweight='bold', color='white')
+                        left += valores
 
                     # Totales al final de cada barra
                     max_left = left.max() if len(left) > 0 else 0
@@ -1438,20 +1440,20 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                  ha='left', va='center', fontsize=10,
                                  fontweight='bold', color='black')
 
-                    # Etiquetas Y (motivos truncados)
-                    etiquetas_y_mot = [f"{str(m)[:70]}{'...' if len(str(m)) > 70 else ''}"
-                                      for m in pivot_matriz.index]
+                    # Etiquetas Y = Áreas (truncadas)
+                    etiquetas_y_area = [f"{str(a)[:50]}{'...' if len(str(a)) > 50 else ''}"
+                                       for a in pivot_matriz.index]
                     ax2b.set_yticks(y_pos)
-                    ax2b.set_yticklabels(etiquetas_y_mot, fontsize=9)
+                    ax2b.set_yticklabels(etiquetas_y_area, fontsize=10)
 
                     ax2b.set_xlabel('Cantidad de Órdenes', fontsize=12)
-                    ax2b.set_ylabel('Motivo', fontsize=12)
+                    ax2b.set_ylabel('Área', fontsize=12)
                     ax2b.set_title(
                         f'Motivos por Área - Gestionado desde programación - {sufijo_sede}',
                         fontsize=14, fontweight='bold'
                     )
 
-                    ax2b.legend(loc='lower right', fontsize=10, title='Área',
+                    ax2b.legend(loc='lower right', fontsize=9, title='Motivo',
                                title_fontsize=11, framealpha=0.95, edgecolor='#7c3aed')
 
                     ax2b.set_xlim(0, max_left * 1.15 if max_left > 0 else 10)
