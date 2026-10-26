@@ -190,6 +190,27 @@ SUFIJOS_POR_TABLA = {"Fase 1": "consulta externa", "Fase 2": "hospitalario", "Fa
 PREFIJOS_POR_TABLA = {"Fase 1": "ambulatorio", "Fase 2": "hospitalario", "Fase 3": "quirúrgico", "Consolidado": "consolidado"}
 
 # ============================================================
+# FUNCIONES AUXILIARES DE FORMATO
+# ============================================================
+def formatear_numero(valor, es_dinero=False):
+    if pd.isna(valor) or valor is None:
+        return ""
+    try:
+        # Formato: 1.234.567,89
+        if es_dinero:
+            prefijo = "$"
+            base = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        else:
+            prefijo = ""
+            if float(valor).is_integer():
+                base = f"{valor:,.0f}".replace(",", ".")
+            else:
+                base = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"{prefijo}{base}"
+    except:
+        return str(valor)
+
+# ============================================================
 # FUNCIONES AUXILIARES
 # ============================================================
 def normalizar(s):
@@ -380,16 +401,28 @@ def construir_tabla_resumen(tipo_tabla="Fase 1"):
     return df
 
 def formatear_dinero_interfaz(total, cant_err, suma_err, pct_err):
-    if cant_err > 0: return f"${total:,.0f} (Errores: ${suma_err:,.0f} en {cant_err} registros — {pct_err:.2f}%)"
-    return f"${total:,.0f}"
+    base = formatear_numero(total, es_dinero=True)
+    if cant_err > 0: 
+        err = formatear_numero(suma_err, es_dinero=True)
+        pct = f"{pct_err:.2f}".replace(".", ",")
+        return f"{base} (Errores: {err} en {cant_err} registros — {pct}%)"
+    return base
 
 def formatear_conteo_con_error(total, cant_err, suma_err, pct_err):
-    if cant_err > 0: return f"{total:,} (Errores: ${suma_err:,.0f} en {cant_err} registros — {pct_err:.2f}%)"
-    return f"{total:,}"
+    base = formatear_numero(total)
+    if cant_err > 0: 
+        err = formatear_numero(suma_err, es_dinero=True)
+        pct = f"{pct_err:.2f}".replace(".", ",")
+        return f"{base} (Errores: {err} en {cant_err} registros — {pct}%)"
+    return base
 
 def formatear_dinero_con_error(total, cant_err, suma_err, pct_err):
-    if cant_err > 0: return f"${total:,.0f} (Errores: ${suma_err:,.0f} en {cant_err} registros — {pct_err:.2f}%)"
-    return f"${total:,.0f}"
+    base = formatear_numero(total, es_dinero=True)
+    if cant_err > 0: 
+        err = formatear_numero(suma_err, es_dinero=True)
+        pct = f"{pct_err:.2f}".replace(".", ",")
+        return f"{base} (Errores: {err} en {cant_err} registros — {pct}%)"
+    return base
 
 def parsear_valor_generico(v):
     if pd.isna(v): return None
@@ -587,10 +620,8 @@ def procesar_todo(files_data):
         col_valor_liquidado = obtener_columna(atenciones_df, "Valor liquidado")
 
         if col_ubicacion is not None and col_verifica is not None:
-            # Optimización: map vectorizado en lugar de loops iterativos
             ubicacion_norm_serie = atenciones_df[col_ubicacion].astype(str).map(normalizar)
             
-            # Creamos las series de sede y fase mapeando con la función robusta
             mapeo_ubicaciones = ubicacion_norm_serie.map(detectar_ubicacion_robusta)
             sede_serie = mapeo_ubicaciones.map(lambda x: x[0])
             fase_serie = mapeo_ubicaciones.map(lambda x: x[1])
@@ -616,7 +647,6 @@ def procesar_todo(files_data):
                     conteos[fase][cod]["revisadas"] = int(mask_rev.sum())
                     conteos[fase][cod]["avaladas"] = int(mask_ava.sum())
 
-                    # Errores
                     mask_rev_error = mask_rev_total & ~mask_valor_mayor_1000
                     if mask_rev_error.any():
                         errores_revisadas[fase][cod]["cantidad"] = int(mask_rev_error.sum())
@@ -627,7 +657,6 @@ def procesar_todo(files_data):
                         errores_avaladas[fase][cod]["cantidad"] = int(mask_ava_error.sum())
                         errores_avaladas[fase][cod]["suma"] = float(valor_liquidado_num[mask_ava_error].sum())
 
-                    # Dinero interfaz
                     mask_dinero_base = mask_sede_fase & mask_verifica
                     mask_dinero_val = mask_dinero_base & mask_valor_mayor_1000
                     mask_dinero_err = mask_dinero_base & ~mask_valor_mayor_1000
@@ -901,10 +930,10 @@ def procesar_todo(files_data):
             tabla.loc["Dinero enviado por interfaz", columna] = formatear_dinero_interfaz(dinero_interfaz[fase][cod], errores_valor_bajo[fase][cod]["cantidad"], errores_valor_bajo[fase][cod]["suma"], porcentaje_errores_valor[fase][cod])
             tabla.loc[filas[3], columna] = formatear_conteo_con_error(total_ventas_ce[fase][cod], errores_totales[fase][cod]["cantidad"], errores_totales[fase][cod]["suma"], porcentaje_errores_totales[fase][cod])
             tabla.loc[filas[4], columna] = formatear_dinero_con_error(dinero_ambulatorio[fase][cod], errores_totales[fase][cod]["cantidad"], errores_totales[fase][cod]["suma"], porcentaje_errores_totales[fase][cod])
-            tabla.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante[fase][cod]:,.2f}%"
+            tabla.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante[fase][cod]:,.2f}%".replace(".", ",")
             tabla.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_conteo_con_error(ventas_relacionadas_factura[fase][cod], errores_ventas[fase][cod]["cantidad"], errores_ventas[fase][cod]["suma"], porcentaje_errores_ventas[fase][cod])
             tabla.loc["Dinero ventas (Facturado)", columna] = formatear_dinero_con_error(dinero_ventas_facturado[fase][cod], errores_ventas[fase][cod]["cantidad"], errores_ventas[fase][cod]["suma"], porcentaje_errores_ventas[fase][cod])
-            tabla.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado[fase][cod]:,.2f}%"
+            tabla.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado[fase][cod]:,.2f}%".replace(".", ",")
         tablas_por_fase[fase] = tabla
 
     tabla_consolidada = construir_tabla_resumen("Consolidado")
@@ -926,10 +955,10 @@ def procesar_todo(files_data):
         tabla_consolidada.loc["Dinero enviado por interfaz", columna] = formatear_dinero_interfaz(dinero_interfaz_consolidado[cod], errores_valor_bajo_consolidado[cod]["cantidad"], errores_valor_bajo_consolidado[cod]["suma"], porcentaje_errores_valor_consolidado[cod])
         tabla_consolidada.loc[filas_cons[3], columna] = formatear_conteo_con_error(total_ventas_ce_consolidado[cod], errores_totales_consolidado[cod]["cantidad"], errores_totales_consolidado[cod]["suma"], porcentaje_errores_totales_consolidado[cod])
         tabla_consolidada.loc[filas_cons[4], columna] = formatear_dinero_con_error(dinero_ambulatorio_consolidado[cod], errores_totales_consolidado[cod]["cantidad"], errores_totales_consolidado[cod]["suma"], porcentaje_errores_totales_consolidado[cod])
-        tabla_consolidada.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante_consolidado[cod]:,.2f}%"
+        tabla_consolidada.loc["Porcentual faltante (META 30%)", columna] = f"{porcentual_faltante_consolidado[cod]:,.2f}%".replace(".", ",")
         tabla_consolidada.loc["Ventas relacionadas en factura (FACTURADO)", columna] = formatear_conteo_con_error(ventas_relacionadas_factura_consolidado[cod], errores_ventas_consolidado[cod]["cantidad"], errores_ventas_consolidado[cod]["suma"], porcentaje_errores_ventas_consolidado[cod])
         tabla_consolidada.loc["Dinero ventas (Facturado)", columna] = formatear_dinero_con_error(dinero_ventas_facturado_consolidado[cod], errores_ventas_consolidado[cod]["cantidad"], errores_ventas_consolidado[cod]["suma"], porcentaje_errores_ventas_consolidado[cod])
-        tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%"
+        tabla_consolidada.loc["Porcentual impactado (META 0%)", columna] = f"{porcentual_impactado_consolidado[cod]:,.2f}%".replace(".", ",")
 
     # -------- NOVEDADES --------
     resumen_verifica = pd.DataFrame()
@@ -1037,7 +1066,7 @@ def _firma_consolidados(consolidados_por_periodo):
     return hashlib.md5(";".join(partes).encode()).hexdigest()
 
 # ============================================================
-# GRÁFICAS POR SEDE
+# GRÁFICAS POR SEDE (Ejes invertidos)
 # ============================================================
 @st.cache_data(show_spinner=False)
 def generar_grafica_dinero(_consolidados_por_periodo, firma):
@@ -1047,29 +1076,28 @@ def generar_grafica_dinero(_consolidados_por_periodo, firma):
             datos.append({"Periodo": periodo, "Sede": sede, "Valor": vals["dinero_interfaz"]})
     df = pd.DataFrame(datos)
     if df.empty or df["Valor"].sum() == 0: return None
-    fig, ax = plt.subplots(figsize=(14, 6))
-    sns.barplot(data=df, x="Periodo", y="Valor", hue="Sede", ax=ax)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.barplot(data=df, x="Valor", y="Periodo", hue="Sede", ax=ax) # Invertido
     def _fmt_corto(v):
         if v <= 0: return ""
-        if v >= 1_000_000: return f"${v/1_000_000:,.1f}M"
-        elif v >= 1_000: return f"${v/1_000:,.0f}K"
-        return f"${v:,.0f}"
+        if v >= 1_000_000: return f"${v/1_000_000:,.1f}M".replace(".", ",")
+        elif v >= 1_000: return f"${v/1_000:,.0f}K".replace(",", ".")
+        return f"${v:,.0f}".replace(",", ".")
     for container in ax.containers:
         ax.bar_label(container, labels=[_fmt_corto(v) for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-    ax.set_ylim(0, df["Valor"].max() * 1.05)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}".replace(",", ".")))
+    ax.set_xlim(0, df["Valor"].max() * 1.05)
     ax.set_title("Dinero enviado por interfaz por periodo y sede (Consolidado)", pad=15)
-    ax.set_ylabel("Valor (COP)")
-    ax.set_xlabel("Periodo")
-    plt.xticks(rotation=30, ha="right")
+    ax.set_xlabel("Valor (COP)")
+    ax.set_ylabel("Periodo")
+    plt.yticks(rotation=0)
     plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
+    plt.subplots_adjust(right=0.85)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
     return buf.getvalue()
-
 
 @st.cache_data(show_spinner=False)
 def generar_grafica_cobertura(_consolidados_por_periodo, firma):
@@ -1082,24 +1110,23 @@ def generar_grafica_cobertura(_consolidados_por_periodo, firma):
             datos.append({"Periodo": periodo, "Sede": sede, "Cobertura": cobertura})
     df = pd.DataFrame(datos)
     if df.empty or df["Cobertura"].sum() == 0: return None
-    fig, ax = plt.subplots(figsize=(14, 6))
-    sns.barplot(data=df, x="Periodo", y="Cobertura", hue="Sede", ax=ax)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.barplot(data=df, x="Cobertura", y="Periodo", hue="Sede", ax=ax) # Invertido
     for container in ax.containers:
-        ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
-    ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
-    ax.set_ylim(0, 105)
+        ax.bar_label(container, labels=[f"{v:.1f}%".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
+    ax.axvline(70, color="red", linestyle="--", label="Meta 70%")
+    ax.set_xlim(0, 105)
     ax.set_title("Cobertura general de honorarios médicos (Avaladas / Total ventas)", pad=15)
-    ax.set_ylabel("Cobertura (%)")
-    ax.set_xlabel("Periodo")
-    plt.xticks(rotation=30, ha="right")
+    ax.set_xlabel("Cobertura (%)")
+    ax.set_ylabel("Periodo")
+    plt.yticks(rotation=0)
     plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
+    plt.subplots_adjust(right=0.85)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
     return buf.getvalue()
-
 
 @st.cache_data(show_spinner=False)
 def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
@@ -1118,27 +1145,26 @@ def generar_grafica_participacion_fase(_consolidados_por_periodo, firma):
     total_por_fila = df.sum(axis=1)
     df_pct = df.div(total_por_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
     df_pct = df_pct.reset_index()
-    df_pct["Etiqueta"] = df_pct["Periodo"] + "\n" + df_pct["Sede"]
+    df_pct["Etiqueta"] = df_pct["Periodo"] + " - " + df_pct["Sede"]
     df_pct = df_pct.set_index("Etiqueta")[["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"]]
-    fig, ax = plt.subplots(figsize=(14, 7))
-    df_pct.plot(kind="bar", stacked=True, ax=ax, color=["#305496", "#D1615D", "#85C17E"], width=0.6)
+    fig, ax = plt.subplots(figsize=(12, 10))
+    df_pct.plot(kind="barh", stacked=True, ax=ax, color=["#305496", "#D1615D", "#85C17E"], width=0.7) # Invertido a barh
     for container in ax.containers:
-        vals = [v.get_height() for v in container]
-        labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
+        vals = [v.get_width() for v in container] # get_width en barh
+        labels = [f"{v:.1f}%".replace(".", ",") if v > 3 else "" for v in vals]
         ax.bar_label(container, labels=labels, label_type="center", fontsize=9, color="white", weight="bold")
     ax.set_title("Participación por fase de cada sede y periodo", pad=15)
-    ax.set_ylabel("Participación (%)")
-    ax.set_xlabel("")
-    plt.xticks(rotation=45, ha="right", fontsize=9)
+    ax.set_xlabel("Participación (%)")
+    ax.set_ylabel("")
+    plt.yticks(fontsize=9)
     plt.legend(title="Fase", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
-    plt.ylim(0, 100)
+    plt.xlim(0, 100)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.90)
+    plt.subplots_adjust(right=0.85)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
     return buf.getvalue()
-
 
 @st.cache_data(show_spinner=False)
 def generar_grafica_participacion_sede(_consolidados_por_periodo, firma):
@@ -1150,27 +1176,26 @@ def generar_grafica_participacion_sede(_consolidados_por_periodo, firma):
     if df.empty: return None
     df["Total_Periodo"] = df.groupby("Periodo")["Valor"].transform("sum")
     df["Porcentaje"] = df.apply(lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0, axis=1)
-    df["Etiqueta"] = df["Periodo"] + "\n" + df["Sede"]
-    fig, ax = plt.subplots(figsize=(14, 7))
-    sns.barplot(data=df, x="Etiqueta", y="Porcentaje", hue="Sede", ax=ax)
+    df["Etiqueta"] = df["Periodo"] + " - " + df["Sede"]
+    fig, ax = plt.subplots(figsize=(12, 10))
+    sns.barplot(data=df, x="Porcentaje", y="Etiqueta", hue="Sede", ax=ax) # Invertido
     for container in ax.containers:
-        ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=3, label_type="center")
+        ax.bar_label(container, labels=[f"{v:.1f}%".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=3, label_type="center")
     ax.set_title("Participación de cada sede respecto al total general por periodo", pad=15)
-    ax.set_ylabel("Participación (%)")
-    ax.set_xlabel("")
-    plt.xticks(rotation=45, ha="right", fontsize=8)
+    ax.set_xlabel("Participación (%)")
+    ax.set_ylabel("")
+    plt.yticks(fontsize=8)
     plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
-    plt.ylim(0, 105)
+    plt.xlim(0, 105)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
+    plt.subplots_adjust(right=0.85)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
     return buf.getvalue()
 
-
 # ============================================================
-# GRÁFICAS CONSOLIDADAS TOTALES
+# GRÁFICAS CONSOLIDADAS TOTALES (Ejes invertidos)
 # ============================================================
 @st.cache_data(show_spinner=False)
 def generar_grafica_dinero_total(_consolidados_por_periodo, firma):
@@ -1180,28 +1205,27 @@ def generar_grafica_dinero_total(_consolidados_por_periodo, firma):
         datos.append({"Periodo": periodo, "Valor": total_periodo})
     df = pd.DataFrame(datos)
     if df.empty or df["Valor"].sum() == 0: return None
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sns.barplot(data=df, x="Periodo", y="Valor", ax=ax, color="#305496")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(data=df, x="Valor", y="Periodo", ax=ax, color="#305496") # Invertido
     def _fmt_corto(v):
         if v <= 0: return ""
-        if v >= 1_000_000: return f"${v/1_000_000:,.1f}M"
-        elif v >= 1_000: return f"${v/1_000:,.0f}K"
-        return f"${v:,.0f}"
+        if v >= 1_000_000: return f"${v/1_000_000:,.1f}M".replace(".", ",")
+        elif v >= 1_000: return f"${v/1_000:,.0f}K".replace(",", ".")
+        return f"${v:,.0f}".replace(",", ".")
     for container in ax.containers:
         ax.bar_label(container, labels=[_fmt_corto(v) for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-    ax.set_ylim(0, df["Valor"].max() * 1.05)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}".replace(",", ".")))
+    ax.set_xlim(0, df["Valor"].max() * 1.05)
     ax.set_title("Dinero enviado por interfaz por periodo (Todas las sedes consolidadas)", pad=15)
-    ax.set_ylabel("Valor (COP)")
-    ax.set_xlabel("Periodo")
-    plt.xticks(rotation=30, ha="right")
+    ax.set_xlabel("Valor (COP)")
+    ax.set_ylabel("Periodo")
+    plt.yticks(rotation=0)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
+    plt.subplots_adjust(right=0.85)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
     return buf.getvalue()
-
 
 @st.cache_data(show_spinner=False)
 def generar_grafica_cobertura_total(_consolidados_por_periodo, firma):
@@ -1213,24 +1237,23 @@ def generar_grafica_cobertura_total(_consolidados_por_periodo, firma):
         datos.append({"Periodo": periodo, "Cobertura": cobertura})
     df = pd.DataFrame(datos)
     if df.empty or df["Cobertura"].sum() == 0: return None
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sns.barplot(data=df, x="Periodo", y="Cobertura", ax=ax, color="#305496")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(data=df, x="Cobertura", y="Periodo", ax=ax, color="#305496") # Invertido
     for container in ax.containers:
-        ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
-    ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
-    ax.set_ylim(0, 105)
+        ax.bar_label(container, labels=[f"{v:.1f}%".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
+    ax.axvline(70, color="red", linestyle="--", label="Meta 70%")
+    ax.set_xlim(0, 105)
     ax.set_title("Cobertura general de honorarios médicos por periodo (Todas las sedes consolidadas)", pad=15)
-    ax.set_ylabel("Cobertura (%)")
-    ax.set_xlabel("Periodo")
-    plt.xticks(rotation=30, ha="right")
+    ax.set_xlabel("Cobertura (%)")
+    ax.set_ylabel("Periodo")
+    plt.yticks(rotation=0)
     ax.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
+    plt.subplots_adjust(right=0.85)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
     return buf.getvalue()
-
 
 @st.cache_data(show_spinner=False)
 def generar_grafica_participacion_fase_total(_consolidados_por_periodo, firma):
@@ -1244,25 +1267,24 @@ def generar_grafica_participacion_fase_total(_consolidados_por_periodo, firma):
     if df.empty: return None
     total_por_fila = df.sum(axis=1)
     df_pct = df.div(total_por_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
-    fig, ax = plt.subplots(figsize=(12, 6))
-    df_pct.plot(kind="bar", stacked=True, ax=ax, color=["#305496", "#D1615D", "#85C17E"], width=0.5)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    df_pct.plot(kind="barh", stacked=True, ax=ax, color=["#305496", "#D1615D", "#85C17E"], width=0.6) # Invertido a barh
     for container in ax.containers:
-        vals = [v.get_height() for v in container]
-        labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
+        vals = [v.get_width() for v in container]
+        labels = [f"{v:.1f}%".replace(".", ",") if v > 3 else "" for v in vals]
         ax.bar_label(container, labels=labels, label_type="center", fontsize=10, color="white", weight="bold")
     ax.set_title("Participación por fase — Todas las sedes consolidadas", pad=15)
-    ax.set_ylabel("Participación (%)")
-    ax.set_xlabel("Periodo")
-    plt.xticks(rotation=30, ha="right", fontsize=9)
+    ax.set_xlabel("Participación (%)")
+    ax.set_ylabel("Periodo")
+    plt.yticks(fontsize=9)
     plt.legend(title="Fase", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
-    plt.ylim(0, 100)
+    plt.xlim(0, 100)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
+    plt.subplots_adjust(right=0.85)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
     return buf.getvalue()
-
 
 @st.cache_data(show_spinner=False)
 def generar_grafica_participacion_sede_total(_consolidados_por_periodo, firma):
@@ -1275,25 +1297,24 @@ def generar_grafica_participacion_sede_total(_consolidados_por_periodo, firma):
     df["Total_Periodo"] = df.groupby("Periodo")["Valor"].transform("sum")
     df["Porcentaje"] = df.apply(lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0, axis=1)
     df_melt = df.pivot_table(index="Periodo", columns="Sede", values="Porcentaje", fill_value=0)
-    fig, ax = plt.subplots(figsize=(12, 6))
-    df_melt.plot(kind="bar", stacked=True, ax=ax, width=0.5, colormap="tab10")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    df_melt.plot(kind="barh", stacked=True, ax=ax, width=0.6, colormap="tab10") # Invertido a barh
     for container in ax.containers:
-        vals = [v.get_height() for v in container]
-        labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
+        vals = [v.get_width() for v in container]
+        labels = [f"{v:.1f}%".replace(".", ",") if v > 3 else "" for v in vals]
         ax.bar_label(container, labels=labels, label_type="center", fontsize=8, color="white", weight="bold")
     ax.set_title("Participación de cada sede en el total general por periodo", pad=15)
-    ax.set_ylabel("Participación (%)")
-    ax.set_xlabel("Periodo")
-    plt.xticks(rotation=30, ha="right")
+    ax.set_xlabel("Participación (%)")
+    ax.set_ylabel("Periodo")
+    plt.yticks(fontsize=9)
     plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
-    plt.ylim(0, 100)
+    plt.xlim(0, 100)
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
+    plt.subplots_adjust(right=0.85)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
     return buf.getvalue()
-
 
 # ============================================================
 # EXCEL CACHEADO
@@ -1447,20 +1468,20 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         df_g1 = pd.DataFrame(datos_g1)
 
         if not df_g1.empty and df_g1["Valor"].sum() > 0:
-            fig, ax = plt.subplots(figsize=(14, 6))
-            sns.barplot(data=df_g1, x="Periodo", y="Valor", hue="Sede", ax=ax)
+            fig, ax = plt.subplots(figsize=(12, 8))
+            sns.barplot(data=df_g1, x="Valor", y="Periodo", hue="Sede", ax=ax) # Invertido
             for container in ax.containers:
-                ax.bar_label(container, labels=[f"${v/1e6:,.1f}M" if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-            ax.set_ylim(0, df_g1["Valor"].max() * 1.05)
+                ax.bar_label(container, labels=[f"${v/1e6:,.1f}M".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
+            ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}".replace(",", ".")))
+            ax.set_xlim(0, df_g1["Valor"].max() * 1.05)
             ax.set_title("Dinero enviado por interfaz por periodo y sede (Consolidado)", pad=15)
-            ax.set_ylabel("Valor (COP)")
-            ax.set_xlabel("Periodo")
-            plt.xticks(rotation=30, ha="right")
+            ax.set_xlabel("Valor (COP)")
+            ax.set_ylabel("Periodo")
+            plt.yticks(rotation=0)
             plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
             plt.tight_layout()
-            plt.subplots_adjust(top=0.88)
-            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 1 — Dinero enviado por interfaz (COP)")
+            plt.subplots_adjust(right=0.85)
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=500, titulo="Gráfico 1 — Dinero enviado por interfaz (COP)")
             plt.close(fig)
 
         datos_g2 = []
@@ -1473,20 +1494,20 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         df_g2 = pd.DataFrame(datos_g2)
 
         if not df_g2.empty and df_g2["Cobertura"].sum() > 0:
-            fig, ax = plt.subplots(figsize=(14, 6))
-            sns.barplot(data=df_g2, x="Periodo", y="Cobertura", hue="Sede", ax=ax)
+            fig, ax = plt.subplots(figsize=(12, 8))
+            sns.barplot(data=df_g2, x="Cobertura", y="Periodo", hue="Sede", ax=ax) # Invertido
             for container in ax.containers:
-                ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
-            ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
-            ax.set_ylim(0, 105)
+                ax.bar_label(container, labels=[f"{v:.1f}%".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
+            ax.axvline(70, color="red", linestyle="--", label="Meta 70%")
+            ax.set_xlim(0, 105)
             ax.set_title("Cobertura general de honorarios médicos (Avaladas / Total ventas)", pad=15)
-            ax.set_ylabel("Cobertura (%)")
-            ax.set_xlabel("Periodo")
-            plt.xticks(rotation=30, ha="right")
+            ax.set_xlabel("Cobertura (%)")
+            ax.set_ylabel("Periodo")
+            plt.yticks(rotation=0)
             plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
             plt.tight_layout()
-            plt.subplots_adjust(top=0.88)
-            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 2 — Cobertura general de honorarios médicos (meta 70%)")
+            plt.subplots_adjust(right=0.85)
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=500, titulo="Gráfico 2 — Cobertura general de honorarios médicos (meta 70%)")
             plt.close(fig)
 
         datos_g3 = []
@@ -1504,40 +1525,40 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             total_fila = df_g3.sum(axis=1)
             df_g3_pct = df_g3.div(total_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
             df_g3_pct = df_g3_pct.reset_index()
-            df_g3_pct["Etiqueta"] = df_g3_pct["Periodo"] + "\n" + df_g3_pct["Sede"]
+            df_g3_pct["Etiqueta"] = df_g3_pct["Periodo"] + " - " + df_g3_pct["Sede"]
             df_g3_pct = df_g3_pct.set_index("Etiqueta")[["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"]]
 
-            fig, ax = plt.subplots(figsize=(14, 7))
-            df_g3_pct.plot(kind="bar", stacked=True, ax=ax, color=["#305496", "#D1615D", "#85C17E"], width=0.6)
+            fig, ax = plt.subplots(figsize=(12, 10))
+            df_g3_pct.plot(kind="barh", stacked=True, ax=ax, color=["#305496", "#D1615D", "#85C17E"], width=0.7) # Invertido a barh
             for container in ax.containers:
-                vals = [v.get_height() for v in container]
-                labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
+                vals = [v.get_width() for v in container]
+                labels = [f"{v:.1f}%".replace(".", ",") if v > 3 else "" for v in vals]
                 ax.bar_label(container, labels=labels, label_type="center", fontsize=9, color="white", weight="bold")
             ax.set_title("Participación por fase de cada sede y periodo", pad=15)
-            ax.set_ylabel("Participación (%)")
-            plt.xticks(rotation=45, ha="right", fontsize=9)
-            plt.ylim(0, 100)
+            ax.set_xlabel("Participación (%)")
+            plt.yticks(fontsize=9)
+            plt.xlim(0, 100)
             plt.tight_layout()
-            plt.subplots_adjust(top=0.90)
-            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 3 — Participación por fase (por sede)")
+            plt.subplots_adjust(right=0.85)
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=550, titulo="Gráfico 3 — Participación por fase (por sede)")
             plt.close(fig)
 
         if not df_g1.empty:
             df_g1["Total_Periodo"] = df_g1.groupby("Periodo")["Valor"].transform("sum")
             df_g1["Porcentaje"] = df_g1.apply(lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0, axis=1)
-            df_g1["Etiqueta"] = df_g1["Periodo"] + "\n" + df_g1["Sede"]
+            df_g1["Etiqueta"] = df_g1["Periodo"] + " - " + df_g1["Sede"]
 
-            fig, ax = plt.subplots(figsize=(14, 7))
-            sns.barplot(data=df_g1, x="Etiqueta", y="Porcentaje", hue="Sede", ax=ax)
+            fig, ax = plt.subplots(figsize=(12, 10))
+            sns.barplot(data=df_g1, x="Porcentaje", y="Etiqueta", hue="Sede", ax=ax) # Invertido
             for container in ax.containers:
-                ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues], label_type="center", fontsize=9, padding=3)
+                ax.bar_label(container, labels=[f"{v:.1f}%".replace(".", ",") if v > 0 else "" for v in container.datavalues], label_type="center", fontsize=9, padding=3)
             ax.set_title("Participación de cada sede respecto al total general por periodo", pad=15)
-            ax.set_ylabel("Participación (%)")
-            plt.xticks(rotation=45, ha="right", fontsize=8)
-            plt.ylim(0, 105)
+            ax.set_xlabel("Participación (%)")
+            plt.yticks(fontsize=8)
+            plt.xlim(0, 105)
             plt.tight_layout()
-            plt.subplots_adjust(top=0.88)
-            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 4 — Participación de cada sede en el total")
+            plt.subplots_adjust(right=0.85)
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=550, titulo="Gráfico 4 — Participación de cada sede en el total")
             plt.close(fig)
 
         sedes_con_datos = set()
@@ -1554,19 +1575,19 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             df_g5 = pd.DataFrame(datos_g5)
 
             if not df_g5.empty and df_g5["Valor"].sum() > 0:
-                fig, ax = plt.subplots(figsize=(12, 6))
-                sns.barplot(data=df_g5, x="Periodo", y="Valor", ax=ax, color="#305496")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                sns.barplot(data=df_g5, x="Valor", y="Periodo", ax=ax, color="#305496") # Invertido
                 for container in ax.containers:
-                    ax.bar_label(container, labels=[f"${v/1e6:,.1f}M" if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
-                ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-                ax.set_ylim(0, df_g5["Valor"].max() * 1.05)
+                    ax.bar_label(container, labels=[f"${v/1e6:,.1f}M".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
+                ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}".replace(",", ".")))
+                ax.set_xlim(0, df_g5["Valor"].max() * 1.05)
                 ax.set_title("Dinero enviado por interfaz por periodo (Todas las sedes consolidadas)", pad=15)
-                ax.set_ylabel("Valor (COP)")
-                ax.set_xlabel("Periodo")
-                plt.xticks(rotation=30, ha="right")
+                ax.set_xlabel("Valor (COP)")
+                ax.set_ylabel("Periodo")
+                plt.yticks(rotation=0)
                 plt.tight_layout()
-                plt.subplots_adjust(top=0.88)
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 5 — Dinero enviado por interfaz (TODAS LAS SEDES)")
+                plt.subplots_adjust(right=0.85)
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 5 — Dinero enviado por interfaz (TODAS LAS SEDES)")
                 plt.close(fig)
 
             datos_g6 = []
@@ -1578,20 +1599,20 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             df_g6 = pd.DataFrame(datos_g6)
 
             if not df_g6.empty and df_g6["Cobertura"].sum() > 0:
-                fig, ax = plt.subplots(figsize=(12, 6))
-                sns.barplot(data=df_g6, x="Periodo", y="Cobertura", ax=ax, color="#305496")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                sns.barplot(data=df_g6, x="Cobertura", y="Periodo", ax=ax, color="#305496") # Invertido
                 for container in ax.containers:
-                    ax.bar_label(container, labels=[f"{v:.1f}%" if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
-                ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
-                ax.set_ylim(0, 105)
+                    ax.bar_label(container, labels=[f"{v:.1f}%".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=0, padding=2, label_type="center")
+                ax.axvline(70, color="red", linestyle="--", label="Meta 70%")
+                ax.set_xlim(0, 105)
                 ax.set_title("Cobertura general de honorarios médicos por periodo (Todas las sedes consolidadas)", pad=15)
-                ax.set_ylabel("Cobertura (%)")
-                ax.set_xlabel("Periodo")
-                plt.xticks(rotation=30, ha="right")
+                ax.set_xlabel("Cobertura (%)")
+                ax.set_ylabel("Periodo")
+                plt.yticks(rotation=0)
                 ax.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
                 plt.tight_layout()
-                plt.subplots_adjust(top=0.88)
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 6 — Cobertura general de honorarios médicos (TODAS LAS SEDES)")
+                plt.subplots_adjust(right=0.85)
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 6 — Cobertura general de honorarios médicos (TODAS LAS SEDES)")
                 plt.close(fig)
 
             datos_g7 = []
@@ -1606,19 +1627,19 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 total_fila = df_g7.sum(axis=1)
                 df_g7_pct = df_g7.div(total_fila.replace(0, pd.NA), axis=0).fillna(0) * 100
 
-                fig, ax = plt.subplots(figsize=(12, 6))
-                df_g7_pct.plot(kind="bar", stacked=True, ax=ax, color=["#305496", "#D1615D", "#85C17E"], width=0.5)
+                fig, ax = plt.subplots(figsize=(10, 6))
+                df_g7_pct.plot(kind="barh", stacked=True, ax=ax, color=["#305496", "#D1615D", "#85C17E"], width=0.6) # Invertido a barh
                 for container in ax.containers:
-                    vals = [v.get_height() for v in container]
-                    labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
+                    vals = [v.get_width() for v in container]
+                    labels = [f"{v:.1f}%".replace(".", ",") if v > 3 else "" for v in vals]
                     ax.bar_label(container, labels=labels, label_type="center", fontsize=10, color="white", weight="bold")
                 ax.set_title("Participación por fase — Todas las sedes consolidadas", pad=15)
-                ax.set_ylabel("Participación (%)")
-                plt.xticks(rotation=30, ha="right", fontsize=9)
-                plt.ylim(0, 100)
+                ax.set_xlabel("Participación (%)")
+                plt.yticks(fontsize=9)
+                plt.xlim(0, 100)
                 plt.tight_layout()
-                plt.subplots_adjust(top=0.88)
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 7 — Participación por fase (Todas las sedes)")
+                plt.subplots_adjust(right=0.85)
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 7 — Participación por fase (Todas las sedes)")
                 plt.close(fig)
 
             datos_g8 = []
@@ -1632,19 +1653,19 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
                 df_g8["Porcentaje"] = df_g8.apply(lambda r: (r["Valor"] / r["Total_Periodo"] * 100) if r["Total_Periodo"] > 0 else 0, axis=1)
                 df_g8_melt = df_g8.pivot_table(index="Periodo", columns="Sede", values="Porcentaje", fill_value=0)
 
-                fig, ax = plt.subplots(figsize=(12, 6))
-                df_g8_melt.plot(kind="bar", stacked=True, ax=ax, width=0.5, colormap="tab10")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                df_g8_melt.plot(kind="barh", stacked=True, ax=ax, width=0.6, colormap="tab10") # Invertido a barh
                 for container in ax.containers:
-                    vals = [v.get_height() for v in container]
-                    labels = [f"{v:.1f}%" if v > 3 else "" for v in vals]
+                    vals = [v.get_width() for v in container]
+                    labels = [f"{v:.1f}%".replace(".", ",") if v > 3 else "" for v in vals]
                     ax.bar_label(container, labels=labels, label_type="center", fontsize=8, color="white", weight="bold")
                 ax.set_title("Participación de cada sede en el total general por periodo", pad=15)
-                ax.set_ylabel("Participación (%)")
-                plt.xticks(rotation=30, ha="right")
-                plt.ylim(0, 100)
+                ax.set_xlabel("Participación (%)")
+                plt.yticks(fontsize=9)
+                plt.xlim(0, 100)
                 plt.tight_layout()
-                plt.subplots_adjust(top=0.88)
-                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, titulo="Gráfico 8 — Participación de cada sede (Todas las sedes)")
+                plt.subplots_adjust(right=0.85)
+                fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 8 — Participación de cada sede (Todas las sedes)")
                 plt.close(fig)
 
         ws_analisis.column_dimensions["A"].width = 130
@@ -1653,7 +1674,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
     wb.save(buffer)
     buffer.seek(0)
     return buffer.getvalue()
-
 
 # ============================================================
 # SIDEBAR
@@ -1828,10 +1848,10 @@ if len(consolidados_por_periodo) > 0:
         sede_top = max(consolidados_agrupados[ultimo_periodo].items(), key=lambda x: x[1]["dinero_interfaz"])
 
         narrativa = f"""
-En el periodo **{ultimo_periodo}**, se procesaron un total de **{total_revisadas:,}** registros, de los cuales **{total_avaladas:,}** fueron avalados por la subgerencia médica.
-El dinero total enviado por interfaz ascendió a **${total_dinero:,.0f}**.
-La cobertura general de honorarios médicos (Avaladas / Total Ventas) se situó en **{cobertura:.1f}%** frente a la meta del 70%.
-La sede con mayor participación en el envío de dinero por interfaz fue **{sede_top[0]}** con un monto de **${sede_top[1]['dinero_interfaz']:,.0f}**.
+En el periodo **{ultimo_periodo}**, se procesaron un total de **{formatear_numero(total_revisadas)}** registros, de los cuales **{formatear_numero(total_avaladas)}** fueron avalados por la subgerencia médica.
+El dinero total enviado por interfaz ascendió a **{formatear_numero(total_dinero, es_dinero=True)}**.
+La cobertura general de honorarios médicos (Avaladas / Total Ventas) se situó en **{f"{cobertura:.1f}".replace(".", ",")}%** frente a la meta del 70%.
+La sede con mayor participación en el envío de dinero por interfaz fue **{sede_top[0]}** con un monto de **{formatear_numero(sede_top[1]['dinero_interfaz'], es_dinero=True)}**.
 """
         if len(periodos_ordenados) > 1:
             primer_periodo = periodos_ordenados[0]
@@ -1840,7 +1860,7 @@ La sede con mayor participación en el envío de dinero por interfaz fue **{sede
             if total_dinero_primero > 0:
                 variacion = ((total_dinero - total_dinero_primero) / total_dinero_primero) * 100
                 tendencia = "un incremento" if variacion >= 0 else "una disminución"
-                narrativa += f"\n\nEn cuanto al histórico, al comparar **{ultimo_periodo}** con **{primer_periodo}**, se observa {tendencia} del **{abs(variacion):.1f}%** en el dinero total enviado por interfaz."
+                narrativa += f"\n\nEn cuanto al histórico, al comparar **{ultimo_periodo}** con **{primer_periodo}**, se observa {tendencia} del **{f"{abs(variacion):.1f}".replace(".", ",")}%** en el dinero total enviado por interfaz."
             else:
                 narrativa += f"\n\nEn cuanto al histórico, el primer periodo registrado ({primer_periodo}) no presentó datos base para calcular variaciones."
 
