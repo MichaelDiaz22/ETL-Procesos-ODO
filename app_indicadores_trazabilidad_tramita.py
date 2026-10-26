@@ -394,19 +394,46 @@ def extraer_motivo(observacion):
     motivo = re.sub(r'\s+', ' ', motivo).strip().upper()
     return motivo
 
-# ======================== CONJUNTO DE MOTIVOS CLASIFICADOS COMO "SEDE" ========================
-MOTIVOS_SEDE = {
-    'PROBLEMA DE AGENDA',
-    'PENDIENTE PROGRAMACIÓN SEDE',
-    'PENDIENTE PROGRAMACION SEDE',
-    'PENDIENTE VALORACION ANESTESIA',
-    'PENDIENTE VALORACIÓN ANESTESIA',
-    'PENDIENTE PROGRAMACION LOCAL',
-    'PENDIENTE PROGRAMACIÓN LOCAL',
-    'PENDIENTE PROGRAMACION PROCEDIMIENTO',
-    'PENDIENTE PROGRAMACIÓN PROCEDIMIENTO',
-    'PENDIENTE AGENDAMIENTO/CONFIRMACIÓN DEL ESPECIALISTA',
-    'PENDIENTE AGENDAMIENTO/CONFIRMACION DEL ESPECIALISTA',
+# ======================== MAPA GLOBAL DE MOTIVOS A GRUPO ========================
+MAPA_MOTIVOS_GRUPO = {
+    'PENDIENTE PROGRAMACIÓN EN SEDE': 'Pendiente de gestión Sede',
+    'PENDIENTE PROGRAMACION EN SEDE': 'Pendiente de gestión Sede',
+    'PROBLEMA DE AGENDA U OPORTUNIDAD': 'Pendiente de gestión Sede',
+    'PROBLEMAS DE CONTACTABILIDAD': 'Pendiente de gestión Contactive',
+    'SIN CAPACIDAD EN EL SERVICIO': 'Pendiente de gestión Sede',
+    'PENDIENTE AGENDAMIENTO/CONFIRMACIÓN DEL ESPECIALISTA': 'Pendiente de gestión Sede',
+    'PENDIENTE AGENDAMIENTO/CONFIRMACION DEL ESPECIALISTA': 'Pendiente de gestión Sede',
+    'SOLICITUD DEL PACIENTE': 'Pendiente por solicitud/condición del paciente',
+    'CONDICIONADO A EXÁMENES MÉDICOS Y/O PROCEDIMIENTOS': 'Pendiente de gestión Contactive',
+    'CONDICIONADO A EXAMENES MEDICOS Y/O PROCEDIMIENTOS': 'Pendiente de gestión Contactive',
+    'PENDIENTE VALORACIÓN ANESTESIA': 'Pendiente de gestión Sede',
+    'PENDIENTE VALORACION ANESTESIA': 'Pendiente de gestión Sede',
+    'PENDIENTE PROGRAMACIÓN PROCEDIMIENTO': 'Pendiente de gestión Sede',
+    'PENDIENTE PROGRAMACION PROCEDIMIENTO': 'Pendiente de gestión Sede',
+    'REPROGRAMADO POR ANESTESIOLOGÍA': 'Pendiente de gestión Sede',
+    'REPROGRAMADO POR ANESTESIOLOGIA': 'Pendiente de gestión Sede',
+    'PENDIENTE PREQUIRURGICOS': 'Pendiente de gestión Sede',
+    'PENDIENTE PREQUIRÚRGICOS': 'Pendiente de gestión Sede',
+    'PENDIENTE PROGRAMACIÓN LOCAL': 'Pendiente de gestión Sede',
+    'PENDIENTE PROGRAMACION LOCAL': 'Pendiente de gestión Sede',
+    'NO LE CORRESPONDE POR ESQUEMA': 'Pendiente de gestión Contactive',
+    'PENDIENTE AUTORIZACIÓN': 'Pendiente de gestión Sede',
+    'PENDIENTE AUTORIZACION': 'Pendiente de gestión Sede',
+    'PENDIENTE COTIZACIÓN MAOS': 'Pendiente de gestión Sede',
+    'PENDIENTE COTIZACION MAOS': 'Pendiente de gestión Sede',
+    'CONTRAINDICACIÓN CLÍNICA TEMPORAL': 'Pendiente por solicitud/condición del paciente',
+    'CONTRAINDICACION CLINICA TEMPORAL': 'Pendiente por solicitud/condición del paciente',
+}
+
+GRUPO_SEDE = 'Pendiente de gestión Sede'
+GRUPO_CONTACTIVE = 'Pendiente de gestión Contactive'
+GRUPO_PACIENTE = 'Pendiente por solicitud/condición del paciente'
+GRUPOS_ORDEN = [GRUPO_SEDE, GRUPO_CONTACTIVE, GRUPO_PACIENTE]
+
+COLORES_GRUPOS_MAP = {
+    GRUPO_SEDE: '#FF6B6B',
+    GRUPO_CONTACTIVE: '#45B7D1',
+    GRUPO_PACIENTE: '#FFEAA7',
 }
 
 # ======================== CONJUNTO DE ÁREAS QUE SIEMPRE SON "SEDE" ========================
@@ -427,14 +454,14 @@ def normalizar_texto(txt):
     return re.sub(r'\s+', ' ', str(txt)).strip().upper()
 
 def clasificar_motivo_grupo(motivo):
-    """Clasifica SOLO por motivo (sin considerar área)."""
+    """
+    Clasifica SOLO por motivo (sin considerar área).
+    Si el motivo no está en el mapa → None (no se agrupa).
+    """
     if pd.isna(motivo):
         return None
     motivo_norm = normalizar_texto(motivo)
-    if motivo_norm in MOTIVOS_SEDE:
-        return 'Pendientes de gestión Sede'
-    else:
-        return 'Pendientes de gestión Contactive'
+    return MAPA_MOTIVOS_GRUPO.get(motivo_norm, None)
 
 def clasificar_area_es_sede(area):
     """Devuelve True si el área pertenece al conjunto AREAS_SIEMPRE_SEDE."""
@@ -443,18 +470,17 @@ def clasificar_area_es_sede(area):
 
 def clasificar_grupo_final(row):
     """
-    Clasificación final:
-    - Si el área está en AREAS_SIEMPRE_SEDE → 'Pendientes de gestión Sede' (regla prioritaria)
-    - Si no, se evalúa el motivo:
-        * Motivo en MOTIVOS_SEDE → 'Pendientes de gestión Sede'
-        * En otro caso → 'Pendientes de gestión Contactive'
+    Clasificación final con prioridad:
+    1. Si el área está en AREAS_SIEMPRE_SEDE → 'Pendiente de gestión Sede' (regla prioritaria)
+    2. Si el motivo está mapeado en MAPA_MOTIVOS_GRUPO → grupo correspondiente
+    3. En otro caso → None (no se clasifica)
     """
     area = row.get('Area', '')
     motivo = row.get('Motivo', '')
     
     # Regla prioritaria: área siempre Sede
     if clasificar_area_es_sede(area):
-        return 'Pendientes de gestión Sede'
+        return GRUPO_SEDE
     
     # Regla por motivo
     return clasificar_motivo_grupo(motivo)
@@ -1558,10 +1584,10 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
 
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # ======================== GRÁFICO 2C: MOTIVOS AGRUPADOS POR ÁREA (SEDE VS CONTACTIVE) ========================
+        # ======================== GRÁFICO 2C: MOTIVOS AGRUPADOS POR ÁREA (3 GRUPOS) ========================
         with st.container():
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.subheader("📊 Motivos Agrupados por Área - Pendientes de gestión Sede vs Contactive")
+            st.subheader("📊 Motivos Agrupados por Área - Sede / Contactive / Solicitud del paciente")
 
             if len(df_motivos) > 0 and 'Observación' in df_motivos.columns:
                 df_motivos_grupo = df_motivos.copy()
@@ -1570,7 +1596,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     df_motivos_grupo['Motivo'] = df_motivos_grupo['Observación'].apply(extraer_motivo)
 
                 df_motivos_grupo = df_motivos_grupo[df_motivos_grupo['Motivo'].notna()].copy()
-                # Clasificación final con prioridad de área
                 df_motivos_grupo['Grupo_Motivo'] = df_motivos_grupo.apply(clasificar_grupo_final, axis=1)
                 df_motivos_grupo = df_motivos_grupo[df_motivos_grupo['Grupo_Motivo'].notna()].copy()
 
@@ -1582,15 +1607,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
 
                     orden_areas_c = pivot_grupo.groupby('Area')['Cantidad'].sum().sort_values(ascending=True).index.tolist()
 
-                    grupos_unicos = ['Pendientes de gestión Sede', 'Pendientes de gestión Contactive']
-                    colores_grupos_map = {
-                        'Pendientes de gestión Sede': '#FF6B6B',
-                        'Pendientes de gestión Contactive': '#45B7D1',
-                    }
-
                     pivot_matriz_c = pivot_grupo.pivot(index='Area', columns='Grupo_Motivo', values='Cantidad').fillna(0)
                     pivot_matriz_c = pivot_matriz_c.reindex(index=orden_areas_c).fillna(0)
-                    columnas_grupo = [g for g in grupos_unicos if g in pivot_matriz_c.columns]
+                    columnas_grupo = [g for g in GRUPOS_ORDEN if g in pivot_matriz_c.columns]
                     pivot_matriz_c = pivot_matriz_c[columnas_grupo]
 
                     fig2c, ax2c = plt.subplots(figsize=(14, max(6, len(orden_areas_c) * 0.8)))
@@ -1600,14 +1619,17 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
 
                     for grupo in columnas_grupo:
                         valores_c = pivot_matriz_c[grupo].values
+                        color_grupo = COLORES_GRUPOS_MAP.get(grupo, '#CCCCCC')
+                        # Para el grupo amarillo el texto va en negro para visibilidad
+                        text_color_val = 'black' if grupo == GRUPO_PACIENTE else 'white'
                         ax2c.barh(y_pos_c, valores_c, left=left_c, height=0.65,
-                                 label=grupo, color=colores_grupos_map[grupo],
+                                 label=grupo, color=color_grupo,
                                  edgecolor='white', linewidth=1.2)
                         for j, v in enumerate(valores_c):
                             if v > 0:
                                 ax2c.text(left_c[j] + v/2, y_pos_c[j], f'{int(v)}',
                                          ha='center', va='center', fontsize=9,
-                                         fontweight='bold', color='white')
+                                         fontweight='bold', color=text_color_val)
                         left_c += valores_c
 
                     max_left_c = left_c.max() if len(left_c) > 0 else 0
@@ -1625,7 +1647,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     ax2c.set_xlabel('Cantidad de Órdenes', fontsize=12)
                     ax2c.set_ylabel('Área', fontsize=12)
                     ax2c.set_title(
-                        f'Motivos Agrupados por Área - Pendientes de gestión Sede vs Contactive - {sufijo_sede}',
+                        f'Motivos Agrupados por Área - Sede / Contactive / Solicitud del paciente - {sufijo_sede}',
                         fontsize=14, fontweight='bold'
                     )
 
@@ -1637,62 +1659,74 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     plt.tight_layout()
                     st.pyplot(fig2c)
 
-                    total_sede = int((df_motivos_grupo['Grupo_Motivo'] == 'Pendientes de gestión Sede').sum())
-                    total_contactive = int((df_motivos_grupo['Grupo_Motivo'] == 'Pendientes de gestión Contactive').sum())
+                    # Totales por grupo
+                    total_por_grupo = df_motivos_grupo['Grupo_Motivo'].value_counts()
+                    total_sede = int(total_por_grupo.get(GRUPO_SEDE, 0))
+                    total_contactive = int(total_por_grupo.get(GRUPO_CONTACTIVE, 0))
+                    total_paciente = int(total_por_grupo.get(GRUPO_PACIENTE, 0))
                     pct_sede = total_sede / total_con_motivo_c * 100 if total_con_motivo_c > 0 else 0
                     pct_contactive = total_contactive / total_con_motivo_c * 100 if total_con_motivo_c > 0 else 0
+                    pct_paciente = total_paciente / total_con_motivo_c * 100 if total_con_motivo_c > 0 else 0
 
-                    grupo_top = 'Sede' if total_sede >= total_contactive else 'Contactive'
-                    pct_grupo_top = max(pct_sede, pct_contactive)
+                    # Grupo predominante
+                    grupos_totales = {
+                        'Sede': total_sede,
+                        'Contactive': total_contactive,
+                        'Solicitud del paciente': total_paciente,
+                    }
+                    grupo_top_nombre = max(grupos_totales, key=grupos_totales.get)
+                    pct_grupo_top = grupos_totales[grupo_top_nombre] / total_con_motivo_c * 100 if total_con_motivo_c > 0 else 0
 
-                    area_mas_sede = None
-                    area_mas_contactive = None
-                    if total_sede > 0 and 'Pendientes de gestión Sede' in pivot_grupo['Grupo_Motivo'].values:
-                        df_sede = pivot_grupo[pivot_grupo['Grupo_Motivo'] == 'Pendientes de gestión Sede']
-                        if len(df_sede) > 0:
-                            idx_s = df_sede['Cantidad'].idxmax()
-                            area_mas_sede = (df_sede.loc[idx_s, 'Area'], int(df_sede.loc[idx_s, 'Cantidad']))
-                    if total_contactive > 0 and 'Pendientes de gestión Contactive' in pivot_grupo['Grupo_Motivo'].values:
-                        df_con = pivot_grupo[pivot_grupo['Grupo_Motivo'] == 'Pendientes de gestión Contactive']
-                        if len(df_con) > 0:
-                            idx_c = df_con['Cantidad'].idxmax()
-                            area_mas_contactive = (df_con.loc[idx_c, 'Area'], int(df_con.loc[idx_c, 'Cantidad']))
+                    # Área top por grupo
+                    area_top_por_grupo = {}
+                    for grupo_key, grupo_nombre in [(GRUPO_SEDE, 'Sede'), (GRUPO_CONTACTIVE, 'Contactive'), (GRUPO_PACIENTE, 'Solicitud del paciente')]:
+                        df_g = pivot_grupo[pivot_grupo['Grupo_Motivo'] == grupo_key]
+                        if len(df_g) > 0:
+                            idx_g = df_g['Cantidad'].idxmax()
+                            area_top_por_grupo[grupo_nombre] = (df_g.loc[idx_g, 'Area'], int(df_g.loc[idx_g, 'Cantidad']))
 
                     texto_interpretacion2c = (
                         f'Se clasificaron <strong>{total_con_motivo_c}</strong> motivos de las '
                         f'<strong>{total_gestionados_prog_c}</strong> órdenes gestionadas desde programación. '
-                        f'<span class="stat">"Pendientes de gestión Sede"</span> agrupa <strong>{total_sede}</strong> registros '
-                        f'(<span class="stat">{pct_sede:.1f}%</span>) y '
-                        f'<span class="stat">"Pendientes de gestión Contactive"</span> agrupa <strong>{total_contactive}</strong> registros '
-                        f'(<span class="stat">{pct_contactive:.1f}%</span>). '
-                        f'El grupo predominante es <strong>{grupo_top}</strong> con <span class="stat">{pct_grupo_top:.1f}%</span> del total. '
+                        f'<span class="stat">"{GRUPO_SEDE}"</span> agrupa <strong>{total_sede}</strong> registros '
+                        f'(<span class="stat">{pct_sede:.1f}%</span>), '
+                        f'<span class="stat">"{GRUPO_CONTACTIVE}"</span> agrupa <strong>{total_contactive}</strong> registros '
+                        f'(<span class="stat">{pct_contactive:.1f}%</span>), y '
+                        f'<span class="stat">"{GRUPO_PACIENTE}"</span> agrupa <strong>{total_paciente}</strong> registros '
+                        f'(<span class="stat">{pct_paciente:.1f}%</span>). '
+                        f'El grupo predominante es <strong>{grupo_top_nombre}</strong> con <span class="stat">{pct_grupo_top:.1f}%</span> del total. '
                     )
 
-                    if area_mas_sede is not None:
+                    if 'Sede' in area_top_por_grupo:
                         texto_interpretacion2c += (
                             f'El área con mayor volumen de motivos de Sede es '
-                            f'<span class="stat">"{str(area_mas_sede[0])[:50]}"</span> con <strong>{area_mas_sede[1]}</strong> registros. '
+                            f'<span class="stat">"{str(area_top_por_grupo["Sede"][0])[:50]}"</span> con <strong>{area_top_por_grupo["Sede"][1]}</strong> registros. '
                         )
-                    if area_mas_contactive is not None:
+                    if 'Contactive' in area_top_por_grupo:
                         texto_interpretacion2c += (
                             f'El área con mayor volumen de motivos de Contactive es '
-                            f'<span class="stat">"{str(area_mas_contactive[0])[:50]}"</span> con <strong>{area_mas_contactive[1]}</strong> registros. '
+                            f'<span class="stat">"{str(area_top_por_grupo["Contactive"][0])[:50]}"</span> con <strong>{area_top_por_grupo["Contactive"][1]}</strong> registros. '
+                        )
+                    if 'Solicitud del paciente' in area_top_por_grupo:
+                        texto_interpretacion2c += (
+                            f'El área con mayor volumen de motivos por solicitud/condición del paciente es '
+                            f'<span class="stat">"{str(area_top_por_grupo["Solicitud del paciente"][0])[:50]}"</span> con <strong>{area_top_por_grupo["Solicitud del paciente"][1]}</strong> registros. '
                         )
 
                     if pct_grupo_top >= 70:
                         texto_interpretacion2c += (
-                            f'La <strong>alta concentración en {grupo_top}</strong> indica que la mayoría de los bloqueos de programación '
+                            f'La <strong>alta concentración en {grupo_top_nombre}</strong> indica que la mayoría de los bloqueos de programación '
                             f'dependen de esta instancia, lo que permite focalizar acciones de mejora en un solo frente.'
                         )
                     elif pct_grupo_top >= 55:
                         texto_interpretacion2c += (
-                            f'Existe una <strong>concentración moderada en {grupo_top}</strong>, aunque ambos frentes '
-                            f'(Sede y Contactive) requieren atención simultánea.'
+                            f'Existe una <strong>concentración moderada en {grupo_top_nombre}</strong>, aunque los demás frentes '
+                            f'requieren atención simultánea.'
                         )
                     else:
                         texto_interpretacion2c += (
-                            f'La distribución está <strong>relativamente equilibrada</strong> entre Sede y Contactive, '
-                            f'por lo que se recomienda gestionar ambos frentes con la misma prioridad.'
+                            f'La distribución está <strong>relativamente equilibrada</strong> entre los grupos, '
+                            f'por lo que se recomienda gestionar todos los frentes con la misma prioridad.'
                         )
 
                     st.markdown(generar_interpretacion("Interpretación", texto_interpretacion2c), unsafe_allow_html=True)
@@ -2710,7 +2744,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
         
         if df_motivos_grupo_export is not None and len(df_motivos_grupo_export) > 0:
             for _, row in df_motivos_grupo_export.iterrows():
-                resumen_data.append(['Gráfico 2C', 'Motivos Agrupados (Sede vs Contactive)', 
+                resumen_data.append(['Gráfico 2C', 'Motivos Agrupados (Sede vs Contactive vs Solicitud del paciente)', 
                                     f'{row["Grupo_Motivo"]} - {row["Area"]}: {row["Cantidad"]}', ''])
             resumen_data.append(['', '', '', ''])
         
@@ -2769,7 +2803,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             estados_serv_data = estados_counts.copy()
             entidad_data = entidad_counts.copy()
             
-            # Exportar motivos por área
             df_motivos_area_export = None
             df_motivos_export_check = df_filtrado[df_filtrado['Estado_Gestion'] == "Gestionado desde programación"].copy()
             if len(df_motivos_export_check) > 0 and 'Observación' in df_motivos_export_check.columns:
@@ -2779,7 +2812,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     df_motivos_area_export = df_motivos_export_check.groupby(['Motivo', 'Area']).size().reset_index(name='Cantidad')
                     df_motivos_area_export = df_motivos_area_export.sort_values('Cantidad', ascending=False)
             
-            # Exportar motivos agrupados (Sede vs Contactive) CON la nueva regla de área
             df_motivos_grupo_export = None
             if len(df_motivos_export_check) > 0:
                 df_motivos_export_check_g = df_motivos_export_check.copy()
@@ -2887,7 +2919,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 adjusted_length = min(max_length + 2, 50)
                 ws2.column_dimensions[column_letter].width = adjusted_length
             
-            # Hoja Motivos por Área
             if df_motivos_area_export is not None and len(df_motivos_area_export) > 0:
                 ws_motivos = wb.create_sheet("Motivos por Área")
                 for r_idx, row in enumerate(dataframe_to_rows(df_motivos_area_export, index=False, header=True), 1):
@@ -2911,7 +2942,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     adjusted_length = min(max_length + 2, 50)
                     ws_motivos.column_dimensions[column_letter].width = adjusted_length
             
-            # Hoja Motivos Agrupados (Sede vs Contactive)
             if df_motivos_grupo_export is not None and len(df_motivos_grupo_export) > 0:
                 ws_grupo = wb.create_sheet("Motivos Agrupados")
                 for r_idx, row in enumerate(dataframe_to_rows(df_motivos_grupo_export, index=False, header=True), 1):
