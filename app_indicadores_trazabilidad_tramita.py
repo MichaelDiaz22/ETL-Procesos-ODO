@@ -1493,9 +1493,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                         orden_areas = pivot_top.groupby('Etiqueta_Y')['Cantidad'].sum().sort_values(ascending=True).index.tolist()
                     else:
                         pivot_top['Etiqueta_Y'] = pivot_top['Area'] + ' | ' + pivot_top['Periodo']
-                        # Ordenamos primero por Periodo y luego por total de Area para mantener una estructura coherente
+                        # Ordenamos primero por total de Area descendente, luego por Periodo ascendente
                         pivot_top['Total_Area'] = pivot_top.groupby('Area')['Cantidad'].transform('sum')
-                        pivot_top = pivot_top.sort_values(['Periodo', 'Total_Area', 'Area'], ascending=[True, True, True])
+                        pivot_top = pivot_top.sort_values(['Total_Area', 'Periodo', 'Area'], ascending=[False, True, True])
                         orden_areas = pivot_top['Etiqueta_Y'].unique().tolist()
 
                     motivos_unicos = motivos_top
@@ -1526,7 +1526,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             if v > 0:
                                 ax2b.text(left[j] + v/2, y_pos[j], f'{int(v)}',
                                          ha='center', va='center', fontsize=9,
-                                         fontweight='bold', color='white')
+                                         fontweight='bold', color='black')
                         left += valores
 
                     max_left = left.max() if len(left) > 0 else 0
@@ -1651,7 +1651,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     else:
                         pivot_grupo['Etiqueta_Y'] = pivot_grupo['Area'] + ' | ' + pivot_grupo['Periodo']
                         pivot_grupo['Total_Area'] = pivot_grupo.groupby('Area')['Cantidad'].transform('sum')
-                        pivot_grupo = pivot_grupo.sort_values(['Periodo', 'Total_Area', 'Area'], ascending=[True, True, True])
+                        pivot_grupo = pivot_grupo.sort_values(['Total_Area', 'Periodo', 'Area'], ascending=[False, True, True])
                         orden_areas_c = pivot_grupo['Etiqueta_Y'].unique().tolist()
 
                     pivot_matriz_c = pivot_grupo.pivot(index='Etiqueta_Y', columns='Grupo_Motivo', values='Cantidad').fillna(0)
@@ -1667,7 +1667,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     for grupo in columnas_grupo:
                         valores_c = pivot_matriz_c[grupo].values
                         color_grupo = COLORES_GRUPOS_MAP.get(grupo, '#CCCCCC')
-                        text_color_val = 'black' if grupo == GRUPO_PACIENTE else 'white'
                         ax2c.barh(y_pos_c, valores_c, left=left_c, height=0.65,
                                  label=grupo, color=color_grupo,
                                  edgecolor='white', linewidth=1.2)
@@ -1675,7 +1674,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                             if v > 0:
                                 ax2c.text(left_c[j] + v/2, y_pos_c[j], f'{int(v)}',
                                          ha='center', va='center', fontsize=9,
-                                         fontweight='bold', color=text_color_val)
+                                         fontweight='bold', color='black')
                         left_c += valores_c
 
                     max_left_c = left_c.max() if len(left_c) > 0 else 0
