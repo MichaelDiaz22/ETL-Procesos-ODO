@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import openpyxl
 import io
+import zipfile
 import xlsxwriter
 from datetime import datetime
 import datetime as dt
@@ -34,7 +35,9 @@ with st.sidebar:
         - Haz clic en **Generate and Download Files**.
 
         **6. Descargar los Excel**
-        - Cada archivo tendrá dos hojas: **Base confirmación** y **Pacientes**.
+        - Se generará **un único archivo ZIP** con todos los Excel dentro.
+        - Cada Excel tendrá dos hojas: **Base confirmación** y **Pacientes**.
+        - Solo necesitas hacer **una descarga** para obtener todos los archivos.
         """)
 
     with st.expander("⚙️ Reglas parametrizadas en el código", expanded=False):
@@ -198,7 +201,7 @@ if uploaded_file is not None:
             'CARTAGO UNIDAD ONCOLOGICA CARTAGO', 'CLINICA DE ALTA TECNOLOGIA SEDE ARMENIA ARMENIA',
             'ONCOLOGOS SEDE LA DORADA LA DORADA', 'UDC CLINICA DE ALTA TECNOLOGIA ARMENIA ARMENIA',
             'UDC CLINICA MARAYA PEREIRA', 'UDC CLINICA AVIDANTI MANIZALES',
-            'UDC CLINICA LA PRESENTACION MANIZALES', 'UDC SAN MARCEL MANIZALES', 'CENTRO DE CANCEROLOGIA DE BOYACA TUNJA'
+            'UDC CLINICA LA PRESENTACION MANIZALES', 'UDC SAN MARCEL MANIZALES'
         ],
         'Dirección': [
             'Calle 92 N°  29-75,  SAN MARCEL -  MANIZALES',
@@ -213,8 +216,7 @@ if uploaded_file is not None:
             'Calle 50 N° 13-10, MARAYA - PEREIRA',
             'Calle 10 N° 2C-10B, CLÍNICA AVIDANTI -  MANIZALES',
             'Carrera 23 N° 46 Esquina, CLÍNICA LA PRESENTACIÓN - MANIZALES',
-            'Calle 92 N°  29-75,  SAN MARCEL -  MANIZALES',
-            'Avenida Universitaria # 46-71 - TUNJA'
+            'Calle 92 N°  29-75,  SAN MARCEL -  MANIZALES'
         ]
     })
 
@@ -323,10 +325,6 @@ if uploaded_file is not None:
     # FUNCIÓN AUXILIAR: Aplicar reglas horarias Maraya sobre un DataFrame
     # ============================================================
     def aplicar_reglas_horarias_maraya(df_in):
-        """
-        Aplica R5, R6, R7 y R8 sobre df_in (ya filtrado por sede/sede Maraya).
-        Devuelve df_in modificado con Hora Cita Formatted actualizada.
-        """
         if len(df_in) == 0:
             return df_in
         
@@ -459,7 +457,7 @@ if uploaded_file is not None:
                 st.warning(f"⚠️ No se encontró la columna requerida: {col}")
                 return df_temp
         
-        # 🔧 CAMBIO: usar la hora YA FORMATEADA (post-reglas) para ordenar
+        # Usar la hora YA FORMATEADA (post-reglas) para ordenar
         df_temp['Hora_para_orden'] = df_temp['Hora Cita Formatted'].apply(hora_formateada_a_decimal)
         df_temp['Hora_para_orden'] = df_temp['Hora_para_orden'].fillna(999999)
         
@@ -626,7 +624,7 @@ if uploaded_file is not None:
             logs_placeholder.info(f"📁 Archivo {i+1}: {len(filtered_df)} filas después del filtrado inicial")
             
             # ============================================================
-            # NUEVO ORDEN DE APLICACIÓN:
+            # ORDEN DE APLICACIÓN:
             # 1) Reglas horarias Maraya (R5–R8)
             # 2) Identificar primer servicio / eliminar duplicados (R1)
             # 3) Hora más temprana (R9)
@@ -634,19 +632,15 @@ if uploaded_file is not None:
             # ============================================================
             es_maraya = any('MARAYA' in str(s).upper() for s in file_filters['sedes'])
             
-            # 🔧 PASO 1: Reglas horarias antes de eliminar duplicados
             if es_maraya and len(filtered_df) > 0:
                 filtered_df = aplicar_reglas_horarias_maraya(filtered_df)
-                # Reconstruir VARIABLE tras cambios de hora
                 filtered_df['VARIABLE'] = filtered_df.apply(
                     lambda row: f"{row.get('Nombres','') } {row.get('Apellidos','')}|{row.get('Actividad Médica','')}|{row.get('Fecha Programación Formateada','')}|{row.get('Hora Cita Formatted','')}|{row.get('Especialista','')}|{row.get('Direccion Final','')}",
                     axis=1
                 )
             
-            # 🔧 PASO 2: Ahora sí, eliminar duplicados con las horas ya corregidas
             filtered_df = identificar_primer_servicio(filtered_df)
             
-            # 🔧 PASO 3: Hora más temprana por grupo
             if es_maraya and len(filtered_df) > 0:
                 filtered_df = aplicar_hora_mas_temprana(filtered_df)
                 filtered_df['VARIABLE'] = filtered_df.apply(
@@ -654,7 +648,6 @@ if uploaded_file is not None:
                     axis=1
                 )
             
-            # 🔧 PASO 4: Exclusión (R4)
             if ('Especialista' in filtered_df.columns 
                 and 'Unidad Funcional' in filtered_df.columns
                 and len(filtered_df) > 0):
@@ -677,14 +670,20 @@ if uploaded_file is not None:
             filtered_dfs.append((filtered_df, file_filters))
             progress_bar.progress((i + 1) / len(filters))
         
-        status_text.text("✅ Procesamiento completado")
+        status_text.text("✅ Procesamiento completado. Generando archivos...")
 
-        with results_placeholder:
+        # ============================================================
+        # GENERACIÓN DEL ZIP CON TODOS LOS EXCEL
+        # ============================================================
+        zip_buffer = io.BytesIO()
+        archivos_generados = []
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             for i, (filtered_df, file_filters) in enumerate(filtered_dfs):
                 if len(filtered_df) == 0:
-                    st.error(f"❌ El archivo {i+1} no contiene datos con los filtros aplicados.")
+                    archivos_generados.append(f"❌ Archivo {i+1}: sin datos con los filtros aplicados (omitido)")
                     continue
-                    
+                
                 buffer = io.BytesIO()
 
                 base_confirmacion_cols = ['TELEFONO CONFIRMACIÓN', 'VARIABLE']
@@ -713,12 +712,37 @@ if uploaded_file is not None:
                 
                 filename = f"{empresas_str}_Confirmacion_{ubicaciones_str}_{file_filters['start_date'].day}_al_{file_filters['end_date'].day}_{file_filters['start_date'].strftime('%B')}_{file_filters['start_date'].year}.xlsx"
 
-                st.download_button(
-                    label=f"📥 Download File {i+1}: {filename}",
-                    data=buffer.getvalue(),
-                    file_name=filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheet.sheet",
-                    key=f"download_{i}"
-                )
-
+                # Escribir el Excel directamente dentro del ZIP
+                zip_file.writestr(filename, buffer.getvalue())
                 buffer.close()
+                
+                archivos_generados.append(f"✅ {filename} ({len(filtered_df)} filas)")
+        
+        zip_buffer.seek(0)
+        
+        status_text.text("✅ Archivos generados correctamente")
+        
+        # Resumen de archivos incluidos
+        with results_placeholder:
+            st.subheader("📦 Archivos incluidos en el ZIP")
+            for msg in archivos_generados:
+                st.write(msg)
+            
+            # Un solo botón de descarga para todos los archivos
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            zip_filename = f"Confirmaciones_ODO_{timestamp}.zip"
+            
+            num_validos = len([a for a in archivos_generados if a.startswith('✅')])
+            
+            if num_validos > 0:
+                st.download_button(
+                    label=f"📥 Descargar todos los archivos ({num_validos} Excel)",
+                    data=zip_buffer.getvalue(),
+                    file_name=zip_filename,
+                    mime="application/zip",
+                    key="download_zip_all"
+                )
+            else:
+                st.warning("⚠️ No se generó ningún archivo válido para descargar.")
+        
+        zip_buffer.close()
