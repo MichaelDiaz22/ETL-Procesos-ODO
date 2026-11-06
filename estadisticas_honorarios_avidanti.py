@@ -1013,6 +1013,7 @@ def procesar_todo(files_data):
                 es_fase_2 = concepto_lower.startswith("fase 2")
                 es_fase_3 = concepto_lower.startswith("fase 3")
                 es_consolidado = concepto_lower.startswith("consolidado")
+                
                 if es_fase_1 or es_fase_2 or es_fase_3 or es_consolidado:
                     concepto_sin_prefijo = " - ".join(concepto.split(" - ")[1:])
                 else:
