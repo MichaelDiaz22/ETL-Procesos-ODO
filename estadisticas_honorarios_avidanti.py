@@ -353,10 +353,6 @@ def parsear_hoja_resultados(df, nombre_hoja):
     sedes_por_columna = None
     fase_actual = None
 
-    # OPTIMIZACIÓN: Detectar si existe la tabla Consolidado para ignorar las fases
-    textos_norm = [normalizar(v) for v in df.iloc[:, 0].astype(str).tolist()]
-    tiene_consolidado = "consolidado todas las fases" in textos_norm
-
     for idx_fila, row in df.iterrows():
         valores = row.tolist()
         primera_celda = str(valores[0]).strip() if valores else ""
@@ -366,17 +362,10 @@ def parsear_hoja_resultados(df, nombre_hoja):
             if patron in primera_norm:
                 fase_detectada = nombre_fase
                 break
-        
         if fase_detectada:
-            # Si el archivo tiene Consolidado, ignoramos las fases individuales para no duplicar
-            if tiene_consolidado and fase_detectada != "Consolidado":
-                fase_actual = None
-                sedes_por_columna = None
-                continue
             fase_actual = fase_detectada
             sedes_por_columna = None
             continue
-
         if primera_norm == "concepto" and fase_actual:
             sedes_por_columna = {}
             for j, celda in enumerate(valores[1:], start=1):
@@ -386,7 +375,6 @@ def parsear_hoja_resultados(df, nombre_hoja):
                         sedes_por_columna[j] = col_canon
                         break
             continue
-
         if fase_actual and sedes_por_columna and primera_celda and primera_norm not in ("nan", ""):
             concepto_key = f"{fase_actual} - {primera_celda}"
             resultado[concepto_key] = {}
