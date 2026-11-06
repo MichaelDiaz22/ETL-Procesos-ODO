@@ -353,6 +353,10 @@ def parsear_hoja_resultados(df, nombre_hoja):
     sedes_por_columna = None
     fase_actual = None
 
+    # OPTIMIZACIÓN: Detectar si existe la tabla Consolidado para ignorar las fases
+    textos_norm = [normalizar(v) for v in df.iloc[:, 0].astype(str).tolist()]
+    tiene_consolidado = "consolidado todas las fases" in textos_norm
+
     for idx_fila, row in df.iterrows():
         valores = row.tolist()
         primera_celda = str(valores[0]).strip() if valores else ""
@@ -362,10 +366,17 @@ def parsear_hoja_resultados(df, nombre_hoja):
             if patron in primera_norm:
                 fase_detectada = nombre_fase
                 break
+        
         if fase_detectada:
+            # Si el archivo tiene Consolidado, ignoramos las fases individuales para no duplicar
+            if tiene_consolidado and fase_detectada != "Consolidado":
+                fase_actual = None
+                sedes_por_columna = None
+                continue
             fase_actual = fase_detectada
             sedes_por_columna = None
             continue
+
         if primera_norm == "concepto" and fase_actual:
             sedes_por_columna = {}
             for j, celda in enumerate(valores[1:], start=1):
@@ -375,6 +386,7 @@ def parsear_hoja_resultados(df, nombre_hoja):
                         sedes_por_columna[j] = col_canon
                         break
             continue
+
         if fase_actual and sedes_por_columna and primera_celda and primera_norm not in ("nan", ""):
             concepto_key = f"{fase_actual} - {primera_celda}"
             resultado[concepto_key] = {}
@@ -1003,9 +1015,6 @@ def procesar_todo(files_data):
             ventas_relacionadas_p = 0; dinero_facturado_p = 0.0
             dinero_interfaz_fase_1_p = 0.0; dinero_interfaz_fase_2_p = 0.0; dinero_interfaz_fase_3_p = 0.0
 
-            # Determinar si existe tabla consolidada en el histórico para evitar doble conteo
-            hay_consolidado = any(normalizar(c).startswith("consolidado - ") for c in conceptos.keys())
-
             for concepto, valores in conceptos.items():
                 valor = valores.get(sede)
                 if valor is None: continue
@@ -1016,11 +1025,6 @@ def procesar_todo(files_data):
                 es_fase_2 = concepto_lower.startswith("fase 2")
                 es_fase_3 = concepto_lower.startswith("fase 3")
                 es_consolidado = concepto_lower.startswith("consolidado")
-
-                # CORRECCIÓN: Si el histórico tiene tabla consolidada, ignorar las fases individuales
-                if hay_consolidado and not es_consolidado:
-                    continue
-
                 if es_fase_1 or es_fase_2 or es_fase_3 or es_consolidado:
                     concepto_sin_prefijo = " - ".join(concepto.split(" - ")[1:])
                 else:
