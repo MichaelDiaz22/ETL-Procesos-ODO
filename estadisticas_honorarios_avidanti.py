@@ -1003,6 +1003,9 @@ def procesar_todo(files_data):
             ventas_relacionadas_p = 0; dinero_facturado_p = 0.0
             dinero_interfaz_fase_1_p = 0.0; dinero_interfaz_fase_2_p = 0.0; dinero_interfaz_fase_3_p = 0.0
 
+            # Determinar si existe tabla consolidada en el histórico para evitar doble conteo
+            hay_consolidado = any(normalizar(c).startswith("consolidado - ") for c in conceptos.keys())
+
             for concepto, valores in conceptos.items():
                 valor = valores.get(sede)
                 if valor is None: continue
@@ -1013,6 +1016,11 @@ def procesar_todo(files_data):
                 es_fase_2 = concepto_lower.startswith("fase 2")
                 es_fase_3 = concepto_lower.startswith("fase 3")
                 es_consolidado = concepto_lower.startswith("consolidado")
+
+                # CORRECCIÓN: Si el histórico tiene tabla consolidada, ignorar las fases individuales
+                if hay_consolidado and not es_consolidado:
+                    continue
+
                 if es_fase_1 or es_fase_2 or es_fase_3 or es_consolidado:
                     concepto_sin_prefijo = " - ".join(concepto.split(" - ")[1:])
                 else:
