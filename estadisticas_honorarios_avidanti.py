@@ -784,6 +784,7 @@ def procesar_todo(files_data):
             df_filtrado_revisadas = atenciones_df.loc[mask_verifica].copy()
 
     # -------- CRUCE VENTAS (código de producto + valor) --------
+    # El "Valor facturado" de Ventas se registra UNA sola vez por (No. venta, código producto).
     ventas_valor_por_codigo = {}
     ventas_df_global = pd.DataFrame()
     if bases["Ventas"]:
@@ -795,13 +796,15 @@ def procesar_todo(files_data):
         col_v_valor_fact = obtener_columna(ventas_df_global, "Valor facturado")
 
         if col_v_venta_no is not None and col_v_codigo is not None and col_v_valor_fact is not None:
-            v_no_norm = ventas_df_global[col_v_venta_no].map(normalizar_llave_venta)
-            v_cod_norm = ventas_df_global[col_v_codigo].astype(str).str.strip().str.extract(r"(\d{6})", expand=False).fillna("")
-            v_valor_num = convertir_a_numero(ventas_df_global[col_v_valor_fact])
-            for (vno, cod), val in zip(zip(v_no_norm, v_cod_norm), v_valor_num):
-                if vno and cod:
-                    clave = (vno, cod)
-                    ventas_valor_por_codigo[clave] = ventas_valor_por_codigo.get(clave, 0.0) + float(val)
+            df_vv = pd.DataFrame({
+                "vno": ventas_df_global[col_v_venta_no].map(normalizar_llave_venta).values,
+                "cod": ventas_df_global[col_v_codigo].astype(str).str.strip().str.extract(r"(\d{6})", expand=False).fillna("").values,
+                "val": convertir_a_numero(ventas_df_global[col_v_valor_fact]).values,
+            })
+            df_vv = df_vv[(df_vv["vno"] != "") & (df_vv["cod"] != "")]
+            # Filas idénticas (misma venta, código y valor) se cuentan una sola vez
+            df_vv = df_vv.drop_duplicates(subset=["vno", "cod", "val"])
+            ventas_valor_por_codigo = df_vv.groupby(["vno", "cod"])["val"].sum().to_dict()
 
     # -------- TOTALES --------
     total_ventas_ce = {fase: {cod: 0 for cod in CODIGOS_SEDE} for fase in FASES}
@@ -849,6 +852,9 @@ def procesar_todo(files_data):
 
             mask_venta_en_ventas = totales_df["_venta_no_norm"].isin(ventas_nos_existentes)
 
+            # Claves (venta, código) cuyo valor de Ventas ya fue sumado (evita multiplicar por profesional)
+            claves_dinero_contadas = set()
+
             for fase in FASES:
                 for cod in CODIGOS_SEDE:
                     mask_sede_fase = (totales_df["_sede"] == cod) & (totales_df["_fase"] == fase)
@@ -863,25 +869,31 @@ def procesar_todo(files_data):
                             valor_totales = float(totales_tarifa_num.loc[idx])
                             vno = totales_df.loc[idx, "_venta_no_norm"]
                             cod_prod = totales_df.loc[idx, "_codigo_prod"]
-                            valor_ventas = ventas_valor_por_codigo.get((vno, cod_prod))
-                            
-                            if valor_ventas is not None and abs(valor_ventas - valor_totales) > 0.01:
-                                total_ventas_ce[fase][cod] += 1
-                                dinero_ambulatorio[fase][cod] += valor_ventas
-                                registros_errores_tarifas.append({
-                                    "Sede": cod,
-                                    "Fase": fase,
-                                    "Categoría de error": "tarifa diferente",
-                                    "No. de venta": totales_df.loc[idx, col_totales_venta_no],
-                                    "Código producto": cod_prod,
-                                    "Producto": totales_df.loc[idx, col_totales_producto] if col_totales_producto is not None else "",
-                                    "Profesional": totales_df.loc[idx, col_totales_profesional] if col_totales_profesional is not None else "",
-                                    "Tarifa Totales (reliquidado)": valor_totales,
-                                    "Valor facturado en Ventas": valor_ventas,
-                                    "Diferencia": valor_ventas - valor_totales,
-                                })
+                            clave = (vno, cod_prod)
+                            valor_ventas = ventas_valor_por_codigo.get(clave)
+
+                            total_ventas_ce[fase][cod] += 1
+
+                            if valor_ventas is not None:
+                                # Valor facturado de Ventas: se suma UNA sola vez por (venta, código)
+                                if clave not in claves_dinero_contadas:
+                                    claves_dinero_contadas.add(clave)
+                                    dinero_ambulatorio[fase][cod] += valor_ventas
+                                if abs(valor_ventas - valor_totales) > 0.01:
+                                    registros_errores_tarifas.append({
+                                        "Sede": cod,
+                                        "Fase": fase,
+                                        "Categoría de error": "tarifa diferente",
+                                        "No. de venta": totales_df.loc[idx, col_totales_venta_no],
+                                        "Código producto": cod_prod,
+                                        "Producto": totales_df.loc[idx, col_totales_producto] if col_totales_producto is not None else "",
+                                        "Profesional": totales_df.loc[idx, col_totales_profesional] if col_totales_profesional is not None else "",
+                                        "Tarifa Totales (reliquidado)": valor_totales,
+                                        "Valor facturado en Ventas": valor_ventas,
+                                        "Diferencia": valor_ventas - valor_totales,
+                                    })
                             else:
-                                total_ventas_ce[fase][cod] += 1
+                                # Sin coincidencia en Ventas: respaldo con la tarifa de Totales
                                 dinero_ambulatorio[fase][cod] += valor_totales
 
                         if mask_error.any():
@@ -971,10 +983,23 @@ def procesar_todo(files_data):
             else:
                 mask_venta_en_totales = pd.Series(False, index=ventas_df.index)
 
+            # Evitar duplicados de filas en Ventas (misma venta, código, estado y valor)
+            col_ventas_codigo = obtener_columna(ventas_df, "Código Producto") or obtener_columna(ventas_df, "Codigo Producto")
+            if col_ventas_venta_no is not None and col_ventas_codigo is not None:
+                llave_dup = pd.DataFrame({
+                    "v": ventas_df[col_ventas_venta_no].map(normalizar_llave_venta),
+                    "c": ventas_df[col_ventas_codigo].astype(str).str.extract(r"(\d{6})", expand=False).fillna(""),
+                    "e": mask_estado_facturada,
+                    "x": valor_facturado_num,
+                })
+                mask_no_duplicada = ~llave_dup.duplicated()
+            else:
+                mask_no_duplicada = pd.Series(True, index=ventas_df.index)
+
             for fase in FASES:
                 for cod in CODIGOS_SEDE:
                     mask_sede_fase = (ventas_df["_sede"] == cod) & (ventas_df["_fase"] == fase)
-                    mask_base = mask_sede_fase & mask_estado_facturada & mask_venta_en_totales
+                    mask_base = mask_sede_fase & mask_estado_facturada & mask_venta_en_totales & mask_no_duplicada
                     if mask_base.any():
                         valores = valor_facturado_num[mask_base]
                         indices = valores.index
@@ -1614,10 +1639,10 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         ("2. Avaladas subgerencia médica", "Revisadas + 'Usuario / Sub Medico' NO vacío + 'Valor liquidado' > 1000."),
         ("3. Dinero enviado por interfaz", "Σ 'Valor liquidado' válido (>= 1000), errores reportados aparte."),
         ("4. Total ventas", "count(Totales ∩ Ventas con 'tarifas' >= 1000). Errores reportados aparte."),
-        ("5. Dinero ventas", "Σ 'tarifas (reliquidado)' válidas (>= 1000). Se cruza por (No. venta, primeros 6 dígitos de 'producto' en Totales) contra 'Código Producto' de Ventas. Si el 'Valor facturado' difiere, se usa el de Ventas y se marca 'tarifa diferente'."),
+        ("5. Dinero ventas", "Se toma el 'Valor facturado' de Ventas, sumado UNA sola vez por (No. venta, primeros 6 dígitos de 'producto' en Totales = 'Código Producto' de Ventas). Si no hay coincidencia en Ventas se usa la 'tarifas (reliquidado)' de Totales. Si el valor de Ventas difiere de Totales se marca 'tarifa diferente'."),
         ("6. Porcentual faltante (META 30%)", "(Total ventas − Avaladas) / Total ventas × 100."),
-        ("7. Ventas relacionadas en factura", "count(Ventas con Estado=Facturada, 'Valor facturado' >= 1000 y 'Venta No.' ∈ Totales)."),
-        ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada y 'Venta No.' ∈ Totales."),
+        ("7. Ventas relacionadas en factura", "count(Ventas con Estado=Facturada, 'Valor facturado' >= 1000 y 'Venta No.' ∈ Totales). Filas duplicadas de Ventas se cuentan una sola vez."),
+        ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada y 'Venta No.' ∈ Totales, sin duplicados."),
         ("9. Porcentual impactado (META 0%)", "(Total ventas − Ventas relacionadas) / Total ventas × 100."),
         ("Consolidado", "Suma de las 3 fases. Porcentajes recalculados."),
         ("Gráficas / Históricos", "Las gráficas usan los valores de la tabla CONSOLIDADO de cada periodo (en históricos se lee la sección 'CONSOLIDADO - TODAS LAS FASES'); las fases solo se usan para el desglose de participación por fase."),
