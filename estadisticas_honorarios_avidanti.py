@@ -222,7 +222,6 @@ def normalizar(s):
     return txt
 
 def extraer_codigo_producto(valor):
-    """Extrae los primeros 6 dígitos numéricos del campo 'producto' (Totales)."""
     if pd.isna(valor):
         return ""
     s = str(valor).strip()
@@ -431,13 +430,52 @@ def formatear_dinero_con_error(total, cant_err, suma_err, pct_err):
         return f"{base} (Errores: {err} en {cant_err} registros — {pct}%)"
     return base
 
+# ============================================================
+# PARSER DE VALORES CON SOPORTE PARA FORMATO CO Y US
+# ============================================================
 def parsear_valor_generico(v):
-    if pd.isna(v): return None
+    """
+    Parsea un valor numérico que puede venir en formato:
+    - US:  $1,234,567.89
+    - CO:  $1.234.567,89
+    - Entero con miles: 2.440  (CO) o 2,440 (US)
+    - Porcentaje: 66,60% (CO) o 66.60% (US)
+    """
+    if pd.isna(v):
+        return None
     s = str(v).strip()
     s = re.sub(r"\(.*?\)", "", s).strip()
-    s = s.replace("$", "").replace(",", "").replace("%", "").strip()
+    s = s.replace("$", "").replace("%", "").replace(" ", "").strip()
+    if not s:
+        return None
+
+    tiene_coma = "," in s
+    tiene_punto = "." in s
+
+    if tiene_coma and tiene_punto:
+        if s.rfind(",") > s.rfind("."):
+            # CO: 1.234.567,89
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            # US: 1,234,567.89
+            s = s.replace(",", "")
+    elif tiene_punto:
+        partes = s.split(".")
+        if len(partes) > 2 or all(len(p) == 3 for p in partes[1:]):
+            # Miles con puntos: 1.234.567 -> CO entero
+            s = s.replace(".", "")
+        # else: US con decimales (1.234 -> float 1.234)
+    elif tiene_coma:
+        partes = s.split(",")
+        if len(partes) > 2 or all(len(p) == 3 for p in partes[1:]):
+            # Miles con comas: 1,234,567 -> US entero
+            s = s.replace(",", "")
+        else:
+            # Decimal CO: 66,60 -> 66.60
+            s = s.replace(",", ".")
+
     try:
-        return float(s) if s else None
+        return float(s)
     except Exception:
         return None
 
@@ -1209,7 +1247,6 @@ def generar_grafica_cobertura(_consolidados_por_periodo, firma):
 
 @st.cache_data(show_spinner=False)
 def generar_grafica_participacion_fase_general(_consolidados_por_periodo, firma):
-    """Vista general horizontal ampliada: todas las sedes × periodos en barras 100% apiladas."""
     datos = []
     for periodo, data_sedes in _consolidados_por_periodo.items():
         for sede, vals in data_sedes.items():
@@ -1253,7 +1290,6 @@ def generar_grafica_participacion_fase_general(_consolidados_por_periodo, firma)
 
 @st.cache_data(show_spinner=False)
 def generar_grafica_participacion_fase_sede_individual(_consolidados_por_periodo, sede_sel, firma):
-    """Gráfica de UNA sola sede: barras 100% apiladas por fase, todos los periodos en X."""
     datos = []
     for periodo, data_sedes in _consolidados_por_periodo.items():
         vals = data_sedes.get(sede_sel)
@@ -1553,7 +1589,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             ws.add_image(xl_img, f"A{fila}")
             return fila + int(alto / 20) + 3
 
-        # ---- Gráfico 1: Dinero enviado por interfaz (por sede) ----
+        # Gráfico 1: Dinero enviado por interfaz (por sede)
         datos_g1 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1575,7 +1611,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 1 — Dinero enviado por interfaz (COP)")
             plt.close(fig)
 
-        # ---- Gráfico 2: Cobertura general ----
+        # Gráfico 2: Cobertura general
         datos_g2 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1599,7 +1635,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 2 — Cobertura general de honorarios médicos (meta 70%)")
             plt.close(fig)
 
-        # ---- Gráfico 3: Participación por fase — Small multiples ----
+        # Gráfico 3: Participación por fase — Small multiples
         datos_g3 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1660,7 +1696,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=950, alto=520, titulo="Gráfico 3 — Participación por fase (por sede)")
             plt.close(fig)
 
-        # ---- Gráfico 4: Dinero total por periodo (todas las sedes) ----
+        # Gráfico 4: Dinero total por periodo
         datos_g4 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             total_periodo = sum(vals["dinero_interfaz"] for vals in data_sedes.values())
@@ -1680,7 +1716,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 4 — Dinero total enviado por periodo")
             plt.close(fig)
 
-        # ---- Gráfico 5: Cobertura total por periodo ----
+        # Gráfico 5: Cobertura total por periodo
         datos_g5 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             avaladas_total = sum(vals["avaladas"] for vals in data_sedes.values())
@@ -1742,7 +1778,7 @@ if uploaded_files:
         if not consolidados:
             st.info("No hay datos históricos suficientes para generar el análisis.")
         else:
-            # ---- Selector global para gráficas 1, 2, 4, 5, 6, 7 ----
+            # Selector global para gráficas 1, 2, 4, 5, 6, 7
             agrupacion = st.radio(
                 "Agrupar por:",
                 ["Mes", "Bimestre", "Trimestre", "Semestre", "Año"],
@@ -1759,7 +1795,7 @@ if uploaded_files:
             img = generar_grafica_cobertura(consolidados_agrup, firma)
             if img: st.image(img, use_column_width=True)
 
-            # ---- Gráfico 3: Participación por fase con selector de SEDE ----
+            # Gráfico 3: Participación por fase con selector de SEDE
             st.markdown("#### Gráfico 3 — Participación por fase (por sede y periodo)")
             opciones_sede = ["General"] + COLUMNAS_RESUMEN
             sede_sel = st.radio(
