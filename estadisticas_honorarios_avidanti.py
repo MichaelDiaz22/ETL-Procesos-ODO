@@ -515,6 +515,17 @@ def normalizar_etiqueta_hist(concepto):
     if c.startswith("Dinero ventas ") and "Facturado" not in c: return "Dinero ventas"
     return c
 
+# Mapa de etiqueta normalizada (histórico) -> métrica interna
+MAPA_METRICAS_HIST = {
+    "Revisadas por analistas": "revisadas",
+    "Avaladas subgerencia médica": "avaladas",
+    "Total ventas (ACTIVO Y FACTURADO)": "total_ventas",
+    "Dinero enviado por interfaz": "dinero_interfaz",
+    "Dinero ventas": "dinero_ventas",
+    "Ventas relacionadas en factura (FACTURADO)": "ventas_relacionadas",
+    "Dinero ventas (Facturado)": "dinero_facturado",
+}
+
 def _etiqueta_periodo_corta(p):
     e = str(p)
     for l, c in [
@@ -1152,6 +1163,7 @@ def procesar_todo(files_data):
         resumen_verifica = resumen_verifica.sort_values("Registros", ascending=False).reset_index(drop=True)
 
     # -------- CONSOLIDADOS POR PERIODO --------
+    # Los valores que se grafican SON los de la tabla CONSOLIDADO (no se suman las tablas de cada fase).
     consolidados_por_periodo = {}
 
     if periodo_etiqueta != "—" and len(bases["Atenciones del especialista"]) > 0:
@@ -1165,48 +1177,52 @@ def procesar_todo(files_data):
             } for cod, sede in zip(CODIGOS_SEDE, COLUMNAS_RESUMEN)
         }
 
+    # Históricos: se toma ÚNICAMENTE la sección "Consolidado" de cada hoja para los totales.
+    # Las secciones de fase solo se usan para el desglose por fase (gráfico de participación)
+    # y como respaldo si la hoja no trae sección Consolidado.
     for etiqueta_periodo, conceptos in historicos_detectados.items():
         data_periodo = {}
         for sede in COLUMNAS_RESUMEN:
-            revisadas_p = 0; avaladas_p = 0; total_ventas_p = 0
-            dinero_interfaz_p = 0.0; dinero_ventas_p = 0.0
-            ventas_relacionadas_p = 0; dinero_facturado_p = 0.0
-            dinero_interfaz_fase_1_p = 0.0; dinero_interfaz_fase_2_p = 0.0; dinero_interfaz_fase_3_p = 0.0
+            consolidado_vals = {m: None for m in MAPA_METRICAS_HIST.values()}
+            suma_fases = {m: 0.0 for m in MAPA_METRICAS_HIST.values()}
+            dinero_por_fase = {"Fase 1": 0.0, "Fase 2": 0.0, "Fase 3": 0.0}
 
             for concepto, valores in conceptos.items():
                 valor = valores.get(sede)
-                if valor is None: continue
+                if valor is None:
+                    continue
                 num = parsear_valor_generico(valor)
-                if num is None: continue
-                concepto_lower = normalizar(concepto)
-                es_fase_1 = concepto_lower.startswith("fase 1")
-                es_fase_2 = concepto_lower.startswith("fase 2")
-                es_fase_3 = concepto_lower.startswith("fase 3")
-                es_consolidado = concepto_lower.startswith("consolidado")
-                
-                if es_fase_1 or es_fase_2 or es_fase_3 or es_consolidado:
-                    concepto_sin_prefijo = " - ".join(concepto.split(" - ")[1:])
-                else:
-                    concepto_sin_prefijo = concepto
-                concepto_norm = normalizar_etiqueta_hist(concepto_sin_prefijo)
+                if num is None:
+                    continue
 
-                if concepto_norm == "Revisadas por analistas": revisadas_p += num
-                elif concepto_norm == "Avaladas subgerencia médica": avaladas_p += num
-                elif concepto_norm == "Total ventas (ACTIVO Y FACTURADO)": total_ventas_p += num
-                elif concepto_norm == "Dinero enviado por interfaz":
-                    dinero_interfaz_p += num
-                    if es_fase_1: dinero_interfaz_fase_1_p += num
-                    elif es_fase_2: dinero_interfaz_fase_2_p += num
-                    elif es_fase_3: dinero_interfaz_fase_3_p += num
-                elif concepto_norm == "Dinero ventas": dinero_ventas_p += num
-                elif concepto_norm == "Ventas relacionadas en factura (FACTURADO)": ventas_relacionadas_p += num
-                elif concepto_norm == "Dinero ventas (Facturado)": dinero_facturado_p += num
+                partes = concepto.split(" - ", 1)
+                prefijo = limpiar_texto(partes[0])
+                concepto_sin_prefijo = partes[1] if len(partes) > 1 else concepto
+                metrica = MAPA_METRICAS_HIST.get(normalizar_etiqueta_hist(concepto_sin_prefijo))
+                if metrica is None:
+                    continue
+
+                if prefijo == "Consolidado":
+                    consolidado_vals[metrica] = (consolidado_vals[metrica] or 0.0) + num
+                elif prefijo in FASES:
+                    suma_fases[metrica] += num
+                    if metrica == "dinero_interfaz":
+                        dinero_por_fase[prefijo] += num
+
+            def _final(m):
+                return consolidado_vals[m] if consolidado_vals[m] is not None else suma_fases[m]
 
             data_periodo[sede] = {
-                "revisadas": revisadas_p, "avaladas": avaladas_p, "total_ventas": total_ventas_p,
-                "dinero_interfaz": dinero_interfaz_p, "dinero_ventas": dinero_ventas_p,
-                "ventas_relacionadas": ventas_relacionadas_p, "dinero_facturado": dinero_facturado_p,
-                "dinero_interfaz_fase_1": dinero_interfaz_fase_1_p, "dinero_interfaz_fase_2": dinero_interfaz_fase_2_p, "dinero_interfaz_fase_3": dinero_interfaz_fase_3_p,
+                "revisadas": _final("revisadas"),
+                "avaladas": _final("avaladas"),
+                "total_ventas": _final("total_ventas"),
+                "dinero_interfaz": _final("dinero_interfaz"),
+                "dinero_ventas": _final("dinero_ventas"),
+                "ventas_relacionadas": _final("ventas_relacionadas"),
+                "dinero_facturado": _final("dinero_facturado"),
+                "dinero_interfaz_fase_1": dinero_por_fase["Fase 1"],
+                "dinero_interfaz_fase_2": dinero_por_fase["Fase 2"],
+                "dinero_interfaz_fase_3": dinero_por_fase["Fase 3"],
             }
         consolidados_por_periodo[etiqueta_periodo] = data_periodo
 
@@ -1604,6 +1620,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada y 'Venta No.' ∈ Totales."),
         ("9. Porcentual impactado (META 0%)", "(Total ventas − Ventas relacionadas) / Total ventas × 100."),
         ("Consolidado", "Suma de las 3 fases. Porcentajes recalculados."),
+        ("Gráficas / Históricos", "Las gráficas usan los valores de la tabla CONSOLIDADO de cada periodo (en históricos se lee la sección 'CONSOLIDADO - TODAS LAS FASES'); las fases solo se usan para el desglose de participación por fase."),
         ("Agrupación", "Las gráficas permiten agrupar por Mes, Bimestre, Trimestre, Semestre o Año."),
         ("Errores de tarifas", "Base única con todos los registros clasificados como 'tarifa diferente' o 'tarifas no aplican'."),
     ]
@@ -1818,6 +1835,7 @@ if uploaded_files:
 
     with tabs[1]:
         st.markdown("### Análisis histórico comparativo entre periodos")
+        st.caption("Los gráficos usan los valores de la tabla CONSOLIDADO de cada periodo.")
         consolidados = resultados["consolidados_por_periodo"]
         if not consolidados:
             st.info("No hay datos históricos suficientes para generar el análisis.")
