@@ -437,16 +437,19 @@ def parsear_valor_generico(v):
     """
     Parsea un valor numérico que puede venir en formato:
     - US:  $1,234,567.89
-    - CO:  $1.234.567,89
+    - CO:  $1.234.567,89  (con posibles espacios duros \\xa0 o \\u202f)
     - Entero con miles: 2.440  (CO) o 2,440 (US)
     - Porcentaje: 66,60% (CO) o 66.60% (US)
+    Devuelve None si no se puede parsear.
     """
     if pd.isna(v):
         return None
     s = str(v).strip()
+    # Eliminar paréntesis de errores (ej: "(Errores: ...)")
     s = re.sub(r"\(.*?\)", "", s).strip()
-    s = s.replace("$", "").replace("%", "").replace(" ", "").strip()
-    if not s:
+    # Eliminar TODO lo que no sea dígito, coma, punto o signo menos
+    s = re.sub(r"[^\d,.\-]", "", s)
+    if not s or s in ("-", ".", ","):
         return None
 
     tiene_coma = "," in s
@@ -461,13 +464,12 @@ def parsear_valor_generico(v):
             s = s.replace(",", "")
     elif tiene_punto:
         partes = s.split(".")
-        if len(partes) > 2 or all(len(p) == 3 for p in partes[1:]):
+        if len(partes) > 2 or (len(partes) == 2 and len(partes[1]) == 3 and len(partes[0]) <= 3):
             # Miles con puntos: 1.234.567 -> CO entero
             s = s.replace(".", "")
-        # else: US con decimales (1.234 -> float 1.234)
     elif tiene_coma:
         partes = s.split(",")
-        if len(partes) > 2 or all(len(p) == 3 for p in partes[1:]):
+        if len(partes) > 2 or (len(partes) == 2 and len(partes[1]) == 3 and len(partes[0]) <= 3):
             # Miles con comas: 1,234,567 -> US entero
             s = s.replace(",", "")
         else:
@@ -477,6 +479,13 @@ def parsear_valor_generico(v):
     try:
         return float(s)
     except Exception:
+        # Fallback: extraer solo dígitos
+        solo_digitos = re.sub(r"[^\d]", "", s)
+        if solo_digitos:
+            try:
+                return float(solo_digitos)
+            except Exception:
+                return None
         return None
 
 def normalizar_etiqueta_hist(concepto):
@@ -1589,7 +1598,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             ws.add_image(xl_img, f"A{fila}")
             return fila + int(alto / 20) + 3
 
-        # Gráfico 1: Dinero enviado por interfaz (por sede)
         datos_g1 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1611,7 +1619,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 1 — Dinero enviado por interfaz (COP)")
             plt.close(fig)
 
-        # Gráfico 2: Cobertura general
         datos_g2 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1635,7 +1642,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 2 — Cobertura general de honorarios médicos (meta 70%)")
             plt.close(fig)
 
-        # Gráfico 3: Participación por fase — Small multiples
         datos_g3 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1696,7 +1702,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=950, alto=520, titulo="Gráfico 3 — Participación por fase (por sede)")
             plt.close(fig)
 
-        # Gráfico 4: Dinero total por periodo
         datos_g4 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             total_periodo = sum(vals["dinero_interfaz"] for vals in data_sedes.values())
@@ -1716,7 +1721,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 4 — Dinero total enviado por periodo")
             plt.close(fig)
 
-        # Gráfico 5: Cobertura total por periodo
         datos_g5 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             avaladas_total = sum(vals["avaladas"] for vals in data_sedes.values())
@@ -1778,7 +1782,6 @@ if uploaded_files:
         if not consolidados:
             st.info("No hay datos históricos suficientes para generar el análisis.")
         else:
-            # Selector global para gráficas 1, 2, 4, 5, 6, 7
             agrupacion = st.radio(
                 "Agrupar por:",
                 ["Mes", "Bimestre", "Trimestre", "Semestre", "Año"],
@@ -1795,7 +1798,6 @@ if uploaded_files:
             img = generar_grafica_cobertura(consolidados_agrup, firma)
             if img: st.image(img, use_column_width=True)
 
-            # Gráfico 3: Participación por fase con selector de SEDE
             st.markdown("#### Gráfico 3 — Participación por fase (por sede y periodo)")
             opciones_sede = ["General"] + COLUMNAS_RESUMEN
             sede_sel = st.radio(
