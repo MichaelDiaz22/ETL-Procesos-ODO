@@ -222,8 +222,7 @@ def normalizar(s):
     return txt
 
 def extraer_codigo_producto(valor):
-    """Extrae los primeros 6 dígitos numéricos del campo 'producto' (Totales).
-    Ej: '123456 - CONSULTA ESPECIALIZADA' -> '123456'."""
+    """Extrae los primeros 6 dígitos numéricos del campo 'producto' (Totales)."""
     if pd.isna(valor):
         return ""
     s = str(valor).strip()
@@ -678,7 +677,6 @@ def procesar_todo(files_data):
             df_filtrado_revisadas = atenciones_df.loc[mask_verifica].copy()
 
     # -------- CRUCE VENTAS (código de producto + valor) --------
-    # Mapa: (venta_no_norm, codigo_producto_6dig) -> valor_facturado (sumado si hay varias líneas)
     ventas_valor_por_codigo = {}
     ventas_df_global = pd.DataFrame()
     if bases["Ventas"]:
@@ -716,7 +714,6 @@ def procesar_todo(files_data):
 
         if col_totales_venta_no is not None and col_totales_centro_costo is not None:
             totales_df["_venta_no_norm"] = totales_df[col_totales_venta_no].map(normalizar_llave_venta)
-            # Código de producto: primeros 6 dígitos numéricos del campo 'producto'
             totales_df["_codigo_prod"] = (
                 totales_df[col_totales_producto].map(extraer_codigo_producto)
                 if col_totales_producto is not None
@@ -755,7 +752,6 @@ def procesar_todo(files_data):
                         mask_valida = totales_tarifa_num.loc[indices] >= 1000
                         mask_error = ~mask_valida
 
-                        # ---- Comparar contra Ventas por (venta_no, código_producto) ----
                         for idx in indices[mask_valida]:
                             valor_totales = float(totales_tarifa_num.loc[idx])
                             vno = totales_df.loc[idx, "_venta_no_norm"]
@@ -763,7 +759,6 @@ def procesar_todo(files_data):
                             valor_ventas = ventas_valor_por_codigo.get((vno, cod_prod))
                             
                             if valor_ventas is not None and abs(valor_ventas - valor_totales) > 0.01:
-                                # tarifa diferente: se usa el valor de Ventas
                                 total_ventas_ce[fase][cod] += 1
                                 dinero_ambulatorio[fase][cod] += valor_ventas
                                 registros_errores_tarifas.append({
@@ -782,7 +777,6 @@ def procesar_todo(files_data):
                                 total_ventas_ce[fase][cod] += 1
                                 dinero_ambulatorio[fase][cod] += valor_totales
 
-                        # ---- Errores por valor < 1000 = "tarifas no aplican" ----
                         if mask_error.any():
                             idxs_err = indices[mask_error]
                             errores_totales[fase][cod]["cantidad"] = len(idxs_err)
@@ -1149,7 +1143,7 @@ def _firma_consolidados(consolidados_por_periodo):
     return hashlib.md5(";".join(partes).encode()).hexdigest()
 
 # ============================================================
-# GRÁFICAS (idénticas al original)
+# GRÁFICAS
 # ============================================================
 @st.cache_data(show_spinner=False)
 def generar_grafica_dinero(_consolidados_por_periodo, firma):
@@ -1414,7 +1408,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         return fila + 2
 
     ws1 = wb.active
-    ws1.title = "Resultados"
+    ws1.title = "Fases"
     periodo_info = None
     if periodo_etiqueta != "—":
         periodo_info = f"Periodo: {periodo_etiqueta} | Inicio: {periodo_inicio} | Fin: {periodo_fin}"
@@ -1524,7 +1518,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             ws.add_image(xl_img, f"A{fila}")
             return fila + int(alto / 20) + 3
 
-        # (Se mantienen las gráficas del Excel — idénticas al original)
         datos_g1 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
@@ -1590,31 +1583,25 @@ if uploaded_files:
     if resultados['periodo_etiqueta'] != "—":
         st.caption(f"Inicio: {resultados['periodo_inicio']} | Fin: {resultados['periodo_fin']}")
 
-    # Pestañas unificadas: Fases (selector), Consolidado, Errores, Novedades, Diagnóstico
-    tabs = st.tabs(["Fases", "Consolidado", "Errores de tarifas", "Novedades", "Diagnóstico"])
+    tabs = st.tabs(["Fases", "Errores de tarifas", "Novedades", "Diagnóstico"])
 
+    # Pestaña "Fases": se muestran SIEMPRE las 4 tablas (Fase 1, Fase 2, Fase 3, Consolidado)
     with tabs[0]:
-        fase_sel = st.radio(
-            "Selecciona la fase:",
-            ["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"],
-            horizontal=True,
-        )
-        fase_key = {"Fase 1 - Ambulatorio": "Fase 1",
-                    "Fase 2 - Hospitalario": "Fase 2",
-                    "Fase 3 - Quirúrgico": "Fase 3"}[fase_sel]
-        st.markdown(f"### {TITULOS_FASES[fase_key]}")
-        st.dataframe(resultados["tablas_por_fase"][fase_key], use_container_width=True)
-
-    with tabs[1]:
+        st.markdown(f"### {TITULOS_FASES['Fase 1']}")
+        st.dataframe(resultados["tablas_por_fase"]["Fase 1"], use_container_width=True)
+        st.markdown(f"### {TITULOS_FASES['Fase 2']}")
+        st.dataframe(resultados["tablas_por_fase"]["Fase 2"], use_container_width=True)
+        st.markdown(f"### {TITULOS_FASES['Fase 3']}")
+        st.dataframe(resultados["tablas_por_fase"]["Fase 3"], use_container_width=True)
+        st.markdown("### CONSOLIDADO - TODAS LAS FASES")
         st.dataframe(resultados["tabla_consolidada"], use_container_width=True)
 
-    with tabs[2]:
+    with tabs[1]:
         st.markdown("### Base única de errores de tarifas")
         df_err = resultados.get("df_errores_tarifas", pd.DataFrame())
         if df_err.empty:
             st.info("No se detectaron errores de tarifas.")
         else:
-            # Filtros rápidos
             cat_sel = st.multiselect(
                 "Filtrar por categoría de error:",
                 options=sorted(df_err["Categoría de error"].dropna().unique().tolist()),
@@ -1626,10 +1613,10 @@ if uploaded_files:
             csv = df_err_f.to_csv(index=False).encode("utf-8")
             st.download_button("⬇️ Descargar errores de tarifas (CSV)", csv, "errores_tarifas.csv", "text/csv")
 
-    with tabs[3]:
+    with tabs[2]:
         st.dataframe(resultados["resumen_verifica"], use_container_width=True)
 
-    with tabs[4]:
+    with tabs[3]:
         st.markdown("**Ubicaciones no mapeadas (Atenciones)**")
         st.dataframe(resultados["ubicaciones_no_mapeadas"], use_container_width=True)
         st.markdown("**Totales sin match en Atenciones**")
