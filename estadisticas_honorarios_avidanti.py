@@ -3,6 +3,7 @@ import pandas as pd
 import hashlib
 import re
 import io
+import unicodedata
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
@@ -212,9 +213,19 @@ def formatear_numero(valor, es_dinero=False):
 # ============================================================
 # FUNCIONES AUXILIARES
 # ============================================================
+def limpiar_texto(s):
+    """Elimina caracteres invisibles, espacios duros, BOM, etc."""
+    if s is None:
+        return ""
+    s = str(s)
+    s = unicodedata.normalize("NFKC", s)
+    s = s.replace("\xa0", " ").replace("\u202f", " ").replace("\ufeff", "").replace("\u2007", " ")
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
 def normalizar(s):
     if pd.isna(s): return ""
-    txt = str(s).strip().lower()
+    txt = limpiar_texto(s).lower()
     txt = (txt.replace("Ã³", "o").replace("Ã¡", "a").replace("Ã©", "e").replace("Ã", "i").replace("Ãº", "u"))
     txt = (txt.replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u").replace("ñ", "n"))
     txt = re.sub(r"[_\-\.,/()]", " ", txt)
@@ -224,7 +235,7 @@ def normalizar(s):
 def extraer_codigo_producto(valor):
     if pd.isna(valor):
         return ""
-    s = str(valor).strip()
+    s = limpiar_texto(valor)
     m = re.match(r"^(\d{6})", s)
     if m:
         return m.group(1)
@@ -348,7 +359,7 @@ def formatear_periodo(anio, mes):
 
 def es_hoja_de_resultados(df):
     if df is None or df.empty: return False
-    primera_col = df.iloc[:, 0].astype(str).tolist()
+    primera_col = [limpiar_texto(v) for v in df.iloc[:, 0].astype(str).tolist()]
     textos_norm = [normalizar(v) for v in primera_col]
     titulos_clave = ["fase 1 ambulatorio", "fase 2 hospitalario", "fase 3 quirurgico", "consolidado todas las fases"]
     coincidencias = sum(1 for t in titulos_clave if t in textos_norm)
@@ -362,7 +373,7 @@ def parsear_hoja_resultados(df, nombre_hoja):
 
     for idx_fila, row in df.iterrows():
         valores = row.tolist()
-        primera_celda = str(valores[0]).strip() if valores else ""
+        primera_celda = limpiar_texto(valores[0]) if valores else ""
         primera_norm = normalizar(primera_celda)
         fase_detectada = None
         for patron, nombre_fase in fases_map.items():
@@ -387,7 +398,13 @@ def parsear_hoja_resultados(df, nombre_hoja):
             resultado[concepto_key] = {}
             for j, sede_canon in sedes_por_columna.items():
                 if j < len(valores):
-                    resultado[concepto_key][sede_canon] = valores[j]
+                    v = valores[j]
+                    # Guardar SIEMPRE como string limpio (sin np.nan, sin None)
+                    if pd.isna(v) if not isinstance(v, str) else False:
+                        v_str = ""
+                    else:
+                        v_str = limpiar_texto(v)
+                    resultado[concepto_key][sede_canon] = v_str
     return resultado
 
 def filas_resumen(tipo_tabla):
@@ -431,21 +448,29 @@ def formatear_dinero_con_error(total, cant_err, suma_err, pct_err):
     return base
 
 # ============================================================
-# PARSER DE VALORES CON SOPORTE PARA FORMATO CO Y US
+# PARSER DE VALORES ROBUSTO (US / CO / invisible)
 # ============================================================
 def parsear_valor_generico(v):
     """
-    Parsea un valor numérico que puede venir en formato:
-    - US:  $1,234,567.89
-    - CO:  $1.234.567,89  (con posibles espacios duros \\xa0 o \\u202f)
-    - Entero con miles: 2.440  (CO) o 2,440 (US)
-    - Porcentaje: 66,60% (CO) o 66.60% (US)
+    Convierte cualquier valor (str, float, int, np.float64, NaN, None) a float.
+    Soporta formato US ($1,234,567.89) y CO ($1.234.567,89).
+    Elimina espacios duros (\\xa0), BOM, %, $, etc.
     Devuelve None si no se puede parsear.
     """
-    if pd.isna(v):
+    if v is None:
         return None
+    # Caso nativo numérico
+    if isinstance(v, (int, float)):
+        try:
+            if pd.isna(v):
+                return None
+            return float(v)
+        except Exception:
+            pass
     s = str(v).strip()
-    # Eliminar paréntesis de errores (ej: "(Errores: ...)")
+    if not s or s.lower() in ("nan", "none", "null", "nat", ""):
+        return None
+    # Eliminar paréntesis de errores
     s = re.sub(r"\(.*?\)", "", s).strip()
     # Eliminar TODO lo que no sea dígito, coma, punto o signo menos
     s = re.sub(r"[^\d,.\-]", "", s)
@@ -465,21 +490,17 @@ def parsear_valor_generico(v):
     elif tiene_punto:
         partes = s.split(".")
         if len(partes) > 2 or (len(partes) == 2 and len(partes[1]) == 3 and len(partes[0]) <= 3):
-            # Miles con puntos: 1.234.567 -> CO entero
             s = s.replace(".", "")
     elif tiene_coma:
         partes = s.split(",")
         if len(partes) > 2 or (len(partes) == 2 and len(partes[1]) == 3 and len(partes[0]) <= 3):
-            # Miles con comas: 1,234,567 -> US entero
             s = s.replace(",", "")
         else:
-            # Decimal CO: 66,60 -> 66.60
             s = s.replace(",", ".")
 
     try:
         return float(s)
     except Exception:
-        # Fallback: extraer solo dígitos
         solo_digitos = re.sub(r"[^\d]", "", s)
         if solo_digitos:
             try:
@@ -489,7 +510,7 @@ def parsear_valor_generico(v):
         return None
 
 def normalizar_etiqueta_hist(concepto):
-    c = str(concepto).strip()
+    c = limpiar_texto(concepto)
     if c.startswith("Total ventas ") and "(ACTIVO Y FACTURADO)" in c: return "Total ventas (ACTIVO Y FACTURADO)"
     if c.startswith("Dinero ventas ") and "Facturado" not in c: return "Dinero ventas"
     return c
@@ -589,6 +610,8 @@ def procesar_todo(files_data):
     hojas_duplicadas = []
     periodos_detectados = []
     historicos_detectados = {}
+    # Diagnóstico: cuántos valores válidos se parsearon por hoja y por sede
+    diagnostico_historicos = []
 
     hashes_archivos_vistos = {}
     hashes_hojas_vistos = {}
@@ -616,7 +639,23 @@ def procesar_todo(files_data):
                 if a_h is None: a_h, m_h = anio, mes
                 etiqueta, _, _ = formatear_periodo(a_h, m_h)
                 if etiqueta == "—": etiqueta = hoja
-                historicos_detectados[etiqueta] = parsear_hoja_resultados(df, hoja)
+                parsed = parsear_hoja_resultados(df, hoja)
+                historicos_detectados[etiqueta] = parsed
+                # Diagnóstico: contar cuántos conceptos y sedes se detectaron
+                sedes_detectadas = set()
+                valores_no_vacios = 0
+                for k, vals in parsed.items():
+                    for sede_k, val_k in vals.items():
+                        if val_k and str(val_k).strip():
+                            sedes_detectadas.add(sede_k)
+                            valores_no_vacios += 1
+                diagnostico_historicos.append({
+                    "Hoja": hoja,
+                    "Etiqueta periodo": etiqueta,
+                    "Conceptos detectados": len(parsed),
+                    "Sedes con datos": ", ".join(sorted(sedes_detectadas)) if sedes_detectadas else "(ninguna)",
+                    "Valores no vacíos": valores_no_vacios,
+                })
                 continue
 
             try:
@@ -1183,6 +1222,7 @@ def procesar_todo(files_data):
         "ubicaciones_ventas_no_mapeadas": ubicaciones_ventas_no_mapeadas, "estados_no_incluidos": estados_no_incluidos,
         "totales_sin_match_atenciones_df": totales_sin_match_atenciones_df,
         "df_errores_tarifas": df_errores_tarifas,
+        "diagnostico_historicos": pd.DataFrame(diagnostico_historicos),
     }
 
 def _firma_consolidados(consolidados_por_periodo):
@@ -1853,6 +1893,13 @@ if uploaded_files:
         st.dataframe(resultados["resumen_verifica"], use_container_width=True)
 
     with tabs[4]:
+        st.markdown("### Diagnóstico de históricos detectados")
+        diag_df = resultados.get("diagnostico_historicos", pd.DataFrame())
+        if diag_df is None or diag_df.empty:
+            st.info("No se detectaron hojas de resultados en los archivos cargados.")
+        else:
+            st.dataframe(diag_df, use_container_width=True)
+        st.markdown("---")
         st.markdown("**Ubicaciones no mapeadas (Atenciones)**")
         st.dataframe(resultados["ubicaciones_no_mapeadas"], use_container_width=True)
         st.markdown("**Totales sin match en Atenciones**")
