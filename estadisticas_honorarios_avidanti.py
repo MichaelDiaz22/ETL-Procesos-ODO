@@ -336,30 +336,20 @@ def normalizar_llave_venta(v):
     if s.isdigit(): s = s.lstrip("0") or "0"
     return s
 
-def convertir_a_numero(serie, reescalar_miles=False, devolver_mascara=False):
+def convertir_a_numero(serie):
     """
-    Convierte una serie a float soportando formato US (1,234,567.89) y CO (1.234.567,89).
+    Convierte una serie a float con parsear_valor_generico (formato US, CO o sin separador de miles).
     Si la serie ya es numérica se usa tal cual. Valores no parseables -> 0.
-
-    reescalar_miles=True: un valor con parte decimal entre 0 y 1000 (p. ej. 107.5) se interpreta
-    como un valor al que le falta el separador de miles (107.5 -> 107.500) y se multiplica por 1000.
-    Los enteros pequeños (p. ej. 500) y los ceros NO se modifican.
-    devolver_mascara=True: devuelve (serie, máscara de valores reescalados).
+    El separador se interpreta según los dígitos a su izquierda y derecha (ver parsear_valor_generico).
     """
     if pd.api.types.is_numeric_dtype(serie):
-        base = pd.to_numeric(serie, errors="coerce").fillna(0).astype(float)
-    else:
-        def _conv(v):
-            r = parsear_valor_generico(v)
-            return 0.0 if r is None else r
-        base = serie.map(_conv).astype(float)
+        return pd.to_numeric(serie, errors="coerce").fillna(0).astype(float)
 
-    mascara = pd.Series(False, index=base.index)
-    if reescalar_miles:
-        mascara = (base > 0) & (base < 1000) & ((base % 1).abs() > 1e-9)
-        base = base.where(~mascara, (base * 1000).round(2))
+    def _conv(v):
+        r = parsear_valor_generico(v)
+        return 0.0 if r is None else r
 
-    return (base, mascara) if devolver_mascara else base
+    return serie.map(_conv).astype(float)
 
 MAPA_UBICACION = {normalizar(ubicacion): (sede_cod, str(fase).strip()) for sede_cod, ubicacion, fase in MAPA_FASES}
 
@@ -765,7 +755,7 @@ def procesar_todo(files_data):
             if estructura == "Totales":
                 col_tot_tarifas = obtener_columna(df_con_header, "Total tarifas y recargos/descuentos")
                 if col_tot_tarifas is not None:
-                    valores_tot = convertir_a_numero(df_con_header[col_tot_tarifas], reescalar_miles=True)
+                    valores_tot = convertir_a_numero(df_con_header[col_tot_tarifas])
                     df_con_header = df_con_header[valores_tot >= 1000].copy()
 
             h = hash_df(df_con_header)
@@ -821,7 +811,7 @@ def procesar_todo(files_data):
             df_vv = pd.DataFrame({
                 "vno": ventas_df_global[col_v_venta_no].map(normalizar_llave_venta).values,
                 "cod": ventas_df_global[col_v_codigo].astype(str).str.strip().str.extract(r"(\d{6})", expand=False).fillna("").values,
-                "val": convertir_a_numero(ventas_df_global[col_v_valor_fact], reescalar_miles=True).values,
+                "val": convertir_a_numero(ventas_df_global[col_v_valor_fact]).values,
             })
             df_vv = df_vv[(df_vv["vno"] != "") & (df_vv["cod"] != "")]
             # Filas idénticas (misma venta, código y valor) se cuentan una sola vez
@@ -967,12 +957,9 @@ def procesar_todo(files_data):
                 ubicaciones_totales_no_mapeadas = (sin_match_totales.value_counts().rename_axis("Centro De Costo (normalizado)").reset_index(name="Registros"))
 
             if col_totales_tarifa_reliq is not None:
-                totales_tarifa_num, totales_tarifa_reesc = convertir_a_numero(
-                    totales_df[col_totales_tarifa_reliq], reescalar_miles=True, devolver_mascara=True
-                )
+                totales_tarifa_num = convertir_a_numero(totales_df[col_totales_tarifa_reliq])
             else:
                 totales_tarifa_num = pd.Series(0.0, index=totales_df.index)
-                totales_tarifa_reesc = pd.Series(False, index=totales_df.index)
 
             ventas_nos_existentes = set()
             if bases["Ventas"]:
@@ -1004,21 +991,6 @@ def procesar_todo(files_data):
                             valor_ventas = ventas_valor_por_codigo.get(clave)
 
                             total_ventas_ce[fase][cod] += 1
-
-                            if totales_tarifa_reesc.loc[idx]:
-                                registros_errores_tarifas.append({
-                                    "Sede": cod,
-                                    "Fase": fase,
-                                    "Fuente": "Totales",
-                                    "Categoría de error": "tarifa sin separador de miles (corregida)",
-                                    "No. de venta": totales_df.loc[idx, col_totales_venta_no],
-                                    "Código producto": cod_prod,
-                                    "Producto": totales_df.loc[idx, col_totales_producto] if col_totales_producto is not None else "",
-                                    "Profesional": totales_df.loc[idx, col_totales_profesional] if col_totales_profesional is not None else "",
-                                    "Tarifa Totales (reliquidado)": valor_totales,
-                                    "Valor facturado en Ventas": valor_ventas,
-                                    "Diferencia": None,
-                                })
 
                             if valor_ventas is not None and valor_ventas > 0:
                                 # Valor facturado de Ventas: se suma UNA sola vez por (venta, código)
@@ -1060,6 +1032,7 @@ def procesar_todo(files_data):
                                     "Producto": totales_df.loc[idx, col_totales_producto] if col_totales_producto is not None else "",
                                     "Profesional": totales_df.loc[idx, col_totales_profesional] if col_totales_profesional is not None else "",
                                     "Tarifa Totales (reliquidado)": float(totales_tarifa_num.loc[idx]),
+                                    "Valor original (Totales)": totales_df.loc[idx, col_totales_tarifa_reliq] if col_totales_tarifa_reliq is not None else "",
                                     "Valor facturado en Ventas": ventas_valor_por_codigo.get((vno, cod_prod)),
                                     "Diferencia": None,
                                 })
@@ -1121,7 +1094,7 @@ def procesar_todo(files_data):
                 mask_estado_facturada = pd.Series(False, index=ventas_df.index)
 
             if col_ventas_valor_facturado is not None:
-                valor_facturado_num = convertir_a_numero(ventas_df[col_ventas_valor_facturado], reescalar_miles=True)
+                valor_facturado_num = convertir_a_numero(ventas_df[col_ventas_valor_facturado])
             else:
                 valor_facturado_num = pd.Series(0.0, index=ventas_df.index)
 
@@ -1781,7 +1754,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         ("", "Cada hoja se clasifica: Ventas, Atenciones del especialista, Totales o Histórico."),
         ("", "Hojas/archivos duplicados se descartan por hash."),
         ("", "Ventas acepta un formato alterno: si falta 'Valor facturado' se usa 'Valor Total' (también 'No. de venta', 'Cod Producto venta' y 'Estado de la venta' como respaldo)."),
-        ("", "Tarifas/valores con punto decimal y menores a 1000 (p. ej. 107.5) se interpretan como valores sin separador de miles (107.500) en Totales y Ventas, y se listan en 'Errores de tarifas' con la categoría 'tarifa sin separador de miles (corregida)'. Enteros pequeños y ceros no se modifican."),
+        ("", "Separadores numéricos: con un solo separador, si hay 4 o más dígitos a su izquierda es decimal (1234.56 = 1.234,56); si hay 1 a 3 dígitos a la izquierda y exactamente 3 a la derecha es separador de miles (107.500 = 107500); en otro caso es decimal (107.5 = 107,5). Con separadores repetidos o mezclados, el último es el decimal."),
         ("Periodo", ""), ("", "Se extrae del nombre del archivo (YYYY-MM, MM-YYYY, nombre de mes + año)."),
         ("Filtros previos", ""), ("", "En Totales: 'Total tarifas y recargos/descuentos' >= 1000."),
         ("Mapeo de (sede, fase)", ""), ("", "Match flexible contra el mapa Sede + Ubicación → Fase."),
