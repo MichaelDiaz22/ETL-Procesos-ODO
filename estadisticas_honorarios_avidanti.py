@@ -24,7 +24,8 @@ st.set_page_config(page_title="ANÁLISIS DE HONORARIOS MÉDICOS", page_icon="�
 st.title("📊 ANÁLISIS DE GESTIÓN DE HONORARIOS MÉDICOS POR INTERFAZ")
 st.markdown(
     "Carga múltiples archivos Excel. Se clasificarán automáticamente en "
-    "**Ventas**, **Atenciones del especialista**, **Totales** o **Histórico**."
+    "**Ventas**, **Atenciones del especialista**, **Totales** o **Histórico**. "
+    "Los registros individuales de $100 millones o más se reportan como errores y no se suman."
 )
 
 # ============================================================
@@ -110,6 +111,9 @@ ALIAS_COLUMNAS_VENTAS = {
 }
 
 UMBRAL_COINCIDENCIA = 0.60
+
+# Un registro individual >= $100 millones se considera atípico y no se suma.
+LIMITE_VALOR_REGISTRO = 100_000_000
 
 MAPA_FASES = [
     ("ADC", "VILL-Oncología", "Fase 1"), ("ADC", "VILL-Rehabilitación Cardiaca", "Fase 1"),
@@ -856,6 +860,8 @@ def procesar_todo(files_data, periodo_manual=None):
                 "cod": ventas_df_global[col_v_codigo].astype(str).str.strip().str.extract(r"(\d{6})", expand=False).fillna("").values,
                 "val": convertir_a_numero(ventas_df_global[col_v_valor_fact]).values,
             })
+            # Evita que una fila extrema contamine el cruce de Ventas.
+            df_vv = df_vv[df_vv["val"].abs() < LIMITE_VALOR_REGISTRO]
             df_vv = df_vv[(df_vv["vno"] != "") & (df_vv["cod"] != "")]
             # Filas idénticas (misma venta, código y valor) se cuentan una sola vez
             df_vv = df_vv.drop_duplicates(subset=["vno", "cod", "val"])
@@ -893,7 +899,8 @@ def procesar_todo(files_data, periodo_manual=None):
                 ubicaciones_no_mapeadas = (sin_match.value_counts().rename_axis("Ubicación (normalizada)").reset_index(name="Registros"))
 
             valor_liquidado_num = convertir_a_numero(atenciones_df[col_valor_liquidado]) if col_valor_liquidado is not None else pd.Series(0.0, index=atenciones_df.index)
-            mask_valor_mayor_1000 = valor_liquidado_num > 1000
+            mask_valor_extremo_atenciones = valor_liquidado_num.abs() >= LIMITE_VALOR_REGISTRO
+            mask_valor_mayor_1000 = (valor_liquidado_num > 1000) & ~mask_valor_extremo_atenciones
 
             # --- Cruce con Ventas: si la tarifa liquidada difiere del 'Valor facturado' de Ventas,
             # se usa el valor de Ventas (una sola vez por venta + código de producto) ---
@@ -944,7 +951,25 @@ def procesar_todo(files_data, periodo_manual=None):
 
                     mask_dinero_base = mask_sede_fase & mask_verifica
                     mask_dinero_val = mask_dinero_base & mask_valor_mayor_1000
+                    # Valores extremos se excluyen de la sumatoria y se reportan como error.
                     mask_dinero_err = mask_dinero_base & ~mask_valor_mayor_1000
+                    mask_extremo_sede = mask_dinero_base & mask_valor_extremo_atenciones
+
+                    if mask_extremo_sede.any():
+                        for idx_at in atenciones_df.index[mask_extremo_sede]:
+                            registros_errores_tarifas.append({
+                                "Fuente": "Atenciones",
+                                "Sede": cod,
+                                "Fase": fase,
+                                "Categoría de error": "valor individual extraordinariamente alto (>= $100 millones)",
+                                "No. de venta": atenciones_df.loc[idx_at, col_at_venta] if col_at_venta is not None else "",
+                                "Código producto": at_cod.loc[idx_at] if at_cod is not None else "",
+                                "Producto": atenciones_df.loc[idx_at, col_at_prod] if col_at_prod is not None else "",
+                                "Profesional": atenciones_df.loc[idx_at, col_at_esp] if col_at_esp is not None else "",
+                                "Valor liquidado (Atenciones)": float(valor_liquidado_num.loc[idx_at]),
+                                "Valor facturado en Ventas": valor_ventas_serie.loc[idx_at] if pd.notna(valor_ventas_serie.loc[idx_at]) else None,
+                                "Diferencia": None,
+                            })
 
                     if mask_dinero_val.any():
                         dinero_interfaz[fase][cod] = float(valor_ajustado[mask_dinero_val].sum())
@@ -1023,7 +1048,8 @@ def procesar_todo(files_data, periodo_manual=None):
                     if mask_base.any():
                         tarifas_filtro = totales_tarifa_num[mask_base]
                         indices = tarifas_filtro.index
-                        mask_valida = totales_tarifa_num.loc[indices] >= 1000
+                        mask_extremo = totales_tarifa_num.loc[indices].abs() >= LIMITE_VALOR_REGISTRO
+                        mask_valida = (totales_tarifa_num.loc[indices] >= 1000) & ~mask_extremo
                         mask_error = ~mask_valida
 
                         for idx in indices[mask_valida]:
@@ -1045,7 +1071,9 @@ def procesar_todo(files_data, periodo_manual=None):
                                         "Sede": cod,
                                         "Fase": fase,
                                         "Fuente": "Totales",
-                                        "Categoría de error": "tarifa diferente",
+                                        "Categoría de error": (
+                                        "tarifa diferente"
+                                    ),
                                         "No. de venta": totales_df.loc[idx, col_totales_venta_no],
                                         "Código producto": cod_prod,
                                         "Producto": totales_df.loc[idx, col_totales_producto] if col_totales_producto is not None else "",
@@ -1069,7 +1097,11 @@ def procesar_todo(files_data, periodo_manual=None):
                                     "Sede": cod,
                                     "Fase": fase,
                                     "Fuente": "Totales",
-                                    "Categoría de error": "tarifas no aplican",
+                                    "Categoría de error": (
+                                        "valor individual extraordinariamente alto (>= $100 millones)"
+                                        if abs(float(totales_tarifa_num.loc[idx])) >= LIMITE_VALOR_REGISTRO
+                                        else "tarifas no aplican"
+                                    ),
                                     "No. de venta": totales_df.loc[idx, col_totales_venta_no],
                                     "Código producto": cod_prod,
                                     "Producto": totales_df.loc[idx, col_totales_producto] if col_totales_producto is not None else "",
@@ -1167,7 +1199,9 @@ def procesar_todo(files_data, periodo_manual=None):
                     if mask_base.any():
                         valores = valor_facturado_num[mask_base]
                         indices = valores.index
-                        mask_valida = valor_facturado_num.loc[indices] >= 1000
+                        valores_ventas_filtro = valor_facturado_num.loc[indices]
+                        mask_extremo_ventas = valores_ventas_filtro.abs() >= LIMITE_VALOR_REGISTRO
+                        mask_valida = (valores_ventas_filtro >= 1000) & ~mask_extremo_ventas
                         mask_error = ~mask_valida
                         
                         ventas_relacionadas_factura[fase][cod] = int(mask_valida.sum())
@@ -1176,6 +1210,21 @@ def procesar_todo(files_data, periodo_manual=None):
                         if mask_error.any():
                             errores_ventas[fase][cod]["cantidad"] = int(mask_error.sum())
                             errores_ventas[fase][cod]["suma"] = float(valor_facturado_num.loc[indices][mask_error].sum())
+
+                            # Detalle de registros de Ventas cuyo valor individual es atípico.
+                            indices_extremos = indices[mask_extremo_ventas]
+                            for idx_extremo in indices_extremos:
+                                registros_errores_tarifas.append({
+                                    "Fuente": "Ventas",
+                                    "Sede": cod,
+                                    "Fase": fase,
+                                    "Categoría de error": "valor individual extraordinariamente alto (>= $100 millones)",
+                                    "No. de venta": ventas_df.loc[idx_extremo, col_ventas_venta_no] if col_ventas_venta_no is not None else "",
+                                    "Código producto": ventas_df.loc[idx_extremo, col_ventas_codigo] if col_ventas_codigo is not None else "",
+                                    "Producto": ventas_df.loc[idx_extremo, obtener_columna(ventas_df, "Nombre del Producto")] if obtener_columna(ventas_df, "Nombre del Producto") is not None else "",
+                                    "Valor facturado en Ventas": float(valor_facturado_num.loc[idx_extremo]),
+                                    "Diferencia": None,
+                                })
 
     # -------- PORCENTUALES --------
     porcentual_faltante = {fase: {cod: 0.0 for cod in CODIGOS_SEDE} for fase in FASES}
