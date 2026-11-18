@@ -425,6 +425,39 @@ def formatear_periodo(anio, mes):
     etiqueta = f"{MESES_ES[mes]} {anio}"
     return (etiqueta, fecha_inicio.date(), fecha_fin.date())
 
+def extraer_periodo_desde_df(df, max_filas=3000):
+    """
+    Detecta (anio, mes) desde el contenido de una hoja cuando el nombre del archivo no lo trae.
+    1) Columna 'Periodo' (texto tipo '2026-10', 'Octubre 2026', '10/2026' o fecha).
+    2) Si no, columnas de fecha de venta ('Fecha de la venta', 'Fecha de venta', 'Fecha Venta').
+    Devuelve el (anio, mes) más frecuente o (None, None).
+    """
+    from collections import Counter
+    conteo = Counter()
+
+    col_periodo = obtener_columna(df, "Periodo")
+    if col_periodo is not None:
+        for v in df[col_periodo].dropna().head(max_filas):
+            if hasattr(v, "year") and hasattr(v, "month"):
+                conteo[(int(v.year), int(v.month))] += 1
+                continue
+            a, m = extraer_periodo_desde_nombre(str(v))
+            if a is not None and m is not None:
+                conteo[(a, m)] += 1
+
+    if not conteo:
+        for nombre in ["Fecha de la venta", "Fecha de venta", "Fecha Venta"]:
+            col_f = obtener_columna(df, nombre)
+            if col_f is None:
+                continue
+            fechas = pd.to_datetime(df[col_f].head(max_filas), errors="coerce", dayfirst=True).dropna()
+            for f in fechas:
+                conteo[(int(f.year), int(f.month))] += 1
+            if conteo:
+                break
+
+    return conteo.most_common(1)[0][0] if conteo else (None, None)
+
 def es_hoja_de_resultados(df):
     if df is None or df.empty: return False
     primera_col = [limpiar_texto(v) for v in df.iloc[:, 0].astype(str).tolist()]
@@ -681,8 +714,9 @@ def _ordenar_llaves_cronologicamente(diccionario):
 # PROCESAMIENTO CACHEADO
 # ============================================================
 @st.cache_data(show_spinner="Procesando archivos y calculando indicadores...")
-def procesar_todo(files_data):
+def procesar_todo(files_data, periodo_manual=None):
     bases = {nombre: [] for nombre in ESTRUCTURAS}
+    periodos_por_contenido = {}
     no_clasificados = []
     errores = []
     archivos_duplicados = []
@@ -752,6 +786,13 @@ def procesar_todo(files_data):
                 })
                 continue
 
+            # Si el nombre del archivo no trae periodo, se toma del contenido de la hoja
+            if anio is None and f_name not in periodos_por_contenido:
+                p_df = extraer_periodo_desde_df(df_con_header)
+                if p_df != (None, None):
+                    periodos_por_contenido[f_name] = p_df
+                    periodos_detectados.append((f_name, p_df))
+
             if estructura == "Totales":
                 col_tot_tarifas = obtener_columna(df_con_header, "Total tarifas y recargos/descuentos")
                 if col_tot_tarifas is not None:
@@ -782,6 +823,8 @@ def procesar_todo(files_data):
         periodo_actual_tupla = conteo.most_common(1)[0][0]
     else:
         periodo_actual_tupla = (None, None)
+    if periodo_manual:
+        periodo_actual_tupla = tuple(periodo_manual)
     periodo_etiqueta, periodo_inicio, periodo_fin = formatear_periodo(*periodo_actual_tupla)
 
     if bases["Atenciones del especialista"]:
@@ -1962,9 +2005,20 @@ uploaded_files = st.file_uploader(
     help="Selecciona todos los archivos del periodo."
 )
 
+with st.sidebar:
+    st.header("Periodo")
+    st.caption("Por defecto se detecta del nombre del archivo o, si no está, de la columna 'Periodo' / fechas de venta.")
+    forzar_periodo = st.checkbox("Indicar el periodo manualmente", value=False)
+    periodo_manual = None
+    if forzar_periodo:
+        anio_m = st.number_input("Año", min_value=2000, max_value=2100, value=datetime.now().year, step=1)
+        mes_m = st.selectbox("Mes", options=list(MESES_ES.keys()), format_func=lambda m: MESES_ES[m],
+                             index=max(datetime.now().month - 2, 0))
+        periodo_manual = (int(anio_m), int(mes_m))
+
 if uploaded_files:
     files_data = [(f.name, f.getvalue()) for f in uploaded_files]
-    resultados = procesar_todo(files_data)
+    resultados = procesar_todo(files_data, periodo_manual)
 
     st.subheader(f"Periodo detectado: {resultados['periodo_etiqueta']}")
     if resultados['periodo_etiqueta'] != "—":
