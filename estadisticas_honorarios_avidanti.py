@@ -9,7 +9,6 @@ from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
-from openpyxl.drawing.image import Image as XLImage
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -264,7 +263,7 @@ def obtener_columna_valor_facturado(df):
     """
     Devuelve la columna de valor monetario de Ventas.
     Soporta variantes: 'Valor facturado', 'Valor Total', 'Valor total', etc.
-    Se prioriza 'Valor facturado' si existe; si no, se cae a 'Valor Total'.
+    Prioriza 'Valor facturado' si existe; si no, cae a 'Valor Total'.
     """
     candidatos = [
         "Valor facturado",
@@ -279,7 +278,6 @@ def obtener_columna_valor_facturado(df):
         col = obtener_columna(df, nombre)
         if col is not None:
             return col
-    # Búsqueda flexible: cualquier columna que normalizada sea 'valor total' o 'valor facturado'
     for c in df.columns:
         n = normalizar(c)
         if n in ("valor total", "valor facturado"):
@@ -476,12 +474,6 @@ def formatear_dinero_con_error(total, cant_err, suma_err, pct_err):
 # PARSER DE VALORES ROBUSTO (US / CO / invisible)
 # ============================================================
 def parsear_valor_generico(v):
-    """
-    Convierte cualquier valor (str, float, int, np.float64, NaN, None) a float.
-    Soporta formato US ($1,234,567.89) y CO ($1.234.567,89).
-    Elimina espacios duros (\xa0), BOM, %, $, etc.
-    Devuelve None si no se puede parsear.
-    """
     if v is None:
         return None
     if isinstance(v, (int, float)):
@@ -1333,7 +1325,6 @@ def _firma_consolidados(consolidados_por_periodo):
 # ============================================================
 # GRÁFICAS — Streamlit
 # ============================================================
-
 @st.cache_data(show_spinner=False)
 def generar_grafica_dinero(_consolidados_por_periodo, firma):
     datos = []
@@ -1590,6 +1581,8 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
     totales_sin_match_atenciones_df = resultados["totales_sin_match_atenciones_df"]
     consolidados_por_periodo = resultados["consolidados_por_periodo"]
     df_errores_tarifas = resultados.get("df_errores_tarifas", pd.DataFrame())
+    diagnostico_historicos = resultados.get("diagnostico_historicos", pd.DataFrame())
+    historicos_detectados = resultados.get("historicos_detectados", {})
 
     wb = Workbook()
     bold_white = Font(bold=True, size=11, color="FFFFFF")
@@ -1618,6 +1611,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila += 1
         return fila + 2
 
+    # ---------- HOJA 1: FASES ----------
     ws1 = wb.active
     ws1.title = "Fases"
     periodo_info = None
@@ -1636,6 +1630,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
     for col_idx in range(1, len(COLUMNAS_RESUMEN) + 2):
         ws1.column_dimensions[get_column_letter(col_idx)].width = 28 if col_idx == 1 else 22
 
+    # ---------- HOJA 2: Totales sin match ----------
     ws2 = wb.create_sheet("Totales sin match")
     if totales_sin_match_atenciones_df is None or totales_sin_match_atenciones_df.empty:
         ws2.cell(row=1, column=1, value="No hay registros de Totales sin coincidencia en Atenciones.")
@@ -1649,11 +1644,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         for j in range(1, len(totales_sin_match_atenciones_df.columns) + 1):
             ws2.column_dimensions[get_column_letter(j)].width = 30
 
-    # ====== resto del Excel ======
-    # NOTA: el archivo original tenía más hojas (Novedades, Errores tarifas,
-    # Diagnóstico históricos, Históricos, etc.). Como no se incluyeron completas
-    # en el material compartido, se dejan como placeholders para que el Excel
-    # no falle. Reemplaza por el contenido completo de tu versión si aplica.
+    # ---------- HOJA 3: Novedades ----------
     ws3 = wb.create_sheet("Novedades")
     if resumen_verifica is None or resumen_verifica.empty:
         ws3.cell(row=1, column=1, value="Sin datos de verificadores.")
@@ -1661,21 +1652,318 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         for j, col in enumerate(resumen_verifica.columns, start=1):
             c = ws3.cell(row=1, column=j, value=col)
             c.font = bold_white; c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
         for i, (_, row) in enumerate(resumen_verifica.iterrows(), start=2):
             for j, col in enumerate(resumen_verifica.columns, start=1):
                 ws3.cell(row=i, column=j, value=row[col])
+        for j in range(1, len(resumen_verifica.columns) + 1):
+            ws3.column_dimensions[get_column_letter(j)].width = 35
 
-    ws4 = wb.create_sheet("Errores de tarifas")
+    # ---------- HOJA 4: Errores de tarifas ----------
+    ws4 = wb.create_sheet("Errores tarifas")
     if df_errores_tarifas is None or df_errores_tarifas.empty:
         ws4.cell(row=1, column=1, value="Sin errores de tarifas detectados.")
     else:
         for j, col in enumerate(df_errores_tarifas.columns, start=1):
             c = ws4.cell(row=1, column=j, value=col)
             c.font = bold_white; c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
         for i, (_, row) in enumerate(df_errores_tarifas.iterrows(), start=2):
             for j, col in enumerate(df_errores_tarifas.columns, start=1):
                 ws4.cell(row=i, column=j, value=row[col])
+        for j in range(1, len(df_errores_tarifas.columns) + 1):
+            ws4.column_dimensions[get_column_letter(j)].width = 25
+
+    # ---------- HOJA 5: Diagnóstico históricos ----------
+    ws5 = wb.create_sheet("Diagnóstico históricos")
+    if diagnostico_historicos is None or diagnostico_historicos.empty:
+        ws5.cell(row=1, column=1, value="No se detectaron hojas de resultados históricos.")
+    else:
+        for j, col in enumerate(diagnostico_historicos.columns, start=1):
+            c = ws5.cell(row=1, column=j, value=col)
+            c.font = bold_white; c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
+        for i, (_, row) in enumerate(diagnostico_historicos.iterrows(), start=2):
+            for j, col in enumerate(diagnostico_historicos.columns, start=1):
+                ws5.cell(row=i, column=j, value=row[col])
+        for j in range(1, len(diagnostico_historicos.columns) + 1):
+            ws5.column_dimensions[get_column_letter(j)].width = 30
+
+    # ---------- HOJA 6: Históricos detectados ----------
+    ws6 = wb.create_sheet("Históricos detectados")
+    if not historicos_detectados:
+        ws6.cell(row=1, column=1, value="No se detectaron históricos.")
+    else:
+        encabezados = ["Periodo", "Concepto"] + COLUMNAS_RESUMEN
+        for j, col in enumerate(encabezados, start=1):
+            c = ws6.cell(row=1, column=j, value=col)
+            c.font = bold_white; c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
+        fila = 2
+        for periodo, conceptos in historicos_detectados.items():
+            for concepto, vals in conceptos.items():
+                ws6.cell(row=fila, column=1, value=periodo)
+                ws6.cell(row=fila, column=2, value=concepto)
+                for j, sede in enumerate(COLUMNAS_RESUMEN, start=3):
+                    ws6.cell(row=fila, column=j, value=vals.get(sede, ""))
+                fila += 1
+        for j in range(1, len(encabezados) + 1):
+            ws6.column_dimensions[get_column_letter(j)].width = 30
+
+    # ---------- HOJA 7: Consolidados por periodo ----------
+    ws7 = wb.create_sheet("Consolidados por periodo")
+    if not consolidados_por_periodo:
+        ws7.cell(row=1, column=1, value="No hay consolidados por periodo.")
+    else:
+        encabezados = ["Periodo", "Sede", "Revisadas", "Avaladas", "Total ventas",
+                       "Dinero interfaz", "Dinero ventas", "Ventas relacionadas",
+                       "Dinero facturado", "Dinero interfaz F1", "Dinero interfaz F2", "Dinero interfaz F3"]
+        for j, col in enumerate(encabezados, start=1):
+            c = ws7.cell(row=1, column=j, value=col)
+            c.font = bold_white; c.fill = header_fill
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
+        fila = 2
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            for sede, vals in data_sedes.items():
+                ws7.cell(row=fila, column=1, value=periodo)
+                ws7.cell(row=fila, column=2, value=sede)
+                ws7.cell(row=fila, column=3, value=vals["revisadas"])
+                ws7.cell(row=fila, column=4, value=vals["avaladas"])
+                ws7.cell(row=fila, column=5, value=vals["total_ventas"])
+                ws7.cell(row=fila, column=6, value=vals["dinero_interfaz"])
+                ws7.cell(row=fila, column=7, value=vals["dinero_ventas"])
+                ws7.cell(row=fila, column=8, value=vals["ventas_relacionadas"])
+                ws7.cell(row=fila, column=9, value=vals["dinero_facturado"])
+                ws7.cell(row=fila, column=10, value=vals.get("dinero_interfaz_fase_1", 0))
+                ws7.cell(row=fila, column=11, value=vals.get("dinero_interfaz_fase_2", 0))
+                ws7.cell(row=fila, column=12, value=vals.get("dinero_interfaz_fase_3", 0))
+                fila += 1
+        for j in range(1, len(encabezados) + 1):
+            ws7.column_dimensions[get_column_letter(j)].width = 22
 
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ============================================================
+# UI PRINCIPAL — CARGA DE ARCHIVOS Y RENDERIZADO
+# ============================================================
+
+st.markdown("---")
+st.subheader("📁 Carga de archivos")
+
+uploaded_files = st.file_uploader(
+    "Selecciona uno o varios archivos Excel (.xlsx, .xls)",
+    type=["xlsx", "xls"],
+    accept_multiple_files=True,
+    key="uploader_principal",
+)
+
+if not uploaded_files:
+    st.info(
+        "👆 Carga al menos un archivo Excel para comenzar el análisis. "
+        "El sistema detectará automáticamente si es **Ventas**, **Atenciones del especialista**, "
+        "**Totales** o un **Histórico** ya consolidado."
+    )
+    st.stop()
+
+files_data = [(f.name, f.getvalue()) for f in uploaded_files]
+
+with st.spinner("Procesando archivos..."):
+    resultados = procesar_todo(files_data)
+
+# ============================================================
+# ENCABEZADO DEL PERIODO
+# ============================================================
+st.markdown("---")
+col_a, col_b, col_c = st.columns([2, 1, 1])
+with col_a:
+    st.subheader(f"📅 Periodo detectado: **{resultados['periodo_etiqueta']}**")
+with col_b:
+    st.metric("Inicio", resultados["periodo_inicio"])
+with col_c:
+    st.metric("Fin", resultados["periodo_fin"])
+
+# ============================================================
+# DIAGNÓSTICO
+# ============================================================
+with st.expander("🔍 Diagnóstico de carga", expanded=False):
+    diag = resultados.get("diagnostico_historicos")
+    if diag is not None and not diag.empty:
+        st.markdown("**Hojas históricas detectadas:**")
+        st.dataframe(diag, use_container_width=True)
+
+    if resultados["archivos_duplicados"]:
+        st.warning("Archivos duplicados (ignorados):")
+        st.dataframe(pd.DataFrame(resultados["archivos_duplicados"]), use_container_width=True)
+
+    if resultados["hojas_duplicadas"]:
+        st.warning("Hojas duplicadas (ignoradas):")
+        st.dataframe(pd.DataFrame(resultados["hojas_duplicadas"]), use_container_width=True)
+
+    if resultados["errores"]:
+        st.error("Errores al leer archivos:")
+        st.dataframe(pd.DataFrame(resultados["errores"], columns=["Archivo", "Error"]), use_container_width=True)
+
+    if resultados["no_clasificados"]:
+        st.warning("Hojas no clasificadas (no coinciden con ninguna estructura):")
+        st.dataframe(pd.DataFrame(resultados["no_clasificados"]), use_container_width=True)
+
+# ============================================================
+# TABLAS RESUMEN
+# ============================================================
+st.markdown("---")
+st.header("📊 Tablas resumen")
+
+tabs = st.tabs(["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico", "Consolidado"])
+
+for tab, fase in zip(tabs[:3], FASES):
+    with tab:
+        st.markdown(f"### {TITULOS_FASES[fase]}")
+        st.dataframe(resultados["tablas_por_fase"][fase], use_container_width=True)
+
+with tabs[3]:
+    st.markdown("### CONSOLIDADO - TODAS LAS FASES")
+    st.dataframe(resultados["tabla_consolidada"], use_container_width=True)
+
+# ============================================================
+# GRÁFICAS POR PERIODO
+# ============================================================
+consolidados = resultados["consolidados_por_periodo"]
+
+if consolidados:
+    st.markdown("---")
+    st.header("📈 Análisis histórico por periodo")
+
+    firma = _firma_consolidados(consolidados)
+
+    agrupacion = st.selectbox(
+        "Agrupar por:",
+        ["Mes", "Bimestre", "Trimestre", "Semestre", "Año"],
+        index=0,
+        key="agrupacion_selector",
+    )
+    consolidados_agrupados = agrupar_consolidados(consolidados, agrupacion)
+    consolidados_agrupados = _ordenar_llaves_cronologicamente(consolidados_agrupados)
+    firma_agr = _firma_consolidados(consolidados_agrupados)
+
+    st.subheader("💰 Dinero enviado por interfaz por periodo y sede")
+    img = generar_grafica_dinero(consolidados_agrupados, firma_agr)
+    if img:
+        st.image(img, use_container_width=True)
+    else:
+        st.info("Sin datos de dinero para graficar.")
+
+    st.subheader("✅ Cobertura por sede (Avaladas / Total ventas)")
+    img = generar_grafica_cobertura(consolidados_agrupados, firma_agr)
+    if img:
+        st.image(img, use_container_width=True)
+    else:
+        st.info("Sin datos de cobertura para graficar.")
+
+    st.subheader("💵 Dinero total por periodo (todas las sedes)")
+    img = generar_grafica_dinero_total(consolidados_agrupados, firma_agr)
+    if img:
+        st.image(img, use_container_width=True)
+
+    st.subheader("🎯 Cobertura total por periodo (todas las sedes)")
+    img = generar_grafica_cobertura_total(consolidados_agrupados, firma_agr)
+    if img:
+        st.image(img, use_container_width=True)
+
+    st.subheader("🧩 Participación por fase — Todas las sedes")
+    img = generar_grafica_participacion_fase_total(consolidados_agrupados, firma_agr)
+    if img:
+        st.image(img, use_container_width=True)
+
+    st.subheader("🧩 Participación por fase — Vista general por sede")
+    img = generar_grafica_participacion_fase_general(consolidados_agrupados, firma_agr)
+    if img:
+        st.image(img, use_container_width=True)
+
+    st.subheader("🏥 Participación de cada sede en el total por periodo")
+    img = generar_grafica_participacion_sede_total(consolidados_agrupados, firma_agr)
+    if img:
+        st.image(img, use_container_width=True)
+
+    st.subheader("🔎 Participación por fase — Sede individual")
+    sede_sel = st.selectbox("Selecciona una sede:", COLUMNAS_RESUMEN, key="sede_individual")
+    img = generar_grafica_participacion_fase_sede_individual(consolidados_agrupados, sede_sel, firma_agr)
+    if img:
+        st.image(img, use_container_width=True)
+
+else:
+    st.info("No se detectaron periodos históricos ni datos consolidados para graficar.")
+
+# ============================================================
+# NOVEDADES
+# ============================================================
+if resultados["resumen_verifica"] is not None and not resultados["resumen_verifica"].empty:
+    st.markdown("---")
+    st.header("👥 Novedades — Verificadores")
+    st.dataframe(resultados["resumen_verifica"], use_container_width=True)
+
+# ============================================================
+# UBICACIONES NO MAPEADAS
+# ============================================================
+with st.expander("🗺️ Ubicaciones / centros de costo no mapeados", expanded=False):
+    for key, titulo in [
+        ("ubicaciones_no_mapeadas", "Atenciones — Ubicación de la venta"),
+        ("ubicaciones_totales_no_mapeadas", "Totales — Centro De Costo"),
+        ("ubicaciones_ventas_no_mapeadas", "Ventas — Centro de costo"),
+    ]:
+        df_ub = resultados.get(key)
+        if df_ub is not None and len(df_ub) > 0:
+            st.markdown(f"**{titulo}**")
+            st.dataframe(df_ub, use_container_width=True)
+
+    estados = resultados.get("estados_no_incluidos")
+    if estados is not None and len(estados) > 0:
+        st.markdown("**Estados de venta no incluidos (fuera de ACTIVA/FACTURADA)**")
+        st.dataframe(estados, use_container_width=True)
+
+# ============================================================
+# TOTALES SIN MATCH
+# ============================================================
+if resultados["totales_sin_match_atenciones_df"] is not None and not resultados["totales_sin_match_atenciones_df"].empty:
+    st.markdown("---")
+    st.header("⚠️ Totales sin coincidencia en Atenciones")
+    st.dataframe(resultados["totales_sin_match_atenciones_df"], use_container_width=True)
+
+# ============================================================
+# ERRORES DE TARIFAS
+# ============================================================
+if resultados["df_errores_tarifas"] is not None and not resultados["df_errores_tarifas"].empty:
+    st.markdown("---")
+    st.header("💸 Errores de tarifas detectados")
+    st.dataframe(resultados["df_errores_tarifas"], use_container_width=True)
+
+# ============================================================
+# DESCARGA DE EXCEL
+# ============================================================
+st.markdown("---")
+st.header("📥 Descargar resultados")
+
+col_dl1, col_dl2 = st.columns([1, 2])
+with col_dl1:
+    generar = st.button("🛠️ Generar Excel", type="primary", use_container_width=True)
+with col_dl2:
+    st.caption("El Excel incluye tablas por fase, consolidado, novedades, errores de tarifas, diagnósticos, históricos y consolidados por periodo.")
+
+if generar:
+    with st.spinner("Generando Excel..."):
+        excel_bytes = generar_excel_bytes(
+            resultados,
+            resultados["periodo_etiqueta"],
+            resultados["periodo_inicio"],
+            resultados["periodo_fin"],
+        )
+    st.download_button(
+        label="⬇️ Descargar Excel de resultados",
+        data=excel_bytes,
+        file_name=f"Analisis_Honorarios_{resultados['periodo_etiqueta'].replace(' ', '_')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+    st.success("✅ Excel generado. Usa el botón de descarga.")
