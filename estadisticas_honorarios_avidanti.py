@@ -9,6 +9,7 @@ from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as XLImage
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -259,31 +260,6 @@ def obtener_columna(df, nombre_esperado):
         if normalizar(c) == objetivo: return c
     return None
 
-def obtener_columna_valor_facturado(df):
-    """
-    Devuelve la columna de valor monetario de Ventas.
-    Soporta variantes: 'Valor facturado', 'Valor Total', 'Valor total', etc.
-    Prioriza 'Valor facturado' si existe; si no, cae a 'Valor Total'.
-    """
-    candidatos = [
-        "Valor facturado",
-        "Valor Facturado",
-        "Valor Total",
-        "Valor total",
-        "valor total",
-        "Vlr Total",
-        "Vlr Facturado",
-    ]
-    for nombre in candidatos:
-        col = obtener_columna(df, nombre)
-        if col is not None:
-            return col
-    for c in df.columns:
-        n = normalizar(c)
-        if n in ("valor total", "valor facturado"):
-            return c
-    return None
-
 def hash_df(df):
     return hashlib.md5(pd.util.hash_pandas_object(df, index=False).values.tobytes()).hexdigest()
 
@@ -423,6 +399,7 @@ def parsear_hoja_resultados(df, nombre_hoja):
             for j, sede_canon in sedes_por_columna.items():
                 if j < len(valores):
                     v = valores[j]
+                    # Guardar SIEMPRE como string limpio (sin np.nan, sin None)
                     if pd.isna(v) if not isinstance(v, str) else False:
                         v_str = ""
                     else:
@@ -474,8 +451,15 @@ def formatear_dinero_con_error(total, cant_err, suma_err, pct_err):
 # PARSER DE VALORES ROBUSTO (US / CO / invisible)
 # ============================================================
 def parsear_valor_generico(v):
+    """
+    Convierte cualquier valor (str, float, int, np.float64, NaN, None) a float.
+    Soporta formato US ($1,234,567.89) y CO ($1.234.567,89).
+    Elimina espacios duros (\\xa0), BOM, %, $, etc.
+    Devuelve None si no se puede parsear.
+    """
     if v is None:
         return None
+    # Caso nativo numérico
     if isinstance(v, (int, float)):
         try:
             if pd.isna(v):
@@ -486,7 +470,9 @@ def parsear_valor_generico(v):
     s = str(v).strip()
     if not s or s.lower() in ("nan", "none", "null", "nat", ""):
         return None
+    # Eliminar paréntesis de errores
     s = re.sub(r"\(.*?\)", "", s).strip()
+    # Eliminar TODO lo que no sea dígito, coma, punto o signo menos
     s = re.sub(r"[^\d,.\-]", "", s)
     if not s or s in ("-", ".", ","):
         return None
@@ -496,8 +482,10 @@ def parsear_valor_generico(v):
 
     if tiene_coma and tiene_punto:
         if s.rfind(",") > s.rfind("."):
+            # CO: 1.234.567,89
             s = s.replace(".", "").replace(",", ".")
         else:
+            # US: 1,234,567.89
             s = s.replace(",", "")
     elif tiene_punto:
         partes = s.split(".")
@@ -527,6 +515,7 @@ def normalizar_etiqueta_hist(concepto):
     if c.startswith("Dinero ventas ") and "Facturado" not in c: return "Dinero ventas"
     return c
 
+# Mapa de etiqueta normalizada (histórico) -> métrica interna
 MAPA_METRICAS_HIST = {
     "Revisadas por analistas": "revisadas",
     "Avaladas subgerencia médica": "avaladas",
@@ -632,6 +621,7 @@ def procesar_todo(files_data):
     hojas_duplicadas = []
     periodos_detectados = []
     historicos_detectados = {}
+    # Diagnóstico: cuántos valores válidos se parsearon por hoja y por sede
     diagnostico_historicos = []
 
     hashes_archivos_vistos = {}
@@ -662,6 +652,7 @@ def procesar_todo(files_data):
                 if etiqueta == "—": etiqueta = hoja
                 parsed = parsear_hoja_resultados(df, hoja)
                 historicos_detectados[etiqueta] = parsed
+                # Diagnóstico: contar cuántos conceptos y sedes se detectaron
                 sedes_detectadas = set()
                 valores_no_vacios = 0
                 for k, vals in parsed.items():
@@ -728,6 +719,7 @@ def procesar_todo(files_data):
         atenciones_df = pd.DataFrame()
 
     # -------- CRUCE VENTAS (código de producto + valor) --------
+    # El "Valor facturado" de Ventas se registra UNA sola vez por (No. venta, código producto).
     ventas_valor_por_codigo = {}
     ventas_df_global = pd.DataFrame()
     if bases["Ventas"]:
@@ -736,8 +728,7 @@ def procesar_todo(files_data):
         col_v_codigo = obtener_columna(ventas_df_global, "Código Producto")
         if col_v_codigo is None:
             col_v_codigo = obtener_columna(ventas_df_global, "Codigo Producto")
-        # *** AJUSTE: soporta "Valor facturado" o "Valor Total" ***
-        col_v_valor_fact = obtener_columna_valor_facturado(ventas_df_global)
+        col_v_valor_fact = obtener_columna(ventas_df_global, "Valor facturado")
 
         if col_v_venta_no is not None and col_v_codigo is not None and col_v_valor_fact is not None:
             df_vv = pd.DataFrame({
@@ -746,6 +737,7 @@ def procesar_todo(files_data):
                 "val": convertir_a_numero(ventas_df_global[col_v_valor_fact]).values,
             })
             df_vv = df_vv[(df_vv["vno"] != "") & (df_vv["cod"] != "")]
+            # Filas idénticas (misma venta, código y valor) se cuentan una sola vez
             df_vv = df_vv.drop_duplicates(subset=["vno", "cod", "val"])
             ventas_valor_por_codigo = df_vv.groupby(["vno", "cod"])["val"].sum().to_dict()
 
@@ -783,6 +775,8 @@ def procesar_todo(files_data):
             valor_liquidado_num = convertir_a_numero(atenciones_df[col_valor_liquidado]) if col_valor_liquidado is not None else pd.Series(0.0, index=atenciones_df.index)
             mask_valor_mayor_1000 = valor_liquidado_num > 1000
 
+            # --- Cruce con Ventas: si la tarifa liquidada difiere del 'Valor facturado' de Ventas,
+            # se usa el valor de Ventas (una sola vez por venta + código de producto) ---
             col_at_venta = obtener_columna(atenciones_df, "Numero Venta")
             col_at_codigo = obtener_columna(atenciones_df, "Codigo de producto")
             col_at_prod = obtener_columna(atenciones_df, "Nombre del producto Venta")
@@ -899,6 +893,7 @@ def procesar_todo(files_data):
 
             mask_venta_en_ventas = totales_df["_venta_no_norm"].isin(ventas_nos_existentes)
 
+            # Claves (venta, código) cuyo valor de Ventas ya fue sumado (evita multiplicar por profesional)
             claves_dinero_contadas = set()
 
             for fase in FASES:
@@ -921,6 +916,7 @@ def procesar_todo(files_data):
                             total_ventas_ce[fase][cod] += 1
 
                             if valor_ventas is not None and valor_ventas > 0:
+                                # Valor facturado de Ventas: se suma UNA sola vez por (venta, código)
                                 if clave not in claves_dinero_contadas:
                                     claves_dinero_contadas.add(clave)
                                     dinero_ambulatorio[fase][cod] += valor_ventas
@@ -939,6 +935,7 @@ def procesar_todo(files_data):
                                         "Diferencia": valor_ventas - valor_totales,
                                     })
                             else:
+                                # Sin coincidencia en Ventas: respaldo con la tarifa de Totales
                                 dinero_ambulatorio[fase][cod] += valor_totales
 
                         if mask_error.any():
@@ -952,7 +949,7 @@ def procesar_todo(files_data):
                                     "Sede": cod,
                                     "Fase": fase,
                                     "Fuente": "Totales",
-                                    "Categoría de error": "tarifas no aplican",
+                                        "Categoría de error": "tarifas no aplican",
                                     "No. de venta": totales_df.loc[idx, col_totales_venta_no],
                                     "Código producto": cod_prod,
                                     "Producto": totales_df.loc[idx, col_totales_producto] if col_totales_producto is not None else "",
@@ -997,8 +994,7 @@ def procesar_todo(files_data):
         ventas_df = ventas_df_global if not ventas_df_global.empty else pd.concat([df for _, _, df in bases["Ventas"]], ignore_index=True)
         col_ventas_centro_costo = obtener_columna(ventas_df, "Centro de costo")
         col_ventas_estado = obtener_columna(ventas_df, "Estado")
-        # *** AJUSTE: soporta "Valor facturado" o "Valor Total" ***
-        col_ventas_valor_facturado = obtener_columna_valor_facturado(ventas_df)
+        col_ventas_valor_facturado = obtener_columna(ventas_df, "Valor facturado")
         col_ventas_venta_no = obtener_columna(ventas_df, "Venta No.")
 
         if col_ventas_centro_costo is not None:
@@ -1030,6 +1026,7 @@ def procesar_todo(files_data):
             else:
                 mask_venta_en_totales = pd.Series(False, index=ventas_df.index)
 
+            # Evitar duplicados de filas en Ventas (misma venta, código, estado y valor)
             col_ventas_codigo = obtener_columna(ventas_df, "Código Producto") or obtener_columna(ventas_df, "Codigo Producto")
             if col_ventas_venta_no is not None and col_ventas_codigo is not None:
                 llave_dup = pd.DataFrame({
@@ -1234,6 +1231,7 @@ def procesar_todo(files_data):
         resumen_verifica = resumen_verifica.sort_values("Registros", ascending=False).reset_index(drop=True)
 
     # -------- CONSOLIDADOS POR PERIODO --------
+    # Los valores que se grafican SON los de la tabla CONSOLIDADO (no se suman las tablas de cada fase).
     consolidados_por_periodo = {}
 
     if periodo_etiqueta != "—" and len(bases["Atenciones del especialista"]) > 0:
@@ -1247,6 +1245,9 @@ def procesar_todo(files_data):
             } for cod, sede in zip(CODIGOS_SEDE, COLUMNAS_RESUMEN)
         }
 
+    # Históricos: se toma ÚNICAMENTE la sección "Consolidado" de cada hoja para los totales.
+    # Las secciones de fase solo se usan para el desglose por fase (gráfico de participación)
+    # y como respaldo si la hoja no trae sección Consolidado.
     for etiqueta_periodo, conceptos in historicos_detectados.items():
         data_periodo = {}
         for sede in COLUMNAS_RESUMEN:
@@ -1325,6 +1326,7 @@ def _firma_consolidados(consolidados_por_periodo):
 # ============================================================
 # GRÁFICAS — Streamlit
 # ============================================================
+
 @st.cache_data(show_spinner=False)
 def generar_grafica_dinero(_consolidados_por_periodo, firma):
     datos = []
@@ -1581,8 +1583,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
     totales_sin_match_atenciones_df = resultados["totales_sin_match_atenciones_df"]
     consolidados_por_periodo = resultados["consolidados_por_periodo"]
     df_errores_tarifas = resultados.get("df_errores_tarifas", pd.DataFrame())
-    diagnostico_historicos = resultados.get("diagnostico_historicos", pd.DataFrame())
-    historicos_detectados = resultados.get("historicos_detectados", {})
 
     wb = Workbook()
     bold_white = Font(bold=True, size=11, color="FFFFFF")
@@ -1611,7 +1611,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
             fila += 1
         return fila + 2
 
-    # ---------- HOJA 1: FASES ----------
     ws1 = wb.active
     ws1.title = "Fases"
     periodo_info = None
@@ -1630,7 +1629,6 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
     for col_idx in range(1, len(COLUMNAS_RESUMEN) + 2):
         ws1.column_dimensions[get_column_letter(col_idx)].width = 28 if col_idx == 1 else 22
 
-    # ---------- HOJA 2: Totales sin match ----------
     ws2 = wb.create_sheet("Totales sin match")
     if totales_sin_match_atenciones_df is None or totales_sin_match_atenciones_df.empty:
         ws2.cell(row=1, column=1, value="No hay registros de Totales sin coincidencia en Atenciones.")
@@ -1644,326 +1642,366 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         for j in range(1, len(totales_sin_match_atenciones_df.columns) + 1):
             ws2.column_dimensions[get_column_letter(j)].width = 30
 
-    # ---------- HOJA 3: Novedades ----------
     ws3 = wb.create_sheet("Novedades")
     if resumen_verifica is None or resumen_verifica.empty:
-        ws3.cell(row=1, column=1, value="Sin datos de verificadores.")
+        ws3.cell(row=1, column=1, value="No hay registros en Novedades.")
     else:
         for j, col in enumerate(resumen_verifica.columns, start=1):
             c = ws3.cell(row=1, column=j, value=col)
             c.font = bold_white; c.fill = header_fill
-            c.alignment = Alignment(horizontal="center", wrap_text=True)
         for i, (_, row) in enumerate(resumen_verifica.iterrows(), start=2):
             for j, col in enumerate(resumen_verifica.columns, start=1):
                 ws3.cell(row=i, column=j, value=row[col])
-        for j in range(1, len(resumen_verifica.columns) + 1):
-            ws3.column_dimensions[get_column_letter(j)].width = 35
+        ws3.column_dimensions["A"].width = 40
+        ws3.column_dimensions["B"].width = 15
+        ws3.column_dimensions["C"].width = 30
 
-    # ---------- HOJA 4: Errores de tarifas ----------
-    ws4 = wb.create_sheet("Errores tarifas")
+    ws_err = wb.create_sheet("Errores de tarifas")
     if df_errores_tarifas is None or df_errores_tarifas.empty:
-        ws4.cell(row=1, column=1, value="Sin errores de tarifas detectados.")
+        ws_err.cell(row=1, column=1, value="No hay errores de tarifas registrados.")
     else:
         for j, col in enumerate(df_errores_tarifas.columns, start=1):
-            c = ws4.cell(row=1, column=j, value=col)
+            c = ws_err.cell(row=1, column=j, value=col)
             c.font = bold_white; c.fill = header_fill
-            c.alignment = Alignment(horizontal="center", wrap_text=True)
         for i, (_, row) in enumerate(df_errores_tarifas.iterrows(), start=2):
             for j, col in enumerate(df_errores_tarifas.columns, start=1):
-                ws4.cell(row=i, column=j, value=row[col])
+                ws_err.cell(row=i, column=j, value=row[col])
         for j in range(1, len(df_errores_tarifas.columns) + 1):
-            ws4.column_dimensions[get_column_letter(j)].width = 25
+            ws_err.column_dimensions[get_column_letter(j)].width = 25
 
-    # ---------- HOJA 5: Diagnóstico históricos ----------
-    ws5 = wb.create_sheet("Diagnóstico históricos")
-    if diagnostico_historicos is None or diagnostico_historicos.empty:
-        ws5.cell(row=1, column=1, value="No se detectaron hojas de resultados históricos.")
-    else:
-        for j, col in enumerate(diagnostico_historicos.columns, start=1):
-            c = ws5.cell(row=1, column=j, value=col)
-            c.font = bold_white; c.fill = header_fill
-            c.alignment = Alignment(horizontal="center", wrap_text=True)
-        for i, (_, row) in enumerate(diagnostico_historicos.iterrows(), start=2):
-            for j, col in enumerate(diagnostico_historicos.columns, start=1):
-                ws5.cell(row=i, column=j, value=row[col])
-        for j in range(1, len(diagnostico_historicos.columns) + 1):
-            ws5.column_dimensions[get_column_letter(j)].width = 30
+    ws4 = wb.create_sheet("Reglas")
+    reglas = [
+        ("Carga de archivos", ""), ("", "Se aceptan múltiples Excel (.xlsx, .xls)."),
+        ("", "Cada hoja se clasifica: Ventas, Atenciones del especialista, Totales o Histórico."),
+        ("", "Hojas/archivos duplicados se descartan por hash."),
+        ("Periodo", ""), ("", "Se extrae del nombre del archivo (YYYY-MM, MM-YYYY, nombre de mes + año)."),
+        ("Filtros previos", ""), ("", "En Totales: 'Total tarifas y recargos/descuentos' >= 1000."),
+        ("Mapeo de (sede, fase)", ""), ("", "Match flexible contra el mapa Sede + Ubicación → Fase."),
+        ("Cálculos por (sede, fase)", ""),
+        ("1. Revisadas por analistas", "Ubicación mapea + 'Nombre de Usuario que Verifica' NO vacío + 'Valor liquidado' > 1000."),
+        ("2. Avaladas subgerencia médica", "Revisadas + 'Usuario / Sub Medico' NO vacío + 'Valor liquidado' > 1000."),
+        ("3. Dinero enviado por interfaz", "Σ 'Valor liquidado' válido (> 1000). Si la tarifa difiere del 'Valor facturado' de Ventas (cruce por No. venta + código de producto), se suma el valor de Ventas UNA sola vez por (venta, código). Errores reportados aparte."),
+        ("4. Total ventas", "count(Totales ∩ Ventas con 'tarifas' >= 1000). Errores reportados aparte."),
+        ("5. Dinero ventas", "Se toma el 'Valor facturado' de Ventas, sumado UNA sola vez por (No. venta, primeros 6 dígitos de 'producto' en Totales = 'Código Producto' de Ventas). Si no hay coincidencia en Ventas se usa la 'tarifas (reliquidado)' de Totales. Si el valor de Ventas difiere de Totales se marca 'tarifa diferente'."),
+        ("6. Porcentual faltante (META 30%)", "(Total ventas − Avaladas) / Total ventas × 100."),
+        ("7. Ventas relacionadas en factura", "count(Ventas con Estado=Facturada, 'Valor facturado' >= 1000 y 'Venta No.' ∈ Totales). Filas duplicadas de Ventas se cuentan una sola vez."),
+        ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada y 'Venta No.' ∈ Totales, sin duplicados."),
+        ("9. Porcentual impactado (META 0%)", "(Total ventas − Ventas relacionadas) / Total ventas × 100."),
+        ("Consolidado", "Suma de las 3 fases. Porcentajes recalculados."),
+        ("Gráficas / Históricos", "Las gráficas usan los valores de la tabla CONSOLIDADO de cada periodo (en históricos se lee la sección 'CONSOLIDADO - TODAS LAS FASES'); las fases solo se usan para el desglose de participación por fase."),
+        ("Agrupación", "Las gráficas permiten agrupar por Mes, Bimestre, Trimestre, Semestre o Año."),
+        ("Errores de tarifas", "Base única con todos los registros clasificados como 'tarifa diferente' o 'tarifas no aplican'."),
+    ]
+    for i, (c1, c2) in enumerate(reglas, start=1):
+        celda1 = ws4.cell(row=i, column=1, value=c1)
+        celda2 = ws4.cell(row=i, column=2, value=c2)
+        if c1 and not c2:
+            celda1.font = Font(bold=True, size=12, color="305496")
+            celda1.fill = info_fill
+        celda2.alignment = Alignment(wrap_text=True, vertical="top")
+    ws4.column_dimensions["A"].width = 40
+    ws4.column_dimensions["B"].width = 100
 
-    # ---------- HOJA 6: Históricos detectados ----------
-    ws6 = wb.create_sheet("Históricos detectados")
-    if not historicos_detectados:
-        ws6.cell(row=1, column=1, value="No se detectaron históricos.")
+    ws_analisis = wb.create_sheet("Análisis")
+    ws_analisis.cell(row=1, column=1, value="Análisis histórico comparativo entre periodos (Consolidado por sede)").font = Font(bold=True, size=14, color="305496")
+
+    if len(consolidados_por_periodo) == 0:
+        ws_analisis.cell(row=3, column=1, value="No hay datos suficientes para generar el análisis.")
     else:
-        encabezados = ["Periodo", "Concepto"] + COLUMNAS_RESUMEN
-        for j, col in enumerate(encabezados, start=1):
-            c = ws6.cell(row=1, column=j, value=col)
-            c.font = bold_white; c.fill = header_fill
-            c.alignment = Alignment(horizontal="center", wrap_text=True)
-        fila = 2
-        for periodo, conceptos in historicos_detectados.items():
-            for concepto, vals in conceptos.items():
-                ws6.cell(row=fila, column=1, value=periodo)
-                ws6.cell(row=fila, column=2, value=concepto)
-                for j, sede in enumerate(COLUMNAS_RESUMEN, start=3):
-                    ws6.cell(row=fila, column=j, value=vals.get(sede, ""))
+        sns.set_theme(style="whitegrid")
+        fila_actual = 3
+
+        def insertar_grafico(ws, fig, fila, ancho=900, alto=420, titulo=None):
+            if titulo:
+                ws.cell(row=fila, column=1, value=titulo).font = Font(bold=True, size=12, color="1F4E78")
                 fila += 1
-        for j in range(1, len(encabezados) + 1):
-            ws6.column_dimensions[get_column_letter(j)].width = 30
+            img_buffer = io.BytesIO()
+            fig.savefig(img_buffer, format="png", dpi=110, bbox_inches="tight")
+            img_buffer.seek(0)
+            xl_img = XLImage(img_buffer)
+            xl_img.width = ancho; xl_img.height = alto
+            ws.add_image(xl_img, f"A{fila}")
+            return fila + int(alto / 20) + 3
 
-    # ---------- HOJA 7: Consolidados por periodo ----------
-    ws7 = wb.create_sheet("Consolidados por periodo")
-    if not consolidados_por_periodo:
-        ws7.cell(row=1, column=1, value="No hay consolidados por periodo.")
-    else:
-        encabezados = ["Periodo", "Sede", "Revisadas", "Avaladas", "Total ventas",
-                       "Dinero interfaz", "Dinero ventas", "Ventas relacionadas",
-                       "Dinero facturado", "Dinero interfaz F1", "Dinero interfaz F2", "Dinero interfaz F3"]
-        for j, col in enumerate(encabezados, start=1):
-            c = ws7.cell(row=1, column=j, value=col)
-            c.font = bold_white; c.fill = header_fill
-            c.alignment = Alignment(horizontal="center", wrap_text=True)
-        fila = 2
+        datos_g1 = []
         for periodo, data_sedes in consolidados_por_periodo.items():
             for sede, vals in data_sedes.items():
-                ws7.cell(row=fila, column=1, value=periodo)
-                ws7.cell(row=fila, column=2, value=sede)
-                ws7.cell(row=fila, column=3, value=vals["revisadas"])
-                ws7.cell(row=fila, column=4, value=vals["avaladas"])
-                ws7.cell(row=fila, column=5, value=vals["total_ventas"])
-                ws7.cell(row=fila, column=6, value=vals["dinero_interfaz"])
-                ws7.cell(row=fila, column=7, value=vals["dinero_ventas"])
-                ws7.cell(row=fila, column=8, value=vals["ventas_relacionadas"])
-                ws7.cell(row=fila, column=9, value=vals["dinero_facturado"])
-                ws7.cell(row=fila, column=10, value=vals.get("dinero_interfaz_fase_1", 0))
-                ws7.cell(row=fila, column=11, value=vals.get("dinero_interfaz_fase_2", 0))
-                ws7.cell(row=fila, column=12, value=vals.get("dinero_interfaz_fase_3", 0))
-                fila += 1
-        for j in range(1, len(encabezados) + 1):
-            ws7.column_dimensions[get_column_letter(j)].width = 22
+                datos_g1.append({"Periodo": periodo, "Sede": sede, "Valor": vals["dinero_interfaz"]})
+        df_g1 = pd.DataFrame(datos_g1)
+
+        if not df_g1.empty and df_g1["Valor"].sum() > 0:
+            fig, ax = plt.subplots(figsize=(12, 7))
+            sns.barplot(data=df_g1, x="Periodo", y="Valor", hue="Sede", ax=ax) 
+            for container in ax.containers:
+                ax.bar_label(container, labels=[f"${v/1e6:,.1f}M".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=8, rotation=90, padding=3, label_type="edge", fontweight="bold")
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}".replace(",", ".")))
+            ax.set_ylim(0, df_g1["Valor"].max() * 1.25)
+            ax.set_title("Dinero enviado por interfaz por periodo y sede (Consolidado)", pad=15)
+            ax.set_ylabel("Valor (COP)"); ax.set_xlabel("Periodo")
+            plt.xticks(rotation=45, ha="right")
+            plt.legend(title="Sede", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+            plt.tight_layout(); plt.subplots_adjust(right=0.80)
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 1 — Dinero enviado por interfaz (COP)")
+            plt.close(fig)
+
+        datos_g2 = []
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            for sede, vals in data_sedes.items():
+                avaladas = vals["avaladas"]; total_ventas = vals["total_ventas"]
+                cobertura = (avaladas / total_ventas * 100.0) if total_ventas > 0 else 0.0
+                datos_g2.append({"Periodo": periodo, "Sede": sede, "Cobertura": cobertura})
+        df_g2 = pd.DataFrame(datos_g2)
+
+        if not df_g2.empty and df_g2["Cobertura"].sum() > 0:
+            fig, ax = plt.subplots(figsize=(12, 7))
+            sns.barplot(data=df_g2, x="Periodo", y="Cobertura", hue="Sede", ax=ax) 
+            for container in ax.containers:
+                ax.bar_label(container, labels=[f"{v:.1f}%".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=8, rotation=90, padding=3, label_type="edge", fontweight="bold")
+            ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
+            ax.set_ylim(0, max(df_g2["Cobertura"].max() * 1.25, 120))
+            ax.set_title("Cobertura general de honorarios médicos (Avaladas / Total ventas)", pad=15)
+            ax.set_ylabel("Cobertura (%)"); ax.set_xlabel("Periodo")
+            plt.xticks(rotation=45, ha="right")
+            plt.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+            plt.tight_layout(); plt.subplots_adjust(right=0.80)
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 2 — Cobertura general de honorarios médicos (meta 70%)")
+            plt.close(fig)
+
+        datos_g3 = []
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            for sede, vals in data_sedes.items():
+                datos_g3.append({
+                    "Periodo": periodo, "Sede": sede,
+                    "Fase 1 - Ambulatorio": vals.get("dinero_interfaz_fase_1", 0),
+                    "Fase 2 - Hospitalario": vals.get("dinero_interfaz_fase_2", 0),
+                    "Fase 3 - Quirúrgico": vals.get("dinero_interfaz_fase_3", 0),
+                })
+        df_g3 = pd.DataFrame(datos_g3)
+        if not df_g3.empty:
+            periodos3 = list(df_g3["Periodo"].unique())
+            orden3 = _ordenar_llaves_cronologicamente({p: {} for p in periodos3})
+            df_g3["Periodo"] = pd.Categorical(df_g3["Periodo"], categories=list(orden3.keys()), ordered=True)
+
+            cols_fases3 = ["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico"]
+            df_g3 = df_g3.set_index(["Sede", "Periodo"])
+            tot_g3 = df_g3[cols_fases3].sum(axis=1)
+            df_g3_pct = df_g3[cols_fases3].div(tot_g3.replace(0, pd.NA), axis=0).fillna(0) * 100
+
+            sedes3 = sorted(df_g3_pct.index.get_level_values("Sede").unique())
+            n_sedes3 = len(sedes3)
+            n_cols3 = 3
+            n_filas3 = (n_sedes3 + n_cols3 - 1) // n_cols3
+            fig, axes = plt.subplots(n_filas3, n_cols3, figsize=(16, 4.2 * n_filas3), sharey=True, squeeze=False)
+            colores3 = ["#305496", "#D1615D", "#85C17E"]
+            etiquetas_fase3 = ["Fase 1", "Fase 2", "Fase 3"]
+
+            for i, sede in enumerate(sedes3):
+                ax = axes[i // n_cols3][i % n_cols3]
+                datos_sede = df_g3_pct.loc[sede].reindex(list(orden3.keys())).fillna(0)
+                x = range(len(datos_sede.index))
+                bottom = [0] * len(x)
+                for j, col in enumerate(cols_fases3):
+                    valores = datos_sede[col].values
+                    ax.bar(x, valores, bottom=bottom, color=colores3[j], width=0.75,
+                           label=etiquetas_fase3[j], edgecolor="white", linewidth=0.5)
+                    for xi, v, b in zip(x, valores, bottom):
+                        if v >= 6:
+                            ax.text(xi, b + v / 2, f"{v:.0f}%", ha="center", va="center",
+                                    fontsize=8.5, color="white", fontweight="bold")
+                    bottom = [b + v for b, v in zip(bottom, valores)]
+                ax.set_title(sede, fontsize=11, fontweight="bold")
+                ax.set_ylim(0, 100)
+                ax.set_xticks(list(x))
+                etiquetas_periodo = [_etiqueta_periodo_corta(p) for p in datos_sede.index]
+                ax.set_xticklabels(etiquetas_periodo, rotation=45, ha="right", fontsize=8)
+                ax.grid(axis="y", alpha=0.3, linestyle="--")
+                ax.spines[["top", "right"]].set_visible(False)
+            for k in range(n_sedes3, n_filas3 * n_cols3):
+                axes[k // n_cols3][k % n_cols3].set_visible(False)
+            for i in range(n_filas3):
+                axes[i][0].set_ylabel("Participación (%)", fontsize=9)
+            handles, labels = axes[0][0].get_legend_handles_labels()
+            fig.legend(handles, labels, loc="lower center", ncol=3, title="Fase", fontsize=10, bbox_to_anchor=(0.5, -0.02))
+            fig.suptitle("Participación por fase — comparación entre sedes y periodos", fontsize=13, fontweight="bold", y=1.01)
+            plt.tight_layout(rect=[0, 0.04, 1, 0.98])
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=950, alto=520, titulo="Gráfico 3 — Participación por fase (por sede)")
+            plt.close(fig)
+
+        datos_g4 = []
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            total_periodo = sum(vals["dinero_interfaz"] for vals in data_sedes.values())
+            datos_g4.append({"Periodo": periodo, "Valor": total_periodo})
+        df_g4 = pd.DataFrame(datos_g4)
+        if not df_g4.empty and df_g4["Valor"].sum() > 0:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.barplot(data=df_g4, x="Periodo", y="Valor", ax=ax, color="#305496") 
+            for container in ax.containers:
+                ax.bar_label(container, labels=[f"${v/1e6:,.1f}M".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=90, padding=3, label_type="edge", fontweight="bold")
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}".replace(",", ".")))
+            ax.set_ylim(0, df_g4["Valor"].max() * 1.25)
+            ax.set_title("Dinero enviado por interfaz por periodo (Todas las sedes consolidadas)", pad=15)
+            ax.set_ylabel("Valor (COP)"); ax.set_xlabel("Periodo")
+            plt.xticks(rotation=45, ha="right")
+            plt.tight_layout(); plt.subplots_adjust(right=0.90)
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 4 — Dinero total enviado por periodo")
+            plt.close(fig)
+
+        datos_g5 = []
+        for periodo, data_sedes in consolidados_por_periodo.items():
+            avaladas_total = sum(vals["avaladas"] for vals in data_sedes.values())
+            total_ventas_total = sum(vals["total_ventas"] for vals in data_sedes.values())
+            cobertura = (avaladas_total / total_ventas_total * 100.0) if total_ventas_total > 0 else 0.0
+            datos_g5.append({"Periodo": periodo, "Cobertura": cobertura})
+        df_g5 = pd.DataFrame(datos_g5)
+        if not df_g5.empty and df_g5["Cobertura"].sum() > 0:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.barplot(data=df_g5, x="Periodo", y="Cobertura", ax=ax, color="#305496") 
+            for container in ax.containers:
+                ax.bar_label(container, labels=[f"{v:.1f}%".replace(".", ",") if v > 0 else "" for v in container.datavalues], fontsize=9, rotation=90, padding=3, label_type="edge", fontweight="bold")
+            ax.axhline(70, color="red", linestyle="--", label="Meta 70%")
+            ax.set_ylim(0, max(df_g5["Cobertura"].max() * 1.25, 120))
+            ax.set_title("Cobertura general de honorarios médicos por periodo (Todas las sedes consolidadas)", pad=15)
+            ax.set_ylabel("Cobertura (%)"); ax.set_xlabel("Periodo")
+            plt.xticks(rotation=45, ha="right")
+            ax.legend(title="", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+            plt.tight_layout(); plt.subplots_adjust(right=0.90)
+            fila_actual = insertar_grafico(ws_analisis, fig, fila_actual, ancho=900, alto=420, titulo="Gráfico 5 — Cobertura total por periodo (meta 70%)")
+            plt.close(fig)
 
     buf = io.BytesIO()
     wb.save(buf)
+    buf.seek(0)
     return buf.getvalue()
 
-
 # ============================================================
-# UI PRINCIPAL — CARGA DE ARCHIVOS Y RENDERIZADO
+# INTERFAZ STREAMLIT
 # ============================================================
-
-st.markdown("---")
-st.subheader("📁 Carga de archivos")
-
 uploaded_files = st.file_uploader(
-    "Selecciona uno o varios archivos Excel (.xlsx, .xls)",
-    type=["xlsx", "xls"],
-    accept_multiple_files=True,
-    key="uploader_principal",
+    "Carga los archivos Excel", type=["xlsx", "xls"], accept_multiple_files=True,
+    help="Selecciona todos los archivos del periodo."
 )
 
-if not uploaded_files:
-    st.info(
-        "👆 Carga al menos un archivo Excel para comenzar el análisis. "
-        "El sistema detectará automáticamente si es **Ventas**, **Atenciones del especialista**, "
-        "**Totales** o un **Histórico** ya consolidado."
-    )
-    st.stop()
-
-files_data = [(f.name, f.getvalue()) for f in uploaded_files]
-
-with st.spinner("Procesando archivos..."):
+if uploaded_files:
+    files_data = [(f.name, f.getvalue()) for f in uploaded_files]
     resultados = procesar_todo(files_data)
 
-# ============================================================
-# ENCABEZADO DEL PERIODO
-# ============================================================
-st.markdown("---")
-col_a, col_b, col_c = st.columns([2, 1, 1])
-with col_a:
-    st.subheader(f"📅 Periodo detectado: **{resultados['periodo_etiqueta']}**")
-with col_b:
-    st.metric("Inicio", resultados["periodo_inicio"])
-with col_c:
-    st.metric("Fin", resultados["periodo_fin"])
+    st.subheader(f"Periodo detectado: {resultados['periodo_etiqueta']}")
+    if resultados['periodo_etiqueta'] != "—":
+        st.caption(f"Inicio: {resultados['periodo_inicio']} | Fin: {resultados['periodo_fin']}")
 
-# ============================================================
-# DIAGNÓSTICO
-# ============================================================
-with st.expander("🔍 Diagnóstico de carga", expanded=False):
-    diag = resultados.get("diagnostico_historicos")
-    if diag is not None and not diag.empty:
-        st.markdown("**Hojas históricas detectadas:**")
-        st.dataframe(diag, use_container_width=True)
+    tabs = st.tabs(["Fases", "Análisis histórico", "Errores de tarifas", "Novedades", "Diagnóstico"])
 
-    if resultados["archivos_duplicados"]:
-        st.warning("Archivos duplicados (ignorados):")
-        st.dataframe(pd.DataFrame(resultados["archivos_duplicados"]), use_container_width=True)
+    with tabs[0]:
+        st.markdown(f"### {TITULOS_FASES['Fase 1']}")
+        st.dataframe(resultados["tablas_por_fase"]["Fase 1"], use_container_width=True)
+        st.markdown(f"### {TITULOS_FASES['Fase 2']}")
+        st.dataframe(resultados["tablas_por_fase"]["Fase 2"], use_container_width=True)
+        st.markdown(f"### {TITULOS_FASES['Fase 3']}")
+        st.dataframe(resultados["tablas_por_fase"]["Fase 3"], use_container_width=True)
+        st.markdown("### CONSOLIDADO - TODAS LAS FASES")
+        st.dataframe(resultados["tabla_consolidada"], use_container_width=True)
 
-    if resultados["hojas_duplicadas"]:
-        st.warning("Hojas duplicadas (ignoradas):")
-        st.dataframe(pd.DataFrame(resultados["hojas_duplicadas"]), use_container_width=True)
+    with tabs[1]:
+        st.markdown("### Análisis histórico comparativo entre periodos")
+        st.caption("Los gráficos usan los valores de la tabla CONSOLIDADO de cada periodo.")
+        consolidados = resultados["consolidados_por_periodo"]
+        if not consolidados:
+            st.info("No hay datos históricos suficientes para generar el análisis.")
+        else:
+            agrupacion = st.radio(
+                "Agrupar por:",
+                ["Mes", "Bimestre", "Trimestre", "Semestre", "Año"],
+                horizontal=True, index=0, key="agrup_global"
+            )
+            consolidados_agrup = agrupar_consolidados(consolidados, agrupacion)
+            firma = _firma_consolidados(consolidados_agrup)
 
-    if resultados["errores"]:
-        st.error("Errores al leer archivos:")
-        st.dataframe(pd.DataFrame(resultados["errores"], columns=["Archivo", "Error"]), use_container_width=True)
+            st.markdown("#### Gráfico 1 — Dinero enviado por interfaz por periodo y sede")
+            img = generar_grafica_dinero(consolidados_agrup, firma)
+            if img: st.image(img, use_column_width=True)
 
-    if resultados["no_clasificados"]:
-        st.warning("Hojas no clasificadas (no coinciden con ninguna estructura):")
-        st.dataframe(pd.DataFrame(resultados["no_clasificados"]), use_container_width=True)
+            st.markdown("#### Gráfico 2 — Cobertura general de honorarios médicos")
+            img = generar_grafica_cobertura(consolidados_agrup, firma)
+            if img: st.image(img, use_column_width=True)
 
-# ============================================================
-# TABLAS RESUMEN
-# ============================================================
-st.markdown("---")
-st.header("📊 Tablas resumen")
+            st.markdown("#### Gráfico 3 — Participación por fase (por sede y periodo)")
+            opciones_sede = ["General"] + COLUMNAS_RESUMEN
+            sede_sel = st.radio(
+                "Ver:",
+                opciones_sede,
+                horizontal=True, index=0, key="sel_sede_grafico3",
+            )
+            if sede_sel == "General":
+                firma_fase = "general_" + _firma_consolidados(consolidados)
+                img = generar_grafica_participacion_fase_general(consolidados, firma_fase)
+            else:
+                firma_fase = f"sede_{sede_sel}_" + _firma_consolidados(consolidados)
+                img = generar_grafica_participacion_fase_sede_individual(consolidados, sede_sel, firma_fase)
+            if img:
+                st.image(img, use_column_width=True)
+            else:
+                st.info("Sin datos suficientes para este gráfico.")
 
-tabs = st.tabs(["Fase 1 - Ambulatorio", "Fase 2 - Hospitalario", "Fase 3 - Quirúrgico", "Consolidado"])
+            st.markdown("#### Gráfico 4 — Dinero total enviado por periodo (todas las sedes)")
+            img = generar_grafica_dinero_total(consolidados_agrup, firma)
+            if img: st.image(img, use_column_width=True)
 
-for tab, fase in zip(tabs[:3], FASES):
-    with tab:
-        st.markdown(f"### {TITULOS_FASES[fase]}")
-        st.dataframe(resultados["tablas_por_fase"][fase], use_container_width=True)
+            st.markdown("#### Gráfico 5 — Cobertura total por periodo (todas las sedes)")
+            img = generar_grafica_cobertura_total(consolidados_agrup, firma)
+            if img: st.image(img, use_column_width=True)
 
-with tabs[3]:
-    st.markdown("### CONSOLIDADO - TODAS LAS FASES")
-    st.dataframe(resultados["tabla_consolidada"], use_container_width=True)
+            st.markdown("#### Gráfico 6 — Participación por fase — Todas las sedes consolidadas")
+            img = generar_grafica_participacion_fase_total(consolidados_agrup, firma)
+            if img: st.image(img, use_column_width=True)
 
-# ============================================================
-# GRÁFICAS POR PERIODO
-# ============================================================
-consolidados = resultados["consolidados_por_periodo"]
+            st.markdown("#### Gráfico 7 — Participación de cada sede en el total general por periodo")
+            img = generar_grafica_participacion_sede_total(consolidados_agrup, firma)
+            if img: st.image(img, use_column_width=True)
 
-if consolidados:
-    st.markdown("---")
-    st.header("📈 Análisis histórico por periodo")
+    with tabs[2]:
+        st.markdown("### Base única de errores de tarifas")
+        df_err = resultados.get("df_errores_tarifas", pd.DataFrame())
+        if df_err.empty:
+            st.info("No se detectaron errores de tarifas.")
+        else:
+            cat_sel = st.multiselect(
+                "Filtrar por categoría de error:",
+                options=sorted(df_err["Categoría de error"].dropna().unique().tolist()),
+                default=sorted(df_err["Categoría de error"].dropna().unique().tolist()),
+            )
+            df_err_f = df_err[df_err["Categoría de error"].isin(cat_sel)] if cat_sel else df_err
+            st.caption(f"Registros: {len(df_err_f)}")
+            st.dataframe(df_err_f, use_container_width=True)
+            csv = df_err_f.to_csv(index=False).encode("utf-8")
+            st.download_button("⬇️ Descargar errores de tarifas (CSV)", csv, "errores_tarifas.csv", "text/csv")
 
-    firma = _firma_consolidados(consolidados)
+    with tabs[3]:
+        st.dataframe(resultados["resumen_verifica"], use_container_width=True)
 
-    agrupacion = st.selectbox(
-        "Agrupar por:",
-        ["Mes", "Bimestre", "Trimestre", "Semestre", "Año"],
-        index=0,
-        key="agrupacion_selector",
+    with tabs[4]:
+        st.markdown("### Diagnóstico de históricos detectados")
+        diag_df = resultados.get("diagnostico_historicos", pd.DataFrame())
+        if diag_df is None or diag_df.empty:
+            st.info("No se detectaron hojas de resultados en los archivos cargados.")
+        else:
+            st.dataframe(diag_df, use_container_width=True)
+        st.markdown("---")
+        st.markdown("**Ubicaciones no mapeadas (Atenciones)**")
+        st.dataframe(resultados["ubicaciones_no_mapeadas"], use_container_width=True)
+        st.markdown("**Totales sin match en Atenciones**")
+        st.dataframe(resultados["totales_sin_match_atenciones_df"], use_container_width=True)
+
+    excel_bytes = generar_excel_bytes(
+        resultados,
+        resultados["periodo_etiqueta"],
+        resultados["periodo_inicio"],
+        resultados["periodo_fin"],
     )
-    consolidados_agrupados = agrupar_consolidados(consolidados, agrupacion)
-    consolidados_agrupados = _ordenar_llaves_cronologicamente(consolidados_agrupados)
-    firma_agr = _firma_consolidados(consolidados_agrupados)
-
-    st.subheader("💰 Dinero enviado por interfaz por periodo y sede")
-    img = generar_grafica_dinero(consolidados_agrupados, firma_agr)
-    if img:
-        st.image(img, use_container_width=True)
-    else:
-        st.info("Sin datos de dinero para graficar.")
-
-    st.subheader("✅ Cobertura por sede (Avaladas / Total ventas)")
-    img = generar_grafica_cobertura(consolidados_agrupados, firma_agr)
-    if img:
-        st.image(img, use_container_width=True)
-    else:
-        st.info("Sin datos de cobertura para graficar.")
-
-    st.subheader("💵 Dinero total por periodo (todas las sedes)")
-    img = generar_grafica_dinero_total(consolidados_agrupados, firma_agr)
-    if img:
-        st.image(img, use_container_width=True)
-
-    st.subheader("🎯 Cobertura total por periodo (todas las sedes)")
-    img = generar_grafica_cobertura_total(consolidados_agrupados, firma_agr)
-    if img:
-        st.image(img, use_container_width=True)
-
-    st.subheader("🧩 Participación por fase — Todas las sedes")
-    img = generar_grafica_participacion_fase_total(consolidados_agrupados, firma_agr)
-    if img:
-        st.image(img, use_container_width=True)
-
-    st.subheader("🧩 Participación por fase — Vista general por sede")
-    img = generar_grafica_participacion_fase_general(consolidados_agrupados, firma_agr)
-    if img:
-        st.image(img, use_container_width=True)
-
-    st.subheader("🏥 Participación de cada sede en el total por periodo")
-    img = generar_grafica_participacion_sede_total(consolidados_agrupados, firma_agr)
-    if img:
-        st.image(img, use_container_width=True)
-
-    st.subheader("🔎 Participación por fase — Sede individual")
-    sede_sel = st.selectbox("Selecciona una sede:", COLUMNAS_RESUMEN, key="sede_individual")
-    img = generar_grafica_participacion_fase_sede_individual(consolidados_agrupados, sede_sel, firma_agr)
-    if img:
-        st.image(img, use_container_width=True)
-
-else:
-    st.info("No se detectaron periodos históricos ni datos consolidados para graficar.")
-
-# ============================================================
-# NOVEDADES
-# ============================================================
-if resultados["resumen_verifica"] is not None and not resultados["resumen_verifica"].empty:
-    st.markdown("---")
-    st.header("👥 Novedades — Verificadores")
-    st.dataframe(resultados["resumen_verifica"], use_container_width=True)
-
-# ============================================================
-# UBICACIONES NO MAPEADAS
-# ============================================================
-with st.expander("🗺️ Ubicaciones / centros de costo no mapeados", expanded=False):
-    for key, titulo in [
-        ("ubicaciones_no_mapeadas", "Atenciones — Ubicación de la venta"),
-        ("ubicaciones_totales_no_mapeadas", "Totales — Centro De Costo"),
-        ("ubicaciones_ventas_no_mapeadas", "Ventas — Centro de costo"),
-    ]:
-        df_ub = resultados.get(key)
-        if df_ub is not None and len(df_ub) > 0:
-            st.markdown(f"**{titulo}**")
-            st.dataframe(df_ub, use_container_width=True)
-
-    estados = resultados.get("estados_no_incluidos")
-    if estados is not None and len(estados) > 0:
-        st.markdown("**Estados de venta no incluidos (fuera de ACTIVA/FACTURADA)**")
-        st.dataframe(estados, use_container_width=True)
-
-# ============================================================
-# TOTALES SIN MATCH
-# ============================================================
-if resultados["totales_sin_match_atenciones_df"] is not None and not resultados["totales_sin_match_atenciones_df"].empty:
-    st.markdown("---")
-    st.header("⚠️ Totales sin coincidencia en Atenciones")
-    st.dataframe(resultados["totales_sin_match_atenciones_df"], use_container_width=True)
-
-# ============================================================
-# ERRORES DE TARIFAS
-# ============================================================
-if resultados["df_errores_tarifas"] is not None and not resultados["df_errores_tarifas"].empty:
-    st.markdown("---")
-    st.header("💸 Errores de tarifas detectados")
-    st.dataframe(resultados["df_errores_tarifas"], use_container_width=True)
-
-# ============================================================
-# DESCARGA DE EXCEL
-# ============================================================
-st.markdown("---")
-st.header("📥 Descargar resultados")
-
-col_dl1, col_dl2 = st.columns([1, 2])
-with col_dl1:
-    generar = st.button("🛠️ Generar Excel", type="primary", use_container_width=True)
-with col_dl2:
-    st.caption("El Excel incluye tablas por fase, consolidado, novedades, errores de tarifas, diagnósticos, históricos y consolidados por periodo.")
-
-if generar:
-    with st.spinner("Generando Excel..."):
-        excel_bytes = generar_excel_bytes(
-            resultados,
-            resultados["periodo_etiqueta"],
-            resultados["periodo_inicio"],
-            resultados["periodo_fin"],
-        )
     st.download_button(
-        label="⬇️ Descargar Excel de resultados",
+        "⬇️ Descargar Excel completo",
         data=excel_bytes,
-        file_name=f"Analisis_Honorarios_{resultados['periodo_etiqueta'].replace(' ', '_')}.xlsx",
+        file_name=f"Analisis_honorarios_{resultados['periodo_etiqueta'].replace(' ', '_')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
     )
-    st.success("✅ Excel generado. Usa el botón de descarga.")
+else:
+    st.info("Carga archivos para comenzar el análisis.")
