@@ -337,10 +337,18 @@ def normalizar_llave_venta(v):
     return s
 
 def convertir_a_numero(serie):
-    return pd.to_numeric(
-        serie.astype(str).str.replace(",", "", regex=False).str.replace("$", "", regex=False).str.replace(" ", "", regex=False).str.strip(),
-        errors="coerce"
-    ).fillna(0)
+    """
+    Convierte una serie a float soportando formato US (1,234,567.89) y CO (1.234.567,89).
+    Si la serie ya es numérica se usa tal cual. Valores no parseables -> 0.
+    """
+    if pd.api.types.is_numeric_dtype(serie):
+        return pd.to_numeric(serie, errors="coerce").fillna(0).astype(float)
+
+    def _conv(v):
+        r = parsear_valor_generico(v)
+        return 0.0 if r is None else r
+
+    return serie.map(_conv).astype(float)
 
 MAPA_UBICACION = {normalizar(ubicacion): (sede_cod, str(fase).strip()) for sede_cod, ubicacion, fase in MAPA_FASES}
 
@@ -746,10 +754,7 @@ def procesar_todo(files_data):
             if estructura == "Totales":
                 col_tot_tarifas = obtener_columna(df_con_header, "Total tarifas y recargos/descuentos")
                 if col_tot_tarifas is not None:
-                    valores_tot = pd.to_numeric(
-                        df_con_header[col_tot_tarifas].astype(str).str.replace(",", "", regex=False).str.replace("$", "", regex=False).str.replace(" ", "", regex=False).str.strip(),
-                        errors="coerce"
-                    )
+                    valores_tot = convertir_a_numero(df_con_header[col_tot_tarifas])
                     df_con_header = df_con_header[valores_tot >= 1000].copy()
 
             h = hash_df(df_con_header)
