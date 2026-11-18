@@ -80,6 +80,35 @@ ESTRUCTURAS = {
     ],
 }
 
+# Estructuras ALTERNAS aceptadas para clasificar un archivo (NO reemplazan a ESTRUCTURAS).
+# Si un archivo coincide mejor con una alterna, se clasifica con el nombre de la estructura base.
+ESTRUCTURAS_ALTERNAS = {
+    "Ventas": [
+        "Sede", "Periodo", "Profesional principal de la venta", "Tipo Documento",
+        "Documento", "Concepto", "es empleado?", "No. de venta", "Estado de la venta",
+        "Fecha de venta", "Ingreso", "Fecha de atención", "Contrato paciente",
+        "Paciente", "Cod. Centro de costo", "Centro de costo", "Aseguradora", "Plan",
+        "Tipo atención", "Clase de Ingreso", "Cod Cuenta Contable",
+        "Nombre Cuenta Contable", "Area De Negocio", "Tipo de producto", "Categoría",
+        "Cod Producto venta", "Producto venta", "Cantidad", "Cod. producto componente",
+        "honorario asignado a:", "Especialidad", "Carg Equi Quirurgico", "Gremio",
+        "Documento Gremio", "Valor venta", "Numero factura", "valor tarifa",
+        "Valor recargo", "Forma de cálculo", "Valor configurado",
+        "Forma de cálculo recargo/desc", "Valor configurado Recargo/desc",
+        "Valor Unitario", "Valor Total", "Usuario que elimino",
+        "Fecha de eliminación", "Descripción de eliminación",
+    ],
+}
+
+# Alias de columnas dentro de Ventas: si NO existe el campo esperado (clave),
+# se usa el primer alias que exista en el archivo.
+ALIAS_COLUMNAS_VENTAS = {
+    "Venta No.": ["No. de venta"],
+    "Código Producto": ["Codigo Producto", "Cod Producto venta"],
+    "Valor facturado": ["Valor Total"],   # <- campo para la sumatoria de valores
+    "Estado": ["Estado de la venta"],
+}
+
 UMBRAL_COINCIDENCIA = 0.60
 
 MAPA_FASES = [
@@ -243,11 +272,21 @@ def extraer_codigo_producto(valor):
     return m.group(1) if m else ""
 
 ESTRUCTURAS_NORM = {nombre: {normalizar(c) for c in cols} for nombre, cols in ESTRUCTURAS.items()}
+ESTRUCTURAS_ALTERNAS_NORM = {nombre: {normalizar(c) for c in cols} for nombre, cols in ESTRUCTURAS_ALTERNAS.items()}
 
 def clasificar_estructura(columnas_df):
+    """
+    Compara contra las estructuras esperadas y contra las alternas.
+    Devuelve (nombre_estructura_base, score). Las alternas NO modifican las esperadas.
+    """
     cols_df_norm = {normalizar(c) for c in columnas_df}
     mejor = (None, 0.0)
     for nombre, esperadas in ESTRUCTURAS_NORM.items():
+        if not esperadas: continue
+        coincidencias = len(esperadas & cols_df_norm)
+        score = coincidencias / len(esperadas)
+        if score > mejor[1]: mejor = (nombre, score)
+    for nombre, esperadas in ESTRUCTURAS_ALTERNAS_NORM.items():
         if not esperadas: continue
         coincidencias = len(esperadas & cols_df_norm)
         score = coincidencias / len(esperadas)
@@ -259,6 +298,26 @@ def obtener_columna(df, nombre_esperado):
     for c in df.columns:
         if normalizar(c) == objetivo: return c
     return None
+
+def adaptar_ventas(df):
+    """
+    Si en Ventas no existe un campo esperado pero sí uno de sus alias
+    (p. ej. 'Valor facturado' -> 'Valor Total'), crea el campo esperado como copia del alias.
+    No elimina ni renombra columnas originales; los campos esperados NO cambian.
+    Devuelve (df_adaptado, lista_de_notas).
+    """
+    df = df.copy()
+    notas = []
+    for canonico, alias_lista in ALIAS_COLUMNAS_VENTAS.items():
+        if obtener_columna(df, canonico) is not None:
+            continue
+        for alias in alias_lista:
+            col_alias = obtener_columna(df, alias)
+            if col_alias is not None:
+                df[canonico] = df[col_alias]
+                notas.append((canonico, str(col_alias)))
+                break
+    return df, notas
 
 def hash_df(df):
     return hashlib.md5(pd.util.hash_pandas_object(df, index=False).values.tobytes()).hexdigest()
@@ -623,6 +682,8 @@ def procesar_todo(files_data):
     historicos_detectados = {}
     # Diagnóstico: cuántos valores válidos se parsearon por hoja y por sede
     diagnostico_historicos = []
+    # Diagnóstico: columnas alternas utilizadas en Ventas
+    ventas_columnas_alternas = []
 
     hashes_archivos_vistos = {}
     hashes_hojas_vistos = {}
@@ -696,6 +757,16 @@ def procesar_todo(files_data):
                 hojas_duplicadas.append({"Archivo": f_name, "Hoja": hoja, "Estructura": estructura, "Duplicado de": hashes_hojas_vistos[h]})
                 continue
             hashes_hojas_vistos[h] = f"{f_name}::{hoja}"
+
+            # Ventas: si faltan campos esperados, usar alias (p. ej. 'Valor facturado' <- 'Valor Total')
+            if estructura == "Ventas":
+                df_con_header, notas_alias = adaptar_ventas(df_con_header)
+                for canonico, alias_usado in notas_alias:
+                    ventas_columnas_alternas.append({
+                        "Archivo": f_name, "Hoja": hoja,
+                        "Campo esperado": canonico, "Campo usado": alias_usado,
+                    })
+
             bases[estructura].append((f_name, hoja, df_con_header.copy()))
 
     periodos_validos = [(n, p) for n, p in periodos_detectados if p[0] is not None and p[1] is not None]
@@ -949,7 +1020,7 @@ def procesar_todo(files_data):
                                     "Sede": cod,
                                     "Fase": fase,
                                     "Fuente": "Totales",
-                                        "Categoría de error": "tarifas no aplican",
+                                    "Categoría de error": "tarifas no aplican",
                                     "No. de venta": totales_df.loc[idx, col_totales_venta_no],
                                     "Código producto": cod_prod,
                                     "Producto": totales_df.loc[idx, col_totales_producto] if col_totales_producto is not None else "",
@@ -1307,6 +1378,7 @@ def procesar_todo(files_data):
         "totales_sin_match_atenciones_df": totales_sin_match_atenciones_df,
         "df_errores_tarifas": df_errores_tarifas,
         "diagnostico_historicos": pd.DataFrame(diagnostico_historicos),
+        "ventas_columnas_alternas": pd.DataFrame(ventas_columnas_alternas),
     }
 
 def _firma_consolidados(consolidados_por_periodo):
@@ -1674,6 +1746,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         ("Carga de archivos", ""), ("", "Se aceptan múltiples Excel (.xlsx, .xls)."),
         ("", "Cada hoja se clasifica: Ventas, Atenciones del especialista, Totales o Histórico."),
         ("", "Hojas/archivos duplicados se descartan por hash."),
+        ("", "Ventas acepta un formato alterno: si falta 'Valor facturado' se usa 'Valor Total' (también 'No. de venta', 'Cod Producto venta' y 'Estado de la venta' como respaldo)."),
         ("Periodo", ""), ("", "Se extrae del nombre del archivo (YYYY-MM, MM-YYYY, nombre de mes + año)."),
         ("Filtros previos", ""), ("", "En Totales: 'Total tarifas y recargos/descuentos' >= 1000."),
         ("Mapeo de (sede, fase)", ""), ("", "Match flexible contra el mapa Sede + Ubicación → Fase."),
@@ -1682,7 +1755,7 @@ def generar_excel_bytes(resultados, periodo_etiqueta, periodo_inicio, periodo_fi
         ("2. Avaladas subgerencia médica", "Revisadas + 'Usuario / Sub Medico' NO vacío + 'Valor liquidado' > 1000."),
         ("3. Dinero enviado por interfaz", "Σ 'Valor liquidado' válido (> 1000). Si la tarifa difiere del 'Valor facturado' de Ventas (cruce por No. venta + código de producto), se suma el valor de Ventas UNA sola vez por (venta, código). Errores reportados aparte."),
         ("4. Total ventas", "count(Totales ∩ Ventas con 'tarifas' >= 1000). Errores reportados aparte."),
-        ("5. Dinero ventas", "Se toma el 'Valor facturado' de Ventas, sumado UNA sola vez por (No. venta, primeros 6 dígitos de 'producto' en Totales = 'Código Producto' de Ventas). Si no hay coincidencia en Ventas se usa la 'tarifas (reliquidado)' de Totales. Si el valor de Ventas difiere de Totales se marca 'tarifa diferente'."),
+        ("5. Dinero ventas", "Se toma el 'Valor facturado' de Ventas (o 'Valor Total' en el formato alterno), sumado UNA sola vez por (No. venta, primeros 6 dígitos de 'producto' en Totales = 'Código Producto' de Ventas). Si no hay coincidencia en Ventas se usa la 'tarifas (reliquidado)' de Totales. Si el valor de Ventas difiere de Totales se marca 'tarifa diferente'."),
         ("6. Porcentual faltante (META 30%)", "(Total ventas − Avaladas) / Total ventas × 100."),
         ("7. Ventas relacionadas en factura", "count(Ventas con Estado=Facturada, 'Valor facturado' >= 1000 y 'Venta No.' ∈ Totales). Filas duplicadas de Ventas se cuentan una sola vez."),
         ("8. Dinero ventas (Facturado)", "Σ 'Valor facturado' válido (>= 1000) con Estado=Facturada y 'Venta No.' ∈ Totales, sin duplicados."),
@@ -1979,6 +2052,14 @@ if uploaded_files:
         st.dataframe(resultados["resumen_verifica"], use_container_width=True)
 
     with tabs[4]:
+        st.markdown("### Campos alternos usados en Ventas")
+        alt_df = resultados.get("ventas_columnas_alternas", pd.DataFrame())
+        if alt_df is None or alt_df.empty:
+            st.info("Todos los archivos de Ventas trajeron los campos esperados (no se usaron alias).")
+        else:
+            st.caption("En estos archivos faltaba el campo esperado y se usó el campo indicado para los cálculos.")
+            st.dataframe(alt_df, use_container_width=True)
+        st.markdown("---")
         st.markdown("### Diagnóstico de históricos detectados")
         diag_df = resultados.get("diagnostico_historicos", pd.DataFrame())
         if diag_df is None or diag_df.empty:
@@ -1986,6 +2067,8 @@ if uploaded_files:
         else:
             st.dataframe(diag_df, use_container_width=True)
         st.markdown("---")
+        st.markdown("**Hojas no clasificadas**")
+        st.dataframe(pd.DataFrame(resultados["no_clasificados"]), use_container_width=True)
         st.markdown("**Ubicaciones no mapeadas (Atenciones)**")
         st.dataframe(resultados["ubicaciones_no_mapeadas"], use_container_width=True)
         st.markdown("**Totales sin match en Atenciones**")
