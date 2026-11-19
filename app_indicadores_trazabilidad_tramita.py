@@ -121,10 +121,6 @@ if 'df_portafolio' not in st.session_state:
     st.session_state.df_portafolio = None
 if 'df_externas' not in st.session_state:
     st.session_state.df_externas = None
-if 'df_cruce' not in st.session_state:
-    st.session_state.df_cruce = None
-if 'cruce_disponible' not in st.session_state:
-    st.session_state.cruce_disponible = False
 if 'df_filtrado' not in st.session_state:
     st.session_state.df_filtrado = None
 if 'df_externas_filtrado' not in st.session_state:
@@ -134,232 +130,20 @@ if 'filtros_aplicados' not in st.session_state:
 if 'archivo_cargado' not in st.session_state:
     st.session_state.archivo_cargado = False
 
-# ======================== CONSTANTES Y FUNCIONES PARA EL CRUCE DE ESTADOS ========================
-HOJAS_CRUCE = ['agendamientos', 'ordenamientos qxnoqx', 'agendamientos qx']
-
-# Columnas requeridas en las hojas de cruce (clave normalizada -> nombre canónico)
-COLUMNAS_CRUCE = {
-    'DOCUMENTO PACIENTE': 'Documento Paciente',
-    'CODIGO CUP': 'Codigo Cup',
-    'NOMBRE SEDE': 'Nombre Sede',
-    'ESTADO': 'Estado',
-}
-
-# Estados de "Datos" que NO se cruzan con las hojas nuevas
-ESTADOS_BASE_SIN_CRUCE = {'PENDIENTE PROGRAMAR', 'PROGRAMAR', 'PRESTADO', 'PROGRAMADO'}
-
-# Estado (normalizado) de las hojas nuevas que provoca el cambio a PROGRAMAR
-ESTADO_CRUCE_CAMBIO = 'AUTORIZACION_GESTIONADA'
-ESTADO_NUEVO_DATOS = 'PROGRAMAR'
-
-# Clasificación del resultado del cruce
-CRUCE_BASE = 'Estado base (sin cruce)'
-CRUCE_CAMBIO = 'Cambió a PROGRAMAR (autorización gestionada)'
-CRUCE_SIN_CAMBIO = 'Encontrado en hojas nuevas (sin cambio)'
-CRUCE_NO_ENC = 'Sin coincidencia en hojas nuevas'
-CRUCE_ORDEN = [CRUCE_BASE, CRUCE_CAMBIO, CRUCE_SIN_CAMBIO, CRUCE_NO_ENC]
-CRUCE_COLORES = {
-    CRUCE_BASE: '#CBD5E1',
-    CRUCE_CAMBIO: '#F39C12',
-    CRUCE_SIN_CAMBIO: '#45B7D1',
-    CRUCE_NO_ENC: '#FF6B6B',
-}
-
-
-def normalizar_clave_texto(txt):
-    """Mayúsculas, sin tildes, sin espacios repetidos. NaN -> ''."""
-    if txt is None or (not isinstance(txt, str) and pd.isna(txt)):
-        return ''
-    texto = unicodedata.normalize('NFKD', str(txt))
-    texto = ''.join(c for c in texto if not unicodedata.combining(c))
-    return re.sub(r'\s+', ' ', texto).strip().upper()
-
-
-def _a_texto_id(valor):
-    """Convierte un identificador (documento / CUPS) a texto limpio, evitando '123.0'."""
-    if valor is None or (not isinstance(valor, str) and pd.isna(valor)):
-        return ''
-    if isinstance(valor, float) and valor.is_integer():
-        return str(int(valor))
-    texto = str(valor).strip()
-    texto = re.sub(r'\.0+$', '', texto)
-    return texto
-
-
-def normalizar_documento(valor):
-    texto = _a_texto_id(valor)
-    return re.sub(r'[^0-9A-Za-z]', '', texto).upper()
-
-
-def normalizar_cups6(valor):
-    """Primeros 6 caracteres (de izquierda a derecha) del CUPS."""
-    texto = _a_texto_id(valor)
-    texto = re.sub(r'\s+', '', texto)
-    return texto[:6].upper()
-
-
-def normalizar_estado_cruce(valor):
-    """'Autorización gestionada' / 'autorizacion_gestionada' -> 'AUTORIZACION_GESTIONADA'."""
-    texto = normalizar_clave_texto(valor)
-    return re.sub(r'[\s\-]+', '_', texto)
-
-
-def construir_clave(doc, cups, sede):
-    return f"{normalizar_documento(doc)}|{normalizar_cups6(cups)}|{normalizar_clave_texto(sede)}"
-
-
-def cargar_hojas_cruce(excel_file):
-    """
-    Carga (si existen) las hojas 'agendamientos', 'ordenamientos qxnoqx' y 'agendamientos qx'.
-    Devuelve (df_cruce o None, lista de mensajes [(nivel, texto)]).
-    """
-    mensajes = []
-    frames = []
-    mapa_hojas = {normalizar_clave_texto(s): s for s in excel_file.sheet_names}
-
-    for hoja in HOJAS_CRUCE:
-        nombre_real = mapa_hojas.get(normalizar_clave_texto(hoja))
-        if nombre_real is None:
-            continue
-
-        df_hoja = None
-        # Se prueba con la fila de encabezado 0, 1 y 2
-        for header in (0, 1, 2):
-            try:
-                tmp = excel_file.parse(sheet_name=nombre_real, header=header)
-            except Exception:
-                continue
-            renombres = {}
-            for col in tmp.columns:
-                clave = normalizar_clave_texto(col)
-                if clave in COLUMNAS_CRUCE and COLUMNAS_CRUCE[clave] not in renombres.values():
-                    renombres[col] = COLUMNAS_CRUCE[clave]
-            if len(set(renombres.values())) == len(COLUMNAS_CRUCE):
-                tmp = tmp.rename(columns=renombres)
-                df_hoja = tmp[list(COLUMNAS_CRUCE.values())].copy()
-                break
-
-        if df_hoja is None:
-            mensajes.append((
-                'warning',
-                f"⚠️ La hoja '{nombre_real}' no contiene las columnas requeridas "
-                f"({', '.join(COLUMNAS_CRUCE.values())}). Se omitirá del cruce."
-            ))
-            continue
-
-        df_hoja = df_hoja.dropna(how='all')
-        df_hoja['Hoja_Origen'] = nombre_real
-        frames.append(df_hoja)
-        mensajes.append(('info', f"🔀 Hoja de cruce '{nombre_real}': {len(df_hoja)} registros cargados."))
-
-    if len(frames) == 0:
-        return None, mensajes
-
-    df_cruce = pd.concat(frames, ignore_index=True)
-    return df_cruce, mensajes
-
-
-def aplicar_cruce_estados(df_datos, df_cruce):
-    """
-    Si el Estado en 'Datos' es distinto de Pendiente programar / Programar / Prestado / Programado,
-    busca el registro en las hojas nuevas por Documento + CUPS (6 primeros) + Sede.
-    Si lo encuentra y el Estado en la hoja nueva es 'autorizacion_gestionada',
-    el registro de Datos pasa a tener Estado = 'PROGRAMAR'.
-
-    Agrega las columnas: Estado_Original, Clasif_Cruce, Estado_Cruce, Hoja_Cruce.
-    """
-    df_out = df_datos.copy().reset_index(drop=True)
-    df_out['Estado_Original'] = df_out['Estado']
-    df_out['Clasif_Cruce'] = CRUCE_BASE
-    df_out['Estado_Cruce'] = ''
-    df_out['Hoja_Cruce'] = ''
-
-    estado_norm = df_out['Estado'].apply(normalizar_clave_texto)
-    susceptibles = ~estado_norm.isin(ESTADOS_BASE_SIN_CRUCE)
-
-    if susceptibles.sum() == 0:
-        return df_out
-
-    if df_cruce is None or len(df_cruce) == 0:
-        df_out.loc[susceptibles, 'Clasif_Cruce'] = CRUCE_NO_ENC
-        return df_out
-
-    # Diccionario clave -> (estados, hojas, cambia)
-    cr = df_cruce.copy()
-    cr['_key'] = [construir_clave(d, c, s) for d, c, s in zip(cr['Documento Paciente'], cr['Codigo Cup'], cr['Nombre Sede'])]
-    cr['_estado_raw'] = cr['Estado'].astype(str).str.strip()
-    cr['_es_gest'] = cr['Estado'].apply(normalizar_estado_cruce) == ESTADO_CRUCE_CAMBIO
-
-    dict_cruce = {}
-    for key, grupo in cr.groupby('_key'):
-        dict_cruce[key] = (
-            sorted(set(grupo['_estado_raw'])),
-            sorted(set(grupo['Hoja_Origen'])),
-            bool(grupo['_es_gest'].any()),
-        )
-
-    idx_susc = df_out.index[susceptibles]
-    claves = [construir_clave(df_out.at[i, 'Doc.'], df_out.at[i, 'Cups'], df_out.at[i, 'Sede']) for i in idx_susc]
-
-    for i, key in zip(idx_susc, claves):
-        resultado = dict_cruce.get(key)
-        if resultado is None:
-            df_out.at[i, 'Clasif_Cruce'] = CRUCE_NO_ENC
-            continue
-        estados, hojas, cambia = resultado
-        df_out.at[i, 'Estado_Cruce'] = ', '.join(estados)
-        df_out.at[i, 'Hoja_Cruce'] = ', '.join(hojas)
-        if cambia:
-            df_out.at[i, 'Clasif_Cruce'] = CRUCE_CAMBIO
-            df_out.at[i, 'Estado'] = ESTADO_NUEVO_DATOS
-        else:
-            df_out.at[i, 'Clasif_Cruce'] = CRUCE_SIN_CAMBIO
-
-    return df_out
-
-
-# ======================== FUNCIÓN AUXILIAR PARA ESCRIBIR HOJAS EXCEL ========================
-def escribir_df_en_hoja(ws, df_sheet, header_fill, header_font, thin_border):
-    for r_idx, row in enumerate(dataframe_to_rows(df_sheet, index=False, header=True), 1):
-        for c_idx, value in enumerate(row, 1):
-            cell = ws.cell(row=r_idx, column=c_idx, value=value)
-            if r_idx == 1:
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = Alignment(horizontal='center', vertical='center')
-            cell.border = thin_border
-
-    for column in ws.columns:
-        max_length = 0
-        column_letter = column[0].column_letter
-        for cell in column:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        adjusted_length = min(max_length + 2, 50)
-        ws.column_dimensions[column_letter].width = adjusted_length
-
-
 # Título principal
 st.title("📊 Tablero resumen de gestión de Autorizaciones y Programación en Tramita")
 
 # ======================== SECCIÓN DE CARGA (COLAPSABLE) ========================
 with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
     archivo = st.file_uploader(
-        "Selecciona un archivo Excel que contenga las hojas: 'Datos', 'Portafolio' y 'Solicitudes Externas' (opcionalmente 'agendamientos', 'ordenamientos qxnoqx' y 'agendamientos qx')",
+        "Selecciona un archivo Excel que contenga las hojas: 'Datos', 'Portafolio' y 'Solicitudes Externas'",
         type=['xlsx', 'xls'],
-        help="El archivo debe contener: Hoja 'Datos' con los campos: Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Cups, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo. Hoja 'Portafolio' con los campos: CUPS, codIPS, descrCodIPS, codREPS, A, UNIDAD EJECUTORA, Codigo unidad, Sede_Portafolio. Hoja 'Solicitudes Externas' con los campos: fechaRegistroFormulario, ciudad, proceso, idPaciente, nombrePaciente, entidad, servicio, cups, estado, fechaEntregaProceso, motivoCancelacion. Hojas opcionales 'agendamientos', 'ordenamientos qxnoqx' y 'agendamientos qx' con los campos: Documento Paciente, Codigo Cup, Nombre Sede, Estado"
+        help="El archivo debe contener: Hoja 'Datos' con los campos: Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Cups, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo. Hoja 'Portafolio' con los campos: CUPS, codIPS, descrCodIPS, codREPS, A, UNIDAD EJECUTORA, Codigo unidad, Sede_Portafolio. Hoja 'Solicitudes Externas' con los campos: fechaRegistroFormulario, ciudad, proceso, idPaciente, nombrePaciente, entidad, servicio, cups, estado, fechaEntregaProceso, motivoCancelacion"
     )
     
     if archivo is not None:
         try:
             excel_file = pd.ExcelFile(archivo)
-            
-            # Reiniciar el cruce en cada carga
-            st.session_state.df_cruce = None
-            st.session_state.cruce_disponible = False
             
             if 'Datos' not in excel_file.sheet_names:
                 st.error("⚠️ El archivo no contiene una hoja llamada 'Datos'")
@@ -446,16 +230,6 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                             df_portafolio = df_portafolio.dropna(how='all')
                             st.session_state.df_portafolio = df_portafolio
                             
-                            # ---------- Hojas opcionales para el cruce de estados ----------
-                            df_cruce_cargado, mensajes_cruce = cargar_hojas_cruce(excel_file)
-                            st.session_state.df_cruce = df_cruce_cargado
-                            st.session_state.cruce_disponible = (df_cruce_cargado is not None and len(df_cruce_cargado) > 0)
-                            for nivel_msg, texto_msg in mensajes_cruce:
-                                if nivel_msg == 'warning':
-                                    st.warning(texto_msg)
-                                else:
-                                    st.info(texto_msg)
-                            
                             if 'Solicitudes Externas' not in excel_file.sheet_names:
                                 st.warning("⚠️ El archivo no contiene una hoja llamada 'Solicitudes Externas'. Esta hoja es opcional.")
                                 st.session_state.df_externas = None
@@ -527,10 +301,6 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
                             st.info(f"📊 Portafolio: {len(df_portafolio)} registros encontrados.")
                             if st.session_state.df_externas is not None:
                                 st.info(f"📊 Solicitudes Externas: {len(df_externas)} registros encontrados.")
-                            if st.session_state.cruce_disponible:
-                                st.info(f"🔀 Hojas de cruce de estados: {len(st.session_state.df_cruce)} registros en total.")
-                            else:
-                                st.info("🔀 No se encontraron hojas válidas para el cruce de estados (agendamientos, ordenamientos qxnoqx, agendamientos qx). Se procesará sin cruce.")
                             st.info(f"📅 Rango de fechas: {df['Solicitado'].min().strftime('%Y-%m-%d')} - {df['Solicitado'].max().strftime('%Y-%m-%d')}")
                     
         except Exception as e:
@@ -540,8 +310,6 @@ with st.expander("📂 Cargar Archivo de Solicitudes", expanded=False):
             st.session_state.df = None
             st.session_state.df_portafolio = None
             st.session_state.df_externas = None
-            st.session_state.df_cruce = None
-            st.session_state.cruce_disponible = False
             st.session_state.archivo_cargado = False
     else:
         st.info("📌 Carga un archivo Excel para comenzar a trabajar")
@@ -767,11 +535,6 @@ def generar_resumen_ejecutivo(df):
     resumen += '<h3>📋 Resumen Ejecutivo</h3>'
     resumen += f'<p><strong>Visión General:</strong> Se identificaron <span class="stat">{total_ordenes:,}</span> órdenes correspondientes a <span class="stat">{total_pacientes:,}</span> pacientes y <span class="stat">{total_entidades}</span> entidades diferentes.</p>'
     resumen += f'<p><strong>Gestión de Órdenes:</strong> Del total de órdenes, <span class="stat">{total_gestionados:,} ({total_gestionados/total_ordenes*100:.1f}%)</span> ya han sido gestionadas, mientras que <span class="stat">{total_pendientes:,} ({total_pendientes/total_ordenes*100:.1f}%)</span> se encuentran pendientes de gestión.</p>'
-    
-    if 'Clasif_Cruce' in df.columns:
-        cambiaron = int((df['Clasif_Cruce'] == CRUCE_CAMBIO).sum())
-        if cambiaron > 0:
-            resumen += f'<p><strong>Cruce de Estados:</strong> <span class="stat">{cambiaron:,} ({cambiaron/total_ordenes*100:.1f}%)</span> órdenes cambiaron su estado a <strong>PROGRAMAR</strong> tras cruzarse con las hojas de agendamiento (estado "autorización gestionada"), y por tanto se consideran pendientes de gestión desde programación.</p>'
     
     if total_pendientes > 0:
         resumen += f'<p><strong>Cuellos de Botella:</strong> De las órdenes pendientes, <span class="stat">{pendientes_prog:,} ({pendientes_prog/total_pendientes*100:.1f}%)</span> están pendientes desde programación y <span class="stat">{pendientes_aut:,} ({pendientes_aut/total_pendientes*100:.1f}%)</span> desde autorizaciones.</p>'
@@ -1004,7 +767,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
     df = st.session_state.df.copy()
     df_portafolio = st.session_state.df_portafolio.copy()
     df_externas = st.session_state.df_externas.copy() if st.session_state.df_externas is not None else None
-    df_cruce = st.session_state.df_cruce.copy() if st.session_state.df_cruce is not None else None
     
     if not pd.api.types.is_datetime64_any_dtype(df['Solicitado']):
         try:
@@ -1022,11 +784,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
     if len(df) == 0:
         st.warning("⚠️ El archivo no contiene datos después de la fila de título")
         st.stop()
-    
-    # ======================== CRUCE DE ESTADOS (ANTES DE TODO EL PROCESAMIENTO) ========================
-    # Los registros de 'Datos' cuyo estado no sea Pendiente programar / Programar / Prestado / Programado
-    # se buscan en las hojas nuevas; si están como "autorización gestionada" pasan a "PROGRAMAR".
-    df = aplicar_cruce_estados(df, df_cruce)
     
     df = asignar_area_mejorada(df, df_portafolio)
     
@@ -1063,31 +820,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             st.warning("⚠️ Algunos registros no pudieron ser asignados a un área. Verifica que los CUPS y Sedes coincidan con el portafolio base.")
             ejemplos_sin_area = df[df['Area'] == 'Sin Área'][['Cups', 'Sede']].head(10)
             st.dataframe(ejemplos_sin_area)
-    
-    with st.expander("🔀 Estadísticas del Cruce de Estados (hojas de agendamiento)", expanded=False):
-        if not st.session_state.cruce_disponible:
-            st.info("No se cargaron hojas de cruce válidas (agendamientos, ordenamientos qxnoqx, agendamientos qx). No se aplicó ningún cambio de estado.")
-        else:
-            conteo_cruce = df['Clasif_Cruce'].value_counts().reindex(CRUCE_ORDEN).fillna(0).astype(int)
-            col_c1, col_c2 = st.columns(2)
-            with col_c1:
-                st.metric("Registros en hojas de cruce", len(df_cruce) if df_cruce is not None else 0)
-                st.metric("Registros con estado base (sin cruce)", int(conteo_cruce[CRUCE_BASE]))
-                st.metric("Registros susceptibles al cruce", int(conteo_cruce[CRUCE_CAMBIO] + conteo_cruce[CRUCE_SIN_CAMBIO] + conteo_cruce[CRUCE_NO_ENC]))
-            with col_c2:
-                st.write("Resultado del cruce:")
-                st.dataframe(conteo_cruce.reset_index().rename(columns={'Clasif_Cruce': 'Clasificación', 'index': 'Clasificación', 0: 'Cantidad', 'count': 'Cantidad'}))
-            
-            if df_cruce is not None:
-                st.write("Registros por hoja de cruce:")
-                st.dataframe(df_cruce['Hoja_Origen'].value_counts().reset_index().rename(columns={'index': 'Hoja', 'Hoja_Origen': 'Hoja', 'count': 'Registros'}))
-            
-            st.caption("Llave de cruce: Doc. ↔ Documento Paciente, primeros 6 dígitos de Cups ↔ Codigo Cup, Sede ↔ Nombre Sede.")
-            
-            ejemplos_no_enc = df[df['Clasif_Cruce'] == CRUCE_NO_ENC][['Doc.', 'Cups', 'Sede', 'Estado_Original']].head(10)
-            if len(ejemplos_no_enc) > 0:
-                st.warning("⚠️ Algunos registros con estado susceptible no se encontraron en las hojas nuevas. Ejemplos:")
-                st.dataframe(ejemplos_no_enc)
     
     # ======================== BARRA DE FILTROS ========================
     st.markdown("### 🔍 Panel de Filtros")
@@ -1375,7 +1107,7 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
     with st.expander("📋 Ver Detalle de Resultados (Datos Filtrados)", expanded=False):
         st.markdown("#### Detalle de órdenes con filtros aplicados")
         
-        columnas_tabla = ['Estado', 'Estado_Original', 'Clasif_Cruce', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']
+        columnas_tabla = ['Estado', 'Estado_Gestion', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']
         columnas_existentes = [col for col in columnas_tabla if col in df_filtrado.columns]
         
         if columnas_existentes:
@@ -1390,8 +1122,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 height=400,
                 column_config={
                     "Estado": st.column_config.TextColumn("Estado", width="medium"),
-                    "Estado_Original": st.column_config.TextColumn("Estado original (Datos)", width="medium"),
-                    "Clasif_Cruce": st.column_config.TextColumn("Resultado del cruce", width="large"),
                     "Estado_Gestion": st.column_config.TextColumn("Estado de Gestión", width="large"),
                     "Solicitado": st.column_config.TextColumn("Solicitado", width="medium"),
                     "Doc.": st.column_config.TextColumn("Documento", width="small"),
@@ -1711,169 +1441,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             texto_interpretacion2 = f'Del total de <strong>{total_estados}</strong> órdenes, <strong>{estado_pendientes_prog} (<span class="stat">{estado_pendientes_prog/total_estados*100:.1f}%</span>)</strong> se encuentran pendientes de gestión desde programación, <strong>{estado_pendientes_aut} (<span class="stat">{estado_pendientes_aut/total_estados*100:.1f}%</span>)</strong> pendientes desde autorizaciones, <strong>{estado_gestionados_prog} (<span class="stat">{estado_gestionados_prog/total_estados*100:.1f}%</span>)</strong> ya gestionadas desde programación, y <strong>{estado_gestionados_aut} (<span class="stat">{estado_gestionados_aut/total_estados*100:.1f}%</span>)</strong> gestionadas o en seguimiento desde autorizaciones. La mayor carga de trabajo se concentra en <strong>{mayor_carga}</strong>.'
             
             st.markdown(generar_interpretacion("Interpretación", texto_interpretacion2), unsafe_allow_html=True)
-            
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        # ======================== GRÁFICO 2A (NUEVO): ORDENAMIENTOS SUSCEPTIBLES A CAMBIO DE ESTADO ========================
-        with st.container():
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            st.subheader("📊 Ordenamientos susceptibles a cambio de estado (cruce con hojas de agendamiento)")
-            
-            if not st.session_state.cruce_disponible or 'Clasif_Cruce' not in df_filtrado.columns:
-                st.info("No se cargaron hojas de cruce válidas (agendamientos, ordenamientos qxnoqx, agendamientos qx), por lo que no hay cambios de estado para visualizar.")
-            else:
-                df_cr = df_filtrado.copy()
-                df_cr['Estado_Original'] = df_cr['Estado_Original'].fillna('(sin estado)').astype(str)
-                
-                pv_cr = df_cr.groupby(['Estado_Original', 'Clasif_Cruce']).size().unstack(fill_value=0)
-                for c_cr in CRUCE_ORDEN:
-                    if c_cr not in pv_cr.columns:
-                        pv_cr[c_cr] = 0
-                pv_cr = pv_cr[CRUCE_ORDEN]
-                pv_cr = pv_cr.loc[pv_cr.sum(axis=1).sort_values(ascending=True).index]
-                
-                # Pendientes de gestión desde programación: estado original vs por cambio de estado
-                df_pp = df_cr[df_cr['Estado_Gestion'] == "Pendiente gestión desde programación"].copy()
-                ORIGEN_ORIGINAL = 'Estado original PROGRAMAR'
-                ORIGEN_CAMBIO = 'Por cambio de estado (cruce)'
-                df_pp['Origen_Pendiente'] = np.where(df_pp['Clasif_Cruce'] == CRUCE_CAMBIO, ORIGEN_CAMBIO, ORIGEN_ORIGINAL)
-                
-                if len(df_pp) > 0:
-                    pv_pp = df_pp.groupby(['Area', 'Origen_Pendiente']).size().unstack(fill_value=0)
-                    for o_pp in [ORIGEN_ORIGINAL, ORIGEN_CAMBIO]:
-                        if o_pp not in pv_pp.columns:
-                            pv_pp[o_pp] = 0
-                    pv_pp = pv_pp[[ORIGEN_ORIGINAL, ORIGEN_CAMBIO]]
-                    pv_pp = pv_pp.loc[pv_pp.sum(axis=1).sort_values(ascending=True).index]
-                else:
-                    pv_pp = pd.DataFrame()
-                
-                filas_max = max(len(pv_cr), len(pv_pp), 1)
-                fig2a, (ax2a_l, ax2a_r) = plt.subplots(
-                    1, 2, figsize=(18, max(6, filas_max * 0.7)),
-                    gridspec_kw={'width_ratios': [1.2, 1]}
-                )
-                
-                # ---- Panel izquierdo: estados originales de Datos y resultado del cruce ----
-                y_cr = np.arange(len(pv_cr))
-                left_cr = np.zeros(len(pv_cr))
-                for c_cr in CRUCE_ORDEN:
-                    vals = pv_cr[c_cr].values.astype(float)
-                    if vals.sum() == 0:
-                        continue
-                    ax2a_l.barh(y_cr, vals, left=left_cr, height=0.65, label=c_cr,
-                                color=CRUCE_COLORES[c_cr], edgecolor='white', linewidth=1.2)
-                    for j, v in enumerate(vals):
-                        if v > 0:
-                            ax2a_l.text(left_cr[j] + v/2, y_cr[j], f'{int(v)}', ha='center', va='center',
-                                        fontsize=9, fontweight='bold', color='black')
-                    left_cr += vals
-                
-                max_left_cr = left_cr.max() if len(left_cr) > 0 else 0
-                for j, total in enumerate(left_cr):
-                    ax2a_l.text(total + (max_left_cr * 0.01 if max_left_cr > 0 else 0.3), y_cr[j], f'{int(total)}',
-                                ha='left', va='center', fontsize=10, fontweight='bold', color='black')
-                
-                ax2a_l.set_yticks(y_cr)
-                ax2a_l.set_yticklabels([f"{str(e)[:40]}{'...' if len(str(e)) > 40 else ''}" for e in pv_cr.index], fontsize=10)
-                ax2a_l.set_xlabel('Cantidad de Órdenes', fontsize=12)
-                ax2a_l.set_ylabel('Estado original en Datos', fontsize=12)
-                ax2a_l.set_title('Estados de Datos y resultado del cruce', fontsize=13, fontweight='bold')
-                ax2a_l.set_xlim(0, max_left_cr * 1.15 if max_left_cr > 0 else 10)
-                ax2a_l.legend(loc='lower right', fontsize=9, title='Resultado del cruce',
-                              title_fontsize=10, framealpha=0.95, edgecolor='#7c3aed')
-                
-                # ---- Panel derecho: pendientes de programación por área (original vs cambio) ----
-                if len(pv_pp) > 0:
-                    y_pp = np.arange(len(pv_pp))
-                    left_pp = np.zeros(len(pv_pp))
-                    colores_pp = {ORIGEN_ORIGINAL: '#4ECDC4', ORIGEN_CAMBIO: '#F39C12'}
-                    for o_pp in [ORIGEN_ORIGINAL, ORIGEN_CAMBIO]:
-                        vals = pv_pp[o_pp].values.astype(float)
-                        if vals.sum() == 0:
-                            continue
-                        ax2a_r.barh(y_pp, vals, left=left_pp, height=0.65, label=o_pp,
-                                    color=colores_pp[o_pp], edgecolor='white', linewidth=1.2)
-                        for j, v in enumerate(vals):
-                            if v > 0:
-                                ax2a_r.text(left_pp[j] + v/2, y_pp[j], f'{int(v)}', ha='center', va='center',
-                                            fontsize=9, fontweight='bold', color='black')
-                        left_pp += vals
-                    
-                    max_left_pp = left_pp.max() if len(left_pp) > 0 else 0
-                    for j, total in enumerate(left_pp):
-                        ax2a_r.text(total + (max_left_pp * 0.01 if max_left_pp > 0 else 0.3), y_pp[j], f'{int(total)}',
-                                    ha='left', va='center', fontsize=10, fontweight='bold', color='black')
-                    
-                    ax2a_r.set_yticks(y_pp)
-                    ax2a_r.set_yticklabels([f"{str(a)[:40]}{'...' if len(str(a)) > 40 else ''}" for a in pv_pp.index], fontsize=10)
-                    ax2a_r.set_xlabel('Cantidad de Órdenes', fontsize=12)
-                    ax2a_r.set_ylabel('Área', fontsize=12)
-                    ax2a_r.set_xlim(0, max_left_pp * 1.15 if max_left_pp > 0 else 10)
-                    ax2a_r.legend(loc='lower right', fontsize=9, title='Origen del pendiente',
-                                  title_fontsize=10, framealpha=0.95, edgecolor='#7c3aed')
-                else:
-                    ax2a_r.text(0.5, 0.5, 'Sin pendientes de gestión\ndesde programación', ha='center', va='center',
-                                fontsize=12, transform=ax2a_r.transAxes)
-                    ax2a_r.set_xticks([])
-                    ax2a_r.set_yticks([])
-                ax2a_r.set_title('Pendientes de gestión desde programación: origen del estado', fontsize=13, fontweight='bold')
-                
-                fig2a.suptitle(f'Ordenamientos susceptibles a cambio de estado - {sufijo_sede}', fontsize=14, fontweight='bold')
-                plt.tight_layout()
-                st.pyplot(fig2a)
-                
-                # ---- Interpretación ----
-                total_cr = len(df_cr)
-                n_base = int((df_cr['Clasif_Cruce'] == CRUCE_BASE).sum())
-                n_cambio = int((df_cr['Clasif_Cruce'] == CRUCE_CAMBIO).sum())
-                n_sin_cambio = int((df_cr['Clasif_Cruce'] == CRUCE_SIN_CAMBIO).sum())
-                n_no_enc = int((df_cr['Clasif_Cruce'] == CRUCE_NO_ENC).sum())
-                n_susc = n_cambio + n_sin_cambio + n_no_enc
-                
-                total_pp = len(df_pp)
-                pp_cambio = int((df_pp['Origen_Pendiente'] == ORIGEN_CAMBIO).sum()) if total_pp > 0 else 0
-                pp_original = total_pp - pp_cambio
-                
-                texto_interpretacion2a = (
-                    f'De las <strong>{total_cr}</strong> órdenes, <strong>{n_base}</strong> '
-                    f'(<span class="stat">{(n_base/total_cr*100) if total_cr > 0 else 0:.1f}%</span>) tienen un estado base '
-                    f'(Pendiente programar, Programar, Prestado o Programado) y no requieren cruce, mientras que '
-                    f'<strong>{n_susc}</strong> (<span class="stat">{(n_susc/total_cr*100) if total_cr > 0 else 0:.1f}%</span>) son susceptibles de cambio de estado. '
-                    f'De estas, <strong>{n_cambio}</strong> (<span class="stat">{(n_cambio/n_susc*100) if n_susc > 0 else 0:.1f}%</span>) fueron halladas en las hojas de agendamiento '
-                    f'con estado "autorización gestionada" y pasaron a <strong>PROGRAMAR</strong>, <strong>{n_sin_cambio}</strong> '
-                    f'(<span class="stat">{(n_sin_cambio/n_susc*100) if n_susc > 0 else 0:.1f}%</span>) se encontraron con otro estado (sin cambio) y <strong>{n_no_enc}</strong> '
-                    f'(<span class="stat">{(n_no_enc/n_susc*100) if n_susc > 0 else 0:.1f}%</span>) no tuvieron coincidencia. '
-                )
-                
-                if total_pp > 0:
-                    texto_interpretacion2a += (
-                        f'<br><strong>Impacto en pendientes de programación:</strong> de las <strong>{total_pp}</strong> órdenes pendientes de gestión desde programación, '
-                        f'<strong>{pp_original}</strong> (<span class="stat">{pp_original/total_pp*100:.1f}%</span>) ya estaban en estado PROGRAMAR en Datos y '
-                        f'<strong>{pp_cambio}</strong> (<span class="stat">{pp_cambio/total_pp*100:.1f}%</span>) son pendientes por cambio de estado tras el cruce.'
-                    )
-                    if pp_cambio > 0:
-                        area_cambio = df_pp[df_pp['Origen_Pendiente'] == ORIGEN_CAMBIO]['Area'].value_counts()
-                        texto_interpretacion2a += (
-                            f' El área con más pendientes por cambio de estado es <span class="stat">"{area_cambio.index[0]}"</span> '
-                            f'con <strong>{int(area_cambio.iloc[0])}</strong> órdenes.'
-                        )
-                
-                st.markdown(generar_interpretacion("Interpretación", texto_interpretacion2a), unsafe_allow_html=True)
-                
-                with st.expander("📋 Ver detalle de órdenes con cambio de estado", expanded=False):
-                    df_cambios = df_cr[df_cr['Clasif_Cruce'] == CRUCE_CAMBIO].copy()
-                    cols_cambios = ['Doc.', 'Paciente', 'Entidad', 'Sede', 'Area', 'Cups', 'Servicio',
-                                    'Estado_Original', 'Estado', 'Estado_Cruce', 'Hoja_Cruce', 'Solicitado']
-                    cols_cambios = [c for c in cols_cambios if c in df_cambios.columns]
-                    if len(df_cambios) > 0:
-                        df_cambios_vista = df_cambios[cols_cambios].copy()
-                        if 'Solicitado' in df_cambios_vista.columns:
-                            df_cambios_vista['Solicitado'] = df_cambios_vista['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
-                        st.dataframe(df_cambios_vista, use_container_width=True, height=350)
-                        st.caption(f"📊 {len(df_cambios_vista)} órdenes cambiaron a PROGRAMAR por el cruce")
-                    else:
-                        st.info("No hay órdenes con cambio de estado en el período filtrado.")
             
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -3169,17 +2736,14 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                                    ordenes_area_data, estados_serv_data, entidad_data, 
                                    df_ext_proceso_mes_export, df_ext_top_serv_export, 
                                    df_ext_estado_proceso_export):
-        # Agregar columnas 'Motivo' y 'Grupo_Motivo' justo después de 'Estado_Gestion'
-        # y las columnas del cruce de estados (Estado_Original / Clasif_Cruce) después de 'Estado'
+        # MODIFICACIÓN: Agregar columnas 'Motivo' y 'Grupo_Motivo' justo después de 'Estado_Gestion'
         df_export_clean = df_export.copy()
         
         # Calcular Motivo y Grupo_Motivo para el exportable
         df_export_clean['Motivo'] = df_export_clean['Observación'].apply(extraer_motivo) if 'Observación' in df_export_clean.columns else None
         df_export_clean['Grupo_Motivo'] = df_export_clean.apply(clasificar_grupo_final, axis=1)
         
-        columnas_export = ['Estado', 'Estado_Original', 'Clasif_Cruce', 'Estado_Cruce', 'Hoja_Cruce',
-                           'Estado_Gestion', 'Motivo', 'Grupo_Motivo', 'Solicitado', 'Doc.', 'Paciente',
-                           'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']
+        columnas_export = ['Estado', 'Estado_Gestion', 'Motivo', 'Grupo_Motivo', 'Solicitado', 'Doc.', 'Paciente', 'Entidad', 'Area', 'Cups', 'Servicio', 'Observación']
         columnas_export_existentes = [col for col in columnas_export if col in df_export_clean.columns]
         
         datos_detalle = df_export_clean[columnas_export_existentes].copy()
@@ -3201,13 +2765,6 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             for _, row in estado_gestion_data.iterrows():
                 resumen_data.append(['Gráfico 2', 'Gestión de autorizaciones', f'{row["Estado"]}: {row["Cantidad"]} ({row["Cantidad"]/total_estados*100:.1f}%)', ''])
         resumen_data.append(['', '', '', ''])
-        
-        if 'Clasif_Cruce' in df_export.columns and len(df_export) > 0:
-            conteo_cruce_exp = df_export['Clasif_Cruce'].value_counts()
-            total_cruce_exp = conteo_cruce_exp.sum()
-            for clasif, cant in conteo_cruce_exp.items():
-                resumen_data.append(['Gráfico 2A', 'Ordenamientos susceptibles a cambio de estado', f'{clasif}: {cant} ({cant/total_cruce_exp*100:.1f}%)', ''])
-            resumen_data.append(['', '', '', ''])
         
         if pendientes_data is not None and len(pendientes_data) > 0:
             total_pend = pendientes_data['Cantidad'].sum()
@@ -3306,6 +2863,9 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
             output = BytesIO()
             wb = Workbook()
             
+            ws1 = wb.active
+            ws1.title = "Datos Detallados"
+            
             header_fill = PatternFill(start_color="7c3aed", end_color="7c3aed", fill_type="solid")
             header_font = Font(color="FFFFFF", bold=True)
             thin_border = Border(
@@ -3315,25 +2875,48 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                 bottom=Side(style='thin')
             )
             
-            ws1 = wb.active
-            ws1.title = "Datos Detallados"
-            escribir_df_en_hoja(ws1, datos_detalle, header_fill, header_font, thin_border)
+            for r_idx, row in enumerate(dataframe_to_rows(datos_detalle, index=False, header=True), 1):
+                for c_idx, value in enumerate(row, 1):
+                    cell = ws1.cell(row=r_idx, column=c_idx, value=value)
+                    if r_idx == 1:
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                    cell.border = thin_border
+            
+            for column in ws1.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_length = min(max_length + 2, 50)
+                ws1.column_dimensions[column_letter].width = adjusted_length
             
             ws2 = wb.create_sheet("Resumen Gráficos")
-            escribir_df_en_hoja(ws2, resumen_graficos, header_fill, header_font, thin_border)
+            for r_idx, row in enumerate(dataframe_to_rows(resumen_graficos, index=False, header=True), 1):
+                for c_idx, value in enumerate(row, 1):
+                    cell = ws2.cell(row=r_idx, column=c_idx, value=value)
+                    if r_idx == 1:
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                    cell.border = thin_border
             
-            # Hoja con los registros que cambiaron de estado por el cruce
-            if 'Clasif_Cruce' in df_export.columns:
-                df_cambios_exp = df_export[df_export['Clasif_Cruce'] == CRUCE_CAMBIO].copy()
-                if len(df_cambios_exp) > 0:
-                    cols_cambios_exp = ['Doc.', 'Paciente', 'Entidad', 'Sede', 'Area', 'Cups', 'Servicio',
-                                        'Estado_Original', 'Estado', 'Estado_Cruce', 'Hoja_Cruce', 'Solicitado']
-                    cols_cambios_exp = [c for c in cols_cambios_exp if c in df_cambios_exp.columns]
-                    df_cambios_exp = df_cambios_exp[cols_cambios_exp]
-                    if 'Solicitado' in df_cambios_exp.columns:
-                        df_cambios_exp['Solicitado'] = df_cambios_exp['Solicitado'].dt.strftime('%Y-%m-%d %H:%M')
-                    ws_cambios = wb.create_sheet("Cambios de Estado")
-                    escribir_df_en_hoja(ws_cambios, df_cambios_exp, header_fill, header_font, thin_border)
+            for column in ws2.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_length = min(max_length + 2, 50)
+                ws2.column_dimensions[column_letter].width = adjusted_length
             
             if df_externas_filtrado is not None and len(df_externas_filtrado) > 0:
                 ws3 = wb.create_sheet("Solicitudes Externas")
@@ -3348,7 +2931,26 @@ if st.session_state.archivo_cargado and st.session_state.df is not None and st.s
                     if 'fechaRegistroFormulario' in df_ext_export_sheet.columns:
                         df_ext_export_sheet['fechaRegistroFormulario'] = pd.to_datetime(df_ext_export_sheet['fechaRegistroFormulario']).dt.strftime('%Y-%m-%d')
                     
-                    escribir_df_en_hoja(ws3, df_ext_export_sheet, header_fill, header_font, thin_border)
+                    for r_idx, row in enumerate(dataframe_to_rows(df_ext_export_sheet, index=False, header=True), 1):
+                        for c_idx, value in enumerate(row, 1):
+                            cell = ws3.cell(row=r_idx, column=c_idx, value=value)
+                            if r_idx == 1:
+                                cell.fill = header_fill
+                                cell.font = header_font
+                                cell.alignment = Alignment(horizontal='center', vertical='center')
+                            cell.border = thin_border
+                    
+                    for column in ws3.columns:
+                        max_length = 0
+                        column_letter = column[0].column_letter
+                        for cell in column:
+                            try:
+                                if len(str(cell.value)) > max_length:
+                                    max_length = len(str(cell.value))
+                            except:
+                                pass
+                        adjusted_length = min(max_length + 2, 50)
+                        ws3.column_dimensions[column_letter].width = adjusted_length
             
             wb.save(output)
             output.seek(0)
@@ -3377,7 +2979,7 @@ else:
     
     with st.expander("📚 Ver Formato Esperado del Archivo", expanded=False):
         st.markdown("""
-        ### El archivo Excel debe contener tres hojas obligatorias y puede incluir tres hojas opcionales:
+        ### El archivo Excel debe contener tres hojas:
         
         **Hoja 1: 'Datos'** - Debe contener las siguientes columnas:
         - Tag, Solicitado, Auditado, Sede, Doc., Paciente, Edad, Genero, Diag., Entidad, Grupo Atención, Servicio, Cups, Radicación, Radicado, Autorizado, Autorización, Vence, Entregado, Servicio, Programado, Responsable, Estado, Observación, Prioridad, idOrden, idIndigo
@@ -3387,11 +2989,6 @@ else:
         
         **Hoja 3: 'Solicitudes Externas'** - Debe contener las siguientes columnas:
         - fechaRegistroFormulario, ciudad, proceso, idPaciente, nombrePaciente, entidad, servicio, cups, estado, fechaEntregaProceso, motivoCancelacion
-        
-        **Hojas opcionales para el cruce de estados: 'agendamientos', 'ordenamientos qxnoqx' y 'agendamientos qx'** - Cada una debe contener, como mínimo, las columnas:
-        - Documento Paciente, Codigo Cup, Nombre Sede, Estado
-        
-        > 🔀 Si un registro de 'Datos' tiene un estado distinto de Pendiente programar, Programar, Prestado o Programado, se busca en las hojas opcionales por Documento + CUPS (6 primeros dígitos) + Sede. Si se encuentra con estado `autorizacion_gestionada`, el registro pasa a estado **PROGRAMAR** antes de todo el procesamiento.
         
         > 💡 Se aceptan variantes de nombres como `fechaSolicitud`, `paciente`, `idCups`, `fecha entrega/cancelación`. El sistema las renombra automáticamente al formato esperado.
         """)
